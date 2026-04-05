@@ -1,0 +1,216 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="using:FormDesigner.ViewModels"
+        xmlns:models="using:FormDesigner.Models"
+        mc:Ignorable="d"
+        x:Class="FormDesigner.Views.MainWindow"
+        x:CompileBindings="False"
+        Width="1400"
+        Height="800"
+        Title="Avalonia Form Designer">
+
+	<Grid ColumnDefinitions="240,*,320" RowDefinitions="Auto,*">
+		<Border Grid.ColumnSpan="3"
+                Background="#F4F4F4"
+                BorderBrush="#D8D8D8"
+                BorderThickness="0,0,0,1"
+                Padding="12">
+			<TextBlock Text="Конструктор форм"
+                       FontSize="18"
+                       FontWeight="SemiBold"/>
+		</Border>
+
+		<Border Grid.Row="1" Grid.Column="0"
+                Margin="10"
+                BorderBrush="#D0D0D0"
+                BorderThickness="1"
+                Background="White">
+			<Grid RowDefinitions="Auto,*">
+				<Border Background="#FAFAFA"
+                        BorderBrush="#E0E0E0"
+                        BorderThickness="0,0,0,1"
+                        Padding="10">
+					<TextBlock Text="Компоненты" FontWeight="Bold"/>
+				</Border>
+
+				<ListBox Grid.Row="1"
+                         ItemsSource="{Binding ToolboxItems}"
+                         Margin="8">
+					<ListBox.ItemTemplate>
+						<DataTemplate>
+							<Border Background="#F7F7F7"
+                                    BorderBrush="#DCDCDC"
+                                    BorderThickness="1"
+                                    CornerRadius="6"
+                                    Padding="10"
+                                    Margin="0,0,0,8"
+                                    PointerPressed="ToolboxItem_PointerPressed">
+								<StackPanel>
+									<TextBlock Text="{Binding Title}" FontWeight="Bold"/>
+									<TextBlock Text="{Binding Type}" Opacity="0.7" FontSize="12"/>
+								</StackPanel>
+							</Border>
+						</DataTemplate>
+					</ListBox.ItemTemplate>
+				</ListBox>
+			</Grid>
+		</Border>
+
+		<Border Grid.Row="1" Grid.Column="1"
+                Margin="10"
+                BorderBrush="#D0D0D0"
+                BorderThickness="1"
+                Background="White">
+			<Grid RowDefinitions="Auto,Auto,*">
+				<Border Background="#FAFAFA"
+                        BorderBrush="#E0E0E0"
+                        BorderThickness="0,0,0,1"
+                        Padding="10">
+					<TextBlock Text="Рабочая область" FontWeight="Bold"/>
+				</Border>
+
+				<Border Grid.Row="1"
+                        Background="#FAFAFA"
+                        BorderBrush="#E0E0E0"
+                        BorderThickness="0,0,0,1"
+                        Padding="10">
+					<StackPanel Orientation="Horizontal" Spacing="8">
+						<TextBlock Text="Размер рабочей зоны"
+                                   VerticalAlignment="Center"
+                                   FontWeight="Bold"/>
+
+						<TextBlock Margin="12,0,0,0"
+									VerticalAlignment="Center"
+									Foreground="#666"
+									Text="{Binding DesignWidth, StringFormat='W: {0}'}"/>
+
+						<TextBlock Margin="4,0,0,0"
+								   VerticalAlignment="Center"
+								   Foreground="#666"
+								   Text="{Binding DesignHeight, StringFormat='H: {0}'}"/>
+					</StackPanel>
+				</Border>
+
+				<ScrollViewer Grid.Row="2"
+							  HorizontalScrollBarVisibility="Auto"
+							  VerticalScrollBarVisibility="Auto">
+					<Grid HorizontalAlignment="Left"
+						  VerticalAlignment="Top"
+						  Margin="10">
+						<Canvas x:Name="DesignSurfaceHost"
+								Width="{Binding DesignWidth}"
+								Height="{Binding DesignHeight}"
+								Background="Transparent">
+
+							<Border x:Name="DesignSurfaceBorder"
+									Width="{Binding DesignWidth}"
+									Height="{Binding DesignHeight}"
+									BorderBrush="#707070"
+									BorderThickness="2"
+									Background="White">
+
+								<Canvas x:Name="DesignerCanvas"
+										Width="{Binding DesignWidth}"
+										Height="{Binding DesignHeight}"
+										Background="#F8F8F8"
+										DragDrop.AllowDrop="True"
+										DragDrop.DragOver="DesignerCanvas_DragOver"
+										DragDrop.Drop="DesignerCanvas_Drop"/>
+							</Border>
+
+							<Border x:Name="DesignResizeHandle"
+									Width="18"
+									Height="18"
+									Background="DodgerBlue"
+									Canvas.Right="-9"
+									Canvas.Bottom="-9"
+									PointerPressed="DesignResizeHandle_PointerPressed"
+									PointerMoved="DesignResizeHandle_PointerMoved"
+									PointerReleased="DesignResizeHandle_PointerReleased"/>
+						</Canvas>
+					</Grid>
+				</ScrollViewer>
+			</Grid>
+		</Border>
+
+		<Border Grid.Row="1" Grid.Column="2"
+                Margin="10"
+                BorderBrush="#D0D0D0"
+                BorderThickness="1"
+                Background="White">
+			<Grid RowDefinitions="Auto,*,Auto,*">
+				<Border Background="#FAFAFA"
+                        BorderBrush="#E0E0E0"
+                        BorderThickness="0,0,0,1"
+                        Padding="10">
+					<TextBlock Text="Свойства / XAML" FontWeight="Bold"/>
+				</Border>
+				<Grid ColumnDefinitions="220,*,280">
+					<!-- Слева -->
+					<Border Grid.Column="0" Margin="10" BorderBrush="LightGray" BorderThickness="1">
+						<!-- toolbox -->
+					</Border>
+
+					<!-- Центр -->
+					<Border Grid.Column="1" Margin="10" BorderBrush="LightGray" BorderThickness="1">
+						<!-- рабочая зона -->
+					</Border>
+
+					<!-- Справа -->
+					<Border Grid.Column="2" Margin="10" BorderBrush="LightGray" BorderThickness="1" Padding="10">
+						<!-- свойства -->
+					</Border>
+				</Grid>
+
+				<Border Grid.Column="2" BorderBrush="LightGray" BorderThickness="1" Padding="10" Margin="10">
+					<StackPanel Spacing="8">
+						<TextBlock Text="Свойства" FontWeight="Bold" FontSize="16"/>
+
+						<TextBlock Text="Имя"/>
+						<TextBox Text="{Binding SelectedControl.Name, Mode=TwoWay}"/>
+
+						<TextBlock Text="Текст"/>
+						<TextBox Text="{Binding SelectedControl.Text, Mode=TwoWay}"/>
+
+						<TextBlock Text="Ширина"/>
+						<TextBox Text="{Binding SelectedControl.Width, Mode=TwoWay}"/>
+
+						<TextBlock Text="Высота"/>
+						<TextBox Text="{Binding SelectedControl.Height, Mode=TwoWay}"/>
+
+						<TextBlock Text="X"/>
+						<TextBox Text="{Binding SelectedControl.X, Mode=TwoWay}"/>
+
+						<TextBlock Text="Y"/>
+						<TextBox Text="{Binding SelectedControl.Y, Mode=TwoWay}"/>
+
+						<TextBlock Text="Колонки"/>
+						<TextBox Text="{Binding SelectedControl.Columns, Mode=TwoWay}"/>
+
+						<TextBlock Text="Строки"/>
+						<TextBox Text="{Binding SelectedControl.Rows, Mode=TwoWay}"/>
+					</StackPanel>
+				</Border>
+
+				<Border Grid.Row="2"
+                        Background="#FAFAFA"
+                        BorderBrush="#E0E0E0"
+                        BorderThickness="0,1,0,1"
+                        Padding="10">
+					<TextBlock Text="Сгенерированный XAML" FontWeight="Bold"/>
+				</Border>
+
+				<TextBox Grid.Row="3"
+                         Margin="10"
+                         AcceptsReturn="True"
+                         TextWrapping="NoWrap"
+                         FontFamily="Consolas"
+                         Text="{Binding GeneratedXaml}"
+                         ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                         ScrollViewer.VerticalScrollBarVisibility="Auto"/>
+			</Grid>			
+		</Border>
+	</Grid>
+</Window>
