@@ -27,6 +27,8 @@ public partial class MainWindow : Window
     private double _designStartWidth;
     private double _designStartHeight;
 
+    private DesignControlModel? _trackedSelectedControl;
+
     public MainWindow()
     {
         InitializeComponent();
@@ -35,18 +37,54 @@ public partial class MainWindow : Window
         DataContext = vm;
 
         vm.Controls.CollectionChanged += (_, _) => RenderDesigner();
-        vm.PropertyChanged += (_, e) =>
-        {
-            if (e.PropertyName == nameof(MainWindowViewModel.SelectedControl) ||
-                e.PropertyName == nameof(MainWindowViewModel.DesignWidth) ||
-                e.PropertyName == nameof(MainWindowViewModel.DesignHeight))
-            {
-                RenderDesigner();
-            }
-        };
+        vm.PropertyChanged += VM_PropertyChanged;
+
+        KeyDown += MainWindow_KeyDown;
     }
 
     private MainWindowViewModel VM => (MainWindowViewModel)DataContext!;
+
+    private void VM_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(MainWindowViewModel.SelectedControl))
+        {
+            TrackSelectedControl();
+            RenderDesigner();
+            return;
+        }
+
+        if (e.PropertyName == nameof(MainWindowViewModel.DesignWidth) ||
+            e.PropertyName == nameof(MainWindowViewModel.DesignHeight))
+        {
+            RenderDesigner();
+        }
+    }
+
+    private void TrackSelectedControl()
+    {
+        if (_trackedSelectedControl is not null)
+            _trackedSelectedControl.PropertyChanged -= SelectedControl_PropertyChanged;
+
+        _trackedSelectedControl = VM.SelectedControl;
+
+        if (_trackedSelectedControl is not null)
+            _trackedSelectedControl.PropertyChanged += SelectedControl_PropertyChanged;
+    }
+
+    private void SelectedControl_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        RenderDesigner();
+    }
+
+    private void MainWindow_KeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Delete)
+        {
+            VM.DeleteSelectedCommand.Execute(null);
+            RenderDesigner();
+            e.Handled = true;
+        }
+    }
 
     private async void ToolboxItem_PointerPressed(object? sender, PointerPressedEventArgs e)
     {
@@ -77,27 +115,36 @@ public partial class MainWindow : Window
             return;
 
         var position = e.GetPosition(DesignerCanvas);
+        var model = VM.CreateControl(type, VM.Snap(position.X), VM.Snap(position.Y));
 
-        var model = VM.CreateControl(type, position.X, position.Y);
-        AttachModelHandlers(model);
         RenderDesigner();
+        VM.SelectedControl = model;
     }
 
     private void RenderDesigner()
     {
-        DesignerCanvas.Children.Clear();
+        _isApplyingTextChanges = true;
 
-        foreach (var model in VM.Controls)
+        try
         {
-            var wrapper = CreateDesignerWrapper(model);
+            DesignerCanvas.Children.Clear();
 
-            Canvas.SetLeft(wrapper, model.X);
-            Canvas.SetTop(wrapper, model.Y);
+            foreach (var model in VM.Controls)
+            {
+                var wrapper = CreateDesignerWrapper(model);
 
-            DesignerCanvas.Children.Add(wrapper);
+                Canvas.SetLeft(wrapper, model.X);
+                Canvas.SetTop(wrapper, model.Y);
+
+                DesignerCanvas.Children.Add(wrapper);
+            }
+
+            VM.GenerateXamlCommand.Execute(null);
         }
-
-        VM.GenerateXamlCommand.Execute(null);
+        finally
+        {
+            _isApplyingTextChanges = false;
+        }
     }
 
     private Border CreateDesignerWrapper(DesignControlModel model)
@@ -120,7 +167,8 @@ public partial class MainWindow : Window
             Height = 18,
             Background = Brushes.Transparent,
             Tag = model,
-            IsVisible = VM.SelectedControl == model
+            IsVisible = VM.SelectedControl == model,
+            Cursor = new Cursor(StandardCursorType.SizeNorthSouth)
         };
 
         var resizeVisual = new Border
@@ -163,6 +211,21 @@ public partial class MainWindow : Window
         return wrapper;
     }
 
+    private void ResizeHandle_PointerReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        if (_resizingModel is not null)
+        {
+            _resizingModel.Width = VM.Snap(_resizingModel.Width);
+            _resizingModel.Height = VM.Snap(_resizingModel.Height);
+        }
+
+        _isResizing = false;
+        _resizingModel = null;
+        e.Pointer.Capture(null);
+
+        RenderDesigner();
+    }
+
     private void ResizeHandle_PointerPressed(object? sender, PointerPressedEventArgs e)
     {
         if (sender is not Border border || border.Tag is not DesignControlModel model)
@@ -193,11 +256,15 @@ public partial class MainWindow : Window
         RenderDesigner();
     }
 
-    private void ResizeHandle_PointerReleased(object? sender, PointerReleasedEventArgs e)
+    private void DesignResizeHandle_PointerReleased(object? sender, PointerReleasedEventArgs e)
     {
-        _isResizing = false;
-        _resizingModel = null;
+        VM.DesignWidth = VM.Snap(VM.DesignWidth);
+        VM.DesignHeight = VM.Snap(VM.DesignHeight);
+
+        _isResizingDesignSurface = false;
         e.Pointer.Capture(null);
+
+        RenderDesigner();
     }
 
     private Control CreateAvaloniaControl(DesignControlModel model)
@@ -225,7 +292,8 @@ public partial class MainWindow : Window
                 Text = model.Text,
                 Width = model.Width,
                 Height = model.Height,
-                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+                IsHitTestVisible = false
             },
 
             "CheckBox" => new CheckBox
@@ -238,7 +306,11 @@ public partial class MainWindow : Window
 
             "Grid" => CreateGridPreview(model),
 
-            _ => new TextBlock { Text = "Unknown" }
+            _ => new TextBlock
+            {
+                Text = "Unknown",
+                IsHitTestVisible = false
+            }
         };
     }
 
@@ -258,9 +330,9 @@ public partial class MainWindow : Window
         for (int i = 0; i < Math.Max(1, model.Rows); i++)
             grid.RowDefinitions.Add(new RowDefinition(1, GridUnitType.Star));
 
-        for (int row = 0; row < model.Rows; row++)
+        for (int row = 0; row < Math.Max(1, model.Rows); row++)
         {
-            for (int col = 0; col < model.Columns; col++)
+            for (int col = 0; col < Math.Max(1, model.Columns); col++)
             {
                 var cell = new Border
                 {
@@ -282,7 +354,8 @@ public partial class MainWindow : Window
             BorderBrush = Brushes.Black,
             BorderThickness = new Thickness(1),
             Background = Brushes.White,
-            Child = grid
+            Child = grid,
+            IsHitTestVisible = false
         };
     }
 
@@ -309,8 +382,8 @@ public partial class MainWindow : Window
 
         var pos = e.GetPosition(DesignerCanvas);
 
-        _draggedModel.X = Math.Max(0, pos.X - _dragOffset.X);
-        _draggedModel.Y = Math.Max(0, pos.Y - _dragOffset.Y);
+        _draggedModel.X = Math.Max(0, VM.Snap(pos.X - _dragOffset.X));
+        _draggedModel.Y = Math.Max(0, VM.Snap(pos.Y - _dragOffset.Y));
 
         Canvas.SetLeft(_draggedBorder, _draggedModel.X);
         Canvas.SetTop(_draggedBorder, _draggedModel.Y);
@@ -327,14 +400,6 @@ public partial class MainWindow : Window
 
         _draggedBorder = null;
         _draggedModel = null;
-    }
-
-    private void AttachModelHandlers(DesignControlModel model)
-    {
-        model.PropertyChanged += (_, __) =>
-        {
-            RenderDesigner();
-        };
     }
 
     private void DesignResizeHandle_PointerPressed(object? sender, PointerPressedEventArgs e)
@@ -366,9 +431,165 @@ public partial class MainWindow : Window
         VM.GenerateXaml();
     }
 
-    private void DesignResizeHandle_PointerReleased(object? sender, PointerReleasedEventArgs e)
+    private bool _isApplyingTextChanges;
+
+    private void RefreshFromPropertyPanel()
     {
-        _isResizingDesignSurface = false;
-        e.Pointer.Capture(null);
+        if (_isApplyingTextChanges)
+            return;
+
+        RenderDesigner();
+        VM.GenerateXaml();
+    }
+
+    private static bool TryParseDouble(string? text, out double value)
+    {
+        return double.TryParse(
+            text,
+            System.Globalization.NumberStyles.Any,
+            System.Globalization.CultureInfo.InvariantCulture,
+            out value)
+            || double.TryParse(
+                text,
+                System.Globalization.NumberStyles.Any,
+                System.Globalization.CultureInfo.CurrentCulture,
+                out value);
+    }
+
+    private static bool TryParseInt(string? text, out int value)
+    {
+        return int.TryParse(
+            text,
+            System.Globalization.NumberStyles.Integer,
+            System.Globalization.CultureInfo.InvariantCulture,
+            out value)
+            || int.TryParse(
+                text,
+                System.Globalization.NumberStyles.Integer,
+                System.Globalization.CultureInfo.CurrentCulture,
+                out value);
+    }
+
+    private void SelectedNameTextBox_TextChanged(object? sender, TextChangedEventArgs e)
+    {
+        if (_isApplyingTextChanges || VM.SelectedControl is null || sender is not TextBox tb)
+            return;
+
+        VM.SelectedControl.Name = tb.Text ?? "";
+        RefreshFromPropertyPanel();
+    }
+
+    private void SelectedTextTextBox_TextChanged(object? sender, TextChangedEventArgs e)
+    {
+        if (_isApplyingTextChanges || VM.SelectedControl is null || sender is not TextBox tb)
+            return;
+
+        VM.SelectedControl.Text = tb.Text ?? "";
+        RefreshFromPropertyPanel();
+    }
+
+    private void SelectedWidthTextBox_TextChanged(object? sender, TextChangedEventArgs e)
+    {
+        if (_isApplyingTextChanges || VM.SelectedControl is null || sender is not TextBox tb)
+            return;
+
+        if (!TryParseDouble(tb.Text, out var value))
+            return;
+
+        VM.SelectedControl.Width = Math.Max(40, value);
+        RefreshFromPropertyPanel();
+    }
+
+    private void SelectedHeightTextBox_TextChanged(object? sender, TextChangedEventArgs e)
+    {
+        if (_isApplyingTextChanges || VM.SelectedControl is null || sender is not TextBox tb)
+            return;
+
+        if (!TryParseDouble(tb.Text, out var value))
+            return;
+
+        VM.SelectedControl.Height = Math.Max(24, value);
+        RefreshFromPropertyPanel();
+    }
+
+    private void SelectedXTextBox_TextChanged(object? sender, TextChangedEventArgs e)
+    {
+        if (_isApplyingTextChanges || VM.SelectedControl is null || sender is not TextBox tb)
+            return;
+
+        if (!TryParseDouble(tb.Text, out var value))
+            return;
+
+        VM.SelectedControl.X = Math.Max(0, value);
+        RefreshFromPropertyPanel();
+    }
+
+    private void SelectedYTextBox_TextChanged(object? sender, TextChangedEventArgs e)
+    {
+        if (_isApplyingTextChanges || VM.SelectedControl is null || sender is not TextBox tb)
+            return;
+
+        if (!TryParseDouble(tb.Text, out var value))
+            return;
+
+        VM.SelectedControl.Y = Math.Max(0, value);
+        RefreshFromPropertyPanel();
+    }
+
+    private void SelectedColumnsTextBox_TextChanged(object? sender, TextChangedEventArgs e)
+    {
+        if (_isApplyingTextChanges || VM.SelectedControl is null || sender is not TextBox tb)
+            return;
+
+        if (!TryParseInt(tb.Text, out var value))
+            return;
+
+        VM.SelectedControl.Columns = Math.Max(1, value);
+        RefreshFromPropertyPanel();
+    }
+
+    private void SelectedRowsTextBox_TextChanged(object? sender, TextChangedEventArgs e)
+    {
+        if (_isApplyingTextChanges || VM.SelectedControl is null || sender is not TextBox tb)
+            return;
+
+        if (!TryParseInt(tb.Text, out var value))
+            return;
+
+        VM.SelectedControl.Rows = Math.Max(1, value);
+        RefreshFromPropertyPanel();
+    }
+
+    private void SelectedShowGridLinesCheckBox_Changed(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (VM.SelectedControl is null || sender is not CheckBox cb)
+            return;
+
+        VM.SelectedControl.ShowGridLines = cb.IsChecked ?? false;
+        RefreshFromPropertyPanel();
+    }
+
+    private void DesignWidthTextBox_TextChanged(object? sender, TextChangedEventArgs e)
+    {
+        if (_isApplyingTextChanges || sender is not TextBox tb)
+            return;
+
+        if (!TryParseDouble(tb.Text, out var value))
+            return;
+
+        VM.DesignWidth = Math.Max(300, value);
+        RefreshFromPropertyPanel();
+    }
+
+    private void DesignHeightTextBox_TextChanged(object? sender, TextChangedEventArgs e)
+    {
+        if (_isApplyingTextChanges || sender is not TextBox tb)
+            return;
+
+        if (!TryParseDouble(tb.Text, out var value))
+            return;
+
+        VM.DesignHeight = Math.Max(200, value);
+        RefreshFromPropertyPanel();
     }
 }

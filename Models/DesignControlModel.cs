@@ -37,4 +37,28 @@ public partial class DesignControlModel : ObservableObject
 
     [ObservableProperty]
     private bool showGridLines = true;
+
+    partial void OnColumnsChanged(int value)
+    {
+        if (value < 1)
+            Columns = 1;
+    }
+
+    partial void OnRowsChanged(int value)
+    {
+        if (value < 1)
+            Rows = 1;
+    }
+
+    partial void OnWidthChanged(double value)
+    {
+        if (value < 40)
+            Width = 40;
+    }
+
+    partial void OnHeightChanged(double value)
+    {
+        if (value < 24)
+            Height = 24;
+    }
 }
