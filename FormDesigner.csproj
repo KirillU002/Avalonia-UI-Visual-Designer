@@ -12,7 +12,22 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Remove="tempobj\**\*.cs" />
+    <AvaloniaResource Remove="tempobj\**\*.axaml" />
+    <Compile Remove="PluginContracts\**\*.cs" />
+    <Compile Remove="Plugins\**\*.cs" />
+    <EmbeddedResource Remove="tempobj\**" />
+    <EmbeddedResource Remove="PluginContracts\**" />
+    <EmbeddedResource Remove="Plugins\**" />
+    <None Remove="tempobj\**" />
+    <None Remove="PluginContracts\**" />
+    <None Remove="Plugins\**" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Avalonia" Version="11.3.12" />
+    <PackageReference Include="Avalonia.Controls.DataGrid" Version="11.3.12" />
+    <PackageReference Include="Avalonia.Controls.ColorPicker" Version="11.3.12" />
     <PackageReference Include="Avalonia.Desktop" Version="11.3.11" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.12" />
     <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.11" />
@@ -22,5 +37,12 @@
       <PrivateAssets Condition="'$(Configuration)' != 'Debug'">All</PrivateAssets>
     </PackageReference>
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.2.1" />
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.2" />
+    <PackageReference Include="System.Reflection.MetadataLoadContext" Version="8.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="PluginContracts\FormDesigner.PluginContracts.csproj" />
+    <ProjectReference Include="Plugins\DemoDesignerPlugin\DemoDesignerPlugin.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 </Project>

@@ -1,0 +1,53 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="FormDesigner.Views.PreviewWindow"
+        Title="Предпросмотр запуска"
+        Background="#0F172A"
+        MinWidth="320"
+        MinHeight="220">
+  <Grid>
+    <Border x:Name="PreviewSurfaceBorder"
+            Background="White">
+      <Canvas x:Name="PreviewCanvas"
+              Background="White"
+              ClipToBounds="True"/>
+    </Border>
+
+    <Border x:Name="LoadingOverlay"
+            Background="#0F172AB8">
+      <Grid>
+        <Border Width="420"
+                MaxWidth="420"
+                Padding="22"
+                CornerRadius="20"
+                Background="#0F172A"
+                BorderBrush="#60A5FA"
+                BorderThickness="1.5"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center">
+          <StackPanel Spacing="14">
+            <TextBlock x:Name="LoadingTitleText"
+                       Text="Подготавливаем окно"
+                       Foreground="White"
+                       FontSize="22"
+                       FontWeight="Bold"
+                       TextAlignment="Center"/>
+            <TextBlock x:Name="LoadingDescriptionText"
+                       Text="Сейчас откроется предпросмотр запуска."
+                       Foreground="#CBD5E1"
+                       TextWrapping="Wrap"
+                       TextAlignment="Center"/>
+            <ProgressBar IsIndeterminate="True"
+                         Height="10"
+                         Foreground="#60A5FA"
+                         Background="#1E293B"/>
+            <TextBlock Text="Можно подождать пару секунд — форма собирается."
+                       Foreground="#93C5FD"
+                       FontSize="12"
+                       TextAlignment="Center"/>
+          </StackPanel>
+        </Border>
+      </Grid>
+    </Border>
+  </Grid>
+</Window>

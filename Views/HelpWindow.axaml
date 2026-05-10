@@ -1,0 +1,1100 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="FormDesigner.Views.HelpWindow"
+        Width="1320"
+        Height="880"
+        MinWidth="1080"
+        MinHeight="760"
+        Title="Справка по конструктору форм"
+        Background="#E9F0F7">
+  <Window.Styles>
+    <Style Selector="TabItem">
+      <Setter Property="Foreground" Value="#334155"/>
+      <Setter Property="Background" Value="#E8F0FA"/>
+      <Setter Property="BorderBrush" Value="#D3E0EE"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="Padding" Value="16,10"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
+    <Style Selector="TabItem:pointerover">
+      <Setter Property="Background" Value="#DCEAFE"/>
+      <Setter Property="BorderBrush" Value="#93C5FD"/>
+    </Style>
+    <Style Selector="TabItem:selected">
+      <Setter Property="Foreground" Value="White"/>
+      <Setter Property="Background" Value="#2563EB"/>
+      <Setter Property="BorderBrush" Value="#1E40AF"/>
+    </Style>
+    <Style Selector="Border.hero-card">
+      <Setter Property="Background">
+        <LinearGradientBrush StartPoint="0,0"
+                             EndPoint="1,1">
+          <GradientStop Color="#0F172A"
+                        Offset="0"/>
+          <GradientStop Color="#1D4ED8"
+                        Offset="1"/>
+        </LinearGradientBrush>
+      </Setter>
+      <Setter Property="BorderBrush" Value="#1E3A8A"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="24"/>
+    </Style>
+    <Style Selector="Border.card">
+      <Setter Property="Background" Value="#FFFFFF"/>
+      <Setter Property="BorderBrush" Value="#D7E3EF"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="18"/>
+      <Setter Property="Padding" Value="16"/>
+    </Style>
+    <Style Selector="Border.pill">
+      <Setter Property="Background" Value="#DBEAFE"/>
+      <Setter Property="CornerRadius" Value="999"/>
+      <Setter Property="Padding" Value="10,5"/>
+      <Setter Property="Margin" Value="0,0,8,8"/>
+    </Style>
+    <Style Selector="Border.kbd">
+      <Setter Property="Background" Value="#F8FAFC"/>
+      <Setter Property="BorderBrush" Value="#CBD5E1"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="10"/>
+      <Setter Property="Padding" Value="8,4"/>
+    </Style>
+    <Style Selector="Button.demo-nav">
+      <Setter Property="Background" Value="#EEF4FF"/>
+      <Setter Property="Foreground" Value="#0F172A"/>
+      <Setter Property="BorderBrush" Value="#BFDBFE"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="10"/>
+      <Setter Property="Padding" Value="10,6"/>
+      <Setter Property="MinWidth" Value="92"/>
+    </Style>
+    <Style Selector="Button.demo-nav:pointerover">
+      <Setter Property="Background" Value="#DBEAFE"/>
+      <Setter Property="BorderBrush" Value="#60A5FA"/>
+    </Style>
+    <Style Selector="TextBlock.hero-title">
+      <Setter Property="FontSize" Value="30"/>
+      <Setter Property="FontWeight" Value="Bold"/>
+      <Setter Property="Foreground" Value="White"/>
+    </Style>
+    <Style Selector="TextBlock.hero-body">
+      <Setter Property="Foreground" Value="#DBEAFE"/>
+      <Setter Property="FontSize" Value="14"/>
+      <Setter Property="TextWrapping" Value="Wrap"/>
+    </Style>
+    <Style Selector="TextBlock.eyebrow">
+      <Setter Property="Foreground" Value="#2563EB"/>
+      <Setter Property="FontWeight" Value="Bold"/>
+      <Setter Property="FontSize" Value="11"/>
+    </Style>
+    <Style Selector="TextBlock.card-title">
+      <Setter Property="Foreground" Value="#0F172A"/>
+      <Setter Property="FontWeight" Value="Bold"/>
+      <Setter Property="FontSize" Value="18"/>
+      <Setter Property="TextWrapping" Value="Wrap"/>
+    </Style>
+    <Style Selector="TextBlock.card-body">
+      <Setter Property="Foreground" Value="#475569"/>
+      <Setter Property="FontSize" Value="13"/>
+      <Setter Property="TextWrapping" Value="Wrap"/>
+    </Style>
+    <Style Selector="Border.code-block">
+      <Setter Property="Background" Value="#0F172A"/>
+      <Setter Property="BorderBrush" Value="#1E293B"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="14"/>
+      <Setter Property="Padding" Value="14"/>
+    </Style>
+    <Style Selector="TextBlock.code-text">
+      <Setter Property="Foreground" Value="#E2E8F0"/>
+      <Setter Property="FontFamily" Value="Consolas"/>
+      <Setter Property="FontSize" Value="12"/>
+      <Setter Property="TextWrapping" Value="Wrap"/>
+    </Style>
+    <Style Selector="Border.diagram-node">
+      <Setter Property="Background" Value="#F8FAFC"/>
+      <Setter Property="BorderBrush" Value="#BFDBFE"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="14"/>
+      <Setter Property="Padding" Value="12"/>
+    </Style>
+    <Style Selector="TextBlock.note">
+      <Setter Property="Foreground" Value="#64748B"/>
+      <Setter Property="FontSize" Value="12"/>
+      <Setter Property="TextWrapping" Value="Wrap"/>
+    </Style>
+  </Window.Styles>
+
+  <Grid RowDefinitions="Auto,*"
+        RowSpacing="14"
+        Margin="18">
+    <Border Classes="hero-card"
+            Padding="22">
+      <Grid ColumnDefinitions="*,Auto"
+            ColumnSpacing="20">
+        <StackPanel Spacing="10">
+          <TextBlock Classes="hero-title"
+                     Text="Как пользоваться конструктором форм"/>
+          <TextBlock Classes="hero-body"
+                     Text="Эта справка обновлена под текущий редактор: здесь есть режимы Дизайн / Данные / Код / Плагины / Диагностика / История, компактная диагностика, контекстные действия через меню, zoom / pan, mini-map, предпросмотр запуска, данные из DLL и SQL Server, descriptor-driven дополнительные свойства и гид по созданию собственных плагинов."/>
+          <WrapPanel Margin="0,8,0,0">
+            <Border Classes="pill"><TextBlock Text="Быстрый старт" Foreground="#1D4ED8" FontWeight="SemiBold"/></Border>
+            <Border Classes="pill"><TextBlock Text="Режимы интерфейса" Foreground="#1D4ED8" FontWeight="SemiBold"/></Border>
+            <Border Classes="pill"><TextBlock Text="Zoom / Pan / mini-map" Foreground="#1D4ED8" FontWeight="SemiBold"/></Border>
+            <Border Classes="pill"><TextBlock Text="DataGrid, TreeList и данные" Foreground="#1D4ED8" FontWeight="SemiBold"/></Border>
+            <Border Classes="pill"><TextBlock Text="Preview запуска" Foreground="#1D4ED8" FontWeight="SemiBold"/></Border>
+            <Border Classes="pill"><TextBlock Text="Плагины и descriptor properties" Foreground="#1D4ED8" FontWeight="SemiBold"/></Border>
+          </WrapPanel>
+        </StackPanel>
+        <Border Grid.Column="1"
+                Background="#18FFFFFF"
+                BorderBrush="#22FFFFFF"
+                BorderThickness="1"
+                CornerRadius="22"
+                Padding="18"
+                Width="240">
+          <StackPanel Spacing="8">
+            <TextBlock Text="Быстрый вызов"
+                       Foreground="#BFDBFE"
+                       FontWeight="SemiBold"/>
+            <Border Background="#FFFFFF"
+                    CornerRadius="18"
+                    Padding="18,10"
+                    HorizontalAlignment="Left">
+              <TextBlock Text="F1"
+                         Foreground="#0F172A"
+                         FontSize="26"
+                         FontWeight="Bold"/>
+            </Border>
+            <TextBlock Text="Открывает это окно из любого режима: дизайнер, пользовательский preview или preview запуска."
+                       Foreground="White"
+                       TextWrapping="Wrap"/>
+          </StackPanel>
+        </Border>
+      </Grid>
+    </Border>
+
+    <Grid Grid.Row="1"
+          ColumnDefinitions="340,*"
+          ColumnSpacing="14">
+      <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Spacing="12">
+          <Border Classes="card">
+            <StackPanel Spacing="8">
+              <TextBlock Classes="eyebrow"
+                         Text="С ЧЕГО НАЧАТЬ"/>
+              <TextBlock Classes="card-title"
+                         Text="Рабочий цикл без лишней путаницы"/>
+              <TextBlock Classes="card-body"
+                         Text="1. Работайте в режиме «Дизайн»: поверхность, компоненты, структура и свойства.&#10;2. Перетащите базовые элементы на форму.&#10;3. Для данных переключитесь в «Данные» и настройте BindingSource вручную, из DLL или из SQL Server.&#10;4. Вернитесь в «Дизайн» и примените мастер привязок.&#10;5. Проверьте форму через F12 и F5.&#10;6. Для экспорта откройте «Код»: там XAML, C# и настройки генерации.&#10;7. Если видите счётчики ошибок снизу — откройте «Диагностику».&#10;8. Сохраните документ."/>
+            </StackPanel>
+          </Border>
+
+          <Border Classes="card">
+            <StackPanel Spacing="8">
+              <TextBlock Classes="eyebrow"
+                         Text="АКТУАЛЬНО СЕЙЧАС"/>
+              <TextBlock Classes="card-title"
+                         Text="Что появилось в конструкторе"/>
+              <TextBlock Classes="card-body"
+                         Text="Главное окно стало режимным: «Дизайн» показывает поверхность, компоненты, структуру и свойства; «Данные» — источники данных; «Код» — экспорт XAML/C#; «Плагины» — менеджер плагинов; «Диагностика» — полный список проблем; «История» — историю Undo / Redo. Внизу теперь компактная строка с количеством ошибок, предупреждений и подсказок, а редкие действия над элементами доступны через контекстное меню и горячие клавиши."/>
+            </StackPanel>
+          </Border>
+
+          <Border Classes="card">
+            <StackPanel Spacing="10">
+              <TextBlock Classes="eyebrow"
+                         Text="ИНТЕРАКТИВНАЯ СХЕМА"/>
+              <TextBlock Classes="card-title"
+                         Text="Как выглядит основной поток работы"/>
+
+              <Border Background="#F3F8FF"
+                      BorderBrush="#D7E3EF"
+                      BorderThickness="1"
+                      CornerRadius="18"
+                      Padding="10">
+                <Grid Height="250">
+                  <Border x:Name="DemoFrame0"
+                          Background="White"
+                          BorderBrush="#D7E3EF"
+                          BorderThickness="1"
+                          CornerRadius="16"
+                          ClipToBounds="True"
+                          Padding="10">
+                    <Grid ColumnDefinitions="84,*,118"
+                          ColumnSpacing="10">
+                      <Border Background="#EFF6FF"
+                              BorderBrush="#2563EB"
+                              BorderThickness="2"
+                              CornerRadius="12"
+                              Padding="8">
+                        <StackPanel Spacing="6">
+                          <Border Background="#DBEAFE" CornerRadius="8" Height="24"/>
+                          <Border Background="#DBEAFE" CornerRadius="8" Height="24"/>
+                          <Border Background="#DBEAFE" CornerRadius="8" Height="24"/>
+                        </StackPanel>
+                      </Border>
+                      <Border Grid.Column="1"
+                              Background="#F8FBFF"
+                              BorderBrush="#D7E3EF"
+                              BorderThickness="1"
+                              CornerRadius="12"
+                              Padding="16">
+                        <Grid>
+                          <Border Background="White"
+                                  BorderBrush="#C7D2FE"
+                                  BorderThickness="1"
+                                  CornerRadius="10"
+                                  Margin="40,34,40,34"/>
+                          <Border Background="#EFF6FF"
+                                  BorderBrush="#2563EB"
+                                  BorderThickness="2"
+                                  CornerRadius="10"
+                                  Margin="76,62,112,82"/>
+                        </Grid>
+                      </Border>
+                      <Border Grid.Column="2"
+                              Background="#F8FAFC"
+                              BorderBrush="#E2E8F0"
+                              BorderThickness="1"
+                              CornerRadius="12"
+                              Padding="8">
+                        <StackPanel Spacing="6">
+                          <Border Background="#E2E8F0" CornerRadius="8" Height="18"/>
+                          <Border Background="#E2E8F0" CornerRadius="8" Height="38"/>
+                          <Border Background="#E2E8F0" CornerRadius="8" Height="38"/>
+                          <Border Background="#E2E8F0" CornerRadius="8" Height="38"/>
+                        </StackPanel>
+                      </Border>
+                    </Grid>
+                  </Border>
+
+                  <Border x:Name="DemoFrame1"
+                          IsVisible="False"
+                          Background="White"
+                          BorderBrush="#D7E3EF"
+                          BorderThickness="1"
+                          CornerRadius="16"
+                          ClipToBounds="True"
+                          Padding="10">
+                    <Grid ColumnDefinitions="84,*,118"
+                          ColumnSpacing="10">
+                      <Border Background="#F8FAFC"
+                              BorderBrush="#E2E8F0"
+                              BorderThickness="1"
+                              CornerRadius="12"
+                              Padding="8">
+                        <StackPanel Spacing="6">
+                          <Border Background="#E2E8F0" CornerRadius="8" Height="24"/>
+                          <Border Background="#E2E8F0" CornerRadius="8" Height="24"/>
+                          <Border Background="#E2E8F0" CornerRadius="8" Height="24"/>
+                        </StackPanel>
+                      </Border>
+                      <Border Grid.Column="1"
+                              Background="#F8FBFF"
+                              BorderBrush="#D7E3EF"
+                              BorderThickness="1"
+                              CornerRadius="12"
+                              Padding="16">
+                        <Grid>
+                          <Border Background="White"
+                                  BorderBrush="#C7D2FE"
+                                  BorderThickness="1"
+                                  CornerRadius="10"
+                                  Margin="30,26,30,26"/>
+                          <Border Background="#FFFFFF"
+                                  BorderBrush="#60A5FA"
+                                  BorderThickness="2"
+                                  CornerRadius="10"
+                                  Margin="96,92,86,62"/>
+                          <Border Background="#2563EB"
+                                  CornerRadius="8"
+                                  Width="88"
+                                  Height="28"
+                                  HorizontalAlignment="Left"
+                                  VerticalAlignment="Top"
+                                  Margin="104,102,0,0"/>
+                        </Grid>
+                      </Border>
+                      <Border Grid.Column="2"
+                              Background="#EFF6FF"
+                              BorderBrush="#2563EB"
+                              BorderThickness="2"
+                              CornerRadius="12"
+                              Padding="8">
+                        <StackPanel Spacing="6">
+                          <Border Background="#BFDBFE" CornerRadius="8" Height="18"/>
+                          <Border Background="#DBEAFE" CornerRadius="8" Height="38"/>
+                          <Border Background="#DBEAFE" CornerRadius="8" Height="38"/>
+                          <Border Background="#DBEAFE" CornerRadius="8" Height="38"/>
+                        </StackPanel>
+                      </Border>
+                    </Grid>
+                  </Border>
+
+                  <Border x:Name="DemoFrame2"
+                          IsVisible="False"
+                          Background="White"
+                          BorderBrush="#D7E3EF"
+                          BorderThickness="1"
+                          CornerRadius="16"
+                          ClipToBounds="True"
+                          Padding="10">
+                    <Grid RowDefinitions="36,*">
+                      <Grid ColumnDefinitions="120,120,*,110"
+                            ColumnSpacing="8">
+                        <Border Background="#E2E8F0" CornerRadius="10"/>
+                        <Border Grid.Column="1"
+                                Background="#DBEAFE"
+                                BorderBrush="#2563EB"
+                                BorderThickness="2"
+                                CornerRadius="10"/>
+                        <Border Grid.Column="2" Background="#E2E8F0" CornerRadius="10"/>
+                        <Border Grid.Column="3" Background="#E2E8F0" CornerRadius="10"/>
+                      </Grid>
+                      <Grid Grid.Row="1"
+                            Margin="0,10,0,0"
+                            ColumnDefinitions="1.2*,*"
+                            ColumnSpacing="10">
+                        <Border Background="#F8FBFF"
+                                BorderBrush="#D7E3EF"
+                                BorderThickness="1"
+                                CornerRadius="12"
+                                Padding="10">
+                          <Grid RowDefinitions="28,*,*"
+                                RowSpacing="8">
+                            <Border Background="#E2E8F0" CornerRadius="8"/>
+                            <Border Grid.Row="1" Background="#FFFFFF" BorderBrush="#93C5FD" BorderThickness="1" CornerRadius="8"/>
+                            <Border Grid.Row="2" Background="#FFFFFF" BorderBrush="#93C5FD" BorderThickness="1" CornerRadius="8"/>
+                          </Grid>
+                        </Border>
+                        <Border Grid.Column="1"
+                                Background="#EFF6FF"
+                                BorderBrush="#2563EB"
+                                BorderThickness="2"
+                                CornerRadius="12"
+                                Padding="10">
+                          <Grid RowDefinitions="32,28,28,28,28,28"
+                                RowSpacing="6">
+                            <Border Background="#BFDBFE" CornerRadius="8"/>
+                            <Border Grid.Row="1" Background="#DBEAFE" CornerRadius="8"/>
+                            <Border Grid.Row="2" Background="#DBEAFE" CornerRadius="8"/>
+                            <Border Grid.Row="3" Background="#DBEAFE" CornerRadius="8"/>
+                            <Border Grid.Row="4" Background="#DBEAFE" CornerRadius="8"/>
+                            <Border Grid.Row="5" Background="#DBEAFE" CornerRadius="8"/>
+                          </Grid>
+                        </Border>
+                      </Grid>
+                    </Grid>
+                  </Border>
+
+                  <Border x:Name="DemoFrame3"
+                          IsVisible="False"
+                          Background="White"
+                          BorderBrush="#D7E3EF"
+                          BorderThickness="1"
+                          CornerRadius="16"
+                          ClipToBounds="True"
+                          Padding="16">
+                    <Grid ColumnDefinitions="*,180"
+                          ColumnSpacing="14">
+                      <Border Background="#F8FBFF"
+                              BorderBrush="#D7E3EF"
+                              BorderThickness="1"
+                              CornerRadius="14"
+                              Padding="18">
+                        <Grid>
+                          <Border Background="#FFFFFF"
+                                  BorderBrush="#C7D2FE"
+                                  BorderThickness="1"
+                                  CornerRadius="12"
+                                  Margin="28,22,28,22"/>
+                          <Border Background="#E0F2FE"
+                                  BorderBrush="#38BDF8"
+                                  BorderThickness="2"
+                                  CornerRadius="10"
+                                  Margin="48,50,48,50"/>
+                        </Grid>
+                      </Border>
+                      <StackPanel Grid.Column="1" Spacing="8">
+                        <Border Background="#DBEAFE"
+                                BorderBrush="#2563EB"
+                                BorderThickness="2"
+                                CornerRadius="12"
+                                Padding="12">
+                          <TextBlock Text="F5"
+                                     Foreground="#1D4ED8"
+                                     FontSize="22"
+                                     FontWeight="Bold"
+                                     HorizontalAlignment="Center"/>
+                        </Border>
+                        <Border Background="#EEF2FF" CornerRadius="12" Padding="12">
+                          <TextBlock Text="Preview запуска в отдельном окне"
+                                     Foreground="#334155"
+                                     FontWeight="SemiBold"
+                                     TextWrapping="Wrap"/>
+                        </Border>
+                        <Border Background="#EEF2FF" CornerRadius="12" Padding="12">
+                          <TextBlock Text="Проверка формы как самостоятельного приложения"
+                                     Foreground="#334155"
+                                     FontWeight="SemiBold"
+                                     TextWrapping="Wrap"/>
+                        </Border>
+                      </StackPanel>
+                    </Grid>
+                  </Border>
+                </Grid>
+              </Border>
+
+              <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,*,Auto,Auto"
+                    ColumnSpacing="8">
+                <Border x:Name="DemoDot0" Grid.Column="0" Width="10" Height="10" CornerRadius="999"/>
+                <Border x:Name="DemoDot1" Grid.Column="1" Width="10" Height="10" CornerRadius="999"/>
+                <Border x:Name="DemoDot2" Grid.Column="2" Width="10" Height="10" CornerRadius="999"/>
+                <Border x:Name="DemoDot3" Grid.Column="3" Width="10" Height="10" CornerRadius="999"/>
+                <Button Grid.Column="5" Content="Назад" Classes="demo-nav" Click="DemoPreviousButton_Click"/>
+                <Button Grid.Column="6" Content="Дальше" Classes="demo-nav" Click="DemoNextButton_Click"/>
+              </Grid>
+
+              <TextBlock x:Name="DemoTitleTextBlock"
+                         Classes="card-title"/>
+              <TextBlock x:Name="DemoDescriptionTextBlock"
+                         Classes="card-body"/>
+            </StackPanel>
+          </Border>
+
+          <Border Classes="card">
+            <StackPanel Spacing="10">
+              <TextBlock Classes="eyebrow"
+                         Text="ПОЛЕЗНО ПОМНИТЬ"/>
+              <TextBlock Classes="card-title"
+                         Text="Главные горячие клавиши"/>
+
+              <Grid ColumnDefinitions="Auto,*"
+                    RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
+                    ColumnSpacing="10"
+                    RowSpacing="8">
+                <Border Classes="kbd"><TextBlock Text="F1" FontWeight="Bold"/></Border>
+                <TextBlock Grid.Column="1" Classes="card-body" Text="Открыть это окно справки"/>
+
+                <Border Grid.Row="1" Classes="kbd"><TextBlock Text="F5" FontWeight="Bold"/></Border>
+                <TextBlock Grid.Row="1" Grid.Column="1" Classes="card-body" Text="Открыть полноценный preview запуска в отдельном окне"/>
+
+                <Border Grid.Row="2" Classes="kbd"><TextBlock Text="F12" FontWeight="Bold"/></Border>
+                <TextBlock Grid.Row="2" Grid.Column="1" Classes="card-body" Text="Переключить пользовательский preview прямо в редакторе"/>
+
+                <Border Grid.Row="3" Classes="kbd"><TextBlock Text="Ctrl + колесо" FontWeight="Bold"/></Border>
+                <TextBlock Grid.Row="3" Grid.Column="1" Classes="card-body" Text="Масштабировать поверхность"/>
+
+                <Border Grid.Row="4" Classes="kbd"><TextBlock Text="Средняя кнопка" FontWeight="Bold"/></Border>
+                <TextBlock Grid.Row="4" Grid.Column="1" Classes="card-body" Text="Панорамирование мышью"/>
+
+                <Border Grid.Row="5" Classes="kbd"><TextBlock Text="Space + drag" FontWeight="Bold"/></Border>
+                <TextBlock Grid.Row="5" Grid.Column="1" Classes="card-body" Text="Панорамирование поверхности с клавиатуры"/>
+
+                <Border Grid.Row="6" Classes="kbd"><TextBlock Text="Ctrl + G" FontWeight="Bold"/></Border>
+                <TextBlock Grid.Row="6" Grid.Column="1" Classes="card-body" Text="Сгруппировать выбранные элементы"/>
+
+                <Border Grid.Row="7" Classes="kbd"><TextBlock Text="Ctrl + Shift + G" FontWeight="Bold"/></Border>
+                <TextBlock Grid.Row="7" Grid.Column="1" Classes="card-body" Text="Разгруппировать выбранную группу"/>
+              </Grid>
+            </StackPanel>
+          </Border>
+
+          <Border Classes="card">
+            <StackPanel Spacing="8">
+              <TextBlock Classes="eyebrow"
+                         Text="ЕСЛИ ЧТО-ТО ПОШЛО НЕ ТАК"/>
+              <TextBlock Classes="card-title"
+                         Text="Быстрый чек-лист перед поиском ошибки"/>
+              <TextBlock Classes="card-body"
+                         Text="Проверьте родителя элемента, его X и Y, размеры, anchors, видимость, zoom-уровень, режим preview, а для DataGrid и TreeList — выбранный BindingSource и режим просмотра. Очень часто проблема не в контроле, а в том, что вы смотрите дизайнерский макет вместо preview запуска."/>
+            </StackPanel>
+          </Border>
+        </StackPanel>
+      </ScrollViewer>
+
+      <Border Grid.Column="1"
+              Background="#F8FBFF"
+              BorderBrush="#C9D7E6"
+              BorderThickness="1"
+              CornerRadius="22"
+              Padding="12">
+        <TabControl>
+          <TabItem Header="Старт">
+            <ScrollViewer Margin="0,12,0,0"
+                          VerticalScrollBarVisibility="Auto">
+              <StackPanel Spacing="12">
+                <Grid ColumnDefinitions="*,*"
+                      ColumnSpacing="12">
+                  <Border Classes="card">
+                    <StackPanel Spacing="8">
+                      <TextBlock Classes="eyebrow" Text="ЗА 5 МИНУТ"/>
+                      <TextBlock Classes="card-title" Text="С чего лучше начать"/>
+                      <TextBlock Classes="card-body" Text="Начните не с кнопок и таблиц, а с самой формы. Сначала задайте заголовок, размеры, состояние окна, фон и декоративный стиль поверхности. После этого уже проще раскладывать контролы, потому что вы видите реальные пропорции будущего интерфейса."/>
+                    </StackPanel>
+                  </Border>
+                  <Border Grid.Column="1" Classes="card">
+                    <StackPanel Spacing="8">
+                      <TextBlock Classes="eyebrow" Text="ЛУЧШИЙ ПОРЯДОК"/>
+                      <TextBlock Classes="card-title" Text="Минимум хаоса в проекте"/>
+                      <TextBlock Classes="card-body" Text="Окно → компоненты → свойства → данные → привязки → группы и anchors → пользовательский preview → preview запуска → XAML и C# → сохранение. Если идти в таком порядке, правки не будут ломать уже собранные блоки."/>
+                    </StackPanel>
+                  </Border>
+                </Grid>
+                <Border Classes="card">
+                  <StackPanel Spacing="8">
+                    <TextBlock Classes="eyebrow" Text="КАК СМОТРЕТЬ НА ДИЗАЙНЕР"/>
+                    <TextBlock Classes="card-title" Text="В редакторе и в preview разные задачи"/>
+                    <TextBlock Classes="card-body" Text="Дизайнер — это место сборки и компоновки. Пользовательский preview нужен, чтобы временно скрыть рамки и служебные элементы. Preview запуска нужен для проверки формы как отдельного окна. Чем раньше вы разделяете эти режимы в голове, тем меньше ложных ошибок."/>
+                  </StackPanel>
+                </Border>
+                <Grid ColumnDefinitions="*,*"
+                      ColumnSpacing="12">
+                  <Border Classes="card">
+                    <StackPanel Spacing="8">
+                      <TextBlock Classes="eyebrow" Text="ЕСЛИ ФОРМА БОЛЬШАЯ"/>
+                      <TextBlock Classes="card-title" Text="Работайте блоками"/>
+                      <TextBlock Classes="card-body" Text="Сначала соберите общий каркас: панели, контейнеры, таблицы, области фильтров. Потом отдельным проходом настройте текст, цвета, типографику и привязки. Для очень больших экранов сразу используйте zoom, pan и mini-map."/>
+                    </StackPanel>
+                  </Border>
+                  <Border Grid.Column="1" Classes="card">
+                    <StackPanel Spacing="8">
+                      <TextBlock Classes="eyebrow" Text="ПЕРЕД СОХРАНЕНИЕМ"/>
+                      <TextBlock Classes="card-title" Text="Минимальный контроль качества"/>
+                      <TextBlock Classes="card-body" Text="Проверьте название окна, имена контролов, фон, видимость, данные, группы, anchors, режим F12, режим F5, XAML и C#. Если все выглядит предсказуемо, форма готова к следующему шагу."/>
+                    </StackPanel>
+                  </Border>
+                </Grid>
+              </StackPanel>
+            </ScrollViewer>
+          </TabItem>
+
+          <TabItem Header="Редактор и навигация">
+            <ScrollViewer Margin="0,12,0,0"
+                          VerticalScrollBarVisibility="Auto">
+              <StackPanel Spacing="12">
+                <Grid ColumnDefinitions="*,*"
+                      ColumnSpacing="12">
+                  <Border Classes="card">
+                    <StackPanel Spacing="8">
+                      <TextBlock Classes="eyebrow" Text="ТУЛБОКС"/>
+                      <TextBlock Classes="card-title" Text="Как добавлять элементы"/>
+                      <TextBlock Classes="card-body" Text="Компоненты из левой панели не являются готовыми объектами формы до тех пор, пока вы не бросите их на рабочую область. В момент drop создается настоящая модель элемента и она сразу попадает в документ."/>
+                    </StackPanel>
+                  </Border>
+                  <Border Grid.Column="1" Classes="card">
+                    <StackPanel Spacing="8">
+                      <TextBlock Classes="eyebrow" Text="ВЫДЕЛЕНИЕ"/>
+                      <TextBlock Classes="card-title" Text="Один элемент, группа и рамка"/>
+                      <TextBlock Classes="card-body" Text="Обычный клик выбирает один контрол. Ctrl + клик добавляет элемент к выделению. Рамка выделения помогает захватить несколько объектов сразу. Group превращает временное выделение в полноценный контейнер документа."/>
+                    </StackPanel>
+                  </Border>
+                </Grid>
+
+                <Border Classes="card">
+                  <StackPanel Spacing="8">
+                    <TextBlock Classes="eyebrow" Text="РЕДАКТОР КОЛОНОК DATAGRID"/>
+                    <TextBlock Classes="card-title" Text="Где теперь настраивать поля таблицы"/>
+                    <TextBlock Classes="card-body" Text="В правой панели у выбранного DataGrid показывается компактная секция «Колонки DataGrid»: сколько колонок всего, сколько скрыто, сколько сортируется, группируется и имеет итоги. Нажмите «Редактировать колонки...», чтобы открыть отдельный редактор. В нём слева список колонок с поиском и бейджами «Скрыто / Сортировка / Группа / Итоги», справа — настройки заголовка, пути, примера значения, ширины, видимости, изменения размера, сортировки, фильтра, выравнивания, формата, обрезки/переноса текста, группировки и итогов. Все изменения сразу применяются к предпросмотру и сохраняются вместе с BindingSource."/>
+                  </StackPanel>
+                </Border>
+
+                <Grid ColumnDefinitions="*,*"
+                      ColumnSpacing="12">
+                  <Border Classes="card">
+                    <StackPanel Spacing="8">
+                      <TextBlock Classes="eyebrow" Text="ZOOM"/>
+                      <TextBlock Classes="card-title" Text="Как масштабировать поверхность"/>
+                      <TextBlock Classes="card-body" Text="Используйте Ctrl + колесо мыши или кнопки Zoom In / Zoom Out / 100% над рабочей областью. Поддерживаются пресеты 25%, 50%, 75%, 100%, 150% и 200%. Масштаб меняет только камеру, а не реальные размеры контролов в модели."/>
+                    </StackPanel>
+                  </Border>
+                  <Border Grid.Column="1" Classes="card">
+                    <StackPanel Spacing="8">
+                      <TextBlock Classes="eyebrow" Text="PAN"/>
+                      <TextBlock Classes="card-title" Text="Как перемещать просмотр"/>
+                      <TextBlock Classes="card-body" Text="Панорамирование работает средней кнопкой мыши или через Space + drag. Это особенно полезно на больших формах и при увеличении выше 100%, когда часть поверхности выходит за пределы видимой области."/>
+                    </StackPanel>
+                  </Border>
+                </Grid>
+
+                <Grid ColumnDefinitions="*,*"
+                      ColumnSpacing="12">
+                  <Border Classes="card">
+                    <StackPanel Spacing="8">
+                      <TextBlock Classes="eyebrow" Text="MINI-MAP"/>
+                      <TextBlock Classes="card-title" Text="Когда и зачем она показывается"/>
+                      <TextBlock Classes="card-body" Text="Mini-map появляется только если масштаб больше 100%. На ней видна вся форма и прямоугольник текущего окна просмотра. Можно кликнуть в нужную область или перетаскивать сам прямоугольник, чтобы быстро перемещаться по большой форме."/>
+                    </StackPanel>
+                  </Border>
+                  <Border Grid.Column="1" Classes="card">
+                    <StackPanel Spacing="8">
+                      <TextBlock Classes="eyebrow" Text="ВАЖНО"/>
+                      <TextBlock Classes="card-title" Text="Что при этом не ломается"/>
+                      <TextBlock Classes="card-body" Text="Drag and drop, resize, выделение, направляющие и контейнеры продолжают работать с учетом текущего масштаба. Координаты элементов в модели остаются корректными: zoom и pan двигают только вид, а не сам документ."/>
+                    </StackPanel>
+                  </Border>
+                </Grid>
+
+                <Border Classes="card">
+                  <StackPanel Spacing="8">
+                    <TextBlock Classes="eyebrow" Text="НАПРАВЛЯЮЩИЕ И КОНТЕЙНЕРЫ"/>
+                    <TextBlock Classes="card-title" Text="Почему родитель так важен"/>
+                    <TextBlock Classes="card-body" Text="Если элемент лежит внутри Border, Grid Layout, Group или plugin-контейнера, его координаты, anchors и поведение считаются локально относительно родителя. Во время движения редактор сравнивает края и центры объектов и показывает направляющие для выравнивания."/>
+                  </StackPanel>
+                </Border>
+              </StackPanel>
+            </ScrollViewer>
+          </TabItem>
+
+          <TabItem Header="Свойства">
+            <ScrollViewer Margin="0,12,0,0"
+                          VerticalScrollBarVisibility="Auto">
+              <StackPanel Spacing="12">
+                <Grid ColumnDefinitions="*,*"
+                      ColumnSpacing="12">
+                  <Border Classes="card">
+                    <StackPanel Spacing="8">
+                      <TextBlock Classes="eyebrow" Text="СВОЙСТВА ФОРМЫ"/>
+                      <TextBlock Classes="card-title" Text="Что влияет на все окно"/>
+                      <TextBlock Classes="card-body" Text="Здесь задаются заголовок, размеры, стартовая позиция, состояние окна, фон, системная рамка, показ в taskbar и режим поверх остальных окон. Это базовые параметры будущего окна Avalonia."/>
+                    </StackPanel>
+                  </Border>
+                  <Border Grid.Column="1" Classes="card">
+                    <StackPanel Spacing="8">
+                      <TextBlock Classes="eyebrow" Text="СВОЙСТВА КОНТРОЛА"/>
+                      <TextBlock Classes="card-title" Text="Что обязательно заполнять"/>
+                      <TextBlock Classes="card-body" Text="Для большинства элементов особенно важны Name, Text, размеры, цвета, границы, типографика и видимость. Даже если форма пока черновая, осмысленные имена сильно упрощают структуру, preview и generated код."/>
+                    </StackPanel>
+                  </Border>
+                </Grid>
+
+                <Grid ColumnDefinitions="*,*"
+                      ColumnSpacing="12">
+                  <Border Classes="card">
+                    <StackPanel Spacing="8">
+                      <TextBlock Classes="eyebrow" Text="ПАЛИТРА"/>
+                      <TextBlock Classes="card-title" Text="Как теперь выбирать цвета"/>
+                      <TextBlock Classes="card-body" Text="Рядом с полем цвета есть заметная кнопка выбора. Нажатие открывает палитру, где можно выбрать оттенок визуально. Если hex-код известен заранее, его можно по-прежнему ввести вручную."/>
+                    </StackPanel>
+                  </Border>
+                  <Border Grid.Column="1" Classes="card">
+                    <StackPanel Spacing="8">
+                      <TextBlock Classes="eyebrow" Text="ПРЕСЕТЫ ВНЕШНЕГО ВИДА"/>
+                      <TextBlock Classes="card-title" Text="Красивые варианты без ручной сборки"/>
+                      <TextBlock Classes="card-body" Text="Для рабочей области, кнопок и таблиц можно применять готовые визуальные пресеты: обычный, тёмно-синий, перелив, сияние и другие аккуратные темы. Это ускоряет сборку цельного интерфейса."/>
+                    </StackPanel>
+                  </Border>
+                </Grid>
+
+                <Grid ColumnDefinitions="*,*"
+                      ColumnSpacing="12">
+                  <Border Classes="card">
+                    <StackPanel Spacing="8">
+                      <TextBlock Classes="eyebrow" Text="ДОПОЛНИТЕЛЬНЫЕ СВОЙСТВА"/>
+                      <TextBlock Classes="card-title" Text="Descriptor-driven блок справа"/>
+                      <TextBlock Classes="card-body" Text="Под стандартными свойствами появился отдельный блок 'Дополнительные свойства'. Он строится из descriptor.Properties выбранного контрола и особенно важен для plugin-компонентов."/>
+                    </StackPanel>
+                  </Border>
+                  <Border Grid.Column="1" Classes="card">
+                    <StackPanel Spacing="8">
+                      <TextBlock Classes="eyebrow" Text="ПОДДЕРЖИВАЕМЫЕ РЕДАКТОРЫ"/>
+                      <TextBlock Classes="card-title" Text="Что уже работает"/>
+                      <TextBlock Classes="card-body" Text="Сейчас поддержаны Text, Bool, Number, Color и Enum. Для plugin controls значения читаются и записываются в CustomProperties, сразу обновляют preview, сохраняются в документ и восстанавливаются после открытия файла."/>
+                    </StackPanel>
+                  </Border>
+                </Grid>
+
+                <Border Classes="card">
+                  <StackPanel Spacing="8">
+                    <TextBlock Classes="eyebrow" Text="ПРИМЕР"/>
+                    <TextBlock Classes="card-title" Text="Как это видно на demo plugin control"/>
+                    <TextBlock Classes="card-body" Text="У demo GridControl и demo TreeList есть собственные schema-driven свойства. Например, 'Стиль шапки' меняет визуал preview, сохраняется в CustomProperties и попадает в экспортируемый XAML. Это хороший ориентир для собственных плагинов."/>
+                  </StackPanel>
+                </Border>
+              </StackPanel>
+            </ScrollViewer>
+          </TabItem>
+
+          <TabItem Header="Данные">
+            <ScrollViewer Margin="0,12,0,0"
+                          VerticalScrollBarVisibility="Auto">
+              <StackPanel Spacing="12">
+                <Border Classes="card">
+                  <StackPanel Spacing="8">
+                    <TextBlock Classes="eyebrow" Text="BINDINGSOURCE ПРОСТЫМ ЯЗЫКОМ"/>
+                    <TextBlock Classes="card-title" Text="Это не просто список полей"/>
+                    <TextBlock Classes="card-body" Text="BindingSource — это описание модели данных, с которой работает форма. Один раз создаете источник, а дальше можете использовать его в DataGrid, TreeList, мастере привязок и generated коде."/>
+                  </StackPanel>
+                </Border>
+
+                <Grid ColumnDefinitions="*,*"
+                      ColumnSpacing="12">
+                  <Border Classes="card">
+                    <StackPanel Spacing="8">
+                      <TextBlock Classes="eyebrow" Text="ИМПОРТ DLL"/>
+                      <TextBlock Classes="card-title" Text="Когда модели уже существуют"/>
+                      <TextBlock Classes="card-body" Text="Если у вас есть сборка с DTO, entity-классами или DBML-моделями, импорт DLL позволяет прочитать типы и превратить их в поля источника данных. Это особенно удобно для LINQ to SQL и уже существующих бизнес-моделей."/>
+                    </StackPanel>
+                  </Border>
+                  <Border Grid.Column="1" Classes="card">
+                    <StackPanel Spacing="8">
+                      <TextBlock Classes="eyebrow" Text="ИМПОРТ SQL"/>
+                      <TextBlock Classes="card-title" Text="Когда схема берется из таблицы или запроса"/>
+                      <TextBlock Classes="card-body" Text="SQL-режим нужен, когда структуру проще читать из таблицы или запроса. В этом случае дизайнер подключается к SQL Server, читает колонки и sample values, а затем готовит BindingSource для дальнейшей привязки."/>
+                    </StackPanel>
+                  </Border>
+                </Grid>
+
+                <Grid ColumnDefinitions="*,*"
+                      ColumnSpacing="12">
+                  <Border Classes="card">
+                    <StackPanel Spacing="8">
+                      <TextBlock Classes="eyebrow" Text="DATAGRID И TREELIST В ДИЗАЙНЕРЕ"/>
+                      <TextBlock Classes="card-title" Text="Почему вы видите не все реальные записи"/>
+                      <TextBlock Classes="card-body" Text="На рабочей поверхности DataGrid и TreeList показывают заголовки колонок и пустые строки, а не весь реальный набор данных. Это сделано специально, чтобы большие таблицы не забивали редактор и не делали работу медленной."/>
+                    </StackPanel>
+                  </Border>
+                  <Border Grid.Column="1" Classes="card">
+                    <StackPanel Spacing="8">
+                      <TextBlock Classes="eyebrow" Text="PREVIEW ДАННЫХ"/>
+                      <TextBlock Classes="card-title" Text="Где смотреть форму как пользователь"/>
+                      <TextBlock Classes="card-body" Text="Для проверки визуального поведения таблицы, прокрутки, шапки и заполнения данными используйте F12 и особенно F5. В preview запуска форма открывается как отдельное окно и показывает более честную картину."/>
+                    </StackPanel>
+                  </Border>
+                </Grid>
+
+                <Grid ColumnDefinitions="*,*"
+                      ColumnSpacing="12">
+                  <Border Classes="card">
+                    <StackPanel Spacing="8">
+                      <TextBlock Classes="eyebrow" Text="МАСТЕР ПРИВЯЗОК"/>
+                      <TextBlock Classes="card-title" Text="Что он умеет сейчас"/>
+                      <TextBlock Classes="card-body" Text="Мастер анализирует DataGrid, TextBox и кнопки, предлагает, что использовать как поиск, где редакторы полей, какие кнопки похожи на Добавить / Сохранить / Удалить / Поиск, а затем может автоматически применить найденные привязки."/>
+                    </StackPanel>
+                  </Border>
+                  <Border Grid.Column="1" Classes="card">
+                    <StackPanel Spacing="8">
+                      <TextBlock Classes="eyebrow" Text="ПОЛЕЗНАЯ ПОДСКАЗКА"/>
+                      <TextBlock Classes="card-title" Text="Если SQL Server ругается на сертификат"/>
+                      <TextBlock Classes="card-body" Text="Для dev-серверов конструктор умеет повторять подключение с TrustServerCertificate=True, если видит типичную SSL-ошибку цепочки сертификатов. Это упрощает работу в тестовой среде."/>
+                    </StackPanel>
+                  </Border>
+                </Grid>
+              </StackPanel>
+            </ScrollViewer>
+          </TabItem>
+
+          <TabItem Header="Preview и код">
+            <ScrollViewer Margin="0,12,0,0"
+                          VerticalScrollBarVisibility="Auto">
+              <StackPanel Spacing="12">
+                <Grid ColumnDefinitions="*,*"
+                      ColumnSpacing="12">
+                  <Border Classes="card">
+                    <StackPanel Spacing="8">
+                      <TextBlock Classes="eyebrow" Text="F12"/>
+                      <TextBlock Classes="card-title" Text="Пользовательский preview внутри редактора"/>
+                      <TextBlock Classes="card-body" Text="Этот режим скрывает служебные рамки, сетку, resize-handles и дизайнерские подсказки. Он нужен, чтобы быстро посмотреть, как экран выглядит без визуального шума, не выходя из редактора."/>
+                    </StackPanel>
+                  </Border>
+                  <Border Grid.Column="1" Classes="card">
+                    <StackPanel Spacing="8">
+                      <TextBlock Classes="eyebrow" Text="F5"/>
+                      <TextBlock Classes="card-title" Text="Preview запуска в отдельном окне"/>
+                      <TextBlock Classes="card-body" Text="Это уже более честная проверка формы как самостоятельного окна. Здесь учитываются свойства окна, а при открытии показывается индикатор загрузки, чтобы было видно, что приложение не зависло."/>
+                    </StackPanel>
+                  </Border>
+                </Grid>
+
+                <Grid ColumnDefinitions="*,*"
+                      ColumnSpacing="12">
+                  <Border Classes="card">
+                    <StackPanel Spacing="8">
+                      <TextBlock Classes="eyebrow" Text="XAML"/>
+                      <TextBlock Classes="card-title" Text="Что показывает вкладка разметки"/>
+                      <TextBlock Classes="card-body" Text="Вкладка XAML помогает увидеть, во что превращается текущий документ формы. Это полезно для проверки структуры контейнеров, имен элементов, групп, plugin controls и общих свойств окна."/>
+                    </StackPanel>
+                  </Border>
+                  <Border Grid.Column="1" Classes="card">
+                    <StackPanel Spacing="8">
+                      <TextBlock Classes="eyebrow" Text="C#"/>
+                      <TextBlock Classes="card-title" Text="Что показывает generated код"/>
+                      <TextBlock Classes="card-body" Text="C#-вкладка по умолчанию дает чистый компилируемый каркас: Window, InitializeComponent и пустой ViewModel без тестовых сущностей, fake data и лишних runtime-моделей. Если явно включить demo-режим, тогда появятся sample ViewModel, коллекции, фильтры и CRUD-заготовки."/>
+                    </StackPanel>
+                  </Border>
+                </Grid>
+
+                <Border Classes="card">
+                  <StackPanel Spacing="8">
+                    <TextBlock Classes="eyebrow" Text="ПЕРЕД ЭКСПОРТОМ"/>
+                    <TextBlock Classes="card-title" Text="Что проверить в последний момент"/>
+                    <TextBlock Classes="card-body" Text="Форма, размеры, фон, состояния окна, имена контролов, данные, дополнительные свойства plugin-компонентов, группы, anchors, F12, F5, вкладка XAML и вкладка C#. Если все это выглядит предсказуемо, форма действительно готова к следующему шагу."/>
+                  </StackPanel>
+                </Border>
+              </StackPanel>
+            </ScrollViewer>
+          </TabItem>
+
+          <TabItem Header="Плагины">
+            <ScrollViewer Margin="0,12,0,0"
+                          VerticalScrollBarVisibility="Auto">
+              <StackPanel Spacing="12">
+                <Border Classes="card">
+                  <StackPanel Spacing="8">
+                    <TextBlock Classes="eyebrow" Text="ЗАЧЕМ ЭТО НУЖНО"/>
+                    <TextBlock Classes="card-title" Text="Как добавить свои компоненты в редактор"/>
+                    <TextBlock Classes="card-body" Text="Плагин — это отдельная .dll, которая регистрирует собственные контролы, их preview, XAML-экспорт и descriptor-driven свойства. После загрузки плагина его элементы появляются в toolbox рядом со встроенными компонентами."/>
+                    <TextBlock Classes="note" Text="Подробный внешний документ с полным разбором лежит в файле Docs\PluginGuide.md."/>
+                  </StackPanel>
+                </Border>
+
+                <Border Classes="card">
+                  <StackPanel Spacing="10">
+                    <TextBlock Classes="eyebrow" Text="СХЕМА"/>
+                    <TextBlock Classes="card-title" Text="Как плагин проходит путь до toolbox"/>
+                    <Grid ColumnDefinitions="*,Auto,*,Auto,*,Auto,*"
+                          ColumnSpacing="8">
+                      <Border Classes="diagram-node">
+                        <StackPanel Spacing="4">
+                          <TextBlock Text="1. MyPlugin.dll"
+                                     FontWeight="Bold"
+                                     Foreground="#0F172A"/>
+                          <TextBlock Classes="note"
+                                     Text="Отдельная сборка с контролами и дескрипторами."/>
+                        </StackPanel>
+                      </Border>
+                      <TextBlock Grid.Column="1"
+                                 Text="→"
+                                 VerticalAlignment="Center"
+                                 FontSize="22"
+                                 Foreground="#2563EB"/>
+                      <Border Grid.Column="2"
+                              Classes="diagram-node">
+                        <StackPanel Spacing="4">
+                          <TextBlock Text="2. [assembly: FormDesignerPlugin]"
+                                     FontWeight="Bold"
+                                     Foreground="#0F172A"/>
+                          <TextBlock Classes="note"
+                                     Text="Атрибут указывает, какой класс пакета грузить."/>
+                        </StackPanel>
+                      </Border>
+                      <TextBlock Grid.Column="3"
+                                 Text="→"
+                                 VerticalAlignment="Center"
+                                 FontSize="22"
+                                 Foreground="#2563EB"/>
+                      <Border Grid.Column="4"
+                              Classes="diagram-node">
+                        <StackPanel Spacing="4">
+                          <TextBlock Text="3. IFormDesignerPlugin.Register"
+                                     FontWeight="Bold"
+                                     Foreground="#0F172A"/>
+                          <TextBlock Classes="note"
+                                     Text="Пакет регистрирует один или несколько descriptors."/>
+                        </StackPanel>
+                      </Border>
+                      <TextBlock Grid.Column="5"
+                                 Text="→"
+                                 VerticalAlignment="Center"
+                                 FontSize="22"
+                                 Foreground="#2563EB"/>
+                      <Border Grid.Column="6"
+                              Classes="diagram-node">
+                        <StackPanel Spacing="4">
+                          <TextBlock Text="4. Toolbox, Preview, XAML"
+                                     FontWeight="Bold"
+                                     Foreground="#0F172A"/>
+                          <TextBlock Classes="note"
+                                     Text="После загрузки контрол виден пользователю и участвует в экспорте."/>
+                        </StackPanel>
+                      </Border>
+                    </Grid>
+                  </StackPanel>
+                </Border>
+
+                <Grid ColumnDefinitions="*,*"
+                      ColumnSpacing="12">
+                  <Border Classes="card">
+                    <StackPanel Spacing="8">
+                      <TextBlock Classes="eyebrow" Text="ШАГ 1"/>
+                      <TextBlock Classes="card-title" Text="Создайте отдельный проект плагина"/>
+                      <TextBlock Classes="card-body" Text="Обычно это отдельная Class Library на net7.0. Добавьте ссылку на FormDesigner.PluginContracts и настройте OutputPath так, чтобы сборка попадала в папку Plugins рядом с основным приложением."/>
+                      <Border Classes="code-block">
+                        <TextBlock Classes="code-text"
+                                   xml:space="preserve">TargetFramework = net7.0
+ProjectReference -> ..\..\PluginContracts\FormDesigner.PluginContracts.csproj
+OutputPath -> ..\..\bin\$(Configuration)\net7.0\Plugins\MyPlugin\</TextBlock>
+                      </Border>
+                    </StackPanel>
+                  </Border>
+                  <Border Grid.Column="1" Classes="card">
+                    <StackPanel Spacing="8">
+                      <TextBlock Classes="eyebrow" Text="ШАГ 2"/>
+                      <TextBlock Classes="card-title" Text="Создайте пакет плагина"/>
+                      <TextBlock Classes="card-body" Text="Пакет реализует IFormDesignerPlugin и в Register добавляет descriptors. Именно descriptors описывают, как контрол выглядит в toolbox, как строится preview и как экспортируется в XAML."/>
+                      <Border Classes="code-block">
+                        <TextBlock Classes="code-text"
+                                   xml:space="preserve">[assembly: FormDesignerPlugin(typeof(MyPluginPackage))]
+
+public sealed class MyPluginPackage : IFormDesignerPlugin
+{
+    public string Id => "My.Plugin";
+    public string Title => "My Plugin";
+    public Version ApiVersion => new(1, 0, 0);
+
+    public void Register(IDesignerRegistry registry)
+    {
+        registry.RegisterControl(new MyControlDescriptor(Id, "1.0.0"));
+    }
+}</TextBlock>
+                      </Border>
+                    </StackPanel>
+                  </Border>
+                </Grid>
+
+                <Grid ColumnDefinitions="*,*"
+                      ColumnSpacing="12">
+                  <Border Classes="card">
+                    <StackPanel Spacing="8">
+                      <TextBlock Classes="eyebrow" Text="ШАГ 3"/>
+                      <TextBlock Classes="card-title" Text="Опишите descriptor и схему свойств"/>
+                      <TextBlock Classes="card-body" Text="Descriptor реализует IControlDescriptor. В нем вы задаете TypeKey, название для toolbox, категорию, описание, список Properties, default definition, preview и XAML-экспорт."/>
+                      <Border Classes="code-block">
+                        <TextBlock Classes="code-text"
+                                   xml:space="preserve">public sealed class MyControlDescriptor : IControlDescriptor
+{
+    public string TypeKey => "My.Control";
+    public string Title => "My Control";
+    public IReadOnlyList&lt;DesignPropertyDescriptor&gt; Properties =&gt; new[]
+    {
+        new DesignPropertyDescriptor
+        {
+            Key = "Caption",
+            Title = "Заголовок",
+            Editor = PropertyEditorKind.Text,
+            DefaultValueJson = "\"Новый блок\""
+        },
+        new DesignPropertyDescriptor
+        {
+            Key = "HeaderStyle",
+            Title = "Стиль шапки",
+            Editor = PropertyEditorKind.Enum,
+            DefaultValueJson = "\"Classic\"",
+            Options = new[]
+            {
+                new PropertyOption { Value = "Classic", Title = "Classic" },
+                new PropertyOption { Value = "Compact", Title = "Compact" }
+            }
+        }
+    };
+}</TextBlock>
+                      </Border>
+                    </StackPanel>
+                  </Border>
+                  <Border Grid.Column="1" Classes="card">
+                    <StackPanel Spacing="8">
+                      <TextBlock Classes="eyebrow" Text="ШАГ 4"/>
+                      <TextBlock Classes="card-title" Text="Разделите built-in и custom свойства"/>
+                      <TextBlock Classes="card-body" Text="Если свойство должно записываться в стандартные поля редактора, используйте BuiltInPropertyName и BuiltInProperties. Если это уникальная настройка плагина, храните ее в CustomProperties. Именно они попадают в блок 'Дополнительные свойства' справа."/>
+                      <Border Classes="code-block">
+                        <TextBlock Classes="code-text"
+                                   xml:space="preserve">var definition = new DesignerControlDefinition();
+
+definition.BuiltInProperties["Width"] = 320d;
+definition.BuiltInProperties["Height"] = 180d;
+definition.BuiltInProperties["Background"] = "#0F172A";
+
+definition.CustomProperties["HeaderStyle"] = "\"Classic\"";
+definition.CustomProperties["AccentBrush"] = "\"#60A5FA\"";</TextBlock>
+                      </Border>
+                    </StackPanel>
+                  </Border>
+                </Grid>
+
+                <Grid ColumnDefinitions="*,*"
+                      ColumnSpacing="12">
+                  <Border Classes="card">
+                    <StackPanel Spacing="8">
+                      <TextBlock Classes="eyebrow" Text="ШАГ 5"/>
+                      <TextBlock Classes="card-title" Text="Соберите preview-контрол"/>
+                      <TextBlock Classes="card-body" Text="Метод BuildPreview должен читать свойства из IDesignControlNode и возвращать обычный Avalonia Control. Именно это пользователь видит на рабочей поверхности, в пользовательском preview и в preview запуска."/>
+                      <Border Classes="code-block">
+                        <TextBlock Classes="code-text"
+                                   xml:space="preserve">public Control BuildPreview(IDesignControlNode control, IPreviewContext context)
+{
+    return new MyFancyControl
+    {
+        Width = control.GetDouble("Width", 320),
+        Height = control.GetDouble("Height", 180),
+        Title = control.GetCustomValue("Caption", "Новый блок"),
+        HeaderStyle = control.GetCustomValue("HeaderStyle", "Classic")
+    };
+}</TextBlock>
+                      </Border>
+                    </StackPanel>
+                  </Border>
+                  <Border Grid.Column="1" Classes="card">
+                    <StackPanel Spacing="8">
+                      <TextBlock Classes="eyebrow" Text="ШАГ 6"/>
+                      <TextBlock Classes="card-title" Text="Добавьте XAML-экспорт"/>
+                      <TextBlock Classes="card-body" Text="AppendXaml нужен, чтобы ваш компонент попал в экспорт. Здесь вы регистрируете namespace, пишете атрибуты и учитываете как built-in, так и custom свойства."/>
+                      <Border Classes="code-block">
+                        <TextBlock Classes="code-text"
+                                   xml:space="preserve">context.RegisterXmlNamespace("demo", "clr-namespace:MyPlugin.Controls;assembly=MyPlugin");
+writer.WriteLine(indent, "&lt;demo:MyFancyControl x:Name=\"MyFancyControl1\" HeaderStyle=\"Classic\" /&gt;");</TextBlock>
+                      </Border>
+                    </StackPanel>
+                  </Border>
+                </Grid>
+
+                <Border Classes="card">
+                  <StackPanel Spacing="10">
+                    <TextBlock Classes="eyebrow" Text="КАК ЗАГРУЗИТЬ ПЛАГИН В РЕДАКТОР"/>
+                    <TextBlock Classes="card-title" Text="Пошаговая схема подключения"/>
+                    <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto"
+                          RowSpacing="8">
+                      <Border Classes="diagram-node">
+                        <TextBlock Classes="card-body" Text="1. Соберите .dll плагина вместе с его зависимостями."/>
+                      </Border>
+                      <Border Grid.Row="1" Classes="diagram-node">
+                        <TextBlock Classes="card-body" Text="2. Поместите сборку в папку Plugins рядом с основным приложением. Приложение сканирует AppContext.BaseDirectory\\Plugins при запуске."/>
+                      </Border>
+                      <Border Grid.Row="2" Classes="diagram-node">
+                        <TextBlock Classes="card-body" Text="3. Перезапустите редактор, если он уже был открыт. Так loader сможет заново подхватить новый plugin assembly."/>
+                      </Border>
+                      <Border Grid.Row="3" Classes="diagram-node">
+                        <TextBlock Classes="card-body" Text="4. После загрузки новый контрол появится в toolbox в своей категории, например Demo Plugins или вашей собственной."/>
+                      </Border>
+                      <Border Grid.Row="4" Classes="diagram-node">
+                        <TextBlock Classes="card-body" Text="5. Выберите контрол, бросьте его на форму и откройте справа блок 'Дополнительные свойства'. Именно там будут schema-driven свойства вашего плагина."/>
+                      </Border>
+                    </Grid>
+                  </StackPanel>
+                </Border>
+
+                <Grid ColumnDefinitions="*,*"
+                      ColumnSpacing="12">
+                  <Border Classes="card">
+                    <StackPanel Spacing="8">
+                      <TextBlock Classes="eyebrow" Text="ГДЕ СМОТРЕТЬ ПРИМЕР"/>
+                      <TextBlock Classes="card-title" Text="Готовый demo plugin уже есть в проекте"/>
+                      <TextBlock Classes="card-body" Text="Ориентируйтесь на папку Plugins\DemoDesignerPlugin. Там уже есть Demo GridControl, Demo TreeList и Demo Button. Особенно полезно посмотреть, как у Demo GridControl устроены enum-свойства, preview и XAML-экспорт."/>
+                    </StackPanel>
+                  </Border>
+                  <Border Grid.Column="1" Classes="card">
+                    <StackPanel Spacing="8">
+                      <TextBlock Classes="eyebrow" Text="КРАТКИЙ ЧЕК-ЛИСТ"/>
+                      <TextBlock Classes="card-title" Text="Что должно быть в каждом плагине"/>
+                      <TextBlock Classes="card-body" Text="Сборка .dll, атрибут FormDesignerPlugin, класс IFormDesignerPlugin, хотя бы один IControlDescriptor, CreateDefaultDefinition, BuildPreview, AppendXaml и понятная схема descriptor.Properties. Без этих частей контрол не будет полноценным."/>
+                    </StackPanel>
+                  </Border>
+                </Grid>
+              </StackPanel>
+            </ScrollViewer>
+          </TabItem>
+        </TabControl>
+      </Border>
+    </Grid>
+  </Grid>
+</Window>

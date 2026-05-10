@@ -1,0 +1,646 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:views="using:FormDesigner.Views"
+        xmlns:models="using:FormDesigner.Models"
+        x:Class="FormDesigner.Views.DataGridColumnEditorWindow"
+        x:Name="EditorWindow"
+        x:DataType="views:DataGridColumnEditorViewModel"
+        mc:Ignorable="d"
+        Width="1120"
+        Height="760"
+        MinWidth="940"
+        MinHeight="620"
+        Title="Редактор колонок DataGrid"
+        Background="#E7EEF6">
+  <Window.Styles>
+    <Style Selector="Border.card">
+      <Setter Property="Background" Value="#FFFFFF"/>
+      <Setter Property="BorderBrush" Value="#C7D7EA"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="16"/>
+      <Setter Property="Padding" Value="14"/>
+    </Style>
+
+    <Style Selector="Button.editor-action">
+      <Setter Property="Background" Value="#EFF6FF"/>
+      <Setter Property="Foreground" Value="#0F172A"/>
+      <Setter Property="BorderBrush" Value="#93C5FD"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="10"/>
+      <Setter Property="Padding" Value="12,8"/>
+    </Style>
+
+    <Style Selector="Button.editor-action:pointerover">
+      <Setter Property="Background" Value="#DBEAFE"/>
+      <Setter Property="BorderBrush" Value="#3B82F6"/>
+    </Style>
+
+    <Style Selector="TextBlock.section-title">
+      <Setter Property="FontSize" Value="16"/>
+      <Setter Property="FontWeight" Value="Bold"/>
+      <Setter Property="Foreground" Value="#0F172A"/>
+    </Style>
+
+    <Style Selector="TextBlock.section-note">
+      <Setter Property="FontSize" Value="12"/>
+      <Setter Property="Foreground" Value="#64748B"/>
+      <Setter Property="TextWrapping" Value="Wrap"/>
+    </Style>
+
+    <Style Selector="TextBlock.field-label">
+      <Setter Property="FontSize" Value="12"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="Foreground" Value="#334155"/>
+    </Style>
+
+    <Style Selector="Border.section-card">
+      <Setter Property="Background" Value="#F8FAFC"/>
+      <Setter Property="BorderBrush" Value="#D7E4F3"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="14"/>
+      <Setter Property="Padding" Value="14"/>
+    </Style>
+
+    <Style Selector="TextBox.editor-input">
+      <Setter Property="MinHeight" Value="34"/>
+    </Style>
+
+    <Style Selector="ComboBox.editor-input">
+      <Setter Property="MinHeight" Value="34"/>
+    </Style>
+
+    <Style Selector="CheckBox.editor-check">
+      <Setter Property="Margin" Value="0,0,18,8"/>
+    </Style>
+
+    <Style Selector="ListBoxItem:selected">
+      <Setter Property="Background" Value="#DBEAFE"/>
+    </Style>
+
+    <Style Selector="Button.editor-danger">
+      <Setter Property="Background" Value="#FEF2F2"/>
+      <Setter Property="Foreground" Value="#991B1B"/>
+      <Setter Property="BorderBrush" Value="#FECACA"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="10"/>
+      <Setter Property="Padding" Value="12,8"/>
+    </Style>
+
+    <Style Selector="Border.badge">
+      <Setter Property="CornerRadius" Value="999"/>
+      <Setter Property="Padding" Value="7,3"/>
+      <Setter Property="Margin" Value="0,6,6,0"/>
+    </Style>
+
+    <Style Selector="Border.badge-hidden">
+      <Setter Property="Background" Value="#F1F5F9"/>
+      <Setter Property="BorderBrush" Value="#CBD5E1"/>
+      <Setter Property="BorderThickness" Value="1"/>
+    </Style>
+
+    <Style Selector="Border.badge-sorted">
+      <Setter Property="Background" Value="#DBEAFE"/>
+      <Setter Property="BorderBrush" Value="#93C5FD"/>
+      <Setter Property="BorderThickness" Value="1"/>
+    </Style>
+
+    <Style Selector="Border.badge-grouped">
+      <Setter Property="Background" Value="#DCFCE7"/>
+      <Setter Property="BorderBrush" Value="#86EFAC"/>
+      <Setter Property="BorderThickness" Value="1"/>
+    </Style>
+
+    <Style Selector="Border.badge-summary">
+      <Setter Property="Background" Value="#FEF3C7"/>
+      <Setter Property="BorderBrush" Value="#FCD34D"/>
+      <Setter Property="BorderThickness" Value="1"/>
+    </Style>
+  </Window.Styles>
+
+  <Grid Margin="16"
+        RowDefinitions="Auto,*"
+        RowSpacing="12">
+    <Border Classes="card">
+      <Grid ColumnDefinitions="*,Auto"
+            ColumnSpacing="12">
+        <StackPanel Spacing="4">
+          <TextBlock Text="{Binding HeaderText}"
+                     FontSize="20"
+                     FontWeight="Bold"
+                     Foreground="#0F172A"/>
+          <TextBlock Text="{Binding SummaryText}"
+                     Foreground="#475569"
+                     TextWrapping="Wrap"/>
+        </StackPanel>
+
+        <Button Grid.Column="1"
+                Content="Закрыть"
+                Classes="editor-action"
+                VerticalAlignment="Center"
+                Click="CloseButton_Click"/>
+      </Grid>
+    </Border>
+
+    <Border Grid.Row="1"
+            Classes="card"
+            IsVisible="{Binding HasNoBindingSource}">
+      <StackPanel Spacing="10"
+                  HorizontalAlignment="Center"
+                  VerticalAlignment="Center"
+                  MaxWidth="560">
+        <TextBlock Text="Для DataGrid не выбран BindingSource"
+                   FontSize="22"
+                   FontWeight="Bold"
+                   TextAlignment="Center"/>
+        <TextBlock Text="Сначала подключите источник данных в правой панели. После этого редактор колонок будет работать с полями выбранного BindingSource."
+                   Foreground="#475569"
+                   TextWrapping="Wrap"
+                   TextAlignment="Center"/>
+      </StackPanel>
+    </Border>
+
+    <Grid Grid.Row="1"
+          ColumnDefinitions="340,*"
+          ColumnSpacing="12"
+          IsVisible="{Binding HasBindingSource}">
+      <Border Classes="card">
+        <Grid RowDefinitions="Auto,Auto,Auto,*"
+              RowSpacing="10">
+          <TextBlock Text="Колонки"
+                     FontSize="17"
+                     FontWeight="Bold"/>
+
+          <TextBox Grid.Row="1"
+                   Classes="editor-input"
+                   Watermark="Поиск по заголовку, пути или примеру..."
+                   Text="{Binding SearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+
+          <WrapPanel Grid.Row="2"
+                     Orientation="Horizontal">
+            <Button Content="Добавить"
+                    Classes="editor-action"
+                    Margin="0,0,8,8"
+                    Click="AddColumnButton_Click"/>
+            <Button Content="Удалить"
+                    Classes="editor-danger"
+                    Margin="0,0,8,8"
+                    IsEnabled="{Binding HasSelectedField}"
+                    Click="DeleteColumnButton_Click"/>
+            <Button Content="Вверх"
+                    Classes="editor-action"
+                    Margin="0,0,8,8"
+                    IsEnabled="{Binding HasSelectedField}"
+                    Click="MoveColumnUpButton_Click"/>
+            <Button Content="Вниз"
+                    Classes="editor-action"
+                    Margin="0,0,8,8"
+                    IsEnabled="{Binding HasSelectedField}"
+                    Click="MoveColumnDownButton_Click"/>
+            <Button Content="Показать все"
+                    Classes="editor-action"
+                    Margin="0,0,8,8"
+                    Click="ShowAllColumnsButton_Click"/>
+            <Button Content="Скрыть все"
+                    Classes="editor-action"
+                    Margin="0,0,8,8"
+                    Click="HideAllColumnsButton_Click"/>
+            <Button Content="Сбросить ширины"
+                    Classes="editor-action"
+                    Margin="0,0,8,8"
+                    Click="ResetColumnWidthsButton_Click"/>
+          </WrapPanel>
+
+          <ListBox Grid.Row="3"
+                   ItemsSource="{Binding FilteredFields}"
+                   SelectedItem="{Binding SelectedItem, Mode=TwoWay}">
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="views:DataGridColumnEditorFieldItem">
+                <Grid ColumnDefinitions="*,Auto"
+                      ColumnSpacing="8"
+                      Margin="0,4">
+                  <StackPanel Spacing="2">
+                    <TextBlock Text="{Binding Title}"
+                               FontWeight="SemiBold"
+                               TextTrimming="CharacterEllipsis"/>
+                    <TextBlock Text="{Binding Subtitle}"
+                               Foreground="#64748B"
+                               FontSize="12"
+                               TextTrimming="CharacterEllipsis"/>
+
+                    <WrapPanel Orientation="Horizontal">
+                      <Border Classes="badge badge-hidden"
+                              IsVisible="{Binding IsHidden}">
+                        <TextBlock Text="Скрыта"
+                                   FontSize="11"
+                                   Foreground="#334155"/>
+                      </Border>
+                      <Border Classes="badge badge-sorted"
+                              IsVisible="{Binding IsSorted}">
+                        <TextBlock Text="Сортировка"
+                                   FontSize="11"
+                                   Foreground="#1D4ED8"/>
+                      </Border>
+                      <Border Classes="badge badge-grouped"
+                              IsVisible="{Binding IsGrouped}">
+                        <TextBlock Text="Группа"
+                                   FontSize="11"
+                                   Foreground="#166534"/>
+                      </Border>
+                      <Border Classes="badge badge-summary"
+                              IsVisible="{Binding HasSummary}">
+                        <TextBlock Text="Итог"
+                                   FontSize="11"
+                                   Foreground="#92400E"/>
+                      </Border>
+                    </WrapPanel>
+                  </StackPanel>
+
+                  <TextBlock Grid.Column="1"
+                             Text="{Binding VisibleIndexText}"
+                             Foreground="#94A3B8"
+                             VerticalAlignment="Top"/>
+                </Grid>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+        </Grid>
+      </Border>
+
+      <Border Grid.Column="1"
+              Classes="card"
+              IsVisible="{Binding HasNoSelectedField}">
+        <TextBlock Text="Выберите колонку слева, чтобы увидеть её настройки."
+                   Foreground="#475569"
+                   HorizontalAlignment="Center"
+                   VerticalAlignment="Center"
+                   TextWrapping="Wrap"/>
+      </Border>
+
+      <ContentControl Grid.Column="1"
+                      Content="{Binding SelectedField}"
+                      IsVisible="{Binding HasSelectedField}">
+        <ContentControl.ContentTemplate>
+          <DataTemplate x:DataType="models:BindingFieldModel">
+            <Border Classes="card">
+              <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <StackPanel Spacing="12">
+                  <Border Background="#EFF6FF"
+                          BorderBrush="#BFDBFE"
+                          BorderThickness="1"
+                          CornerRadius="12"
+                          Padding="12">
+                    <Grid ColumnDefinitions="*,Auto"
+                          ColumnSpacing="12">
+                      <StackPanel Spacing="2">
+                        <TextBlock Text="{Binding Header}"
+                                   FontSize="18"
+                                   FontWeight="Bold"
+                                   Foreground="#0F172A"
+                                   TextTrimming="CharacterEllipsis"/>
+                        <TextBlock Text="{Binding Path}"
+                                   Foreground="#475569"
+                                   TextTrimming="CharacterEllipsis"/>
+                      </StackPanel>
+                      <Border Grid.Column="1"
+                              Background="#DBEAFE"
+                              BorderBrush="#93C5FD"
+                              BorderThickness="1"
+                              CornerRadius="999"
+                              Padding="9,4"
+                              VerticalAlignment="Center">
+                        <TextBlock Text="{Binding TypeName}"
+                                   FontSize="12"
+                                   Foreground="#1D4ED8"/>
+                      </Border>
+                    </Grid>
+                  </Border>
+
+                  <Border Classes="section-card">
+                    <StackPanel Spacing="12">
+                      <StackPanel Spacing="2">
+                        <TextBlock Classes="section-title"
+                                   Text="Основное"/>
+                        <TextBlock Classes="section-note"
+                                   Text="Название колонки, путь к полю данных и пример значения для preview."/>
+                      </StackPanel>
+
+                      <Grid ColumnDefinitions="*,*"
+                            ColumnSpacing="12">
+                        <StackPanel Spacing="5">
+                          <TextBlock Classes="field-label"
+                                     Text="Заголовок"/>
+                          <TextBox Classes="editor-input"
+                                   Text="{Binding Header, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="1"
+                                    Spacing="5">
+                          <TextBlock Classes="field-label"
+                                     Text="Путь данных"/>
+                          <TextBox Classes="editor-input"
+                                   Watermark="Например: Name или Customer.Email"
+                                   Text="{Binding Path, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                        </StackPanel>
+                      </Grid>
+
+                      <Grid ColumnDefinitions="*,170"
+                            ColumnSpacing="12">
+                        <StackPanel Spacing="5">
+                          <TextBlock Classes="field-label"
+                                     Text="Пример значения"/>
+                          <TextBox Classes="editor-input"
+                                   Text="{Binding SampleValue, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="1"
+                                    Spacing="5">
+                          <TextBlock Classes="field-label"
+                                     Text="Ширина"/>
+                          <TextBox Classes="editor-input"
+                                   Watermark="*, 120, 2*"
+                                   Text="{Binding Width, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                        </StackPanel>
+                      </Grid>
+
+                      <WrapPanel Orientation="Horizontal">
+                        <Button Content="Авто"
+                                Tag="*"
+                                Classes="editor-action"
+                                Margin="0,0,8,8"
+                                Click="SetColumnWidthPresetButton_Click"/>
+                        <Button Content="120 px"
+                                Tag="120"
+                                Classes="editor-action"
+                                Margin="0,0,8,8"
+                                Click="SetColumnWidthPresetButton_Click"/>
+                        <Button Content="180 px"
+                                Tag="180"
+                                Classes="editor-action"
+                                Margin="0,0,8,8"
+                                Click="SetColumnWidthPresetButton_Click"/>
+                        <Button Content="240 px"
+                                Tag="240"
+                                Classes="editor-action"
+                                Margin="0,0,8,8"
+                                Click="SetColumnWidthPresetButton_Click"/>
+                        <Button Content="1*"
+                                Tag="1*"
+                                Classes="editor-action"
+                                Margin="0,0,8,8"
+                                Click="SetColumnWidthPresetButton_Click"/>
+                        <Button Content="2*"
+                                Tag="2*"
+                                Classes="editor-action"
+                                Margin="0,0,8,8"
+                                Click="SetColumnWidthPresetButton_Click"/>
+                      </WrapPanel>
+                    </StackPanel>
+                  </Border>
+
+                  <Border Classes="section-card">
+                    <StackPanel Spacing="10">
+                      <StackPanel Spacing="2">
+                        <TextBlock Classes="section-title"
+                                   Text="Поведение"/>
+                        <TextBlock Classes="section-note"
+                                   Text="Быстро включайте видимость, изменение размера, сортировку и фильтр."/>
+                      </StackPanel>
+
+                      <WrapPanel Orientation="Horizontal">
+                        <CheckBox Content="Показывать колонку"
+                                  Classes="editor-check"
+                                  IsChecked="{Binding IsVisible, Mode=TwoWay}"/>
+                        <CheckBox Content="Разрешить resize"
+                                  Classes="editor-check"
+                                  IsChecked="{Binding AllowResize, Mode=TwoWay}"/>
+                        <CheckBox Content="Разрешить сортировку"
+                                  Classes="editor-check"
+                                  IsChecked="{Binding AllowSort, Mode=TwoWay}"/>
+                        <CheckBox Content="Разрешить фильтр"
+                                  Classes="editor-check"
+                                  IsChecked="{Binding AllowFilter, Mode=TwoWay}"/>
+                      </WrapPanel>
+                    </StackPanel>
+                  </Border>
+
+                  <Border Classes="section-card">
+                    <StackPanel Spacing="12">
+                      <StackPanel Spacing="2">
+                        <TextBlock Classes="section-title"
+                                   Text="Текст и выравнивание"/>
+                        <TextBlock Classes="section-note"
+                                   Text="Настройки отображения текста в заголовке и ячейках."/>
+                      </StackPanel>
+
+                      <Grid ColumnDefinitions="*,*"
+                            ColumnSpacing="12">
+                        <StackPanel Spacing="5">
+                          <TextBlock Classes="field-label"
+                                     Text="Выравнивание заголовка"/>
+                          <ComboBox Classes="editor-input"
+                                    ItemsSource="{Binding #EditorWindow.DataContext.AvailableColumnAlignmentOptions}"
+                                    SelectedValue="{Binding HeaderAlignment, Mode=TwoWay}"
+                                    SelectedValueBinding="{Binding Value}">
+                            <ComboBox.ItemTemplate>
+                              <DataTemplate x:DataType="models:InteractionOptionModel">
+                                <TextBlock Text="{Binding DisplayName}"/>
+                              </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                          </ComboBox>
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="1"
+                                    Spacing="5">
+                          <TextBlock Classes="field-label"
+                                     Text="Выравнивание ячеек"/>
+                          <ComboBox Classes="editor-input"
+                                    ItemsSource="{Binding #EditorWindow.DataContext.AvailableColumnAlignmentOptions}"
+                                    SelectedValue="{Binding CellAlignment, Mode=TwoWay}"
+                                    SelectedValueBinding="{Binding Value}">
+                            <ComboBox.ItemTemplate>
+                              <DataTemplate x:DataType="models:InteractionOptionModel">
+                                <TextBlock Text="{Binding DisplayName}"/>
+                              </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                          </ComboBox>
+                        </StackPanel>
+                      </Grid>
+
+                      <Grid ColumnDefinitions="*,*"
+                            ColumnSpacing="12">
+                        <StackPanel Spacing="5">
+                          <TextBlock Classes="field-label"
+                                     Text="Формат значения"/>
+                          <TextBox Classes="editor-input"
+                                   Watermark="N2, dd.MM.yyyy или {0:C}"
+                                   Text="{Binding FormatString, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="1"
+                                    Spacing="5">
+                          <TextBlock Classes="field-label"
+                                     Text="Текст для Null"/>
+                          <TextBox Classes="editor-input"
+                                   Watermark="—"
+                                   Text="{Binding NullText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                        </StackPanel>
+                      </Grid>
+
+                      <Grid ColumnDefinitions="*,*,140"
+                            ColumnSpacing="12">
+                        <StackPanel Spacing="5">
+                          <TextBlock Classes="field-label"
+                                     Text="Обрезка текста"/>
+                          <ComboBox Classes="editor-input"
+                                    ItemsSource="{Binding #EditorWindow.DataContext.AvailableColumnTextTrimmingOptions}"
+                                    SelectedValue="{Binding TextTrimming, Mode=TwoWay}"
+                                    SelectedValueBinding="{Binding Value}">
+                            <ComboBox.ItemTemplate>
+                              <DataTemplate x:DataType="models:InteractionOptionModel">
+                                <TextBlock Text="{Binding DisplayName}"/>
+                              </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                          </ComboBox>
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="1"
+                                    Spacing="5">
+                          <TextBlock Classes="field-label"
+                                     Text="Перенос текста"/>
+                          <ComboBox Classes="editor-input"
+                                    ItemsSource="{Binding #EditorWindow.DataContext.AvailableColumnTextWrappingOptions}"
+                                    SelectedValue="{Binding TextWrapping, Mode=TwoWay}"
+                                    SelectedValueBinding="{Binding Value}">
+                            <ComboBox.ItemTemplate>
+                              <DataTemplate x:DataType="models:InteractionOptionModel">
+                                <TextBlock Text="{Binding DisplayName}"/>
+                              </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                          </ComboBox>
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="2"
+                                    Spacing="5">
+                          <TextBlock Classes="field-label"
+                                     Text="Макс. строк"/>
+                          <TextBox Classes="editor-input"
+                                   Text="{Binding MaxLines, Mode=TwoWay}"/>
+                        </StackPanel>
+                      </Grid>
+                    </StackPanel>
+                  </Border>
+
+                  <Border Classes="section-card">
+                    <StackPanel Spacing="12">
+                      <StackPanel Spacing="2">
+                        <TextBlock Classes="section-title"
+                                   Text="Размеры"/>
+                        <TextBlock Classes="section-note"
+                                   Text="Ограничения ширины. Значение 0 для максимума означает “без ограничения”."/>
+                      </StackPanel>
+
+                      <Grid ColumnDefinitions="*,*"
+                            ColumnSpacing="12">
+                        <StackPanel Spacing="5">
+                          <TextBlock Classes="field-label"
+                                     Text="Минимальная ширина"/>
+                          <TextBox Classes="editor-input"
+                                   Text="{Binding MinWidth, Mode=TwoWay}"/>
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="1"
+                                    Spacing="5">
+                          <TextBlock Classes="field-label"
+                                     Text="Максимальная ширина"/>
+                          <TextBox Classes="editor-input"
+                                   Watermark="0 = без ограничения"
+                                   Text="{Binding MaxWidth, Mode=TwoWay}"/>
+                        </StackPanel>
+                      </Grid>
+                    </StackPanel>
+                  </Border>
+
+                  <Border Classes="section-card">
+                    <StackPanel Spacing="12">
+                      <StackPanel Spacing="2">
+                        <TextBlock Classes="section-title"
+                                   Text="Сортировка, группировка и итоги"/>
+                        <TextBlock Classes="section-note"
+                                   Text="Enterprise-настройки колонки: порядок сортировки, группировки и footer-итоги."/>
+                      </StackPanel>
+
+                      <Grid ColumnDefinitions="*,*,*"
+                            ColumnSpacing="12">
+                        <StackPanel Spacing="5">
+                          <TextBlock Classes="field-label"
+                                     Text="Направление сортировки"/>
+                          <ComboBox Classes="editor-input"
+                                    ItemsSource="{Binding #EditorWindow.DataContext.AvailableFieldSortDirectionOptions}"
+                                    SelectedValue="{Binding SortDirection, Mode=TwoWay}"
+                                    SelectedValueBinding="{Binding Value}">
+                            <ComboBox.ItemTemplate>
+                              <DataTemplate x:DataType="models:InteractionOptionModel">
+                                <TextBlock Text="{Binding DisplayName}"/>
+                              </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                          </ComboBox>
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="1"
+                                    Spacing="5">
+                          <TextBlock Classes="field-label"
+                                     Text="Порядок сортировки"/>
+                          <TextBox Classes="editor-input"
+                                   Watermark="-1 = не задано"
+                                   Text="{Binding SortOrder, Mode=TwoWay}"/>
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="2"
+                                    Spacing="5">
+                          <TextBlock Classes="field-label"
+                                     Text="Порядок группировки"/>
+                          <TextBox Classes="editor-input"
+                                   Watermark="-1 = не группировать"
+                                   Text="{Binding GroupOrder, Mode=TwoWay}"/>
+                        </StackPanel>
+                      </Grid>
+
+                      <Grid ColumnDefinitions="220,*"
+                            ColumnSpacing="12">
+                        <StackPanel Spacing="5">
+                          <TextBlock Classes="field-label"
+                                     Text="Тип итога"/>
+                          <ComboBox Classes="editor-input"
+                                    ItemsSource="{Binding #EditorWindow.DataContext.AvailableFieldSummaryTypeOptions}"
+                                    SelectedValue="{Binding SummaryType, Mode=TwoWay}"
+                                    SelectedValueBinding="{Binding Value}">
+                            <ComboBox.ItemTemplate>
+                              <DataTemplate x:DataType="models:InteractionOptionModel">
+                                <TextBlock Text="{Binding DisplayName}"/>
+                              </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                          </ComboBox>
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="1"
+                                    Spacing="5">
+                          <TextBlock Classes="field-label"
+                                     Text="Формат итога"/>
+                          <TextBox Classes="editor-input"
+                                   Watermark="Итого: {0:N2}"
+                                   Text="{Binding SummaryFormat, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                        </StackPanel>
+                      </Grid>
+                    </StackPanel>
+                  </Border>
+                </StackPanel>
+              </ScrollViewer>
+            </Border>
+          </DataTemplate>
+        </ContentControl.ContentTemplate>
+      </ContentControl>
+    </Grid>
+  </Grid>
+</Window>
