@@ -3091,28 +3091,14 @@ public partial class MainWindow : Window
         var visibleFields = fields.Where(field => field.IsVisible).ToList();
         var showGroupPanel = model.AllowGrouping && (model.ShowGroupPanel || groupedFields.Count > 0);
 
+        if (VM.GetBindingSource(model.BindingSourceId) is null)
+            return CreateDataGridEmptyStatePreview(model, "DataGrid: источник данных не выбран", "Выберите BindingSource во вкладке Данные.");
+
         if (fields.Count == 0)
-        {
-            visibleFields = new List<BindingFieldModel>
-            {
-                new BindingFieldModel { Header = "Колонка 1", Path = "Field1", SampleValue = "Значение 1", Width = "*" },
-                new BindingFieldModel { Header = "Колонка 2", Path = "Field2", SampleValue = "Значение 2", Width = "*" },
-                new BindingFieldModel { Header = "Колонка 3", Path = "Field3", SampleValue = "Значение 3", Width = "*" }
-            };
-        }
-        else if (visibleFields.Count == 0)
-        {
-            visibleFields = new List<BindingFieldModel>
-            {
-                new BindingFieldModel
-                {
-                    Header = "Скрыто",
-                    Path = "HiddenColumns",
-                    SampleValue = "Все колонки скрыты",
-                    Width = "*"
-                }
-            };
-        }
+            return CreateDataGridEmptyStatePreview(model, "BindingSource выбран, но поля не добавлены", "Добавьте поля вручную или импортируйте схему из DLL/SQL.");
+
+        if (visibleFields.Count == 0)
+            return CreateDataGridEmptyStatePreview(model, "Все поля BindingSource скрыты", "Включите видимость хотя бы одной колонки.");
 
         var themePalette = DesignerThemeCatalog.Get(VM.FormTheme);
         var headerBackgroundColor = ParseColor(model.Background, themePalette.DataGridHeaderBackground);
@@ -3336,6 +3322,58 @@ public partial class MainWindow : Window
         e.Handled = true;
     }
 
+    private Control CreateDataGridEmptyStatePreview(DesignControlModel model, string title, string description)
+    {
+        var themePalette = DesignerThemeCatalog.Get(VM.FormTheme);
+        var backgroundColor = ParseColor(model.DataGridRowBackground, themePalette.DataGridRowBackground);
+        var borderColor = ParseColor(model.DataGridOuterBorderBrush, themePalette.AccentStrongBrush);
+        var foregroundColor = ParseColor(model.DataGridRowForeground, "#0F172A");
+        var isDark = IsDarkColor(backgroundColor);
+        var mutedColor = BlendColor(foregroundColor, isDark ? Color.Parse("#CBD5E1") : Color.Parse("#64748B"), 0.55);
+
+        return new Border
+        {
+            Width = model.Width,
+            Height = model.Height,
+            Background = new SolidColorBrush(backgroundColor),
+            BorderBrush = new SolidColorBrush(borderColor),
+            BorderThickness = UniformThickness(Math.Max(1, model.BorderThickness)),
+            CornerRadius = new CornerRadius(Math.Max(0, model.CornerRadius)),
+            Padding = new Thickness(18),
+            ClipToBounds = true,
+            IsHitTestVisible = false,
+            Child = new StackPanel
+            {
+                Spacing = 8,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                Children =
+                {
+                    new TextBlock
+                    {
+                        Text = title,
+                        Foreground = new SolidColorBrush(foregroundColor),
+                        FontFamily = new FontFamily(model.FontFamily),
+                        FontSize = Math.Max(12, model.FontSize),
+                        FontWeight = FontWeight.SemiBold,
+                        TextAlignment = TextAlignment.Center,
+                        TextWrapping = TextWrapping.Wrap
+                    },
+                    new TextBlock
+                    {
+                        Text = description,
+                        Foreground = new SolidColorBrush(mutedColor),
+                        FontFamily = new FontFamily(model.FontFamily),
+                        FontSize = Math.Max(11, model.FontSize - 1),
+                        TextAlignment = TextAlignment.Center,
+                        TextWrapping = TextWrapping.Wrap,
+                        MaxWidth = Math.Max(220, model.Width - 48)
+                    }
+                }
+            }
+        };
+    }
+
     private Control CreateModernDataGridPreview(DesignControlModel model)
     {
         var fields = VM.GetBindingFields(model.BindingSourceId).ToList();
@@ -3349,28 +3387,14 @@ public partial class MainWindow : Window
         var visibleFields = fields.Where(field => field.IsVisible).ToList();
         var showGroupPanel = model.AllowGrouping && (model.ShowGroupPanel || groupedFields.Count > 0);
 
+        if (VM.GetBindingSource(model.BindingSourceId) is null)
+            return CreateDataGridEmptyStatePreview(model, "DataGrid: источник данных не выбран", "Выберите BindingSource во вкладке Данные.");
+
         if (fields.Count == 0)
-        {
-            visibleFields = new List<BindingFieldModel>
-            {
-                new() { Header = "Id", Path = "Id", SampleValue = "1001", Width = "92", CellAlignment = BindingFieldModel.AlignmentCenter },
-                new() { Header = "Name", Path = "Name", SampleValue = "Алексей Воронцов", Width = "1.4*" },
-                new() { Header = "Email", Path = "Email", SampleValue = "alexey@contoso.dev", Width = "1.8*" }
-            };
-        }
-        else if (visibleFields.Count == 0)
-        {
-            visibleFields = new List<BindingFieldModel>
-            {
-                new()
-                {
-                    Header = "Скрыто",
-                    Path = "HiddenColumns",
-                    SampleValue = "Все колонки скрыты",
-                    Width = "*"
-                }
-            };
-        }
+            return CreateDataGridEmptyStatePreview(model, "BindingSource выбран, но поля не добавлены", "Добавьте поля вручную или импортируйте схему из DLL/SQL.");
+
+        if (visibleFields.Count == 0)
+            return CreateDataGridEmptyStatePreview(model, "Все поля BindingSource скрыты", "Включите видимость хотя бы одной колонки.");
 
         var showSummaryFooter = ShouldShowModernDataGridSummaryFooter(model.ShowFooter, visibleFields);
         var themePalette = DesignerThemeCatalog.Get(VM.FormTheme);
@@ -4977,42 +5001,6 @@ public partial class MainWindow : Window
     private static string CreateModernPreviewValue(string header, string path, string typeName, string sampleValue, int rowIndex)
     {
         var signature = $"{header} {path} {typeName}".ToLowerInvariant();
-
-        if (ModernDataGridLooksLikeEmail(signature))
-            return GetCycledPreviewValue(rowIndex,
-            new[]
-            {
-                "alexey@contoso.dev",
-                "maria@contoso.dev",
-                "igor@contoso.dev",
-                "anna@contoso.dev",
-                "roman@contoso.dev",
-                "elena@contoso.dev"
-            });
-
-        if (ModernDataGridLooksLikeName(signature))
-            return GetCycledPreviewValue(rowIndex,
-            new[]
-            {
-                "Алексей Воронцов",
-                "Мария Соколова",
-                "Игорь Карпов",
-                "Анна Орлова",
-                "Роман Климов",
-                "Елена Смирнова"
-            });
-
-        if (ModernDataGridLooksLikeLocation(signature))
-            return GetCycledPreviewValue(rowIndex,
-            new[]
-            {
-                "USA",
-                "Greece",
-                "Germany",
-                "Japan",
-                "Canada",
-                "France"
-            });
 
         if (ModernDataGridLooksLikeRating(signature))
             return rowIndex switch
@@ -7229,23 +7217,6 @@ public partial class MainWindow : Window
     {
         VM.GenerateXamlCommand.Execute(null);
         await CopyTextToClipboardAsync(VM.GeneratedCSharp, "C# скопирован. Проверьте namespace формы в новом проекте.");
-    }
-
-    private async void CopyBothGeneratedFilesButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
-    {
-        VM.GenerateXamlCommand.Execute(null);
-        var xamlFileName = VM.ExportTarget == MainWindowViewModel.ExportTargetMainWindow
-            ? "MainWindow.axaml"
-            : "Form1Window.axaml";
-        var csharpFileName = VM.ExportTarget == MainWindowViewModel.ExportTargetMainWindow
-            ? "MainWindow.axaml.cs"
-            : "Form1Window.axaml.cs";
-        var package = $"// ===== {xamlFileName} ====={Environment.NewLine}"
-            + VM.GeneratedXaml
-            + $"{Environment.NewLine}{Environment.NewLine}// ===== {csharpFileName} ====={Environment.NewLine}"
-            + VM.GeneratedCSharp;
-
-        await CopyTextToClipboardAsync(package, "XAML и C# скопированы одним пакетом.");
     }
 
     private async void CopyMainWindowXamlButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)

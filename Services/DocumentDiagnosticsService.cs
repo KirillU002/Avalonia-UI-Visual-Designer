@@ -188,11 +188,30 @@ public sealed class DocumentDiagnosticsService
             return;
         }
 
+        if (sourceBinding.Fields.Count == 0)
+        {
+            diagnostics.Add(new DocumentDiagnosticModel
+            {
+                Severity = string.IsNullOrWhiteSpace(interaction.SourcePath) && !ExtractTemplateTokens(interaction.TextTemplate).Any()
+                    ? DocumentDiagnosticSeverity.Warning
+                    : DocumentDiagnosticSeverity.Error,
+                Source = source.NameOrFallback(),
+                Category = "Логика",
+                Message = $"DataGrid interaction не может использовать поля: BindingSource '{sourceBinding.NameOrFallback()}' пустой.",
+                Recommendation = "Добавьте реальные поля в BindingSource или удалите ссылку на поле/шаблон.",
+                RelatedControlId = source.Id,
+                RelatedControlName = source.Name,
+                RelatedBindingSourceId = sourceBinding.Id,
+                RelatedBindingSourceName = sourceBinding.Name
+            });
+            return;
+        }
+
         if (!string.IsNullOrWhiteSpace(interaction.SourcePath) && !BindingFieldExists(sourceBinding, interaction.SourcePath))
         {
             diagnostics.Add(new DocumentDiagnosticModel
             {
-                Severity = DocumentDiagnosticSeverity.Warning,
+                Severity = DocumentDiagnosticSeverity.Error,
                 Source = source.NameOrFallback(),
                 Category = "Логика",
                 Message = $"Поле interaction '{interaction.SourcePath}' не найдено в BindingSource '{sourceBinding.NameOrFallback()}'.",
@@ -211,7 +230,7 @@ public sealed class DocumentDiagnosticsService
 
             diagnostics.Add(new DocumentDiagnosticModel
             {
-                Severity = DocumentDiagnosticSeverity.Warning,
+                Severity = DocumentDiagnosticSeverity.Error,
                 Source = source.NameOrFallback(),
                 Category = "Логика",
                 Message = $"В шаблоне interaction поле '{{{token}}}' не найдено в BindingSource '{sourceBinding.NameOrFallback()}'.",
@@ -644,7 +663,7 @@ public sealed class DocumentDiagnosticsService
         {
             diagnostics.Add(new DocumentDiagnosticModel
             {
-                Severity = DocumentDiagnosticSeverity.Error,
+                Severity = DocumentDiagnosticSeverity.Warning,
                 Source = control.NameOrFallback(),
                 Category = "Привязка",
                 Message = $"Элемент '{control.NameOrFallback()}' не привязан к источнику данных.",
@@ -668,6 +687,24 @@ public sealed class DocumentDiagnosticsService
                 RelatedControlName = control.Name
             });
             return;
+        }
+
+        if (string.Equals(control.Type, DesignerControlTypes.DataGrid, StringComparison.Ordinal)
+            && source is not null
+            && source.Fields.Count == 0)
+        {
+            diagnostics.Add(new DocumentDiagnosticModel
+            {
+                Severity = DocumentDiagnosticSeverity.Warning,
+                Source = control.NameOrFallback(),
+                Category = "Привязка",
+                Message = $"DataGrid '{control.NameOrFallback()}' подключен к BindingSource без полей.",
+                Recommendation = "Добавьте реальные поля в BindingSource или импортируйте схему из DLL/SQL.",
+                RelatedControlId = control.Id,
+                RelatedControlName = control.Name,
+                RelatedBindingSourceId = source.Id,
+                RelatedBindingSourceName = source.Name
+            });
         }
 
         if (string.IsNullOrWhiteSpace(control.TextBindingPath))

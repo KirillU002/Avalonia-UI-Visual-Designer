@@ -33,8 +33,11 @@ public partial class MainWindowViewModel : ObservableObject
 {
     public const string GenerationModeCleanUi = "Чистый UI";
     public const string GenerationModeDemoData = "С демонстрационными данными";
-    public const string DataGridExportModePortable = "Безопасная таблица без NuGet";
-    public const string DataGridExportModeReal = "Настоящий Avalonia DataGrid (нужен NuGet)";
+    public const string DataGridExportModePlaceholder = "Placeholder без NuGet";
+    public const string DataGridExportModeVisual = "Visual table без NuGet";
+    public const string DataGridExportModePortable = DataGridExportModeVisual;
+    public const string DataGridExportModeReal = "Real Avalonia DataGrid (нужен NuGet)";
+    private const string LegacyDataGridExportModePortable = "Безопасная таблица без NuGet";
     public const string ExportTargetMainWindow = "Замена MainWindow";
     public const string ExportTargetGeneratedWindow = "Отдельное окно Form1Window";
     public const string XamlVerbosityCompact = "Компактный";
@@ -249,7 +252,8 @@ public partial class MainWindowViewModel : ObservableObject
 
     public ObservableCollection<string> AvailableDataGridExportModes { get; } = new()
     {
-        DataGridExportModePortable,
+        DataGridExportModePlaceholder,
+        DataGridExportModeVisual,
         DataGridExportModeReal
     };
 
@@ -507,8 +511,16 @@ public partial class MainWindowViewModel : ObservableObject
     public bool IsCleanUiGenerationMode => string.Equals(GenerationMode, GenerationModeCleanUi, StringComparison.Ordinal);
     public bool IsDemoDataGenerationMode => !IsCleanUiGenerationMode;
     public bool ShouldGenerateDemoRuntimeCode => IsDemoDataGenerationMode || IncludeSampleData || IncludeCrudSkeleton;
-    public bool ShouldExportRealDataGrid => string.Equals(DataGridExportMode, DataGridExportModeReal, StringComparison.Ordinal);
+    public bool ShouldExportPlaceholderDataGrid => string.Equals(NormalizeDataGridExportMode(DataGridExportMode), DataGridExportModePlaceholder, StringComparison.Ordinal);
+    public bool ShouldExportVisualDataGrid => string.Equals(NormalizeDataGridExportMode(DataGridExportMode), DataGridExportModeVisual, StringComparison.Ordinal);
+    public bool ShouldExportRealDataGrid => string.Equals(NormalizeDataGridExportMode(DataGridExportMode), DataGridExportModeReal, StringComparison.Ordinal);
     public bool ShouldExportPortableDataGrid => !ShouldExportRealDataGrid;
+    public string DataGridExportModeHint => NormalizeDataGridExportMode(DataGridExportMode) switch
+    {
+        DataGridExportModePlaceholder => "Компактная заглушка Border/TextBlock. Не рабочая таблица, зато без NuGet и без fake-колонок.",
+        DataGridExportModeReal => "Настоящий Avalonia DataGrid. Работает как таблица, но в новом проекте нужен NuGet Avalonia.Controls.DataGrid.",
+        _ => "Визуальный макет таблицы без NuGet. Используется только при реальных полях BindingSource; без полей автоматически экспортируется placeholder."
+    };
     public bool IsMainWindowExportTarget => string.Equals(ExportTarget, ExportTargetMainWindow, StringComparison.Ordinal);
     public bool IsGeneratedWindowExportTarget => !IsMainWindowExportTarget;
     public bool IsCompactXamlExport => string.Equals(XamlVerbosity, XamlVerbosityCompact, StringComparison.Ordinal);
@@ -545,9 +557,34 @@ public partial class MainWindowViewModel : ObservableObject
     public string GenerationOptionsSummary => IsCleanUiGenerationMode
         ? $"Чистый UI: BindingSource используется только как схема колонок. Demo-код, тестовые модели, fake data и CRUD не генерируются. Цель: {ExportTarget}, XAML: {XamlVerbosity}, DataGrid: {DataGridExportMode}."
         : $"С демонстрационными данными: будет сгенерирован sample ViewModel, коллекции, фильтры и CRUD-заготовки. Цель: {ExportTarget}, XAML: {XamlVerbosity}, DataGrid: {DataGridExportMode}.";
-    public bool HasExportWarnings => GetRequiredExportNuGetPackages().Any()
-        || (IncludePluginRuntimeReferences && Controls.Any(IsPluginRuntimeControl));
-    public string ExportStatusText => HasExportWarnings ? "Нужны зависимости" : "Ready";
+    public bool HasExportWarnings => HasExportChecklistIssues;
+    public IReadOnlyList<ExportChecklistItem> ExportChecklistItems => BuildExportChecklist();
+    public int ExportChecklistErrorCount => ExportChecklistItems.Count(item => item.Severity == ExportChecklistSeverity.Error);
+    public int ExportChecklistWarningCount => ExportChecklistItems.Count(item => item.Severity == ExportChecklistSeverity.Warning);
+    public bool HasExportChecklistIssues => ExportChecklistErrorCount > 0 || ExportChecklistWarningCount > 0;
+    public string ExportStatusText => ExportChecklistErrorCount > 0
+        ? "Export has errors"
+        : ExportChecklistWarningCount > 0
+            ? "Ready with warnings"
+            : "Ready";
+    public string ExportStatusBadgeBackground => ExportChecklistErrorCount > 0
+        ? "#FEF2F2"
+        : ExportChecklistWarningCount > 0
+            ? "#FFFBEB"
+            : "#ECFDF5";
+    public string ExportStatusBadgeBorder => ExportChecklistErrorCount > 0
+        ? "#FECACA"
+        : ExportChecklistWarningCount > 0
+            ? "#FDE68A"
+            : "#86EFAC";
+    public string ExportStatusBadgeForeground => ExportChecklistErrorCount > 0
+        ? "#991B1B"
+        : ExportChecklistWarningCount > 0
+            ? "#92400E"
+            : "#14532D";
+    public string ExportDataGridBadgeText => BuildDataGridExportSummary();
+    public string ExportViewModelBadgeText => $"ViewModel: {(ShouldGenerateViewModelForExport() ? "yes" : "no")}";
+    public string ExportInteractionsBadgeText => $"Interactions: {Interactions.Count}";
     public string ExportCompactSummary => BuildExportCompactSummary();
     public string ExportSummaryText => BuildExportSummaryText();
     public string ExportDependenciesSummary => BuildExportDependenciesSummary();
@@ -1110,6 +1147,9 @@ public partial class MainWindowViewModel : ObservableObject
             var source = SelectedBindingSourceForControl;
             if (source is null)
                 return "Источник данных для DataGrid не выбран.";
+
+            if (source.Fields.Count == 0)
+                return $"{source.Name} -> {source.Path}: BindingSource выбран, но поля не добавлены.";
 
             var visibleCount = source.Fields.Count(field => field.IsVisible);
             var sortedCount = source.Fields.Count(field => !string.Equals(field.SortDirection, BindingFieldModel.SortDirectionNone, StringComparison.OrdinalIgnoreCase));
@@ -2270,10 +2310,23 @@ public partial class MainWindowViewModel : ObservableObject
             Diagnostics.Add(diagnostic);
 
         RaiseDiagnosticsProperties();
+        RaiseExportChecklistProperties();
     }
 
     private void AppendExportDiagnostics(ICollection<DocumentDiagnosticModel> diagnostics)
     {
+        if (HasExportNamespaceError())
+        {
+            diagnostics.Add(new DocumentDiagnosticModel
+            {
+                Severity = DocumentDiagnosticSeverity.Error,
+                Source = "Export",
+                Category = "Namespace",
+                Message = "Namespace проекта для экспорта пустой или некорректный.",
+                Recommendation = "Укажите корректный namespace, например AvaloniaApplication1. Он должен состоять из C# identifiers, разделённых точками."
+            });
+        }
+
         if (ShouldExportRealDataGrid && Controls.Any(control => control.Type == DesignerControlTypes.DataGrid))
         {
             diagnostics.Add(new DocumentDiagnosticModel
@@ -2296,6 +2349,46 @@ public partial class MainWindowViewModel : ObservableObject
                 Message = "В portable export DataGrid экспортируется как безопасный визуальный placeholder.",
                 Recommendation = "Для runtime-логики SelectionChanged включите режим 'Настоящий Avalonia DataGrid' и установите NuGet Avalonia.Controls.DataGrid. C# обработчик будет сгенерирован только для real DataGrid export."
             });
+        }
+
+        if (ShouldExportPortableDataGrid)
+        {
+            foreach (var grid in Controls.Where(control => control.Type == DesignerControlTypes.DataGrid))
+            {
+                var source = GetBindingSource(grid.BindingSourceId);
+                string? message = null;
+                string? recommendation = null;
+
+                if (source is null)
+                {
+                    message = $"DataGrid '{grid.NameOrFallback()}' будет экспортирован как placeholder без источника данных.";
+                    recommendation = "Подключите реальный BindingSource, если хотите получить таблицу с колонками.";
+                }
+                else if (source.Fields.Count == 0)
+                {
+                    message = $"DataGrid '{grid.NameOrFallback()}' будет экспортирован как placeholder: BindingSource не содержит полей.";
+                    recommendation = "Добавьте поля в BindingSource или импортируйте схему из DLL/SQL.";
+                }
+                else if (!source.Fields.Any(field => field.IsVisible))
+                {
+                    message = $"DataGrid '{grid.NameOrFallback()}' будет экспортирован как placeholder: все поля BindingSource скрыты.";
+                    recommendation = "Включите видимость хотя бы одной колонки перед экспортом.";
+                }
+
+                if (message is null)
+                    continue;
+
+                diagnostics.Add(new DocumentDiagnosticModel
+                {
+                    Severity = DocumentDiagnosticSeverity.Warning,
+                    Source = "Export",
+                    Category = "DataGrid",
+                    Message = message,
+                    Recommendation = recommendation ?? "",
+                    RelatedControlId = grid.Id,
+                    RelatedControlName = grid.Name
+                });
+            }
         }
 
         if (IsCleanUiGenerationMode)
@@ -2895,6 +2988,13 @@ public partial class MainWindowViewModel : ObservableObject
         if (SelectedControl?.Type != DesignerControlTypes.DataGrid)
         {
             StatusText = "Выберите DataGrid, чтобы добавить действие выбора строки.";
+            return;
+        }
+
+        var bindingSource = GetBindingSource(SelectedControl.BindingSourceId);
+        if (bindingSource is null || bindingSource.Fields.Count == 0)
+        {
+            StatusText = "Для логики DataGrid сначала подключите BindingSource с реальными полями.";
             return;
         }
 
@@ -3954,11 +4054,7 @@ public partial class MainWindowViewModel : ObservableObject
         GeneratedXaml = sb.ToString();
         GeneratedCSharp = BuildGeneratedCSharp();
         GeneratedBindingGuide = BuildGeneratedBindingGuide();
-        OnPropertyChanged(nameof(HasExportWarnings));
-        OnPropertyChanged(nameof(ExportStatusText));
-        OnPropertyChanged(nameof(ExportCompactSummary));
-        OnPropertyChanged(nameof(ExportSummaryText));
-        OnPropertyChanged(nameof(ExportDependenciesSummary));
+        RaiseExportChecklistProperties();
     }
 
     private void AppendExportDependencyComments(StringBuilder sb)
@@ -3977,7 +4073,7 @@ public partial class MainWindowViewModel : ObservableObject
         }
 
         if (ShouldExportPortableDataGrid && Controls.Any(control => control.Type == DesignerControlTypes.DataGrid))
-            sb.AppendLine("         DataGrid экспортируется как безопасная визуальная таблица на стандартных контролах Avalonia.");
+            sb.AppendLine($"         {BuildDataGridExportSummary()}. Для рабочей таблицы выберите Real Avalonia DataGrid и установите NuGet.");
 
         if (BindingSources.Count > 0 && !ShouldGenerateDemoRuntimeCode)
             sb.AppendLine("         BindingSource используется только как схема колонок. Тестовые модели и fake data не генерируются.");
@@ -4005,6 +4101,44 @@ public partial class MainWindowViewModel : ObservableObject
         return IsMainWindowExportTarget
             ? SanitizeNamespace(ExportProjectNamespace, "AvaloniaApplication1")
             : "GeneratedForms";
+    }
+
+    private bool HasExportNamespaceError()
+    {
+        return IsMainWindowExportTarget && !IsValidNamespaceText(ExportProjectNamespace);
+    }
+
+    private static bool IsValidNamespaceText(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return false;
+
+        var parts = value.Trim().Split('.', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 0)
+            return false;
+
+        return parts.All(IsValidCSharpIdentifier);
+    }
+
+    private static bool IsValidCSharpIdentifier(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return false;
+
+        if (!IsIdentifierStart(value[0]))
+            return false;
+
+        return value.Skip(1).All(IsIdentifierPart);
+    }
+
+    private static bool IsIdentifierStart(char value)
+    {
+        return value == '_' || char.IsLetter(value);
+    }
+
+    private static bool IsIdentifierPart(char value)
+    {
+        return value == '_' || char.IsLetterOrDigit(value);
     }
 
     private string ResolveExportWindowClassName()
@@ -4051,7 +4185,7 @@ public partial class MainWindowViewModel : ObservableObject
 
         return $"Цель: {(IsMainWindowExportTarget ? "MainWindow.axaml / MainWindow.axaml.cs" : $"{ResolveExportWindowClassName()}.axaml / {ResolveExportWindowClassName()}.axaml.cs")}\n"
             + $"Namespace: {ResolveExportNamespace()}\n"
-            + $"Режим: {GenerationMode}; XAML: {XamlVerbosity}; DataGrid: {DataGridExportMode}\n"
+            + $"Режим: {GenerationMode}; XAML: {XamlVerbosity}; {BuildDataGridExportSummary()}\n"
             + $"NuGet: {nugetText}\n"
             + $"DLL плагинов: {pluginText}\n"
             + $"ViewModel генерируется: {(hasGeneratedViewModel ? "да" : "нет")}";
@@ -4062,15 +4196,255 @@ public partial class MainWindowViewModel : ObservableObject
         var packages = GetRequiredExportNuGetPackages()
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
+        var pluginCount = IncludePluginRuntimeReferences
+            ? Controls.Where(IsPluginRuntimeControl)
+                .Select(GetPluginRuntimeRequirementName)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Count()
+            : 0;
         var modeText = IsCleanUiGenerationMode ? "Clean UI" : "Demo data";
         var targetText = IsMainWindowExportTarget ? "MainWindow" : "Form1Window";
-        var gridText = ShouldExportRealDataGrid ? "Real DataGrid" : "Portable DataGrid";
-        var nugetText = packages.Count == 0 ? "No NuGet" : $"NuGet: {string.Join(", ", packages)}";
-        var pluginText = IncludePluginRuntimeReferences && Controls.Any(IsPluginRuntimeControl)
-            ? "Plugins required"
-            : "No plugins";
+        var nugetText = packages.Count == 0 ? "No NuGet" : $"{packages.Count} NuGet";
+        var pluginText = pluginCount == 0 ? "No plugins" : $"{pluginCount} plugin DLL";
 
-        return $"{ExportStatusText} · {modeText} · {targetText} · {gridText} · {nugetText} · {pluginText}";
+        return $"{ExportStatusText} · {modeText} · {targetText} · {nugetText} · {pluginText}";
+    }
+
+    private IReadOnlyList<ExportChecklistItem> BuildExportChecklist()
+    {
+        var exportDiagnostics = BuildExportDiagnosticsSnapshot();
+        var exportSeverity = ToChecklistSeverity(exportDiagnostics);
+        var namespaceError = HasExportNamespaceError();
+        var xamlGenerated = !string.IsNullOrWhiteSpace(GeneratedXaml);
+        var csharpGenerated = !string.IsNullOrWhiteSpace(GeneratedCSharp);
+        var packages = GetRequiredExportNuGetPackages()
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var pluginControls = Controls
+            .Where(IsPluginRuntimeControl)
+            .ToList();
+        var pluginNames = pluginControls
+            .Select(GetPluginRuntimeRequirementName)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(value => value, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var hasPortableDataGridInteraction = ShouldExportPortableDataGrid
+            && Interactions.Any(interaction => IsDataGridSelectionChangedEvent(interaction.EventName));
+        var dataGridStatus = BuildDataGridBindingChecklistStatus();
+
+        return new List<ExportChecklistItem>
+        {
+            new()
+            {
+                Title = "XAML generated",
+                Value = xamlGenerated ? (namespaceError ? "Error" : ToChecklistStatusValue(exportSeverity)) : "Error",
+                Severity = !xamlGenerated || namespaceError ? ExportChecklistSeverity.Error : exportSeverity,
+                Details = !xamlGenerated
+                    ? "XAML ещё не сгенерирован. Нажмите «Обновить»."
+                    : namespaceError
+                        ? "Namespace проекта некорректный."
+                        : "Файл можно копировать с учётом предупреждений ниже."
+            },
+            new()
+            {
+                Title = "C# generated",
+                Value = csharpGenerated ? (namespaceError ? "Error" : ToChecklistStatusValue(exportSeverity)) : "Error",
+                Severity = !csharpGenerated || namespaceError ? ExportChecklistSeverity.Error : exportSeverity,
+                Details = !csharpGenerated
+                    ? "C# ещё не сгенерирован. Нажмите «Обновить»."
+                    : namespaceError
+                        ? "Namespace проекта некорректный."
+                        : "Code-behind сгенерирован для выбранной цели экспорта."
+            },
+            new()
+            {
+                Title = "Target",
+                Value = IsMainWindowExportTarget ? "MainWindow" : "Form1Window",
+                Severity = namespaceError ? ExportChecklistSeverity.Error : ExportChecklistSeverity.Ok,
+                Details = namespaceError
+                    ? "Исправьте namespace проекта в дополнительных настройках."
+                    : ResolveExportNamespace()
+            },
+            new()
+            {
+                Title = "DataGrid export mode",
+                Value = ShouldExportRealDataGrid
+                    ? "Real Avalonia DataGrid"
+                    : ShouldExportPlaceholderDataGrid
+                        ? "Placeholder без NuGet"
+                        : "Visual table без NuGet",
+                Severity = ShouldExportRealDataGrid && Controls.Any(control => control.Type == DesignerControlTypes.DataGrid)
+                    ? ExportChecklistSeverity.Warning
+                    : dataGridStatus.Severity,
+                Details = BuildDataGridExportSummary()
+            },
+            new()
+            {
+                Title = "Required NuGet",
+                Value = packages.Count == 0 ? "none" : $"{packages.Count} packages",
+                Severity = packages.Count == 0 ? ExportChecklistSeverity.Ok : ExportChecklistSeverity.Warning,
+                Details = packages.Count == 0
+                    ? "Дополнительные NuGet-пакеты не нужны."
+                    : $"Установите перед сборкой: {string.Join(", ", packages)}."
+            },
+            new()
+            {
+                Title = "Required plugin DLL",
+                Value = pluginNames.Count == 0 || !IncludePluginRuntimeReferences ? "none" : $"{pluginNames.Count} DLL",
+                Severity = pluginNames.Count == 0
+                    ? ExportChecklistSeverity.Ok
+                    : ExportChecklistSeverity.Warning,
+                Details = pluginNames.Count == 0
+                    ? "Plugin controls не используются."
+                    : IncludePluginRuntimeReferences
+                        ? $"Новый проект должен ссылаться на runtime DLL: {string.Join(", ", pluginNames)}."
+                        : "Plugin controls будут экспортированы как безопасные placeholder-элементы."
+            },
+            new()
+            {
+                Title = "BindingSource status",
+                Value = dataGridStatus.Value,
+                Severity = dataGridStatus.Severity,
+                Details = dataGridStatus.Details
+            },
+            new()
+            {
+                Title = "Interactions exported",
+                Value = Interactions.Count == 0 ? "none" : $"{Interactions.Count} interactions",
+                Severity = hasPortableDataGridInteraction ? ExportChecklistSeverity.Warning : ExportChecklistSeverity.Ok,
+                Details = Interactions.Count == 0
+                    ? "Логика формы не настроена."
+                    : hasPortableDataGridInteraction
+                        ? "DataGrid.SelectionChanged не экспортируется как рабочий handler в portable DataGrid mode."
+                        : "Будут экспортированы только реально настроенные обработчики."
+            },
+            new()
+            {
+                Title = "ViewModel generated",
+                Value = ShouldGenerateViewModelForExport() ? "yes" : "no",
+                Severity = ExportChecklistSeverity.Ok,
+                Details = ShouldGenerateViewModelForExport()
+                    ? "ViewModel нужен выбранному режиму генерации."
+                    : "Clean UI не создаёт пустой ViewModel без необходимости."
+            },
+            new()
+            {
+                Title = "Export comments",
+                Value = ShouldIncludeExportComments ? "on" : "off",
+                Severity = ExportChecklistSeverity.Ok,
+                Details = ShouldIncludeExportComments
+                    ? "Подсказки будут добавлены в XAML/C#."
+                    : "Код будет чище: подсказки остаются в интерфейсе конструктора."
+            }
+        };
+    }
+
+    private List<DocumentDiagnosticModel> BuildExportDiagnosticsSnapshot()
+    {
+        var diagnostics = new List<DocumentDiagnosticModel>();
+        AppendExportDiagnostics(diagnostics);
+        return diagnostics;
+    }
+
+    private static ExportChecklistSeverity ToChecklistSeverity(IEnumerable<DocumentDiagnosticModel> diagnostics)
+    {
+        var list = diagnostics.ToList();
+        if (list.Any(item => item.Severity == DocumentDiagnosticSeverity.Error))
+            return ExportChecklistSeverity.Error;
+
+        return list.Any(item => item.Severity == DocumentDiagnosticSeverity.Warning)
+            ? ExportChecklistSeverity.Warning
+            : ExportChecklistSeverity.Ok;
+    }
+
+    private static string ToChecklistStatusValue(ExportChecklistSeverity severity)
+    {
+        return severity switch
+        {
+            ExportChecklistSeverity.Error => "Error",
+            ExportChecklistSeverity.Warning => "Warning",
+            _ => "OK"
+        };
+    }
+
+    private (string Value, string Details, ExportChecklistSeverity Severity) BuildDataGridBindingChecklistStatus()
+    {
+        var grids = Controls
+            .Where(control => control.Type == DesignerControlTypes.DataGrid)
+            .ToList();
+        if (grids.Count == 0)
+            return ("no DataGrid", "На форме нет DataGrid.", ExportChecklistSeverity.Ok);
+
+        var totalFieldCount = grids.Sum(CountExportableDataGridFields);
+        var gridsWithoutFields = grids.Count(control => !HasExportableDataGridFields(control));
+        if (gridsWithoutFields == grids.Count)
+            return ("DataGrid without fields", "DataGrid будет экспортирован как placeholder, пока не добавлены реальные BindingSource fields.", ExportChecklistSeverity.Warning);
+
+        if (gridsWithoutFields > 0)
+            return ($"DataGrid with {totalFieldCount} fields", $"Есть реальные fields: {totalFieldCount}; DataGrid без fields: {gridsWithoutFields}.", ExportChecklistSeverity.Warning);
+
+        return ($"DataGrid with {totalFieldCount} fields", "Все DataGrid имеют реальные видимые fields.", ExportChecklistSeverity.Ok);
+    }
+
+    private bool ShouldGenerateViewModelForExport()
+    {
+        return ShouldGenerateDemoRuntimeCode
+            && (BuildCrudGenerationContexts().Any()
+                || Controls.Any(control => control.Type == DesignerControlTypes.TextBox)
+                || BindingSources.Count > 0);
+    }
+
+    private string GetPluginRuntimeRequirementName(DesignControlModel control)
+    {
+        var descriptor = GetDescriptor(control.Type);
+        var assemblyPath = descriptor.GetType().Assembly.Location;
+        if (!string.IsNullOrWhiteSpace(assemblyPath)
+            && descriptor.GetType().Assembly != typeof(MainWindowViewModel).Assembly)
+        {
+            return Path.GetFileName(assemblyPath);
+        }
+
+        return string.IsNullOrWhiteSpace(control.PluginId) ? control.Type : control.PluginId;
+    }
+
+    private string BuildDataGridExportSummary()
+    {
+        var grids = Controls
+            .Where(control => control.Type == DesignerControlTypes.DataGrid)
+            .ToList();
+        if (grids.Count == 0)
+            return "DataGrid: none";
+
+        if (ShouldExportRealDataGrid)
+            return "DataGrid: real Avalonia DataGrid, requires NuGet";
+
+        var exportableFieldCount = grids.Sum(control => CountExportableDataGridFields(control));
+        var placeholderCount = grids.Count(control => !HasExportableDataGridFields(control));
+
+        if (ShouldExportPlaceholderDataGrid)
+        {
+            return exportableFieldCount == 0
+                ? "DataGrid: placeholder, no fields"
+                : $"DataGrid: placeholder, {exportableFieldCount} fields ignored";
+        }
+
+        if (placeholderCount == grids.Count)
+            return "DataGrid: placeholder, no fields";
+
+        return placeholderCount == 0
+            ? $"DataGrid: visual table, {exportableFieldCount} fields"
+            : $"DataGrid: visual table, {exportableFieldCount} fields; placeholder: {placeholderCount}";
+    }
+
+    private bool HasExportableDataGridFields(DesignControlModel control)
+    {
+        return CountExportableDataGridFields(control) > 0;
+    }
+
+    private int CountExportableDataGridFields(DesignControlModel control)
+    {
+        var source = GetBindingSource(control.BindingSourceId);
+        return source?.Fields.Count(field => field.IsVisible) ?? 0;
     }
 
     private string BuildExportDependenciesSummary()
@@ -4893,12 +5267,6 @@ public partial class MainWindowViewModel : ObservableObject
         model.DescriptorId = string.IsNullOrWhiteSpace(model.DescriptorId) ? descriptor.TypeKey : model.DescriptorId;
         model.PluginId = string.IsNullOrWhiteSpace(model.PluginId) ? definition.PluginId : model.PluginId;
         model.PluginVersion = string.IsNullOrWhiteSpace(model.PluginVersion) ? definition.PluginVersion : model.PluginVersion;
-
-        if (SupportsDataBinding(model)
-            && string.IsNullOrWhiteSpace(model.BindingSourceId))
-        {
-            model.BindingSourceId = BindingSources.FirstOrDefault()?.Id ?? "";
-        }
 
         return model;
     }
@@ -7212,7 +7580,10 @@ public partial class MainWindowViewModel : ObservableObject
         var headersVisibility = control.DataGridShowHeader ? "Column" : "None";
         var filterableFields = visibleFields.Where(CanFilterBindingField).ToList();
         var shouldExportFilterRow = control.ShowFilterRow && source is not null && filterableFields.Count > 0;
-        var shouldExportGroupPanel = control.AllowGrouping && (control.ShowGroupPanel || groupedFields.Count > 0);
+        var shouldExportGroupPanel = source is not null
+            && visibleFields.Count > 0
+            && control.AllowGrouping
+            && (control.ShowGroupPanel || groupedFields.Count > 0);
         var hasConfiguredSelectionInteractions = GetSelectionChangedSetPropertyInteractionsForGrid(control).Count > 0;
         var shouldExportSelectionChanged = GetExportableSelectionChangedInteractions().Any(item => item.Source.Id == control.Id);
 
@@ -7385,16 +7756,62 @@ public partial class MainWindowViewModel : ObservableObject
         double cellPadding,
         int indentLevel)
     {
-        var fields = visibleFields.Count > 0
-            ? visibleFields
-            : source is not null && source.Fields.Count > 0
-                ? OrderBindingFieldsForDisplay(source.Fields).ToList()
-                : new List<BindingFieldModel>
-            {
-                    new() { Header = "Column 1", Path = "Column1", SampleValue = "Value 1", Width = "*" },
-                    new() { Header = "Column 2", Path = "Column2", SampleValue = "Value 2", Width = "*" },
-                    new() { Header = "Column 3", Path = "Column3", SampleValue = "Value 3", Width = "*" }
-                };
+        if (ShouldExportPlaceholderDataGrid)
+        {
+            var title = source is null || source.Fields.Count == 0 || visibleFields.Count == 0
+                ? "DataGrid: добавьте BindingSource и поля"
+                : "DataGrid: placeholder без NuGet";
+            AppendPortableDataGridEmptyStateXaml(
+                sb,
+                control,
+                title,
+                rowBackground,
+                outerBorderBrush,
+                rowForeground,
+                indentLevel);
+            return;
+        }
+
+        if (source is null)
+        {
+            AppendPortableDataGridEmptyStateXaml(
+                sb,
+                control,
+                "DataGrid: добавьте BindingSource и поля",
+                rowBackground,
+                outerBorderBrush,
+                rowForeground,
+                indentLevel);
+            return;
+        }
+
+        if (source.Fields.Count == 0)
+        {
+            AppendPortableDataGridEmptyStateXaml(
+                sb,
+                control,
+                "DataGrid: добавьте BindingSource и поля",
+                rowBackground,
+                outerBorderBrush,
+                rowForeground,
+                indentLevel);
+            return;
+        }
+
+        if (visibleFields.Count == 0)
+        {
+            AppendPortableDataGridEmptyStateXaml(
+                sb,
+                control,
+                "DataGrid: нет видимых колонок",
+                rowBackground,
+                outerBorderBrush,
+                rowForeground,
+                indentLevel);
+            return;
+        }
+
+        var fields = visibleFields;
         var columnDefinitions = string.Join(",", fields.Select(field => ToPortableColumnDefinition(field.Width)));
         var filterableFields = fields.Where(CanFilterBindingField).ToList();
         var showGroupPanel = control.AllowGrouping && (control.ShowGroupPanel || groupedFields.Count > 0);
@@ -7541,6 +7958,23 @@ public partial class MainWindowViewModel : ObservableObject
         }
 
         sb.AppendLine($"{Indent(indentLevel + 1)}</Grid>");
+        sb.AppendLine($"{Indent(indentLevel)}</Border>");
+    }
+
+    private void AppendPortableDataGridEmptyStateXaml(
+        StringBuilder sb,
+        DesignControlModel control,
+        string title,
+        string background,
+        string borderBrush,
+        string foreground,
+        int indentLevel)
+    {
+        var borderThickness = Math.Max(0, control.BorderThickness);
+        const string placeholderBorderBrush = "#CBD5E1";
+        const string placeholderForeground = "#64748B";
+        sb.AppendLine($"{Indent(indentLevel)}<Border {PlacementAttributes(control)} Background=\"{background}\" BorderBrush=\"{placeholderBorderBrush}\" BorderThickness=\"{ToInvariant(borderThickness)}\" CornerRadius=\"{ToInvariant(control.CornerRadius)}\"{CommonVisibilityAttributes(control)}>");
+        sb.AppendLine($"{Indent(indentLevel + 1)}<TextBlock Text=\"{EscapeXml(title)}\" HorizontalAlignment=\"Center\" VerticalAlignment=\"Center\" Foreground=\"{placeholderForeground}\" TextAlignment=\"Center\" TextWrapping=\"Wrap\" />");
         sb.AppendLine($"{Indent(indentLevel)}</Border>");
     }
 
@@ -9585,9 +10019,10 @@ public partial class MainWindowViewModel : ObservableObject
 
     partial void OnDataGridExportModeChanged(string value)
     {
-        if (!AvailableDataGridExportModes.Contains(value))
+        var normalized = NormalizeDataGridExportMode(value);
+        if (!string.Equals(value, normalized, StringComparison.Ordinal))
         {
-            DataGridExportMode = DataGridExportModePortable;
+            DataGridExportMode = normalized;
             return;
         }
 
@@ -9665,16 +10100,34 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(IsCleanUiGenerationMode));
         OnPropertyChanged(nameof(IsDemoDataGenerationMode));
         OnPropertyChanged(nameof(ShouldGenerateDemoRuntimeCode));
+        OnPropertyChanged(nameof(ShouldExportPlaceholderDataGrid));
+        OnPropertyChanged(nameof(ShouldExportVisualDataGrid));
         OnPropertyChanged(nameof(ShouldExportRealDataGrid));
         OnPropertyChanged(nameof(ShouldExportPortableDataGrid));
+        OnPropertyChanged(nameof(DataGridExportModeHint));
         OnPropertyChanged(nameof(IsMainWindowExportTarget));
         OnPropertyChanged(nameof(IsGeneratedWindowExportTarget));
         OnPropertyChanged(nameof(IsCompactXamlExport));
         OnPropertyChanged(nameof(IsFullStyledXamlExport));
         OnPropertyChanged(nameof(ShouldIncludeExportComments));
         OnPropertyChanged(nameof(GenerationOptionsSummary));
+        RaiseExportChecklistProperties();
+    }
+
+    private void RaiseExportChecklistProperties()
+    {
+        OnPropertyChanged(nameof(ExportChecklistItems));
+        OnPropertyChanged(nameof(ExportChecklistErrorCount));
+        OnPropertyChanged(nameof(ExportChecklistWarningCount));
+        OnPropertyChanged(nameof(HasExportChecklistIssues));
         OnPropertyChanged(nameof(HasExportWarnings));
         OnPropertyChanged(nameof(ExportStatusText));
+        OnPropertyChanged(nameof(ExportStatusBadgeBackground));
+        OnPropertyChanged(nameof(ExportStatusBadgeBorder));
+        OnPropertyChanged(nameof(ExportStatusBadgeForeground));
+        OnPropertyChanged(nameof(ExportDataGridBadgeText));
+        OnPropertyChanged(nameof(ExportViewModelBadgeText));
+        OnPropertyChanged(nameof(ExportInteractionsBadgeText));
         OnPropertyChanged(nameof(ExportCompactSummary));
         OnPropertyChanged(nameof(ExportSummaryText));
         OnPropertyChanged(nameof(ExportDependenciesSummary));
@@ -9759,6 +10212,17 @@ public partial class MainWindowViewModel : ObservableObject
             WindowStateMaximized or "Заполнить рабочую область" or "Развернутое" or "Maximized" => WindowStateMaximized,
             WindowStateFullScreen or "FullScreen" => WindowStateFullScreen,
             _ => WindowStateNormal
+        };
+    }
+
+    private static string NormalizeDataGridExportMode(string? value)
+    {
+        return value?.Trim() switch
+        {
+            DataGridExportModePlaceholder => DataGridExportModePlaceholder,
+            DataGridExportModeReal => DataGridExportModeReal,
+            DataGridExportModeVisual or LegacyDataGridExportModePortable => DataGridExportModeVisual,
+            _ => DataGridExportModeVisual
         };
     }
 

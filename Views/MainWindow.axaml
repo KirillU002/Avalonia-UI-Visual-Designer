@@ -136,6 +136,105 @@
       <Setter Property="Background" Value="#BFDBFE"/>
     </Style>
 
+    <Style Selector="Button.export-primary">
+      <Setter Property="MinHeight" Value="40"/>
+      <Setter Property="MinWidth" Value="132"/>
+      <Setter Property="Background" Value="#1D4ED8"/>
+      <Setter Property="Foreground" Value="#FFFFFF"/>
+      <Setter Property="BorderBrush" Value="#2563EB"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="12"/>
+      <Setter Property="Padding" Value="16,9"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="HorizontalContentAlignment" Value="Center"/>
+      <Setter Property="VerticalContentAlignment" Value="Center"/>
+    </Style>
+
+    <Style Selector="Button.export-primary:pointerover">
+      <Setter Property="Background" Value="#2563EB"/>
+      <Setter Property="BorderBrush" Value="#60A5FA"/>
+    </Style>
+
+    <Style Selector="Button.export-primary:pressed">
+      <Setter Property="Background" Value="#1E40AF"/>
+      <Setter Property="BorderBrush" Value="#1D4ED8"/>
+    </Style>
+
+    <Style Selector="Button.export-primary:disabled">
+      <Setter Property="Background" Value="#CBD5E1"/>
+      <Setter Property="Foreground" Value="#64748B"/>
+      <Setter Property="BorderBrush" Value="#CBD5E1"/>
+      <Setter Property="Opacity" Value="1"/>
+    </Style>
+
+    <Style Selector="Button.export-secondary">
+      <Setter Property="MinHeight" Value="40"/>
+      <Setter Property="MinWidth" Value="132"/>
+      <Setter Property="Background" Value="#F8FAFC"/>
+      <Setter Property="Foreground" Value="#0F172A"/>
+      <Setter Property="BorderBrush" Value="#BFDBFE"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="12"/>
+      <Setter Property="Padding" Value="16,9"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="HorizontalContentAlignment" Value="Center"/>
+      <Setter Property="VerticalContentAlignment" Value="Center"/>
+    </Style>
+
+    <Style Selector="Button.export-secondary:pointerover">
+      <Setter Property="Background" Value="#EFF6FF"/>
+      <Setter Property="BorderBrush" Value="#60A5FA"/>
+    </Style>
+
+    <Style Selector="Button.export-secondary:pressed">
+      <Setter Property="Background" Value="#DBEAFE"/>
+      <Setter Property="BorderBrush" Value="#3B82F6"/>
+    </Style>
+
+    <Style Selector="Button.export-secondary:disabled">
+      <Setter Property="Background" Value="#E2E8F0"/>
+      <Setter Property="Foreground" Value="#94A3B8"/>
+      <Setter Property="BorderBrush" Value="#CBD5E1"/>
+      <Setter Property="Opacity" Value="1"/>
+    </Style>
+
+    <Style Selector="Border.export-card">
+      <Setter Property="Background" Value="#FFFFFF"/>
+      <Setter Property="BorderBrush" Value="#D7E2EE"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="16"/>
+      <Setter Property="Padding" Value="14"/>
+    </Style>
+
+    <Style Selector="Border.export-badge">
+      <Setter Property="Background" Value="#EFF6FF"/>
+      <Setter Property="BorderBrush" Value="#BFDBFE"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="999"/>
+      <Setter Property="Padding" Value="8,3"/>
+      <Setter Property="Margin" Value="0,0,8,6"/>
+    </Style>
+
+    <Style Selector="Border.code-viewer">
+      <Setter Property="Background" Value="#FFFFFF"/>
+      <Setter Property="BorderBrush" Value="#CBD5E1"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="14"/>
+      <Setter Property="Padding" Value="0"/>
+      <Setter Property="ClipToBounds" Value="True"/>
+      <Setter Property="MinHeight" Value="260"/>
+    </Style>
+
+    <Style Selector="TextBlock.code-viewer-text">
+      <Setter Property="FontFamily" Value="Consolas"/>
+      <Setter Property="FontSize" Value="13"/>
+      <Setter Property="LineHeight" Value="18"/>
+      <Setter Property="Foreground" Value="#0F172A"/>
+      <Setter Property="Background" Value="#FFFFFF"/>
+      <Setter Property="Padding" Value="12"/>
+      <Setter Property="TextWrapping" Value="NoWrap"/>
+    </Style>
+
     <Style Selector="TreeViewItem">
       <Setter Property="IsExpanded" Value="True"/>
     </Style>
@@ -4202,40 +4301,79 @@
                    IsVisible="{Binding IsCodeModePanelVisible}">
             <Grid Margin="0,12,0,0"
                   RowDefinitions="Auto,*">
-              <Border Background="White"
-                      BorderBrush="#D7E2EE"
-                      BorderThickness="1"
-                      CornerRadius="14"
-                      Padding="12">
-                <StackPanel Spacing="10">
+              <Border Classes="export-card">
+                <StackPanel Spacing="12">
                   <Grid ColumnDefinitions="*,Auto"
-                        ColumnSpacing="10">
-                    <StackPanel Spacing="5">
-                      <TextBlock Text="Экспорт в Avalonia"
-                                 FontSize="18"
-                                 FontWeight="Bold"/>
-                      <WrapPanel>
-                        <Border Background="#ECFDF5"
-                                BorderBrush="#86EFAC"
-                                BorderThickness="1"
-                                CornerRadius="999"
-                                Padding="8,3"
-                                Margin="0,0,8,0">
-                          <TextBlock Text="{Binding ExportStatusText}"
-                                     Foreground="#14532D"
-                                     FontSize="12"
-                                     FontWeight="SemiBold"/>
-                        </Border>
-                        <TextBlock Text="{Binding ExportCompactSummary}"
-                                   Foreground="#475569"
-                                   VerticalAlignment="Center"
-                                   TextWrapping="Wrap"/>
-                      </WrapPanel>
-                    </StackPanel>
+                        ColumnSpacing="12">
+                    <TextBlock Text="Экспорт в Avalonia"
+                               FontSize="18"
+                               FontWeight="Bold"
+                               VerticalAlignment="Center"/>
+                    <Border Grid.Column="1"
+                            Background="{Binding ExportStatusBadgeBackground}"
+                            BorderBrush="{Binding ExportStatusBadgeBorder}"
+                            BorderThickness="1"
+                            CornerRadius="999"
+                            Padding="9,4"
+                            VerticalAlignment="Center">
+                      <TextBlock Text="{Binding ExportStatusText}"
+                                 Foreground="{Binding ExportStatusBadgeForeground}"
+                                 FontSize="12"
+                                 FontWeight="SemiBold"/>
+                    </Border>
+                  </Grid>
 
-                    <Button Grid.Column="1"
-                            Content="Как вставить в новый проект?"
-                            Padding="10,7">
+                  <TextBlock Text="{Binding ExportCompactSummary}"
+                             Foreground="#475569"
+                             FontSize="13"
+                             TextTrimming="CharacterEllipsis"
+                             MaxLines="1"/>
+
+                  <WrapPanel>
+                    <Border Classes="export-badge">
+                      <TextBlock Text="{Binding ExportDataGridBadgeText}"
+                                 Foreground="#1D4ED8"
+                                 FontSize="12"
+                                 FontWeight="SemiBold"/>
+                    </Border>
+                    <Border Classes="export-badge">
+                      <TextBlock Text="{Binding ExportViewModelBadgeText}"
+                                 Foreground="#1D4ED8"
+                                 FontSize="12"
+                                 FontWeight="SemiBold"/>
+                    </Border>
+                    <Border Classes="export-badge">
+                      <TextBlock Text="{Binding ExportInteractionsBadgeText}"
+                                 Foreground="#1D4ED8"
+                                 FontSize="12"
+                                 FontWeight="SemiBold"/>
+                    </Border>
+                  </WrapPanel>
+
+                  <StackPanel Spacing="6">
+                    <WrapPanel>
+                    <Button Content="Копировать XAML"
+                            Classes="export-primary"
+                            Click="CopyGeneratedXamlButton_Click"
+                            Margin="0,0,8,8"/>
+                    <Button Content="Копировать C#"
+                            Classes="export-primary"
+                            Click="CopyGeneratedCSharpButton_Click"
+                            Margin="0,0,8,8"/>
+                    </WrapPanel>
+                    <WrapPanel>
+                    <Button Content="Обновить"
+                            Classes="export-secondary"
+                            Command="{Binding GenerateXamlCommand}"
+                            Margin="0,0,8,8"/>
+                    <Button Content="Диагностика"
+                            Classes="export-secondary"
+                            Command="{Binding OpenDiagnosticsModeCommand}"
+                            Margin="0,0,8,8"
+                            IsVisible="{Binding HasExportWarnings}"/>
+                    <Button Content="Как вставить?"
+                            Classes="export-secondary"
+                            Margin="0,0,8,8">
                       <Button.Flyout>
                         <Flyout>
                           <Border Padding="14"
@@ -4258,30 +4396,67 @@
                         </Flyout>
                       </Button.Flyout>
                     </Button>
-                  </Grid>
+                    </WrapPanel>
+                  </StackPanel>
 
-                  <WrapPanel>
-                    <Button Content="Копировать XAML"
-                            Click="CopyGeneratedXamlButton_Click"
-                            Padding="12,8"
-                            Margin="0,0,8,0"/>
-                    <Button Content="Копировать C#"
-                            Click="CopyGeneratedCSharpButton_Click"
-                            Padding="12,8"
-                            Margin="0,0,8,0"/>
-                    <Button Content="Копировать оба"
-                            Click="CopyBothGeneratedFilesButton_Click"
-                            Padding="12,8"
-                            Margin="0,0,8,0"/>
-                    <Button Content="Обновить"
-                            Command="{Binding GenerateXamlCommand}"
-                            Padding="12,8"
-                            Margin="0,0,8,0"/>
-                    <Button Content="Открыть диагностику экспорта"
-                            Command="{Binding OpenDiagnosticsModeCommand}"
-                            Padding="12,8"
-                            IsVisible="{Binding HasExportWarnings}"/>
-                  </WrapPanel>
+                  <Expander Header="Показать checklist"
+                            IsExpanded="False">
+                    <Border Background="#F8FAFC"
+                            BorderBrush="#D7E2EE"
+                            BorderThickness="1"
+                            CornerRadius="12"
+                            Padding="10"
+                            Margin="0,8,0,0">
+                      <ScrollViewer MaxHeight="360"
+                                    VerticalScrollBarVisibility="Auto"
+                                    HorizontalScrollBarVisibility="Disabled">
+                        <ItemsControl ItemsSource="{Binding ExportChecklistItems}">
+                          <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                              <Border Background="{Binding SeverityBackground}"
+                                      BorderBrush="{Binding SeverityBorderBrush}"
+                                      BorderThickness="1"
+                                      CornerRadius="10"
+                                      Padding="8"
+                                      Margin="0,0,0,6"
+                                      ToolTip.Tip="{Binding Details}">
+                                <Grid ColumnDefinitions="Auto,*,Auto"
+                                      ColumnSpacing="9">
+                                  <Border Background="{Binding SeverityBadgeBackground}"
+                                          CornerRadius="999"
+                                          Padding="7,2"
+                                          VerticalAlignment="Top">
+                                    <TextBlock Text="{Binding SeverityTitle}"
+                                               Foreground="White"
+                                               FontSize="10"
+                                               FontWeight="Bold"/>
+                                  </Border>
+                                  <StackPanel Grid.Column="1"
+                                              Spacing="1">
+                                    <TextBlock Text="{Binding Title}"
+                                               FontWeight="SemiBold"/>
+                                    <TextBlock Text="{Binding Details}"
+                                               Foreground="#64748B"
+                                               FontSize="12"
+                                               TextTrimming="CharacterEllipsis"
+                                               MaxLines="1"
+                                               IsVisible="{Binding HasDetails}"/>
+                                  </StackPanel>
+                                  <TextBlock Grid.Column="2"
+                                             Text="{Binding Value}"
+                                             Foreground="{Binding SeverityForeground}"
+                                             FontWeight="SemiBold"
+                                             TextTrimming="CharacterEllipsis"
+                                             MaxWidth="220"
+                                             TextAlignment="Right"/>
+                                </Grid>
+                              </Border>
+                            </DataTemplate>
+                          </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                      </ScrollViewer>
+                    </Border>
+                  </Expander>
 
                   <Expander Header="Дополнительные настройки экспорта"
                             IsExpanded="False">
@@ -4292,7 +4467,7 @@
                             Padding="10"
                             Margin="0,8,0,0">
                       <StackPanel Spacing="8">
-                        <Grid ColumnDefinitions="160,*"
+                        <Grid ColumnDefinitions="145,*"
                               ColumnSpacing="10">
                           <TextBlock Text="Режим"
                                      FontWeight="SemiBold"
@@ -4300,9 +4475,10 @@
                           <ComboBox Grid.Column="1"
                                     ItemsSource="{Binding AvailableGenerationModes}"
                                     SelectedItem="{Binding GenerationMode, Mode=TwoWay}"
-                                    MinWidth="180"/>
+                                    MinWidth="0"
+                                    HorizontalAlignment="Stretch"/>
                         </Grid>
-                        <Grid ColumnDefinitions="160,*"
+                        <Grid ColumnDefinitions="145,*"
                               ColumnSpacing="10">
                           <TextBlock Text="Куда вставлять"
                                      FontWeight="SemiBold"
@@ -4310,18 +4486,21 @@
                           <ComboBox Grid.Column="1"
                                     ItemsSource="{Binding AvailableExportTargets}"
                                     SelectedItem="{Binding ExportTarget, Mode=TwoWay}"
-                                    MinWidth="260"/>
+                                    MinWidth="0"
+                                    HorizontalAlignment="Stretch"/>
                         </Grid>
-                        <Grid ColumnDefinitions="160,*"
+                        <Grid ColumnDefinitions="145,*"
                               ColumnSpacing="10">
                           <TextBlock Text="Namespace проекта"
                                      FontWeight="SemiBold"
                                      VerticalAlignment="Center"/>
                           <TextBox Grid.Column="1"
                                    Watermark="AvaloniaApplication1"
+                                   MinWidth="0"
+                                   HorizontalAlignment="Stretch"
                                    Text="{Binding ExportProjectNamespace, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
                         </Grid>
-                        <Grid ColumnDefinitions="160,*"
+                        <Grid ColumnDefinitions="145,*"
                               ColumnSpacing="10">
                           <TextBlock Text="Размер XAML"
                                      FontWeight="SemiBold"
@@ -4329,9 +4508,10 @@
                           <ComboBox Grid.Column="1"
                                     ItemsSource="{Binding AvailableXamlVerbosities}"
                                     SelectedItem="{Binding XamlVerbosity, Mode=TwoWay}"
-                                    MinWidth="220"/>
+                                    MinWidth="0"
+                                    HorizontalAlignment="Stretch"/>
                         </Grid>
-                        <Grid ColumnDefinitions="160,*"
+                        <Grid ColumnDefinitions="145,*"
                               ColumnSpacing="10">
                           <TextBlock Text="DataGrid"
                                      FontWeight="SemiBold"
@@ -4339,34 +4519,45 @@
                           <ComboBox Grid.Column="1"
                                     ItemsSource="{Binding AvailableDataGridExportModes}"
                                     SelectedItem="{Binding DataGridExportMode, Mode=TwoWay}"
-                                    MinWidth="260"/>
+                                    MinWidth="0"
+                                    HorizontalAlignment="Stretch"/>
                         </Grid>
-                        <UniformGrid Columns="2">
+                        <TextBlock Text="{Binding DataGridExportModeHint}"
+                                   Foreground="#64748B"
+                                   FontSize="12"
+                                   TextWrapping="Wrap"/>
+                        <WrapPanel>
                           <CheckBox Content="Комментарии в XAML/C#"
+                                    Margin="0,0,18,8"
                                     IsChecked="{Binding IncludeExportComments, Mode=TwoWay}"/>
                           <CheckBox Content="Demo-данные"
+                                    Margin="0,0,18,8"
                                     IsChecked="{Binding IncludeSampleData, Mode=TwoWay}"/>
                           <CheckBox Content="CRUD-заготовки"
+                                    Margin="0,0,18,8"
                                     IsChecked="{Binding IncludeCrudSkeleton, Mode=TwoWay}"/>
                           <CheckBox Content="Атрибуты CommunityToolkit"
+                                    Margin="0,0,18,8"
                                     IsChecked="{Binding IncludeCommunityToolkitAttributes, Mode=TwoWay}"/>
                           <CheckBox Content="Runtime-ссылки плагинов"
+                                    Margin="0,0,18,8"
                                     IsChecked="{Binding IncludePluginRuntimeReferences, Mode=TwoWay}"/>
-                        </UniformGrid>
+                        </WrapPanel>
                       </StackPanel>
                     </Border>
                   </Expander>
                 </StackPanel>
               </Border>
 
-              <TextBox Grid.Row="1"
-                       Margin="0,12,0,0"
-                       Text="{Binding GeneratedXaml}"
-                       AcceptsReturn="True"
-                       TextWrapping="NoWrap"
-                       IsReadOnly="True"
-                       FontFamily="Consolas"
-                       FontSize="13"/>
+              <Border Grid.Row="1"
+                      Margin="0,12,0,0"
+                      Classes="code-viewer">
+                <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                              VerticalScrollBarVisibility="Auto">
+                  <TextBlock Text="{Binding GeneratedXaml}"
+                             Classes="code-viewer-text"/>
+                </ScrollViewer>
+              </Border>
             </Grid>
           </TabItem>
 
@@ -4374,40 +4565,79 @@
                    IsVisible="{Binding IsCodeModePanelVisible}">
             <Grid Margin="0,12,0,0"
                   RowDefinitions="Auto,*">
-              <Border Background="White"
-                      BorderBrush="#D7E2EE"
-                      BorderThickness="1"
-                      CornerRadius="14"
-                      Padding="12">
-                <StackPanel Spacing="10">
+              <Border Classes="export-card">
+                <StackPanel Spacing="12">
                   <Grid ColumnDefinitions="*,Auto"
-                        ColumnSpacing="10">
-                    <StackPanel Spacing="5">
-                      <TextBlock Text="Экспорт в Avalonia"
-                                 FontSize="18"
-                                 FontWeight="Bold"/>
-                      <WrapPanel>
-                        <Border Background="#ECFDF5"
-                                BorderBrush="#86EFAC"
-                                BorderThickness="1"
-                                CornerRadius="999"
-                                Padding="8,3"
-                                Margin="0,0,8,0">
-                          <TextBlock Text="{Binding ExportStatusText}"
-                                     Foreground="#14532D"
-                                     FontSize="12"
-                                     FontWeight="SemiBold"/>
-                        </Border>
-                        <TextBlock Text="{Binding ExportCompactSummary}"
-                                   Foreground="#475569"
-                                   VerticalAlignment="Center"
-                                   TextWrapping="Wrap"/>
-                      </WrapPanel>
-                    </StackPanel>
+                        ColumnSpacing="12">
+                    <TextBlock Text="Экспорт в Avalonia"
+                               FontSize="18"
+                               FontWeight="Bold"
+                               VerticalAlignment="Center"/>
+                    <Border Grid.Column="1"
+                            Background="{Binding ExportStatusBadgeBackground}"
+                            BorderBrush="{Binding ExportStatusBadgeBorder}"
+                            BorderThickness="1"
+                            CornerRadius="999"
+                            Padding="9,4"
+                            VerticalAlignment="Center">
+                      <TextBlock Text="{Binding ExportStatusText}"
+                                 Foreground="{Binding ExportStatusBadgeForeground}"
+                                 FontSize="12"
+                                 FontWeight="SemiBold"/>
+                    </Border>
+                  </Grid>
 
-                    <Button Grid.Column="1"
-                            Content="Как вставить в новый проект?"
-                            Padding="10,7">
+                  <TextBlock Text="{Binding ExportCompactSummary}"
+                             Foreground="#475569"
+                             FontSize="13"
+                             TextTrimming="CharacterEllipsis"
+                             MaxLines="1"/>
+
+                  <WrapPanel>
+                    <Border Classes="export-badge">
+                      <TextBlock Text="{Binding ExportDataGridBadgeText}"
+                                 Foreground="#1D4ED8"
+                                 FontSize="12"
+                                 FontWeight="SemiBold"/>
+                    </Border>
+                    <Border Classes="export-badge">
+                      <TextBlock Text="{Binding ExportViewModelBadgeText}"
+                                 Foreground="#1D4ED8"
+                                 FontSize="12"
+                                 FontWeight="SemiBold"/>
+                    </Border>
+                    <Border Classes="export-badge">
+                      <TextBlock Text="{Binding ExportInteractionsBadgeText}"
+                                 Foreground="#1D4ED8"
+                                 FontSize="12"
+                                 FontWeight="SemiBold"/>
+                    </Border>
+                  </WrapPanel>
+
+                  <StackPanel Spacing="6">
+                    <WrapPanel>
+                    <Button Content="Копировать XAML"
+                            Classes="export-primary"
+                            Click="CopyGeneratedXamlButton_Click"
+                            Margin="0,0,8,8"/>
+                    <Button Content="Копировать C#"
+                            Classes="export-primary"
+                            Click="CopyGeneratedCSharpButton_Click"
+                            Margin="0,0,8,8"/>
+                    </WrapPanel>
+                    <WrapPanel>
+                    <Button Content="Обновить"
+                            Classes="export-secondary"
+                            Command="{Binding GenerateXamlCommand}"
+                            Margin="0,0,8,8"/>
+                    <Button Content="Диагностика"
+                            Classes="export-secondary"
+                            Command="{Binding OpenDiagnosticsModeCommand}"
+                            Margin="0,0,8,8"
+                            IsVisible="{Binding HasExportWarnings}"/>
+                    <Button Content="Как вставить?"
+                            Classes="export-secondary"
+                            Margin="0,0,8,8">
                       <Button.Flyout>
                         <Flyout>
                           <Border Padding="14"
@@ -4430,30 +4660,67 @@
                         </Flyout>
                       </Button.Flyout>
                     </Button>
-                  </Grid>
+                    </WrapPanel>
+                  </StackPanel>
 
-                  <WrapPanel>
-                    <Button Content="Копировать XAML"
-                            Click="CopyGeneratedXamlButton_Click"
-                            Padding="12,8"
-                            Margin="0,0,8,0"/>
-                    <Button Content="Копировать C#"
-                            Click="CopyGeneratedCSharpButton_Click"
-                            Padding="12,8"
-                            Margin="0,0,8,0"/>
-                    <Button Content="Копировать оба"
-                            Click="CopyBothGeneratedFilesButton_Click"
-                            Padding="12,8"
-                            Margin="0,0,8,0"/>
-                    <Button Content="Обновить"
-                            Command="{Binding GenerateXamlCommand}"
-                            Padding="12,8"
-                            Margin="0,0,8,0"/>
-                    <Button Content="Открыть диагностику экспорта"
-                            Command="{Binding OpenDiagnosticsModeCommand}"
-                            Padding="12,8"
-                            IsVisible="{Binding HasExportWarnings}"/>
-                  </WrapPanel>
+                  <Expander Header="Показать checklist"
+                            IsExpanded="False">
+                    <Border Background="#F8FAFC"
+                            BorderBrush="#D7E2EE"
+                            BorderThickness="1"
+                            CornerRadius="12"
+                            Padding="10"
+                            Margin="0,8,0,0">
+                      <ScrollViewer MaxHeight="360"
+                                    VerticalScrollBarVisibility="Auto"
+                                    HorizontalScrollBarVisibility="Disabled">
+                        <ItemsControl ItemsSource="{Binding ExportChecklistItems}">
+                          <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                              <Border Background="{Binding SeverityBackground}"
+                                      BorderBrush="{Binding SeverityBorderBrush}"
+                                      BorderThickness="1"
+                                      CornerRadius="10"
+                                      Padding="8"
+                                      Margin="0,0,0,6"
+                                      ToolTip.Tip="{Binding Details}">
+                                <Grid ColumnDefinitions="Auto,*,Auto"
+                                      ColumnSpacing="9">
+                                  <Border Background="{Binding SeverityBadgeBackground}"
+                                          CornerRadius="999"
+                                          Padding="7,2"
+                                          VerticalAlignment="Top">
+                                    <TextBlock Text="{Binding SeverityTitle}"
+                                               Foreground="White"
+                                               FontSize="10"
+                                               FontWeight="Bold"/>
+                                  </Border>
+                                  <StackPanel Grid.Column="1"
+                                              Spacing="1">
+                                    <TextBlock Text="{Binding Title}"
+                                               FontWeight="SemiBold"/>
+                                    <TextBlock Text="{Binding Details}"
+                                               Foreground="#64748B"
+                                               FontSize="12"
+                                               TextTrimming="CharacterEllipsis"
+                                               MaxLines="1"
+                                               IsVisible="{Binding HasDetails}"/>
+                                  </StackPanel>
+                                  <TextBlock Grid.Column="2"
+                                             Text="{Binding Value}"
+                                             Foreground="{Binding SeverityForeground}"
+                                             FontWeight="SemiBold"
+                                             TextTrimming="CharacterEllipsis"
+                                             MaxWidth="220"
+                                             TextAlignment="Right"/>
+                                </Grid>
+                              </Border>
+                            </DataTemplate>
+                          </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                      </ScrollViewer>
+                    </Border>
+                  </Expander>
 
                   <Expander Header="Дополнительные настройки экспорта"
                             IsExpanded="False">
@@ -4464,7 +4731,7 @@
                             Padding="10"
                             Margin="0,8,0,0">
                       <StackPanel Spacing="8">
-                        <Grid ColumnDefinitions="160,*"
+                        <Grid ColumnDefinitions="145,*"
                               ColumnSpacing="10">
                           <TextBlock Text="Режим"
                                      FontWeight="SemiBold"
@@ -4472,9 +4739,10 @@
                           <ComboBox Grid.Column="1"
                                     ItemsSource="{Binding AvailableGenerationModes}"
                                     SelectedItem="{Binding GenerationMode, Mode=TwoWay}"
-                                    MinWidth="180"/>
+                                    MinWidth="0"
+                                    HorizontalAlignment="Stretch"/>
                         </Grid>
-                        <Grid ColumnDefinitions="160,*"
+                        <Grid ColumnDefinitions="145,*"
                               ColumnSpacing="10">
                           <TextBlock Text="Куда вставлять"
                                      FontWeight="SemiBold"
@@ -4482,18 +4750,21 @@
                           <ComboBox Grid.Column="1"
                                     ItemsSource="{Binding AvailableExportTargets}"
                                     SelectedItem="{Binding ExportTarget, Mode=TwoWay}"
-                                    MinWidth="260"/>
+                                    MinWidth="0"
+                                    HorizontalAlignment="Stretch"/>
                         </Grid>
-                        <Grid ColumnDefinitions="160,*"
+                        <Grid ColumnDefinitions="145,*"
                               ColumnSpacing="10">
                           <TextBlock Text="Namespace проекта"
                                      FontWeight="SemiBold"
                                      VerticalAlignment="Center"/>
                           <TextBox Grid.Column="1"
                                    Watermark="AvaloniaApplication1"
+                                   MinWidth="0"
+                                   HorizontalAlignment="Stretch"
                                    Text="{Binding ExportProjectNamespace, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
                         </Grid>
-                        <Grid ColumnDefinitions="160,*"
+                        <Grid ColumnDefinitions="145,*"
                               ColumnSpacing="10">
                           <TextBlock Text="Размер XAML"
                                      FontWeight="SemiBold"
@@ -4501,9 +4772,10 @@
                           <ComboBox Grid.Column="1"
                                     ItemsSource="{Binding AvailableXamlVerbosities}"
                                     SelectedItem="{Binding XamlVerbosity, Mode=TwoWay}"
-                                    MinWidth="220"/>
+                                    MinWidth="0"
+                                    HorizontalAlignment="Stretch"/>
                         </Grid>
-                        <Grid ColumnDefinitions="160,*"
+                        <Grid ColumnDefinitions="145,*"
                               ColumnSpacing="10">
                           <TextBlock Text="DataGrid"
                                      FontWeight="SemiBold"
@@ -4511,34 +4783,45 @@
                           <ComboBox Grid.Column="1"
                                     ItemsSource="{Binding AvailableDataGridExportModes}"
                                     SelectedItem="{Binding DataGridExportMode, Mode=TwoWay}"
-                                    MinWidth="260"/>
+                                    MinWidth="0"
+                                    HorizontalAlignment="Stretch"/>
                         </Grid>
-                        <UniformGrid Columns="2">
+                        <TextBlock Text="{Binding DataGridExportModeHint}"
+                                   Foreground="#64748B"
+                                   FontSize="12"
+                                   TextWrapping="Wrap"/>
+                        <WrapPanel>
                           <CheckBox Content="Комментарии в XAML/C#"
+                                    Margin="0,0,18,8"
                                     IsChecked="{Binding IncludeExportComments, Mode=TwoWay}"/>
                           <CheckBox Content="Demo-данные"
+                                    Margin="0,0,18,8"
                                     IsChecked="{Binding IncludeSampleData, Mode=TwoWay}"/>
                           <CheckBox Content="CRUD-заготовки"
+                                    Margin="0,0,18,8"
                                     IsChecked="{Binding IncludeCrudSkeleton, Mode=TwoWay}"/>
                           <CheckBox Content="Атрибуты CommunityToolkit"
+                                    Margin="0,0,18,8"
                                     IsChecked="{Binding IncludeCommunityToolkitAttributes, Mode=TwoWay}"/>
                           <CheckBox Content="Runtime-ссылки плагинов"
+                                    Margin="0,0,18,8"
                                     IsChecked="{Binding IncludePluginRuntimeReferences, Mode=TwoWay}"/>
-                        </UniformGrid>
+                        </WrapPanel>
                       </StackPanel>
                     </Border>
                   </Expander>
                 </StackPanel>
               </Border>
 
-              <TextBox Grid.Row="1"
-                       Margin="0,12,0,0"
-                       Text="{Binding GeneratedCSharp}"
-                       AcceptsReturn="True"
-                       TextWrapping="NoWrap"
-                       IsReadOnly="True"
-                       FontFamily="Consolas"
-                       FontSize="13"/>
+              <Border Grid.Row="1"
+                      Margin="0,12,0,0"
+                      Classes="code-viewer">
+                <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                              VerticalScrollBarVisibility="Auto">
+                  <TextBlock Text="{Binding GeneratedCSharp}"
+                             Classes="code-viewer-text"/>
+                </ScrollViewer>
+              </Border>
             </Grid>
           </TabItem>
 

@@ -204,7 +204,7 @@ public sealed class DemoTreeListDescriptor : IControlDescriptor
         definition.BuiltInProperties[nameof(DemoTreeList.Opacity)] = 1d;
         definition.BuiltInProperties[nameof(DemoTreeList.IsVisible)] = true;
         definition.BuiltInProperties[AutoGenerateColumnsPropertyName] = false;
-        definition.BuiltInProperties[BindingSourceIdPropertyName] = context.BindingSources.FirstOrDefault()?.Id ?? string.Empty;
+        definition.BuiltInProperties[BindingSourceIdPropertyName] = string.Empty;
 
         definition.CustomProperties[AccentBrushPropertyKey] = JsonSerializer.Serialize("#38BDF8");
         definition.CustomProperties[ShowGlowPropertyKey] = JsonSerializer.Serialize(true);

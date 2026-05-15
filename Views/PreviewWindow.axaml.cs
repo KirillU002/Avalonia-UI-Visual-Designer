@@ -1042,28 +1042,14 @@ public partial class PreviewWindow : Window
         var visibleFields = fields.Where(field => field.IsVisible).ToList();
         var showGroupPanel = control.AllowGrouping && (control.ShowGroupPanel || groupedFields.Count > 0);
 
+        if (GetBindingSource(control.BindingSourceId) is null)
+            return CreateDataGridEmptyStatePreview(control, "DataGrid: источник данных не выбран", "Выберите BindingSource во вкладке Данные.");
+
         if (fields.Count == 0)
-        {
-            visibleFields = new List<BindingFieldFileModel>
-            {
-                new() { Header = "Колонка 1", Path = "Field1", SampleValue = "Значение 1", Width = "*" },
-                new() { Header = "Колонка 2", Path = "Field2", SampleValue = "Значение 2", Width = "*" },
-                new() { Header = "Колонка 3", Path = "Field3", SampleValue = "Значение 3", Width = "*" }
-            };
-        }
-        else if (visibleFields.Count == 0)
-        {
-            visibleFields = new List<BindingFieldFileModel>
-            {
-                new()
-                {
-                    Header = "Скрыто",
-                    Path = "HiddenColumns",
-                    SampleValue = "Все колонки скрыты",
-                    Width = "*"
-                }
-            };
-        }
+            return CreateDataGridEmptyStatePreview(control, "BindingSource выбран, но поля не добавлены", "Добавьте поля вручную или импортируйте схему из DLL/SQL.");
+
+        if (visibleFields.Count == 0)
+            return CreateDataGridEmptyStatePreview(control, "Все поля BindingSource скрыты", "Включите видимость хотя бы одной колонки.");
 
         var themePalette = DesignerThemeCatalog.Get(_document.FormTheme);
         var headerBackgroundColor = ParseColor(control.Background, themePalette.DataGridHeaderBackground);
@@ -1280,6 +1266,57 @@ public partial class PreviewWindow : Window
         e.Handled = true;
     }
 
+    private Control CreateDataGridEmptyStatePreview(DesignerControlFileModel control, string title, string description)
+    {
+        var themePalette = DesignerThemeCatalog.Get(_document.FormTheme);
+        var backgroundColor = ParseColor(control.DataGridRowBackground, themePalette.DataGridRowBackground);
+        var borderColor = ParseColor(control.DataGridOuterBorderBrush, themePalette.AccentStrongBrush);
+        var foregroundColor = ParseColor(control.DataGridRowForeground, "#0F172A");
+        var isDark = IsDarkColor(backgroundColor);
+        var mutedColor = BlendColor(foregroundColor, isDark ? Color.Parse("#CBD5E1") : Color.Parse("#64748B"), 0.55);
+
+        return new Border
+        {
+            Width = control.Width,
+            Height = control.Height,
+            Background = new SolidColorBrush(backgroundColor),
+            BorderBrush = new SolidColorBrush(borderColor),
+            BorderThickness = UniformThickness(Math.Max(1, control.BorderThickness)),
+            CornerRadius = new CornerRadius(Math.Max(0, control.CornerRadius)),
+            Padding = new Thickness(18),
+            ClipToBounds = true,
+            Child = new StackPanel
+            {
+                Spacing = 8,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                Children =
+                {
+                    new TextBlock
+                    {
+                        Text = title,
+                        Foreground = new SolidColorBrush(foregroundColor),
+                        FontFamily = new FontFamily(control.FontFamily),
+                        FontSize = Math.Max(12, control.FontSize),
+                        FontWeight = FontWeight.SemiBold,
+                        TextAlignment = TextAlignment.Center,
+                        TextWrapping = TextWrapping.Wrap
+                    },
+                    new TextBlock
+                    {
+                        Text = description,
+                        Foreground = new SolidColorBrush(mutedColor),
+                        FontFamily = new FontFamily(control.FontFamily),
+                        FontSize = Math.Max(11, control.FontSize - 1),
+                        TextAlignment = TextAlignment.Center,
+                        TextWrapping = TextWrapping.Wrap,
+                        MaxWidth = Math.Max(220, control.Width - 48)
+                    }
+                }
+            }
+        };
+    }
+
     private Control CreateModernDataGridPreview(DesignerControlFileModel control)
     {
         return CreateRuntimeDataGridPreview(control);
@@ -1298,28 +1335,14 @@ public partial class PreviewWindow : Window
         var visibleFields = fields.Where(field => field.IsVisible).ToList();
         var showGroupPanel = control.AllowGrouping && (control.ShowGroupPanel || groupedFields.Count > 0);
 
+        if (GetBindingSource(control.BindingSourceId) is null)
+            return CreateDataGridEmptyStatePreview(control, "DataGrid: источник данных не выбран", "Выберите BindingSource во вкладке Данные.");
+
         if (fields.Count == 0)
-        {
-            visibleFields = new List<BindingFieldFileModel>
-            {
-                new() { Header = "Id", Path = "Id", SampleValue = "1001", Width = "92", CellAlignment = BindingFieldModel.AlignmentCenter },
-                new() { Header = "Name", Path = "Name", SampleValue = "Алексей Воронцов", Width = "1.4*" },
-                new() { Header = "Email", Path = "Email", SampleValue = "alexey@contoso.dev", Width = "1.8*" }
-            };
-        }
-        else if (visibleFields.Count == 0)
-        {
-            visibleFields = new List<BindingFieldFileModel>
-            {
-                new()
-                {
-                    Header = "Скрыто",
-                    Path = "HiddenColumns",
-                    SampleValue = "Все колонки скрыты",
-                    Width = "*"
-                }
-            };
-        }
+            return CreateDataGridEmptyStatePreview(control, "BindingSource выбран, но поля не добавлены", "Добавьте поля вручную или импортируйте схему из DLL/SQL.");
+
+        if (visibleFields.Count == 0)
+            return CreateDataGridEmptyStatePreview(control, "Все поля BindingSource скрыты", "Включите видимость хотя бы одной колонки.");
 
         var showSummaryFooter = ShouldShowPreviewDataGridSummaryFooter(control.ShowFooter, visibleFields);
 
@@ -1804,28 +1827,14 @@ public partial class PreviewWindow : Window
         var visibleFields = fields.Where(field => field.IsVisible).ToList();
         var showGroupPanel = control.AllowGrouping && (control.ShowGroupPanel || groupedFields.Count > 0);
 
+        if (GetBindingSource(control.BindingSourceId) is null)
+            return CreateDataGridEmptyStatePreview(control, "DataGrid: источник данных не выбран", "Выберите BindingSource во вкладке Данные.");
+
         if (fields.Count == 0)
-        {
-            visibleFields = new List<BindingFieldFileModel>
-            {
-                new() { Header = "Id", Path = "Id", SampleValue = "1001", Width = "92", CellAlignment = BindingFieldModel.AlignmentCenter },
-                new() { Header = "Name", Path = "Name", SampleValue = "Алексей Воронцов", Width = "1.4*" },
-                new() { Header = "Email", Path = "Email", SampleValue = "alexey@contoso.dev", Width = "1.8*" }
-            };
-        }
-        else if (visibleFields.Count == 0)
-        {
-            visibleFields = new List<BindingFieldFileModel>
-            {
-                new()
-                {
-                    Header = "Скрыто",
-                    Path = "HiddenColumns",
-                    SampleValue = "Все колонки скрыты",
-                    Width = "*"
-                }
-            };
-        }
+            return CreateDataGridEmptyStatePreview(control, "BindingSource выбран, но поля не добавлены", "Добавьте поля вручную или импортируйте схему из DLL/SQL.");
+
+        if (visibleFields.Count == 0)
+            return CreateDataGridEmptyStatePreview(control, "Все поля BindingSource скрыты", "Включите видимость хотя бы одной колонки.");
 
         var themePalette = DesignerThemeCatalog.Get(_document.FormTheme);
         var headerBackgroundColor = ParseColor(control.DataGridHeaderBackground, themePalette.DataGridHeaderBackground);
@@ -2879,42 +2888,6 @@ public partial class PreviewWindow : Window
     {
         var signature = $"{header} {path} {typeName}".ToLowerInvariant();
 
-        if (PreviewDataGridLooksLikeEmail(signature))
-            return GetCycledPreviewValue(rowIndex,
-            new[]
-            {
-                "alexey@contoso.dev",
-                "maria@contoso.dev",
-                "igor@contoso.dev",
-                "anna@contoso.dev",
-                "roman@contoso.dev",
-                "elena@contoso.dev"
-            });
-
-        if (PreviewDataGridLooksLikeName(signature))
-            return GetCycledPreviewValue(rowIndex,
-            new[]
-            {
-                "Алексей Воронцов",
-                "Мария Соколова",
-                "Игорь Карпов",
-                "Анна Орлова",
-                "Роман Климов",
-                "Елена Смирнова"
-            });
-
-        if (PreviewDataGridLooksLikeLocation(signature))
-            return GetCycledPreviewValue(rowIndex,
-            new[]
-            {
-                "USA",
-                "Greece",
-                "Germany",
-                "Japan",
-                "Canada",
-                "France"
-            });
-
         if (PreviewDataGridLooksLikeRating(signature))
             return rowIndex switch
             {
@@ -3303,6 +3276,17 @@ public partial class PreviewWindow : Window
     {
         var luminance = ((0.2126 * color.R) + (0.7152 * color.G) + (0.0722 * color.B)) / 255d;
         return luminance < 0.45;
+    }
+
+    private static Color BlendColor(Color from, Color to, double amount)
+    {
+        var ratio = Math.Clamp(amount, 0d, 1d);
+        static byte Mix(byte a, byte b, double ratio) => (byte)Math.Round(a + ((b - a) * ratio));
+        return Color.FromArgb(
+            Mix(from.A, to.A, ratio),
+            Mix(from.R, to.R, ratio),
+            Mix(from.G, to.G, ratio),
+            Mix(from.B, to.B, ratio));
     }
 
     private static FontWeight ParseFontWeight(string? value)

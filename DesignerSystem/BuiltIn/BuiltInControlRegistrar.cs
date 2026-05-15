@@ -209,7 +209,7 @@ internal static class BuiltInControlRegistrar
                     (nameof(DesignControlModel.BorderThickness), 1d),
                     (nameof(DesignControlModel.FontSize), 13d),
                     (nameof(DesignControlModel.AutoGenerateColumns), false),
-                    (nameof(DesignControlModel.BindingSourceId), context.BindingSources.FirstOrDefault()?.Id ?? string.Empty),
+                    (nameof(DesignControlModel.BindingSourceId), string.Empty),
                     (nameof(DesignControlModel.DataGridRowBackground), palette.DataGridRowBackground),
                     (nameof(DesignControlModel.DataGridAlternateRowBackground), palette.DataGridAlternateRowBackground),
                     (nameof(DesignControlModel.DataGridTextAlignment), DesignControlModel.DataGridTextAlignmentLeft),
