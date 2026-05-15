@@ -4935,7 +4935,7 @@
                                FontSize="16"
                                FontWeight="Bold"/>
                     <Grid ColumnDefinitions="*,*"
-                          RowDefinitions="Auto,Auto,Auto,Auto"
+                          RowDefinitions="Auto,Auto,Auto,Auto,Auto"
                           ColumnSpacing="10"
                           RowSpacing="10">
                       <StackPanel Spacing="4">
@@ -5034,6 +5034,8 @@
                                   Spacing="4">
                         <TextBlock Text="Шаблон текста"
                                    FontWeight="SemiBold"/>
+                        <TextBox Text="{Binding SelectedInteraction.MessageTitle, Mode=TwoWay}"
+                                 Watermark="Заголовок сообщения, например: Готово"/>
                         <TextBox Text="{Binding SelectedInteraction.TextTemplate, Mode=TwoWay}"
                                  Watermark="Например: Клиент: {Name}, Email: {Email}"/>
                         <TextBlock Text="Если шаблон заполнен, он используется вместо одиночного поля. Пример: Клиент: {Name}, Email: {Email}."

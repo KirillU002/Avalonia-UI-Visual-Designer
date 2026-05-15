@@ -50,27 +50,29 @@ public partial class InteractionModel : ObservableObject
     [ObservableProperty]
     private string textTemplate = "";
 
+    [ObservableProperty]
+    private string messageTitle = "";
+
     public string NormalizedEventName => NormalizeEventName(EventName);
 
     public string Summary
     {
         get
         {
-            var source = string.IsNullOrWhiteSpace(SourceControlName) ? "Source" : SourceControlName;
-            var target = string.IsNullOrWhiteSpace(TargetControlName) ? "Target" : TargetControlName;
+            var source = string.IsNullOrWhiteSpace(SourceControlName) ? "Источник" : SourceControlName;
+            var target = string.IsNullOrWhiteSpace(TargetControlName) ? "Цель" : TargetControlName;
             var property = string.IsNullOrWhiteSpace(TargetProperty) ? TargetPropertyText : TargetProperty;
             var value = string.IsNullOrWhiteSpace(TextTemplate)
-                ? string.IsNullOrWhiteSpace(SourcePath) ? "event value" : SourcePath
+                ? string.IsNullOrWhiteSpace(SourcePath) ? "значение события" : SourcePath
                 : TextTemplate;
 
             var eventName = GetEventDisplayName(NormalizedEventName);
-            var actionName = GetActionDisplayName(ActionType);
             var propertyName = GetTargetPropertyDisplayName(property);
 
             return ActionType switch
             {
                 ActionClearProperty => $"{source}: {eventName} -> очистить {target}.{propertyName}",
-                ActionToggleVisibility => $"{source}: {eventName} -> переключить видимость {target}",
+                ActionToggleVisibility => $"{source}: {eventName} -> показать/скрыть {target}",
                 ActionEnableDisable => $"{source}: {eventName} -> доступность {target} = {value}",
                 ActionShowMessage => $"{source}: {eventName} -> сообщение: {value}",
                 _ => $"{source}: {eventName} -> {target}.{propertyName} = {value}"
@@ -95,7 +97,8 @@ public partial class InteractionModel : ObservableObject
             TargetControlName = TargetControlName,
             TargetProperty = TargetProperty,
             SourcePath = SourcePath,
-            TextTemplate = TextTemplate
+            TextTemplate = TextTemplate,
+            MessageTitle = MessageTitle
         };
     }
 
@@ -171,4 +174,5 @@ public partial class InteractionModel : ObservableObject
     }
     partial void OnSourcePathChanged(string value) => OnPropertyChanged(nameof(Summary));
     partial void OnTextTemplateChanged(string value) => OnPropertyChanged(nameof(Summary));
+    partial void OnMessageTitleChanged(string value) => OnPropertyChanged(nameof(Summary));
 }

@@ -148,6 +148,8 @@ public sealed class DocumentDiagnosticsService
                         RelatedControlName = target.Name
                     });
                 }
+
+                ValidateInteractionLoop(interaction, source, target, diagnostics);
             }
 
             if (IsDataGridSelectionChangedEvent(eventName))
@@ -159,6 +161,42 @@ public sealed class DocumentDiagnosticsService
                 ValidateSimpleInteractionSourcePath(interaction, source, diagnostics);
             }
         }
+    }
+
+    private static void ValidateInteractionLoop(
+        InteractionModel interaction,
+        DesignControlModel source,
+        DesignControlModel target,
+        ICollection<DocumentDiagnosticModel> diagnostics)
+    {
+        if (!string.Equals(source.Id, target.Id, StringComparison.Ordinal))
+            return;
+
+        var eventName = InteractionModel.NormalizeEventName(interaction.EventName);
+        var targetProperty = string.IsNullOrWhiteSpace(interaction.TargetProperty)
+            ? InteractionModel.TargetPropertyText
+            : interaction.TargetProperty.Trim();
+
+        var canTriggerItself =
+            source.Type == DesignerControlTypes.TextBox
+            && string.Equals(eventName, InteractionModel.EventTextBoxTextChanged, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(targetProperty, InteractionModel.TargetPropertyText, StringComparison.OrdinalIgnoreCase)
+            && (string.Equals(interaction.ActionType, InteractionModel.ActionSetProperty, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(interaction.ActionType, InteractionModel.ActionClearProperty, StringComparison.OrdinalIgnoreCase));
+
+        if (!canTriggerItself)
+            return;
+
+        diagnostics.Add(new DocumentDiagnosticModel
+        {
+            Severity = DocumentDiagnosticSeverity.Warning,
+            Source = source.NameOrFallback(),
+            Category = "Логика",
+            Message = $"Interaction '{source.NameOrFallback()}' изменяет то же свойство, событие которого запускает правило.",
+            Recommendation = "Лучше выберите другой target control или другое target property, чтобы не получить повторный TextChanged-цикл.",
+            RelatedControlId = source.Id,
+            RelatedControlName = source.Name
+        });
     }
 
     private static void ValidateDataGridInteractionFields(

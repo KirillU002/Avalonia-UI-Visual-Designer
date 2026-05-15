@@ -4838,7 +4838,7 @@ public partial class MainWindow : Window
             .Where(interaction => string.Equals(interaction.SourceControlName, source.Name, StringComparison.OrdinalIgnoreCase))
             .Where(interaction => string.Equals(InteractionModel.NormalizeEventName(interaction.EventName), normalizedEventName, StringComparison.OrdinalIgnoreCase)))
         {
-            changed |= ApplyRuntimeInteraction(interaction, sourceValues);
+            changed |= ApplyRuntimeInteraction(interaction, normalizedEventName, sourceValues);
         }
 
         return changed;
@@ -4846,6 +4846,7 @@ public partial class MainWindow : Window
 
     private bool ApplyRuntimeInteraction(
         InteractionModel interaction,
+        string eventName,
         IReadOnlyDictionary<string, string> sourceValues)
     {
         var value = ResolveRuntimeInteractionValue(interaction, sourceValues);
@@ -4854,6 +4855,7 @@ public partial class MainWindow : Window
             VM.StatusText = string.IsNullOrWhiteSpace(value)
                 ? "Preview: ShowMessage"
                 : $"Preview message: {value}";
+            _ = ShowRuntimeMessageAsync(value, interaction.MessageTitle);
             return false;
         }
 
@@ -4863,14 +4865,24 @@ public partial class MainWindow : Window
 
         if (string.Equals(interaction.ActionType, InteractionModel.ActionToggleVisibility, StringComparison.OrdinalIgnoreCase))
         {
-            var current = _runtimeVisibilityByControlId.TryGetValue(target.Id, out var visible) ? visible : target.IsVisible;
-            _runtimeVisibilityByControlId[target.Id] = !current;
+            if (TryGetBooleanStateForInteractionEvent(eventName, out var nextVisible))
+            {
+                _runtimeVisibilityByControlId[target.Id] = nextVisible;
+            }
+            else
+            {
+                var current = _runtimeVisibilityByControlId.TryGetValue(target.Id, out var visible) ? visible : target.IsVisible;
+                _runtimeVisibilityByControlId[target.Id] = !current;
+            }
+
             return true;
         }
 
         if (string.Equals(interaction.ActionType, InteractionModel.ActionEnableDisable, StringComparison.OrdinalIgnoreCase))
         {
-            _runtimeEnabledByControlId[target.Id] = ParseRuntimeBool(value);
+            _runtimeEnabledByControlId[target.Id] = TryGetBooleanStateForInteractionEvent(eventName, out var enabled)
+                ? enabled
+                : ParseRuntimeBool(value);
             return true;
         }
 
@@ -4982,6 +4994,59 @@ public partial class MainWindow : Window
             return intValue != 0;
 
         return false;
+    }
+
+    private static bool TryGetBooleanStateForInteractionEvent(string eventName, out bool value)
+    {
+        if (string.Equals(eventName, InteractionModel.EventCheckBoxChecked, StringComparison.OrdinalIgnoreCase))
+        {
+            value = true;
+            return true;
+        }
+
+        if (string.Equals(eventName, InteractionModel.EventCheckBoxUnchecked, StringComparison.OrdinalIgnoreCase))
+        {
+            value = false;
+            return true;
+        }
+
+        value = false;
+        return false;
+    }
+
+    private async Task ShowRuntimeMessageAsync(string message, string? title)
+    {
+        var closeButton = new Button
+        {
+            Content = "OK",
+            MinWidth = 92,
+            HorizontalAlignment = HorizontalAlignment.Right
+        };
+
+        var dialog = new Window
+        {
+            Title = string.IsNullOrWhiteSpace(title) ? "Сообщение" : title,
+            Width = 380,
+            Height = 180,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Content = new StackPanel
+            {
+                Margin = new Thickness(18),
+                Spacing = 16,
+                Children =
+                {
+                    new TextBlock
+                    {
+                        Text = string.IsNullOrWhiteSpace(message) ? "Сообщение" : message,
+                        TextWrapping = TextWrapping.Wrap
+                    },
+                    closeButton
+                }
+            }
+        };
+
+        closeButton.Click += (_, _) => dialog.Close();
+        await dialog.ShowDialog(this);
     }
 
     private static (int Kind, double Number, DateTime Date, string Text) GetModernDataGridSortKey(BindingFieldModel field, string value)

@@ -4231,6 +4231,8 @@ public partial class MainWindowViewModel : ObservableObject
         var hasPortableDataGridInteraction = ShouldExportPortableDataGrid
             && Interactions.Any(interaction => IsDataGridSelectionChangedEvent(interaction.EventName));
         var dataGridStatus = BuildDataGridBindingChecklistStatus();
+        var exportableInteractionCount = GetExportableInteractions().Count;
+        var unsupportedInteractionCount = Math.Max(0, Interactions.Count - exportableInteractionCount);
 
         return new List<ExportChecklistItem>
         {
@@ -4310,13 +4312,17 @@ public partial class MainWindowViewModel : ObservableObject
             new()
             {
                 Title = "Interactions exported",
-                Value = Interactions.Count == 0 ? "none" : $"{Interactions.Count} interactions",
-                Severity = hasPortableDataGridInteraction ? ExportChecklistSeverity.Warning : ExportChecklistSeverity.Ok,
+                Value = Interactions.Count == 0 ? "none" : $"{exportableInteractionCount}/{Interactions.Count} exportable",
+                Severity = unsupportedInteractionCount > 0 || hasPortableDataGridInteraction
+                    ? ExportChecklistSeverity.Warning
+                    : ExportChecklistSeverity.Ok,
                 Details = Interactions.Count == 0
                     ? "Логика формы не настроена."
                     : hasPortableDataGridInteraction
                         ? "DataGrid.SelectionChanged не экспортируется как рабочий handler в portable DataGrid mode."
-                        : "Будут экспортированы только реально настроенные обработчики."
+                        : unsupportedInteractionCount > 0
+                            ? $"Будет экспортировано правил: {exportableInteractionCount}. Preview-only/unsupported: {unsupportedInteractionCount}. Проверьте diagnostics."
+                            : "Будут экспортированы все реально настроенные обработчики без demo-кода."
             },
             new()
             {
@@ -4570,6 +4576,8 @@ public partial class MainWindowViewModel : ObservableObject
         var exportControlNames = BuildExportControlNameMap(Controls, windowClassName, viewModelClassName);
         var exportableInteractions = GetExportableInteractions();
         var hasInteractionHandlers = exportableInteractions.Count > 0;
+        var hasShowMessageInteractions = exportableInteractions.Any(item =>
+            string.Equals(item.Interaction.ActionType, InteractionModel.ActionShowMessage, StringComparison.OrdinalIgnoreCase));
         var hasRoutedInteractionHandlers = exportableInteractions.Any(item =>
             string.Equals(item.EventName, InteractionModel.EventButtonClick, StringComparison.OrdinalIgnoreCase)
             || string.Equals(item.EventName, InteractionModel.EventCheckBoxChecked, StringComparison.OrdinalIgnoreCase)
@@ -4587,6 +4595,12 @@ public partial class MainWindowViewModel : ObservableObject
 
         if (hasRoutedInteractionHandlers)
             usings.Add("using Avalonia.Interactivity;");
+        if (hasShowMessageInteractions)
+        {
+            usings.Add("using Avalonia;");
+            usings.Add("using Avalonia.Layout;");
+            usings.Add("using Avalonia.Media;");
+        }
 
         var sb = new StringBuilder();
         foreach (var line in usings.Distinct())
@@ -4623,7 +4637,13 @@ public partial class MainWindowViewModel : ObservableObject
             foreach (var button in buttonControls)
             {
                 var handlerName = $"{exportControlNames[button.Id]}Click";
-                sb.AppendLine($"    private void {handlerName}(object? sender, RoutedEventArgs e)");
+                var buttonInteractions = exportableInteractions
+                    .Where(item => item.Source.Id == button.Id
+                        && string.Equals(item.EventName, InteractionModel.EventButtonClick, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+                var needsAsyncButtonHandler = buttonInteractions.Any(item =>
+                    string.Equals(item.Interaction.ActionType, InteractionModel.ActionShowMessage, StringComparison.OrdinalIgnoreCase));
+                sb.AppendLine($"    private {(needsAsyncButtonHandler ? "async " : "")}void {handlerName}(object? sender, RoutedEventArgs e)");
                 sb.AppendLine("    {");
                 sb.AppendLine($"        // TODO: добавьте runtime-логику для кнопки {button.Name}.");
                 sb.AppendLine("    }");
@@ -4654,7 +4674,7 @@ public partial class MainWindowViewModel : ObservableObject
                 sb.AppendLine();
             }
 
-            AppendGeneratedInteractionHelpers(sb);
+            AppendGeneratedInteractionHelpers(sb, includeShowMessageHelper: hasShowMessageInteractions);
         }
 
         if (hasInteractionHandlers)
@@ -4672,6 +4692,8 @@ public partial class MainWindowViewModel : ObservableObject
         var viewModelClassName = ResolveExportViewModelClassName();
         var exportControlNames = BuildExportControlNameMap(Controls, windowClassName, viewModelClassName);
         var exportableInteractions = GetExportableInteractions();
+        var hasShowMessageInteractions = exportableInteractions.Any(item =>
+            string.Equals(item.Interaction.ActionType, InteractionModel.ActionShowMessage, StringComparison.OrdinalIgnoreCase));
         var selectionInteractions = new List<(InteractionModel Interaction, DesignControlModel Source, DesignControlModel Target)>();
         var buttonControls = Controls.Where(control => control.Type == DesignerControlTypes.Button).ToList();
         var textBoxControls = Controls.Where(control => control.Type == DesignerControlTypes.TextBox).ToList();
@@ -4715,6 +4737,12 @@ public partial class MainWindowViewModel : ObservableObject
                 usings.Add("using System.Data;");
                 usings.Add("using System.Threading.Tasks;");
             }
+        }
+        if (hasShowMessageInteractions)
+        {
+            usings.Add("using Avalonia;");
+            usings.Add("using Avalonia.Layout;");
+            usings.Add("using Avalonia.Media;");
         }
 
         var sb = new StringBuilder();
@@ -4883,7 +4911,13 @@ public partial class MainWindowViewModel : ObservableObject
             foreach (var button in buttonControls)
             {
                 var handlerName = $"{exportControlNames[button.Id]}Click";
-                sb.AppendLine($"    private void {handlerName}(object? sender, RoutedEventArgs e)");
+                var buttonInteractions = exportableInteractions
+                    .Where(item => item.Source.Id == button.Id
+                        && string.Equals(item.EventName, InteractionModel.EventButtonClick, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+                var needsAsyncButtonHandler = buttonInteractions.Any(item =>
+                    string.Equals(item.Interaction.ActionType, InteractionModel.ActionShowMessage, StringComparison.OrdinalIgnoreCase));
+                sb.AppendLine($"    private {(needsAsyncButtonHandler ? "async " : "")}void {handlerName}(object? sender, RoutedEventArgs e)");
                 sb.AppendLine("    {");
 
                 var action = ResolveGeneratedButtonAction(button);
@@ -4896,11 +4930,9 @@ public partial class MainWindowViewModel : ObservableObject
                     sb.AppendLine($"        ViewModel.{callLine};");
                 }
 
-                foreach (var interaction in exportableInteractions.Where(item =>
-                    item.Source.Id == button.Id
-                    && string.Equals(item.EventName, InteractionModel.EventButtonClick, StringComparison.OrdinalIgnoreCase)))
+                foreach (var interaction in buttonInteractions)
                 {
-                    AppendGeneratedInteractionAction(sb, interaction, exportControlNames, exportControlNames[button.Id], 2);
+                    AppendGeneratedInteractionAction(sb, interaction, exportControlNames, exportControlNames[button.Id], 2, needsAsyncButtonHandler);
                 }
 
                 sb.AppendLine("    }");
@@ -4931,7 +4963,7 @@ public partial class MainWindowViewModel : ObservableObject
                 sb.AppendLine();
             }
 
-            AppendGeneratedInteractionHelpers(sb);
+            AppendGeneratedInteractionHelpers(sb, includeShowMessageHelper: hasShowMessageInteractions);
         }
 
         var extraInteractionHandlers = exportableInteractions
@@ -6948,7 +6980,8 @@ public partial class MainWindowViewModel : ObservableObject
             var eventName = group.First().EventName;
             var sourceExportName = exportControlNames[source.Id];
             var handlerName = GetGeneratedInteractionHandlerName(sourceExportName, eventName);
-            var signature = GetGeneratedInteractionHandlerSignature(handlerName, eventName);
+            var needsAsync = group.Any(item => string.Equals(item.Interaction.ActionType, InteractionModel.ActionShowMessage, StringComparison.OrdinalIgnoreCase));
+            var signature = GetGeneratedInteractionHandlerSignature(handlerName, eventName, needsAsync);
             if (string.IsNullOrWhiteSpace(signature))
                 continue;
 
@@ -6961,24 +6994,27 @@ public partial class MainWindowViewModel : ObservableObject
                 sb.AppendLine("        if (selectedItem is null)");
                 sb.AppendLine("        {");
                 foreach (var item in group)
-                    AppendGeneratedInteractionAction(sb, item, exportControlNames, "null", 3);
+                    AppendGeneratedInteractionAction(sb, item, exportControlNames, "null", 3, needsAsync);
                 sb.AppendLine("            return;");
                 sb.AppendLine("        }");
                 sb.AppendLine();
                 foreach (var item in group)
-                    AppendGeneratedInteractionAction(sb, item, exportControlNames, "selectedItem", 2);
+                    AppendGeneratedInteractionAction(sb, item, exportControlNames, "selectedItem", 2, needsAsync);
             }
             else
             {
                 foreach (var item in group)
-                    AppendGeneratedInteractionAction(sb, item, exportControlNames, sourceExportName, 2);
+                    AppendGeneratedInteractionAction(sb, item, exportControlNames, sourceExportName, 2, needsAsync);
             }
 
             sb.AppendLine("    }");
             sb.AppendLine();
         }
 
-        AppendGeneratedInteractionHelpers(sb);
+        AppendGeneratedInteractionHelpers(
+            sb,
+            includeShowMessageHelper: interactions.Any(item =>
+                string.Equals(item.Interaction.ActionType, InteractionModel.ActionShowMessage, StringComparison.OrdinalIgnoreCase)));
     }
 
     private static string GetGeneratedInteractionHandlerName(string sourceExportName, string eventName)
@@ -7000,20 +7036,21 @@ public partial class MainWindowViewModel : ObservableObject
             : $"{sourceExportName}_Interaction";
     }
 
-    private static string GetGeneratedInteractionHandlerSignature(string handlerName, string eventName)
+    private static string GetGeneratedInteractionHandlerSignature(string handlerName, string eventName, bool needsAsync)
     {
+        var methodPrefix = needsAsync ? "private async void" : "private void";
         if (string.Equals(eventName, InteractionModel.EventButtonClick, StringComparison.OrdinalIgnoreCase)
             || string.Equals(eventName, InteractionModel.EventCheckBoxChecked, StringComparison.OrdinalIgnoreCase)
             || string.Equals(eventName, InteractionModel.EventCheckBoxUnchecked, StringComparison.OrdinalIgnoreCase))
         {
-            return $"private void {handlerName}(object? sender, RoutedEventArgs e)";
+            return $"{methodPrefix} {handlerName}(object? sender, RoutedEventArgs e)";
         }
 
         if (string.Equals(eventName, InteractionModel.EventTextBoxTextChanged, StringComparison.OrdinalIgnoreCase))
-            return $"private void {handlerName}(object? sender, TextChangedEventArgs e)";
+            return $"{methodPrefix} {handlerName}(object? sender, TextChangedEventArgs e)";
 
         if (IsDataGridSelectionChangedEvent(eventName))
-            return $"private void {handlerName}(object? sender, SelectionChangedEventArgs e)";
+            return $"{methodPrefix} {handlerName}(object? sender, SelectionChangedEventArgs e)";
 
         return string.Empty;
     }
@@ -7023,7 +7060,8 @@ public partial class MainWindowViewModel : ObservableObject
         ExportableInteraction item,
         IReadOnlyDictionary<string, string> exportControlNames,
         string sourceExpression,
-        int indentLevel)
+        int indentLevel,
+        bool awaitAsyncActions)
     {
         var interaction = item.Interaction;
         var indent = Indent(indentLevel);
@@ -7031,7 +7069,9 @@ public partial class MainWindowViewModel : ObservableObject
 
         if (string.Equals(interaction.ActionType, InteractionModel.ActionShowMessage, StringComparison.OrdinalIgnoreCase))
         {
-            sb.AppendLine($"{indent}System.Diagnostics.Debug.WriteLine({valueExpression});");
+            var titleLiteral = ToVerbatimCSharpString(string.IsNullOrWhiteSpace(interaction.MessageTitle) ? "Сообщение" : interaction.MessageTitle);
+            var awaitPrefix = awaitAsyncActions ? "await " : "_ = ";
+            sb.AppendLine($"{indent}{awaitPrefix}ShowMessageAsync({valueExpression}, {titleLiteral});");
             return;
         }
 
@@ -7049,11 +7089,17 @@ public partial class MainWindowViewModel : ObservableObject
                 break;
 
             case InteractionModel.ActionToggleVisibility:
-                sb.AppendLine($"{indent}{targetExportName}.IsVisible = !{targetExportName}.IsVisible;");
+                if (TryGetBooleanStateForInteractionEvent(item.EventName, out var visibilityState))
+                    sb.AppendLine($"{indent}{targetExportName}.IsVisible = {BoolToCSharp(visibilityState)};");
+                else
+                    sb.AppendLine($"{indent}{targetExportName}.IsVisible = !{targetExportName}.IsVisible;");
                 break;
 
             case InteractionModel.ActionEnableDisable:
-                sb.AppendLine($"{indent}{targetExportName}.IsEnabled = ParseNullableBool({valueExpression}) ?? false;");
+                if (TryGetBooleanStateForInteractionEvent(item.EventName, out var enabledState))
+                    sb.AppendLine($"{indent}{targetExportName}.IsEnabled = {BoolToCSharp(enabledState)};");
+                else
+                    sb.AppendLine($"{indent}{targetExportName}.IsEnabled = ParseNullableBool({valueExpression}) ?? false;");
                 break;
 
             default:
@@ -7144,7 +7190,25 @@ public partial class MainWindowViewModel : ObservableObject
         sb.AppendLine($"{indent}{targetExportName}.{property} = {textExpression};");
     }
 
-    private static void AppendGeneratedInteractionHelpers(StringBuilder sb)
+    private static bool TryGetBooleanStateForInteractionEvent(string eventName, out bool value)
+    {
+        if (string.Equals(eventName, InteractionModel.EventCheckBoxChecked, StringComparison.OrdinalIgnoreCase))
+        {
+            value = true;
+            return true;
+        }
+
+        if (string.Equals(eventName, InteractionModel.EventCheckBoxUnchecked, StringComparison.OrdinalIgnoreCase))
+        {
+            value = false;
+            return true;
+        }
+
+        value = false;
+        return false;
+    }
+
+    private static void AppendGeneratedInteractionHelpers(StringBuilder sb, bool includeShowMessageHelper)
     {
         sb.AppendLine("    private static string ResolveInteractionValue(object? source, string propertyName, string template)");
         sb.AppendLine("    {");
@@ -7190,6 +7254,41 @@ public partial class MainWindowViewModel : ObservableObject
         sb.AppendLine("            return string.Empty;");
         sb.AppendLine();
         sb.AppendLine("        return System.Text.RegularExpressions.Regex.Replace(template, \"\\\\{(?<name>[^{}]+)\\\\}\", match => GetSelectedValue(item, match.Groups[\"name\"].Value.Trim()));");
+        sb.AppendLine("    }");
+
+        if (!includeShowMessageHelper)
+            return;
+
+        sb.AppendLine();
+        sb.AppendLine("    private async System.Threading.Tasks.Task ShowMessageAsync(string message, string title = \"Сообщение\")");
+        sb.AppendLine("    {");
+        sb.AppendLine("        var closeButton = new Button");
+        sb.AppendLine("        {");
+        sb.AppendLine("            Content = \"OK\",");
+        sb.AppendLine("            MinWidth = 92,");
+        sb.AppendLine("            HorizontalAlignment = HorizontalAlignment.Right");
+        sb.AppendLine("        };");
+        sb.AppendLine();
+        sb.AppendLine("        var dialog = new Window");
+        sb.AppendLine("        {");
+        sb.AppendLine("            Title = string.IsNullOrWhiteSpace(title) ? \"Сообщение\" : title,");
+        sb.AppendLine("            Width = 380,");
+        sb.AppendLine("            Height = 180,");
+        sb.AppendLine("            WindowStartupLocation = WindowStartupLocation.CenterOwner,");
+        sb.AppendLine("            Content = new StackPanel");
+        sb.AppendLine("            {");
+        sb.AppendLine("                Margin = new Thickness(18),");
+        sb.AppendLine("                Spacing = 16,");
+        sb.AppendLine("                Children =");
+        sb.AppendLine("                {");
+        sb.AppendLine("                    new TextBlock { Text = string.IsNullOrWhiteSpace(message) ? \"Сообщение\" : message, TextWrapping = TextWrapping.Wrap },");
+        sb.AppendLine("                    closeButton");
+        sb.AppendLine("                }");
+        sb.AppendLine("            }");
+        sb.AppendLine("        };");
+        sb.AppendLine();
+        sb.AppendLine("        closeButton.Click += (_, _) => dialog.Close();");
+        sb.AppendLine("        await dialog.ShowDialog(this);");
         sb.AppendLine("    }");
     }
 
@@ -8107,7 +8206,8 @@ public partial class MainWindowViewModel : ObservableObject
             TargetControlName = interaction.TargetControlName,
             TargetProperty = string.IsNullOrWhiteSpace(interaction.TargetProperty) ? InteractionModel.TargetPropertyText : interaction.TargetProperty,
             SourcePath = interaction.SourcePath,
-            TextTemplate = interaction.TextTemplate
+            TextTemplate = interaction.TextTemplate,
+            MessageTitle = interaction.MessageTitle
         };
     }
 
@@ -8122,7 +8222,8 @@ public partial class MainWindowViewModel : ObservableObject
             TargetControlName = interactionFile.TargetControlName,
             TargetProperty = string.IsNullOrWhiteSpace(interactionFile.TargetProperty) ? InteractionModel.TargetPropertyText : interactionFile.TargetProperty,
             SourcePath = interactionFile.SourcePath,
-            TextTemplate = interactionFile.TextTemplate
+            TextTemplate = interactionFile.TextTemplate,
+            MessageTitle = interactionFile.MessageTitle
         };
     }
 

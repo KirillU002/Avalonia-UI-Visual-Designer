@@ -146,6 +146,7 @@ public class InteractionFileModel
     public string TargetProperty { get; set; } = InteractionModel.TargetPropertyText;
     public string SourcePath { get; set; } = "";
     public string TextTemplate { get; set; } = "";
+    public string MessageTitle { get; set; } = "";
 }
 
 public class BindingSourceFileModel

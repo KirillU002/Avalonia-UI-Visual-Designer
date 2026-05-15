@@ -41,6 +41,12 @@ public partial class PreviewWindow : Window
     private readonly Dictionary<string, Bitmap?> _imageCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, (string Signature, IReadOnlyList<Dictionary<string, string>> Rows)> _sqlPreviewRowsBySourceId = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, Dictionary<string, string>> _dataGridFilterValuesByControlId = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, string> _runtimeTextBoxValuesByControlId = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, string> _runtimeTextBlockValuesByControlId = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, string> _runtimeButtonContentByControlId = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, bool> _runtimeCheckBoxValuesByControlId = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, bool> _runtimeVisibilityByControlId = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, bool> _runtimeEnabledByControlId = new(StringComparer.OrdinalIgnoreCase);
     private readonly IDesignerRegistry _registry;
     private RuntimeDataGridHeaderDragState? _runtimeDataGridHeaderDrag;
     private bool _isRenderingDocument;
@@ -282,7 +288,7 @@ public partial class PreviewWindow : Window
         double actualParentHeight)
     {
         var children = GetChildControls(parent?.Id)
-            .Where(control => control.IsVisible)
+            .Where(control => control.IsVisible && IsRuntimeControlVisible(control))
             .ToList();
         if (children.Count == 0)
             return;
@@ -395,8 +401,19 @@ public partial class PreviewWindow : Window
             Height = renderedHeight,
             Background = Brushes.Transparent,
             Opacity = control.Opacity,
+            IsEnabled = IsRuntimeControlEnabled(control),
             Child = root
         };
+    }
+
+    private bool IsRuntimeControlVisible(DesignerControlFileModel control)
+    {
+        return !_runtimeVisibilityByControlId.TryGetValue(control.Id, out var isVisible) || isVisible;
+    }
+
+    private bool IsRuntimeControlEnabled(DesignerControlFileModel control)
+    {
+        return !_runtimeEnabledByControlId.TryGetValue(control.Id, out var isEnabled) || isEnabled;
     }
 
     private static DesignerControlFileModel CreateRenderControl(DesignerControlFileModel control, double renderedWidth, double renderedHeight)
@@ -752,68 +769,84 @@ public partial class PreviewWindow : Window
 
     private Control CreateButtonPreview(DesignerControlFileModel control)
     {
-        return new Border
+        var text = _runtimeButtonContentByControlId.TryGetValue(control.Id, out var runtimeContent)
+            ? runtimeContent
+            : ResolvePreviewTextValue(control, string.IsNullOrWhiteSpace(control.Text) ? "Кнопка" : control.Text);
+
+        var button = new Button
         {
             Width = control.Width,
             Height = control.Height,
             Background = ParseBrush(control.Background, "#2563EB"),
             BorderBrush = ParseBrush(control.BorderBrush, "#1D4ED8"),
             BorderThickness = UniformThickness(control.BorderThickness),
-            CornerRadius = UniformCornerRadius(control.CornerRadius),
             Padding = UniformThickness(control.Padding),
-            Child = new Grid
-            {
-                Children =
-                {
-                    CreatePreviewText(
-                        ResolvePreviewTextValue(control, string.IsNullOrWhiteSpace(control.Text) ? "Кнопка" : control.Text),
-                        control,
-                        control.Foreground,
-                        HorizontalAlignment.Center,
-                        VerticalAlignment.Center)
-                }
-            }
+            Cursor = new Cursor(StandardCursorType.Hand),
+            Content = CreatePreviewText(
+                text,
+                control,
+                control.Foreground,
+                HorizontalAlignment.Center,
+                VerticalAlignment.Center)
         };
+
+        button.Click += (_, _) =>
+        {
+            if (ApplyRuntimeInteractions(control, InteractionModel.EventButtonClick, BuildRuntimeSourceValues(control, text)))
+                Dispatcher.UIThread.Post(RenderDocument, DispatcherPriority.Background);
+        };
+
+        return button;
     }
 
     private Control CreateTextBoxPreview(DesignerControlFileModel control)
     {
-        var text = string.IsNullOrWhiteSpace(control.Text)
-            ? string.IsNullOrWhiteSpace(control.PlaceholderText) ? string.Empty : control.PlaceholderText
-            : control.Text;
-        text = ResolvePreviewTextValue(control, text);
+        var hasDesignText = !string.IsNullOrWhiteSpace(control.Text) || !string.IsNullOrWhiteSpace(control.TextBindingPath);
+        var text = hasDesignText
+            ? ResolvePreviewTextValue(control, string.IsNullOrWhiteSpace(control.Text) ? string.Empty : control.Text)
+            : string.Empty;
 
-        var foreground = string.IsNullOrWhiteSpace(control.Text) && string.IsNullOrWhiteSpace(control.TextBindingPath)
-            ? "#94A3B8"
-            : control.Foreground;
-
-        return new Border
+        var textBox = new TextBox
         {
             Width = control.Width,
             Height = control.Height,
+            Text = _runtimeTextBoxValuesByControlId.TryGetValue(control.Id, out var runtimeText) ? runtimeText : text,
+            Watermark = string.IsNullOrWhiteSpace(control.PlaceholderText) ? "Введите текст..." : control.PlaceholderText,
+            FontFamily = new FontFamily(control.FontFamily),
+            FontSize = Math.Max(8, control.FontSize),
+            FontWeight = ParseFontWeight(control.FontWeight),
+            Foreground = ParseBrush(control.Foreground, "#0F172A"),
             Background = ParseBrush(control.Background, "#FFFFFF"),
             BorderBrush = ParseBrush(control.BorderBrush, "#94A3B8"),
             BorderThickness = UniformThickness(control.BorderThickness),
             CornerRadius = UniformCornerRadius(control.CornerRadius),
             Padding = UniformThickness(control.Padding),
-            Child = CreatePreviewText(
-                text,
-                control,
-                foreground,
-                HorizontalAlignment.Left,
-                VerticalAlignment.Center)
+            VerticalContentAlignment = VerticalAlignment.Center
         };
+
+        textBox.TextChanged += (_, _) =>
+        {
+            _runtimeTextBoxValuesByControlId[control.Id] = textBox.Text ?? string.Empty;
+            if (ApplyRuntimeInteractions(control, InteractionModel.EventTextBoxTextChanged, BuildRuntimeSourceValues(control, textBox.Text ?? string.Empty)))
+                Dispatcher.UIThread.Post(RenderDocument, DispatcherPriority.Background);
+        };
+
+        return textBox;
     }
 
     private Control CreateTextBlockPreview(DesignerControlFileModel control)
     {
+        var text = _runtimeTextBlockValuesByControlId.TryGetValue(control.Id, out var runtimeText)
+            ? runtimeText
+            : ResolvePreviewTextValue(control, string.IsNullOrWhiteSpace(control.Text) ? "Текст" : control.Text);
+
         return new Border
         {
             Width = control.Width,
             Height = control.Height,
             Background = Brushes.Transparent,
             Child = CreatePreviewText(
-                ResolvePreviewTextValue(control, string.IsNullOrWhiteSpace(control.Text) ? "Текст" : control.Text),
+                text,
                 control,
                 control.Foreground,
                 HorizontalAlignment.Left,
@@ -823,41 +856,42 @@ public partial class PreviewWindow : Window
 
     private Control CreateCheckBoxPreview(DesignerControlFileModel control)
     {
-        var layout = new Grid
+        var caption = ResolvePreviewTextValue(control, string.IsNullOrWhiteSpace(control.Text) ? "Флажок" : control.Text);
+        var checkBox = new CheckBox
         {
             Width = control.Width,
             Height = control.Height,
-            ColumnDefinitions = new ColumnDefinitions("Auto,*"),
-            ColumnSpacing = 10,
-            Margin = new Thickness(6, 0, 6, 0)
+            IsChecked = _runtimeCheckBoxValuesByControlId.TryGetValue(control.Id, out var isChecked) && isChecked,
+            Content = caption,
+            FontFamily = new FontFamily(control.FontFamily),
+            FontSize = Math.Max(8, control.FontSize),
+            FontWeight = ParseFontWeight(control.FontWeight),
+            Foreground = ParseBrush(control.Foreground, "#0F172A"),
+            Padding = new Thickness(6, 0),
+            VerticalContentAlignment = VerticalAlignment.Center
         };
 
-        layout.Children.Add(new Border
+        checkBox.PropertyChanged += (_, e) =>
         {
-            Width = 18,
-            Height = 18,
-            BorderBrush = ParseBrush(control.BorderBrush, "#475569"),
-            BorderThickness = UniformThickness(Math.Max(1, control.BorderThickness)),
-            CornerRadius = new CornerRadius(4),
-            Background = Brushes.Transparent,
-            VerticalAlignment = VerticalAlignment.Center
-        });
+            if (e.Property != ToggleButton.IsCheckedProperty)
+                return;
 
-        var text = CreatePreviewText(
-            ResolvePreviewTextValue(control, string.IsNullOrWhiteSpace(control.Text) ? "Флажок" : control.Text),
-            control,
-            control.Foreground,
-            HorizontalAlignment.Left,
-            VerticalAlignment.Center);
+            _runtimeCheckBoxValuesByControlId[control.Id] = checkBox.IsChecked == true;
+            var eventName = checkBox.IsChecked == true
+                ? InteractionModel.EventCheckBoxChecked
+                : InteractionModel.EventCheckBoxUnchecked;
+            if (ApplyRuntimeInteractions(control, eventName, BuildRuntimeSourceValues(control, checkBox.IsChecked == true ? "true" : "false")))
+                Dispatcher.UIThread.Post(RenderDocument, DispatcherPriority.Background);
+        };
 
-        Grid.SetColumn(text, 1);
-        layout.Children.Add(text);
-        return layout;
+        return checkBox;
     }
 
     private Control CreateBorderPreview(DesignerControlFileModel control)
     {
-        var text = ResolvePreviewTextValue(control, control.Text);
+        var text = _runtimeTextBlockValuesByControlId.TryGetValue(control.Id, out var runtimeText)
+            ? runtimeText
+            : ResolvePreviewTextValue(control, control.Text);
         return new Border
         {
             Width = control.Width,
@@ -922,6 +956,253 @@ public partial class PreviewWindow : Window
         }
 
         return builder.Length == 0 ? fallback : builder.ToString();
+    }
+
+    private Dictionary<string, string> BuildRuntimeSourceValues(DesignerControlFileModel source, string currentValue)
+    {
+        var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Value"] = currentValue
+        };
+
+        switch (source.Type)
+        {
+            case DesignerControlTypes.TextBox:
+            case DesignerControlTypes.TextBlock:
+            case DesignerControlTypes.Border:
+                values[InteractionModel.TargetPropertyText] = currentValue;
+                break;
+
+            case DesignerControlTypes.Button:
+                values[InteractionModel.TargetPropertyContent] = currentValue;
+                break;
+
+            case DesignerControlTypes.CheckBox:
+                values[InteractionModel.TargetPropertyIsChecked] = currentValue;
+                break;
+        }
+
+        return values;
+    }
+
+    private bool ApplyRuntimeInteractions(
+        DesignerControlFileModel source,
+        string eventName,
+        IReadOnlyDictionary<string, string> sourceValues)
+    {
+        var changed = false;
+        var normalizedEventName = InteractionModel.NormalizeEventName(eventName);
+        foreach (var interaction in _document.Interactions
+            .Where(interaction => string.Equals(interaction.SourceControlName, source.Name, StringComparison.OrdinalIgnoreCase))
+            .Where(interaction => string.Equals(InteractionModel.NormalizeEventName(interaction.EventName), normalizedEventName, StringComparison.OrdinalIgnoreCase)))
+        {
+            changed |= ApplyRuntimeInteraction(interaction, normalizedEventName, sourceValues);
+        }
+
+        return changed;
+    }
+
+    private bool ApplyRuntimeInteraction(
+        InteractionFileModel interaction,
+        string eventName,
+        IReadOnlyDictionary<string, string> sourceValues)
+    {
+        var value = ResolveRuntimeInteractionValue(interaction, sourceValues);
+        if (string.Equals(interaction.ActionType, InteractionModel.ActionShowMessage, StringComparison.OrdinalIgnoreCase))
+        {
+            _ = ShowRuntimeMessageAsync(value, interaction.MessageTitle);
+            return false;
+        }
+
+        var target = _document.Controls.FirstOrDefault(control =>
+            string.Equals(control.Name, interaction.TargetControlName, StringComparison.OrdinalIgnoreCase));
+        if (target is null)
+            return false;
+
+        if (string.Equals(interaction.ActionType, InteractionModel.ActionToggleVisibility, StringComparison.OrdinalIgnoreCase))
+        {
+            if (TryGetBooleanStateForInteractionEvent(eventName, out var nextVisible))
+            {
+                _runtimeVisibilityByControlId[target.Id] = nextVisible;
+            }
+            else
+            {
+                var current = _runtimeVisibilityByControlId.TryGetValue(target.Id, out var visible) ? visible : target.IsVisible;
+                _runtimeVisibilityByControlId[target.Id] = !current;
+            }
+
+            return true;
+        }
+
+        if (string.Equals(interaction.ActionType, InteractionModel.ActionEnableDisable, StringComparison.OrdinalIgnoreCase))
+        {
+            _runtimeEnabledByControlId[target.Id] = TryGetBooleanStateForInteractionEvent(eventName, out var enabled)
+                ? enabled
+                : ParseRuntimeBool(value);
+            return true;
+        }
+
+        var targetProperty = string.IsNullOrWhiteSpace(interaction.TargetProperty)
+            ? InteractionModel.TargetPropertyText
+            : interaction.TargetProperty.Trim();
+
+        if (string.Equals(interaction.ActionType, InteractionModel.ActionClearProperty, StringComparison.OrdinalIgnoreCase))
+            return ClearRuntimeTargetProperty(target, targetProperty);
+
+        return SetRuntimeTargetProperty(target, targetProperty, value);
+    }
+
+    private bool ClearRuntimeTargetProperty(DesignerControlFileModel target, string targetProperty)
+    {
+        if (target.Type == DesignerControlTypes.CheckBox
+            && string.Equals(targetProperty, InteractionModel.TargetPropertyIsChecked, StringComparison.OrdinalIgnoreCase))
+        {
+            _runtimeCheckBoxValuesByControlId[target.Id] = false;
+            return true;
+        }
+
+        if (string.Equals(targetProperty, InteractionModel.TargetPropertyIsVisible, StringComparison.OrdinalIgnoreCase))
+        {
+            _runtimeVisibilityByControlId[target.Id] = false;
+            return true;
+        }
+
+        if (string.Equals(targetProperty, InteractionModel.TargetPropertyIsEnabled, StringComparison.OrdinalIgnoreCase))
+        {
+            _runtimeEnabledByControlId[target.Id] = false;
+            return true;
+        }
+
+        return SetRuntimeTargetProperty(target, targetProperty, string.Empty);
+    }
+
+    private bool SetRuntimeTargetProperty(DesignerControlFileModel target, string targetProperty, string value)
+    {
+        if (target.Type == DesignerControlTypes.TextBox
+            && string.Equals(targetProperty, InteractionModel.TargetPropertyText, StringComparison.OrdinalIgnoreCase))
+        {
+            _runtimeTextBoxValuesByControlId[target.Id] = value;
+            return true;
+        }
+
+        if ((target.Type == DesignerControlTypes.TextBlock || target.Type == DesignerControlTypes.Border)
+            && string.Equals(targetProperty, InteractionModel.TargetPropertyText, StringComparison.OrdinalIgnoreCase))
+        {
+            _runtimeTextBlockValuesByControlId[target.Id] = value;
+            return true;
+        }
+
+        if (target.Type == DesignerControlTypes.Button
+            && string.Equals(targetProperty, InteractionModel.TargetPropertyContent, StringComparison.OrdinalIgnoreCase))
+        {
+            _runtimeButtonContentByControlId[target.Id] = value;
+            return true;
+        }
+
+        if (target.Type == DesignerControlTypes.CheckBox
+            && string.Equals(targetProperty, InteractionModel.TargetPropertyIsChecked, StringComparison.OrdinalIgnoreCase))
+        {
+            _runtimeCheckBoxValuesByControlId[target.Id] = ParseRuntimeBool(value);
+            return true;
+        }
+
+        return false;
+    }
+
+    private static string ResolveRuntimeInteractionValue(
+        InteractionFileModel interaction,
+        IReadOnlyDictionary<string, string> rowValues)
+    {
+        if (!string.IsNullOrWhiteSpace(interaction.TextTemplate))
+            return ApplyRuntimeInteractionTemplate(interaction.TextTemplate, rowValues);
+
+        return GetRuntimeRowValue(rowValues, interaction.SourcePath);
+    }
+
+    private static string ApplyRuntimeInteractionTemplate(
+        string template,
+        IReadOnlyDictionary<string, string> rowValues)
+    {
+        return System.Text.RegularExpressions.Regex.Replace(
+            template,
+            "\\{(?<name>[^{}]+)\\}",
+            match => GetRuntimeRowValue(rowValues, match.Groups["name"].Value.Trim()));
+    }
+
+    private static string GetRuntimeRowValue(IReadOnlyDictionary<string, string> rowValues, string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return string.Empty;
+
+        if (rowValues.TryGetValue(path.Trim(), out var directValue))
+            return directValue;
+
+        var match = rowValues.FirstOrDefault(pair => string.Equals(pair.Key, path.Trim(), StringComparison.OrdinalIgnoreCase));
+        return string.IsNullOrEmpty(match.Key) ? string.Empty : match.Value;
+    }
+
+    private static bool ParseRuntimeBool(string value)
+    {
+        if (bool.TryParse(value, out var boolValue))
+            return boolValue;
+
+        if (int.TryParse(value, out var intValue))
+            return intValue != 0;
+
+        return false;
+    }
+
+    private static bool TryGetBooleanStateForInteractionEvent(string eventName, out bool value)
+    {
+        if (string.Equals(eventName, InteractionModel.EventCheckBoxChecked, StringComparison.OrdinalIgnoreCase))
+        {
+            value = true;
+            return true;
+        }
+
+        if (string.Equals(eventName, InteractionModel.EventCheckBoxUnchecked, StringComparison.OrdinalIgnoreCase))
+        {
+            value = false;
+            return true;
+        }
+
+        value = false;
+        return false;
+    }
+
+    private async Task ShowRuntimeMessageAsync(string message, string? title)
+    {
+        var closeButton = new Button
+        {
+            Content = "OK",
+            MinWidth = 92,
+            HorizontalAlignment = HorizontalAlignment.Right
+        };
+
+        var dialog = new Window
+        {
+            Title = string.IsNullOrWhiteSpace(title) ? "Сообщение" : title,
+            Width = 380,
+            Height = 180,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Content = new StackPanel
+            {
+                Margin = new Thickness(18),
+                Spacing = 16,
+                Children =
+                {
+                    new TextBlock
+                    {
+                        Text = string.IsNullOrWhiteSpace(message) ? "Сообщение" : message,
+                        TextWrapping = TextWrapping.Wrap
+                    },
+                    closeButton
+                }
+            }
+        };
+
+        closeButton.Click += (_, _) => dialog.Close();
+        await dialog.ShowDialog(this);
     }
 
     private Control CreateImagePreview(DesignerControlFileModel control)
@@ -1401,6 +1682,18 @@ public partial class PreviewWindow : Window
             CanUserSortColumns = true,
             SelectionMode = DataGridSelectionMode.Single,
             IsReadOnly = true
+        };
+
+        dataGrid.SelectionChanged += (_, _) =>
+        {
+            var rowValues = dataGrid.SelectedItem is IReadOnlyDictionary<string, string> selectedRow
+                ? selectedRow
+                : null;
+            if (rowValues is not null
+                && ApplyRuntimeInteractions(control, InteractionModel.EventDataGridSelectionChanged, rowValues))
+            {
+                Dispatcher.UIThread.Post(RenderDocument, DispatcherPriority.Background);
+            }
         };
 
         foreach (var field in visibleFields)
