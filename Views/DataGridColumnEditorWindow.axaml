@@ -48,8 +48,8 @@
       <Setter Property="Foreground" Value="#64748B"/>
       <Setter Property="TextWrapping" Value="Wrap"/>
     </Style>
-
-    <Style Selector="TextBlock.field-label">
+	  
+	  <Style Selector="TextBlock.field-label">
       <Setter Property="FontSize" Value="12"/>
       <Setter Property="FontWeight" Value="SemiBold"/>
       <Setter Property="Foreground" Value="#334155"/>

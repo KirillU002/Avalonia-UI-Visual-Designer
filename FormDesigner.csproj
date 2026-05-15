@@ -12,13 +12,19 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Remove="artifacts\**\*.cs" />
     <Compile Remove="tempobj\**\*.cs" />
+    <AvaloniaXaml Remove="artifacts\**\*.axaml" />
+    <AvaloniaResource Remove="artifacts\**\*.axaml" />
     <AvaloniaResource Remove="tempobj\**\*.axaml" />
     <Compile Remove="PluginContracts\**\*.cs" />
     <Compile Remove="Plugins\**\*.cs" />
+    <EmbeddedResource Remove="artifacts\**" />
     <EmbeddedResource Remove="tempobj\**" />
     <EmbeddedResource Remove="PluginContracts\**" />
     <EmbeddedResource Remove="Plugins\**" />
+    <Content Remove="artifacts\**" />
+    <None Remove="artifacts\**" />
     <None Remove="tempobj\**" />
     <None Remove="PluginContracts\**" />
     <None Remove="Plugins\**" />
