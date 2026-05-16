@@ -31,6 +31,9 @@ namespace FormDesigner.ViewModels;
 /// </summary>
 public partial class MainWindowViewModel : ObservableObject
 {
+    public const string LayoutExportModeCanvas = "Canvas layout";
+    public const string LayoutExportModeResponsive = "Responsive layout (experimental)";
+
     public const string GenerationModeCleanUi = "Чистый UI";
     public const string GenerationModeDemoData = "С демонстрационными данными";
     public const string DataGridExportModePlaceholder = "Placeholder без NuGet";
@@ -89,6 +92,7 @@ public partial class MainWindowViewModel : ObservableObject
     private XamlExportContext? _activeXamlExportContext;
     private Dictionary<string, IDesignControlNode>? _activeXamlControlNodes;
     private IReadOnlyDictionary<string, string>? _activeXamlControlNameMap;
+    private LayoutExportPlan? _activeLayoutExportPlan;
 
     private bool _isHistorySuspended;
     private bool _isUpdatingSelectionState;
@@ -269,6 +273,12 @@ public partial class MainWindowViewModel : ObservableObject
         XamlVerbosityFullStyled
     };
 
+    public ObservableCollection<string> AvailableLayoutExportModes { get; } = new()
+    {
+        LayoutExportModeCanvas,
+        LayoutExportModeResponsive
+    };
+
     public ObservableCollection<string> AvailableInteractionEvents { get; } = new()
     {
         InteractionModel.EventButtonClick,
@@ -385,6 +395,9 @@ public partial class MainWindowViewModel : ObservableObject
 
     [ObservableProperty]
     private string xamlVerbosity = XamlVerbosityCompact;
+
+    [ObservableProperty]
+    private string layoutExportMode = LayoutExportModeCanvas;
 
     [ObservableProperty]
     private bool includeExportComments;
@@ -526,6 +539,9 @@ public partial class MainWindowViewModel : ObservableObject
     public bool IsCompactXamlExport => string.Equals(XamlVerbosity, XamlVerbosityCompact, StringComparison.Ordinal);
     public bool IsFullStyledXamlExport => !IsCompactXamlExport;
     public bool ShouldIncludeExportComments => IncludeExportComments || IsFullStyledXamlExport;
+    public bool IsResponsiveLayoutExportMode => string.Equals(NormalizeLayoutExportMode(LayoutExportMode), LayoutExportModeResponsive, StringComparison.Ordinal);
+    public string LayoutExportModeHint => BuildLayoutExportPlan().Details;
+    public string ExportLayoutBadgeText => BuildLayoutExportPlan().BadgeText;
     public bool IsDesignMode => string.Equals(WorkspaceMode, WorkspaceModeDesign, StringComparison.Ordinal);
     public bool IsDataMode => string.Equals(WorkspaceMode, WorkspaceModeData, StringComparison.Ordinal);
     public bool IsCodeMode => string.Equals(WorkspaceMode, WorkspaceModeCode, StringComparison.Ordinal);
@@ -1488,6 +1504,14 @@ public partial class MainWindowViewModel : ObservableObject
         return Controls.Where(control => NormalizeId(control.ParentId) == normalized);
     }
 
+    private IEnumerable<DesignControlModel> GetRootControlsForExport()
+    {
+        var roots = GetChildControls(null);
+        return _activeLayoutExportPlan?.UsesResponsiveStack == true
+            ? roots.OrderBy(control => control.Y).ThenBy(control => control.X).ThenBy(control => control.Name).ToList()
+            : roots;
+    }
+
     public IControlDescriptor GetDescriptor(string? typeKey)
     {
         return _registry.GetRequiredControl(typeKey ?? string.Empty);
@@ -2324,6 +2348,21 @@ public partial class MainWindowViewModel : ObservableObject
                 Category = "Namespace",
                 Message = "Namespace проекта для экспорта пустой или некорректный.",
                 Recommendation = "Укажите корректный namespace, например AvaloniaApplication1. Он должен состоять из C# identifiers, разделённых точками."
+            });
+        }
+
+        var layoutPlan = BuildLayoutExportPlan();
+        if (IsResponsiveLayoutExportMode)
+        {
+            diagnostics.Add(new DocumentDiagnosticModel
+            {
+                Severity = layoutPlan.FallbackToCanvas ? DocumentDiagnosticSeverity.Warning : DocumentDiagnosticSeverity.Info,
+                Source = "Export",
+                Category = "Layout",
+                Message = layoutPlan.FallbackToCanvas
+                    ? "Responsive layout недоступен для текущей формы, используется Canvas layout."
+                    : "Responsive layout включён в экспериментальном режиме.",
+                Recommendation = layoutPlan.Details
             });
         }
 
@@ -3945,6 +3984,7 @@ public partial class MainWindowViewModel : ObservableObject
         var windowClassName = ResolveExportWindowClassName();
         var viewModelClassName = ResolveExportViewModelClassName();
         var exportControlNames = BuildExportControlNameMap(Controls, windowClassName, viewModelClassName);
+        var layoutPlan = BuildLayoutExportPlan();
         var controlNodes = Controls.ToDictionary(
             controlModel => controlModel.Id,
             controlModel => (IDesignControlNode)new DesignControlNodeAdapter(controlModel),
@@ -3966,10 +4006,11 @@ public partial class MainWindowViewModel : ObservableObject
         _activeXamlExportContext = exportContext;
         _activeXamlControlNodes = controlNodes;
         _activeXamlControlNameMap = exportControlNames;
+        _activeLayoutExportPlan = layoutPlan;
 
         try
         {
-            foreach (var control in GetChildControls(null))
+            foreach (var control in GetRootControlsForExport())
                 AppendControlXaml(control, 2);
         }
         finally
@@ -4012,6 +4053,8 @@ public partial class MainWindowViewModel : ObservableObject
             AppendThemeStyles(sb);
         }
         AppendRootContainerOpening(sb, usesManagedWindowLayout, resolvedWidth, resolvedHeight);
+        if (ShouldIncludeExportComments && layoutPlan.FallbackToCanvas)
+            sb.AppendLine($"    <!-- {EscapeXml(layoutPlan.Details)} -->");
         if (ShouldIncludeExportComments)
             AppendExportDependencyComments(sb);
 
@@ -4054,6 +4097,7 @@ public partial class MainWindowViewModel : ObservableObject
         GeneratedXaml = sb.ToString();
         GeneratedCSharp = BuildGeneratedCSharp();
         GeneratedBindingGuide = BuildGeneratedBindingGuide();
+        _activeLayoutExportPlan = null;
         RaiseExportChecklistProperties();
     }
 
@@ -4204,10 +4248,132 @@ public partial class MainWindowViewModel : ObservableObject
             : 0;
         var modeText = IsCleanUiGenerationMode ? "Clean UI" : "Demo data";
         var targetText = IsMainWindowExportTarget ? "MainWindow" : "Form1Window";
+        var layoutText = BuildLayoutExportPlan().ShortText;
         var nugetText = packages.Count == 0 ? "No NuGet" : $"{packages.Count} NuGet";
         var pluginText = pluginCount == 0 ? "No plugins" : $"{pluginCount} plugin DLL";
 
-        return $"{ExportStatusText} · {modeText} · {targetText} · {nugetText} · {pluginText}";
+        return $"{ExportStatusText} · {modeText} · {targetText} · {layoutText} · {nugetText} · {pluginText}";
+    }
+
+    private LayoutExportPlan BuildLayoutExportPlan()
+    {
+        var requested = NormalizeLayoutExportMode(LayoutExportMode);
+        if (!string.Equals(requested, LayoutExportModeResponsive, StringComparison.Ordinal))
+        {
+            return new LayoutExportPlan(
+                RequestedMode: requested,
+                EffectiveRootLayoutMode: DesignerLayoutModes.Absolute,
+                UsesResponsiveStack: false,
+                FallbackToCanvas: false,
+                StackSpacing: SurfaceLayoutSpacing,
+                RootMargin: "",
+                ShortText: "Canvas",
+                BadgeText: "Layout: Canvas",
+                Value: "Canvas layout",
+                Details: "Экспорт использует Canvas.Left/Canvas.Top и сохраняет абсолютные координаты формы.",
+                Severity: ExportChecklistSeverity.Ok);
+        }
+
+        var fallbackReason = GetResponsiveLayoutFallbackReason();
+        if (!string.IsNullOrWhiteSpace(fallbackReason))
+        {
+            return new LayoutExportPlan(
+                RequestedMode: requested,
+                EffectiveRootLayoutMode: DesignerLayoutModes.Absolute,
+                UsesResponsiveStack: false,
+                FallbackToCanvas: true,
+                StackSpacing: SurfaceLayoutSpacing,
+                RootMargin: "",
+                ShortText: "Canvas fallback",
+                BadgeText: "Layout: Canvas fallback",
+                Value: "Canvas fallback",
+                Details: $"Responsive layout пока недоступен для текущей формы: {fallbackReason}. Экспорт безопасно переключён на Canvas layout.",
+                Severity: ExportChecklistSeverity.Warning);
+        }
+
+        var roots = GetChildControls(null).OrderBy(control => control.Y).ThenBy(control => control.X).ToList();
+        var spacing = CalculateResponsiveStackSpacing(roots);
+        var margin = BuildResponsiveRootMargin(roots);
+
+        return new LayoutExportPlan(
+            RequestedMode: requested,
+            EffectiveRootLayoutMode: DesignerLayoutModes.Stack,
+            UsesResponsiveStack: true,
+            FallbackToCanvas: false,
+            StackSpacing: spacing,
+            RootMargin: margin,
+            ShortText: "Responsive",
+            BadgeText: "Layout: Responsive StackPanel",
+            Value: "Responsive StackPanel",
+            Details: "Экспериментальный экспорт: простая вертикальная форма будет сгенерирована как StackPanel. Координаты модели не меняются.",
+            Severity: ExportChecklistSeverity.Warning);
+    }
+
+    private string GetResponsiveLayoutFallbackReason()
+    {
+        var rootControls = GetChildControls(null)
+            .OrderBy(control => control.Y)
+            .ThenBy(control => control.X)
+            .ToList();
+
+        if (Controls.Any(control => !string.IsNullOrWhiteSpace(NormalizeId(control.ParentId))))
+            return "есть вложенные элементы, группы или контейнеры";
+
+        if (rootControls.Any(IsPluginRuntimeControl))
+            return "на форме есть plugin controls, для них пока сохраняется Canvas export";
+
+        var visibleControls = rootControls
+            .Where(control => control.IsVisible)
+            .OrderBy(control => control.Y)
+            .ThenBy(control => control.X)
+            .ToList();
+
+        for (var index = 0; index < visibleControls.Count - 1; index++)
+        {
+            var current = visibleControls[index];
+            var next = visibleControls[index + 1];
+            if (next.Y < current.Y + current.Height - 1)
+                return $"элементы '{current.NameOrFallback()}' и '{next.NameOrFallback()}' пересекаются по вертикали";
+        }
+
+        return "";
+    }
+
+    private static double CalculateResponsiveStackSpacing(IReadOnlyList<DesignControlModel> controls)
+    {
+        var visible = controls
+            .Where(control => control.IsVisible)
+            .OrderBy(control => control.Y)
+            .ThenBy(control => control.X)
+            .ToList();
+
+        if (visible.Count < 2)
+            return 12;
+
+        var gaps = new List<double>();
+        for (var index = 0; index < visible.Count - 1; index++)
+        {
+            var gap = visible[index + 1].Y - (visible[index].Y + visible[index].Height);
+            if (gap >= 0)
+                gaps.Add(gap);
+        }
+
+        return gaps.Count == 0
+            ? 12
+            : Math.Round(gaps.Average(), 1);
+    }
+
+    private static string BuildResponsiveRootMargin(IReadOnlyList<DesignControlModel> controls)
+    {
+        if (controls.Count == 0)
+            return "20";
+
+        var left = Math.Max(0, controls.Min(control => control.X));
+        var top = Math.Max(0, controls.Min(control => control.Y));
+        if (left <= 0.01 && top <= 0.01)
+            return "0";
+
+        return $"{ToInvariant(Math.Round(left, 1))},{ToInvariant(Math.Round(top, 1))},0,0";
     }
 
     private IReadOnlyList<ExportChecklistItem> BuildExportChecklist()
@@ -4231,6 +4397,7 @@ public partial class MainWindowViewModel : ObservableObject
         var hasPortableDataGridInteraction = ShouldExportPortableDataGrid
             && Interactions.Any(interaction => IsDataGridSelectionChangedEvent(interaction.EventName));
         var dataGridStatus = BuildDataGridBindingChecklistStatus();
+        var layoutStatus = BuildLayoutExportPlan();
         var exportableInteractionCount = GetExportableInteractions().Count;
         var unsupportedInteractionCount = Math.Max(0, Interactions.Count - exportableInteractionCount);
 
@@ -4266,6 +4433,13 @@ public partial class MainWindowViewModel : ObservableObject
                 Details = namespaceError
                     ? "Исправьте namespace проекта в дополнительных настройках."
                     : ResolveExportNamespace()
+            },
+            new()
+            {
+                Title = "Layout export mode",
+                Value = layoutStatus.Value,
+                Severity = layoutStatus.Severity,
+                Details = layoutStatus.Details
             },
             new()
             {
@@ -7389,14 +7563,41 @@ public partial class MainWindowViewModel : ObservableObject
         return parent is null ? SurfaceLayoutOrientation : parent.LayoutOrientation;
     }
 
+    private string GetExportLayoutModeForParent(string? parentId)
+    {
+        if (string.IsNullOrWhiteSpace(NormalizeId(parentId)) && _activeLayoutExportPlan is not null)
+            return DesignerLayoutModes.NormalizeMode(_activeLayoutExportPlan.EffectiveRootLayoutMode);
+
+        return GetLayoutModeForParent(parentId);
+    }
+
+    private double GetExportParentLayoutSpacing(string? parentId)
+    {
+        if (string.IsNullOrWhiteSpace(NormalizeId(parentId)) && _activeLayoutExportPlan is not null)
+            return _activeLayoutExportPlan.StackSpacing;
+
+        return GetParentLayoutSpacing(parentId);
+    }
+
+    private string GetExportParentLayoutOrientation(string? parentId)
+    {
+        if (string.IsNullOrWhiteSpace(NormalizeId(parentId)) && _activeLayoutExportPlan?.UsesResponsiveStack == true)
+            return DesignerLayoutModes.Vertical;
+
+        return GetParentLayoutOrientation(parentId);
+    }
+
     private string PlacementAttributes(DesignControlModel control)
     {
-        var parentLayoutMode = GetLayoutModeForParent(control.ParentId);
+        var parentLayoutMode = GetExportLayoutModeForParent(control.ParentId);
         if (DesignerLayoutModes.IsAbsolute(parentLayoutMode))
             return CanvasLayoutAttributes(control);
 
         var builder = new StringBuilder(SizeAttributes(control.Width, control.Height));
-        var spacing = Math.Max(0, GetParentLayoutSpacing(control.ParentId));
+        if (string.IsNullOrWhiteSpace(NormalizeId(control.ParentId)) && _activeLayoutExportPlan?.UsesResponsiveStack == true)
+            return builder.ToString();
+
+        var spacing = Math.Max(0, GetExportParentLayoutSpacing(control.ParentId));
         if (spacing <= 0)
             return builder.ToString();
 
@@ -7407,7 +7608,7 @@ public partial class MainWindowViewModel : ObservableObject
             return builder.ToString();
         }
 
-        var orientation = DesignerLayoutModes.NormalizeOrientation(GetParentLayoutOrientation(control.ParentId));
+        var orientation = DesignerLayoutModes.NormalizeOrientation(GetExportParentLayoutOrientation(control.ParentId));
         if (orientation == DesignerLayoutModes.Horizontal)
             builder.Append($" Margin=\"0,0,{ToInvariant(spacing)},0\"");
         else
@@ -7418,15 +7619,22 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void AppendRootContainerOpening(StringBuilder sb, bool usesManagedWindowLayout, double resolvedWidth, double resolvedHeight)
     {
-        var layoutMode = DesignerLayoutModes.NormalizeMode(SurfaceLayoutMode);
+        var layoutMode = DesignerLayoutModes.NormalizeMode(_activeLayoutExportPlan?.EffectiveRootLayoutMode ?? SurfaceLayoutMode);
         var sizeAttributes = usesManagedWindowLayout
             ? " HorizontalAlignment=\"Stretch\" VerticalAlignment=\"Stretch\""
             : $" {SizeAttributes(resolvedWidth, resolvedHeight)}";
+        var rootMargin = !string.IsNullOrWhiteSpace(_activeLayoutExportPlan?.RootMargin)
+            ? $" Margin=\"{EscapeXml(_activeLayoutExportPlan.RootMargin)}\""
+            : "";
 
         switch (layoutMode)
         {
             case DesignerLayoutModes.Stack:
-                sb.AppendLine($"  <StackPanel x:Name=\"RootLayout\" Orientation=\"{ToAvaloniaOrientation(SurfaceLayoutOrientation)}\" Spacing=\"{ToInvariant(SurfaceLayoutSpacing)}\"{sizeAttributes}>");
+                var orientation = _activeLayoutExportPlan?.UsesResponsiveStack == true
+                    ? DesignerLayoutModes.Vertical
+                    : SurfaceLayoutOrientation;
+                var spacing = _activeLayoutExportPlan?.StackSpacing ?? SurfaceLayoutSpacing;
+                sb.AppendLine($"  <StackPanel x:Name=\"RootLayout\" Orientation=\"{ToAvaloniaOrientation(orientation)}\" Spacing=\"{ToInvariant(spacing)}\"{rootMargin}{sizeAttributes}>");
                 break;
             case DesignerLayoutModes.Grid:
                 sb.AppendLine($"  <primitives:UniformGrid x:Name=\"RootLayout\" Columns=\"{Math.Max(1, SurfaceLayoutColumns)}\" Rows=\"{Math.Max(1, SurfaceLayoutRows)}\"{sizeAttributes}>");
@@ -7444,7 +7652,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     private string GetRootContainerClosingTag()
     {
-        return DesignerLayoutModes.NormalizeMode(SurfaceLayoutMode) switch
+        return DesignerLayoutModes.NormalizeMode(_activeLayoutExportPlan?.EffectiveRootLayoutMode ?? SurfaceLayoutMode) switch
         {
             DesignerLayoutModes.Stack => "  </StackPanel>",
             DesignerLayoutModes.Grid => "  </primitives:UniformGrid>",
@@ -10149,6 +10357,20 @@ public partial class MainWindowViewModel : ObservableObject
         GenerateXaml();
     }
 
+    partial void OnLayoutExportModeChanged(string value)
+    {
+        var normalized = NormalizeLayoutExportMode(value);
+        if (!string.Equals(value, normalized, StringComparison.Ordinal))
+        {
+            LayoutExportMode = normalized;
+            return;
+        }
+
+        RaiseGenerationOptionsProperties();
+        GenerateXaml();
+        RefreshDiagnostics();
+    }
+
     partial void OnIncludeExportCommentsChanged(bool value)
     {
         RaiseGenerationOptionsProperties();
@@ -10198,6 +10420,9 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(IsCompactXamlExport));
         OnPropertyChanged(nameof(IsFullStyledXamlExport));
         OnPropertyChanged(nameof(ShouldIncludeExportComments));
+        OnPropertyChanged(nameof(IsResponsiveLayoutExportMode));
+        OnPropertyChanged(nameof(LayoutExportModeHint));
+        OnPropertyChanged(nameof(ExportLayoutBadgeText));
         OnPropertyChanged(nameof(GenerationOptionsSummary));
         RaiseExportChecklistProperties();
     }
@@ -10214,6 +10439,7 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(ExportStatusBadgeBorder));
         OnPropertyChanged(nameof(ExportStatusBadgeForeground));
         OnPropertyChanged(nameof(ExportDataGridBadgeText));
+        OnPropertyChanged(nameof(ExportLayoutBadgeText));
         OnPropertyChanged(nameof(ExportViewModelBadgeText));
         OnPropertyChanged(nameof(ExportInteractionsBadgeText));
         OnPropertyChanged(nameof(ExportCompactSummary));
@@ -10263,6 +10489,19 @@ public partial class MainWindowViewModel : ObservableObject
         DesignControlModel? Target,
         string EventName);
 
+    private sealed record LayoutExportPlan(
+        string RequestedMode,
+        string EffectiveRootLayoutMode,
+        bool UsesResponsiveStack,
+        bool FallbackToCanvas,
+        double StackSpacing,
+        string RootMargin,
+        string ShortText,
+        string BadgeText,
+        string Value,
+        string Details,
+        ExportChecklistSeverity Severity);
+
     private sealed class BindingSourceDiscoveryResult
     {
         public List<BindingSourceModel> Sources { get; } = new();
@@ -10311,6 +10550,15 @@ public partial class MainWindowViewModel : ObservableObject
             DataGridExportModeReal => DataGridExportModeReal,
             DataGridExportModeVisual or LegacyDataGridExportModePortable => DataGridExportModeVisual,
             _ => DataGridExportModeVisual
+        };
+    }
+
+    private static string NormalizeLayoutExportMode(string? value)
+    {
+        return value?.Trim() switch
+        {
+            LayoutExportModeResponsive => LayoutExportModeResponsive,
+            _ => LayoutExportModeCanvas
         };
     }
 

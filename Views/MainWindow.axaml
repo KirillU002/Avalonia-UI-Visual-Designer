@@ -4337,6 +4337,12 @@
                                  FontWeight="SemiBold"/>
                     </Border>
                     <Border Classes="export-badge">
+                      <TextBlock Text="{Binding ExportLayoutBadgeText}"
+                                 Foreground="#1D4ED8"
+                                 FontSize="12"
+                                 FontWeight="SemiBold"/>
+                    </Border>
+                    <Border Classes="export-badge">
                       <TextBlock Text="{Binding ExportViewModelBadgeText}"
                                  Foreground="#1D4ED8"
                                  FontSize="12"
@@ -4511,6 +4517,21 @@
                                     MinWidth="0"
                                     HorizontalAlignment="Stretch"/>
                         </Grid>
+                        <Grid ColumnDefinitions="145,*"
+                              ColumnSpacing="10">
+                          <TextBlock Text="Макет экспорта"
+                                     FontWeight="SemiBold"
+                                     VerticalAlignment="Center"/>
+                          <ComboBox Grid.Column="1"
+                                    ItemsSource="{Binding AvailableLayoutExportModes}"
+                                    SelectedItem="{Binding LayoutExportMode, Mode=TwoWay}"
+                                    MinWidth="0"
+                                    HorizontalAlignment="Stretch"/>
+                        </Grid>
+                        <TextBlock Text="{Binding LayoutExportModeHint}"
+                                   Foreground="#64748B"
+                                   FontSize="12"
+                                   TextWrapping="Wrap"/>
                         <Grid ColumnDefinitions="145,*"
                               ColumnSpacing="10">
                           <TextBlock Text="DataGrid"
@@ -4601,6 +4622,12 @@
                                  FontWeight="SemiBold"/>
                     </Border>
                     <Border Classes="export-badge">
+                      <TextBlock Text="{Binding ExportLayoutBadgeText}"
+                                 Foreground="#1D4ED8"
+                                 FontSize="12"
+                                 FontWeight="SemiBold"/>
+                    </Border>
+                    <Border Classes="export-badge">
                       <TextBlock Text="{Binding ExportViewModelBadgeText}"
                                  Foreground="#1D4ED8"
                                  FontSize="12"
@@ -4775,6 +4802,21 @@
                                     MinWidth="0"
                                     HorizontalAlignment="Stretch"/>
                         </Grid>
+                        <Grid ColumnDefinitions="145,*"
+                              ColumnSpacing="10">
+                          <TextBlock Text="Макет экспорта"
+                                     FontWeight="SemiBold"
+                                     VerticalAlignment="Center"/>
+                          <ComboBox Grid.Column="1"
+                                    ItemsSource="{Binding AvailableLayoutExportModes}"
+                                    SelectedItem="{Binding LayoutExportMode, Mode=TwoWay}"
+                                    MinWidth="0"
+                                    HorizontalAlignment="Stretch"/>
+                        </Grid>
+                        <TextBlock Text="{Binding LayoutExportModeHint}"
+                                   Foreground="#64748B"
+                                   FontSize="12"
+                                   TextWrapping="Wrap"/>
                         <Grid ColumnDefinitions="145,*"
                               ColumnSpacing="10">
                           <TextBlock Text="DataGrid"
