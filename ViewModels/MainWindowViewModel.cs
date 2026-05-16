@@ -3242,6 +3242,7 @@ public partial class MainWindowViewModel : ObservableObject
 
         var sourceIdMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var controlsByOriginalId = new Dictionary<string, DesignControlModel>(StringComparer.OrdinalIgnoreCase);
+        var controlNameMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var rootIds = controlFiles
             .Where(control => string.IsNullOrWhiteSpace(control.ParentId) || controlFiles.All(candidate => !string.Equals(candidate.Id, control.ParentId, StringComparison.OrdinalIgnoreCase)))
             .Select(control => control.Id)
@@ -3278,7 +3279,9 @@ public partial class MainWindowViewModel : ObservableObject
             {
                 var control = FromControlFileModel(controlFile);
                 control.Id = Guid.NewGuid().ToString("N");
-                control.Name = GetUniqueControlName(control.Type);
+                control.Name = GetUniqueControlName(string.IsNullOrWhiteSpace(control.Name) ? control.Type : control.Name);
+                if (!string.IsNullOrWhiteSpace(controlFile.Name))
+                    controlNameMap[controlFile.Name] = control.Name;
 
                 var bindingSourceId = NormalizeId(control.BindingSourceId);
                 if (!string.IsNullOrWhiteSpace(bindingSourceId) && sourceIdMap.TryGetValue(bindingSourceId, out var newBindingSourceId))
@@ -3303,6 +3306,8 @@ public partial class MainWindowViewModel : ObservableObject
 
                 Controls.Add(control);
             }
+
+            CloneInteractionsForNameMap(controlNameMap, template.Interactions);
         }
         finally
         {
@@ -3337,6 +3342,10 @@ public partial class MainWindowViewModel : ObservableObject
             .ToList();
         var selectedIds = selectedTree
             .Select(control => control.Id)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var selectedNames = selectedTree
+            .Select(control => control.Name)
+            .Where(name => !string.IsNullOrWhiteSpace(name))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var bindingSourceIds = selectedTree
             .Where(control => !string.IsNullOrWhiteSpace(control.BindingSourceId))
@@ -3380,6 +3389,13 @@ public partial class MainWindowViewModel : ObservableObject
             BindingSources = BindingSources
                 .Where(source => bindingSourceIds.Contains(source.Id))
                 .Select(ToBindingSourceFileModel)
+                .ToList(),
+            Interactions = Interactions
+                .Where(interaction =>
+                    selectedNames.Contains(interaction.SourceControlName)
+                    && (string.Equals(interaction.ActionType, InteractionModel.ActionShowMessage, StringComparison.OrdinalIgnoreCase)
+                        || selectedNames.Contains(interaction.TargetControlName)))
+                .Select(ToInteractionFileModel)
                 .ToList()
         };
 
@@ -3782,16 +3798,20 @@ public partial class MainWindowViewModel : ObservableObject
 
         foreach (var interactionFile in source)
         {
-            if (!controlNameMap.TryGetValue(interactionFile.SourceControlName, out var newSourceName)
-                || !controlNameMap.TryGetValue(interactionFile.TargetControlName, out var newTargetName))
+            if (!controlNameMap.TryGetValue(interactionFile.SourceControlName, out var newSourceName))
             {
                 continue;
             }
 
+            var isShowMessage = string.Equals(interactionFile.ActionType, InteractionModel.ActionShowMessage, StringComparison.OrdinalIgnoreCase);
+            var hasTarget = controlNameMap.TryGetValue(interactionFile.TargetControlName, out var newTargetName);
+            if (!isShowMessage && !hasTarget)
+                continue;
+
             var clone = FromInteractionFileModel(interactionFile);
             clone.Id = Guid.NewGuid().ToString("N");
             clone.SourceControlName = newSourceName;
-            clone.TargetControlName = newTargetName;
+            clone.TargetControlName = hasTarget ? newTargetName! : "";
             Interactions.Add(clone);
         }
     }
@@ -4406,8 +4426,8 @@ public partial class MainWindowViewModel : ObservableObject
             new()
             {
                 Title = "XAML generated",
-                Value = xamlGenerated ? (namespaceError ? "Error" : ToChecklistStatusValue(exportSeverity)) : "Error",
-                Severity = !xamlGenerated || namespaceError ? ExportChecklistSeverity.Error : exportSeverity,
+                Value = xamlGenerated ? (namespaceError ? "Error" : "OK") : "Error",
+                Severity = !xamlGenerated || namespaceError ? ExportChecklistSeverity.Error : ExportChecklistSeverity.Ok,
                 Details = !xamlGenerated
                     ? "XAML ещё не сгенерирован. Нажмите «Обновить»."
                     : namespaceError
@@ -4417,8 +4437,8 @@ public partial class MainWindowViewModel : ObservableObject
             new()
             {
                 Title = "C# generated",
-                Value = csharpGenerated ? (namespaceError ? "Error" : ToChecklistStatusValue(exportSeverity)) : "Error",
-                Severity = !csharpGenerated || namespaceError ? ExportChecklistSeverity.Error : exportSeverity,
+                Value = csharpGenerated ? (namespaceError ? "Error" : "OK") : "Error",
+                Severity = !csharpGenerated || namespaceError ? ExportChecklistSeverity.Error : ExportChecklistSeverity.Ok,
                 Details = !csharpGenerated
                     ? "C# ещё не сгенерирован. Нажмите «Обновить»."
                     : namespaceError
@@ -4443,21 +4463,19 @@ public partial class MainWindowViewModel : ObservableObject
             },
             new()
             {
-                Title = "DataGrid export mode",
+                Title = "DataGrid",
                 Value = ShouldExportRealDataGrid
                     ? "Real Avalonia DataGrid"
                     : ShouldExportPlaceholderDataGrid
                         ? "Placeholder без NuGet"
                         : "Visual table без NuGet",
-                Severity = ShouldExportRealDataGrid && Controls.Any(control => control.Type == DesignerControlTypes.DataGrid)
-                    ? ExportChecklistSeverity.Warning
-                    : dataGridStatus.Severity,
+                Severity = dataGridStatus.Severity,
                 Details = BuildDataGridExportSummary()
             },
             new()
             {
                 Title = "Required NuGet",
-                Value = packages.Count == 0 ? "none" : $"{packages.Count} packages",
+                Value = packages.Count == 0 ? "none" : string.Join(", ", packages),
                 Severity = packages.Count == 0 ? ExportChecklistSeverity.Ok : ExportChecklistSeverity.Warning,
                 Details = packages.Count == 0
                     ? "Дополнительные NuGet-пакеты не нужны."
@@ -4465,7 +4483,7 @@ public partial class MainWindowViewModel : ObservableObject
             },
             new()
             {
-                Title = "Required plugin DLL",
+                Title = "Plugins",
                 Value = pluginNames.Count == 0 || !IncludePluginRuntimeReferences ? "none" : $"{pluginNames.Count} DLL",
                 Severity = pluginNames.Count == 0
                     ? ExportChecklistSeverity.Ok
@@ -4486,7 +4504,7 @@ public partial class MainWindowViewModel : ObservableObject
             new()
             {
                 Title = "Interactions exported",
-                Value = Interactions.Count == 0 ? "none" : $"{exportableInteractionCount}/{Interactions.Count} exportable",
+                Value = Interactions.Count == 0 ? "none" : $"{exportableInteractionCount}/{Interactions.Count}",
                 Severity = unsupportedInteractionCount > 0 || hasPortableDataGridInteraction
                     ? ExportChecklistSeverity.Warning
                     : ExportChecklistSeverity.Ok,

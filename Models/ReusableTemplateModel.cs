@@ -39,6 +39,8 @@ public partial class ReusableTemplateModel : ObservableObject
 
     public List<BindingSourceFileModel> BindingSources { get; set; } = new();
 
+    public List<InteractionFileModel> Interactions { get; set; } = new();
+
     [JsonIgnore]
     public bool CanEdit => !IsBuiltIn;
 
@@ -50,6 +52,9 @@ public partial class ReusableTemplateModel : ObservableObject
 
     [JsonIgnore]
     public int BindingSourceCount => BindingSources.Count;
+
+    [JsonIgnore]
+    public int InteractionCount => Interactions.Count;
 
     [JsonIgnore]
     public string Summary
@@ -69,7 +74,14 @@ public partial class ReusableTemplateModel : ObservableObject
                 _ => $"{BindingSourceCount} источника данных"
             };
 
-            return $"{controlsText}, {sourcesText}";
+            var interactionsText = InteractionCount switch
+            {
+                0 => "без interactions",
+                1 => "1 interaction",
+                _ => $"{InteractionCount} interactions"
+            };
+
+            return $"{controlsText}, {sourcesText}, {interactionsText}";
         }
     }
 

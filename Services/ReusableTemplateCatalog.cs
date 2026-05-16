@@ -13,6 +13,7 @@ public static class ReusableTemplateCatalog
             CreateLoginForm(),
             CreateCrudToolbar(),
             CreateSearchPanel(),
+            CreateCustomersCrudDemo(),
             CreateDataGridFilterPanel(),
             CreateHeaderFooter(),
             CreateCardBlock()
@@ -90,6 +91,95 @@ public static class ReusableTemplateCatalog
                 Control("builtin-search-box", DesignerControlTypes.TextBox, "SearchTextBox", 22, 58, 330, 38, rootId, placeholder: "Введите текст для поиска", background: "#F8FAFC", border: "#CBD5E1"),
                 Control("builtin-search-active", DesignerControlTypes.CheckBox, "OnlyActiveCheckBox", 22, 98, 180, 26, rootId, "Только активные", background: "Transparent"),
                 Control("builtin-search-button", DesignerControlTypes.Button, "ApplySearchButton", 372, 58, 156, 38, rootId, "Применить", background: "#2563EB", foreground: "#FFFFFF", border: "#1D4ED8", radius: 11, fontWeight: "SemiBold")
+            }
+        };
+    }
+
+    private static ReusableTemplateModel CreateCustomersCrudDemo()
+    {
+        const string rootId = "builtin-customers-form-root";
+        const string detailsPanelId = "builtin-customers-details-panel";
+        const string sourceId = "builtin-customers-source";
+
+        return new ReusableTemplateModel
+        {
+            Id = "builtin-customers-crud-demo",
+            Name = "Форма клиентов",
+            Category = "Данные",
+            Description = "Готовая demo form: Customers DataGrid, BindingSource с реальными полями, карточка деталей и рабочие interactions.",
+            IsBuiltIn = true,
+            Width = 1080,
+            Height = 660,
+            BindingSources = new List<BindingSourceFileModel>
+            {
+                new()
+                {
+                    Id = sourceId,
+                    Name = "CustomersSource",
+                    Path = "Customers",
+                    ItemTypeName = "Customer",
+                    Description = "Demo template source for the Customers CRUD form.",
+                    SourceKind = "Manual",
+                    SourceSchemaName = "dbo",
+                    Fields = new List<BindingFieldFileModel>
+                    {
+                        Field("Id", "Id", "1001", "72", "int"),
+                        Field("Name", "Name", "Анна Смирнова", "*", "string"),
+                        Field("Email", "Email", "anna.smirnova@example.com", "220", "string"),
+                        Field("Phone", "Phone", "+7 921 555-0148", "150", "string"),
+                        Field("Status", "Status", "Активен", "118", "string")
+                    }
+                }
+            },
+            Controls = new List<DesignerControlFileModel>
+            {
+                Control(rootId, DesignerControlTypes.Group, "CustomersFormTemplate", 0, 0, 1080, 660, background: "Transparent"),
+                Control("builtin-customers-bg", DesignerControlTypes.Border, "CustomersFormBackground", 0, 0, 1080, 660, rootId, background: "#F6F8FB", border: "#D7E2EE", radius: 24),
+                Control("builtin-customers-title", DesignerControlTypes.TextBlock, "CustomersFormTitle", 28, 24, 360, 34, rootId, "Форма клиентов", background: "Transparent", foreground: "#0F172A", fontSize: 26, fontWeight: "Bold"),
+                Control("builtin-customers-subtitle", DesignerControlTypes.TextBlock, "CustomersFormSubtitle", 30, 60, 560, 26, rootId, "Demo-сценарий для защиты: таблица, детали, действия и экспорт в Avalonia.", background: "Transparent", foreground: "#64748B", fontSize: 13),
+                Control("builtin-customers-demo-badge-bg", DesignerControlTypes.Border, "CustomersDemoBadgeBackground", 858, 24, 190, 28, rootId, background: "#E0F2FE", border: "#7DD3FC", radius: 999),
+                Control("builtin-customers-demo-badge", DesignerControlTypes.TextBlock, "CustomersDemoBadge", 878, 28, 150, 22, rootId, "Real DataGrid demo", background: "Transparent", foreground: "#0369A1", fontSize: 12, fontWeight: "SemiBold"),
+                Control("builtin-customers-toggle-details", DesignerControlTypes.CheckBox, "ShowDetailsCheckBox", 830, 60, 220, 30, rootId, "Показывать детали", background: "Transparent", foreground: "#334155", fontSize: 13),
+
+                Control("builtin-customers-grid-card", DesignerControlTypes.Border, "CustomersGridCard", 24, 110, 670, 510, rootId, background: "#FFFFFF", border: "#D7E2EE", radius: 18),
+                Control("builtin-customers-grid-title", DesignerControlTypes.TextBlock, "CustomersGridTitle", 46, 130, 220, 28, rootId, "Клиенты", background: "Transparent", foreground: "#0F172A", fontSize: 19, fontWeight: "Bold"),
+                Control("builtin-customers-grid-hint", DesignerControlTypes.TextBlock, "CustomersGridHint", 46, 156, 420, 22, rootId, "Выберите строку, чтобы заполнить карточку деталей.", background: "Transparent", foreground: "#64748B", fontSize: 12),
+                DataGridControl("builtin-customers-grid", "CustomersGrid", 46, 184, 626, 410, rootId, sourceId, showFilterRow: false, showGroupPanel: false, showFooter: false),
+
+                Control(detailsPanelId, DesignerControlTypes.Group, "CustomerDetailsPanel", 716, 110, 340, 510, rootId, background: "Transparent"),
+                Control("builtin-customers-details-card", DesignerControlTypes.Border, "CustomerDetailsCard", 0, 0, 340, 510, detailsPanelId, background: "#FFFFFF", border: "#D7E2EE", radius: 18),
+                Control("builtin-customers-details-title", DesignerControlTypes.TextBlock, "CustomerDetailsTitle", 22, 20, 220, 28, detailsPanelId, "Детали клиента", background: "Transparent", foreground: "#0F172A", fontSize: 19, fontWeight: "Bold"),
+                Control("builtin-customers-details-hint", DesignerControlTypes.TextBlock, "CustomerDetailsHint", 22, 46, 290, 24, detailsPanelId, "Поля заполняются из выбранной строки.", background: "Transparent", foreground: "#64748B", fontSize: 12),
+
+                Control("builtin-customers-name-label", DesignerControlTypes.TextBlock, "CustomerNameLabel", 22, 82, 120, 20, detailsPanelId, "Name", background: "Transparent", foreground: "#475569", fontSize: 12, fontWeight: "SemiBold"),
+                Control("builtin-customers-name-box", DesignerControlTypes.TextBox, "CustomerNameTextBox", 22, 104, 296, 38, detailsPanelId, placeholder: "Имя клиента", background: "#F8FAFC", border: "#CBD5E1", radius: 10, textBindingPath: "CurrentCustomer.Name"),
+                Control("builtin-customers-email-label", DesignerControlTypes.TextBlock, "CustomerEmailLabel", 22, 154, 120, 20, detailsPanelId, "Email", background: "Transparent", foreground: "#475569", fontSize: 12, fontWeight: "SemiBold"),
+                Control("builtin-customers-email-box", DesignerControlTypes.TextBox, "CustomerEmailTextBox", 22, 176, 296, 38, detailsPanelId, placeholder: "email@example.com", background: "#F8FAFC", border: "#CBD5E1", radius: 10, textBindingPath: "CurrentCustomer.Email"),
+                Control("builtin-customers-phone-label", DesignerControlTypes.TextBlock, "CustomerPhoneLabel", 22, 226, 120, 20, detailsPanelId, "Phone", background: "Transparent", foreground: "#475569", fontSize: 12, fontWeight: "SemiBold"),
+                Control("builtin-customers-phone-box", DesignerControlTypes.TextBox, "CustomerPhoneTextBox", 22, 248, 296, 38, detailsPanelId, placeholder: "+7 000 000-00-00", background: "#F8FAFC", border: "#CBD5E1", radius: 10, textBindingPath: "CurrentCustomer.Phone"),
+                Control("builtin-customers-status-label", DesignerControlTypes.TextBlock, "CustomerStatusLabel", 22, 298, 120, 20, detailsPanelId, "Status", background: "Transparent", foreground: "#475569", fontSize: 12, fontWeight: "SemiBold"),
+                Control("builtin-customers-status-bg", DesignerControlTypes.Border, "CustomerStatusBadgeBackground", 22, 322, 160, 34, detailsPanelId, background: "#DCFCE7", border: "#BBF7D0", radius: 999),
+                Control("builtin-customers-status-text", DesignerControlTypes.TextBlock, "CustomerStatusTextBlock", 36, 328, 132, 22, detailsPanelId, "Не выбран", background: "Transparent", foreground: "#166534", fontSize: 13, fontWeight: "SemiBold", textBindingPath: "CurrentCustomer.Status"),
+
+                Control("builtin-customers-add", DesignerControlTypes.Button, "AddCustomerButton", 22, 384, 92, 38, detailsPanelId, "Добавить", background: "#16A34A", foreground: "#FFFFFF", border: "#15803D", radius: 10, fontWeight: "SemiBold", generatedButtonActionKey: "Add"),
+                Control("builtin-customers-save", DesignerControlTypes.Button, "SaveCustomerButton", 124, 384, 92, 38, detailsPanelId, "Сохранить", background: "#2563EB", foreground: "#FFFFFF", border: "#1D4ED8", radius: 10, fontWeight: "SemiBold", generatedButtonActionKey: "Save"),
+                Control("builtin-customers-delete", DesignerControlTypes.Button, "DeleteCustomerButton", 226, 384, 92, 38, detailsPanelId, "Удалить", background: "#EF4444", foreground: "#FFFFFF", border: "#DC2626", radius: 10, fontWeight: "SemiBold", generatedButtonActionKey: "Delete"),
+                Control("builtin-customers-clear", DesignerControlTypes.Button, "ClearCustomerButton", 22, 434, 140, 38, detailsPanelId, "Очистить", background: "#F8FAFC", foreground: "#0F172A", border: "#CBD5E1", radius: 10, fontWeight: "SemiBold", generatedButtonActionKey: "Clear"),
+                Control("builtin-customers-message", DesignerControlTypes.Button, "MessageCustomerButton", 172, 434, 146, 38, detailsPanelId, "Сообщение", background: "#0EA5E9", foreground: "#FFFFFF", border: "#0284C7", radius: 10, fontWeight: "SemiBold")
+            },
+            Interactions = new List<InteractionFileModel>
+            {
+                Interaction("CustomersGrid", InteractionModel.EventDataGridSelectionChanged, InteractionModel.ActionSetProperty, "CustomerNameTextBox", InteractionModel.TargetPropertyText, "Name"),
+                Interaction("CustomersGrid", InteractionModel.EventDataGridSelectionChanged, InteractionModel.ActionSetProperty, "CustomerEmailTextBox", InteractionModel.TargetPropertyText, "Email"),
+                Interaction("CustomersGrid", InteractionModel.EventDataGridSelectionChanged, InteractionModel.ActionSetProperty, "CustomerPhoneTextBox", InteractionModel.TargetPropertyText, "Phone"),
+                Interaction("CustomersGrid", InteractionModel.EventDataGridSelectionChanged, InteractionModel.ActionSetProperty, "CustomerStatusTextBlock", InteractionModel.TargetPropertyText, "Status"),
+                Interaction("ShowDetailsCheckBox", InteractionModel.EventCheckBoxChecked, InteractionModel.ActionToggleVisibility, "CustomerDetailsPanel", InteractionModel.TargetPropertyIsVisible),
+                Interaction("ShowDetailsCheckBox", InteractionModel.EventCheckBoxUnchecked, InteractionModel.ActionToggleVisibility, "CustomerDetailsPanel", InteractionModel.TargetPropertyIsVisible),
+                Interaction("ClearCustomerButton", InteractionModel.EventButtonClick, InteractionModel.ActionClearProperty, "CustomerNameTextBox", InteractionModel.TargetPropertyText),
+                Interaction("ClearCustomerButton", InteractionModel.EventButtonClick, InteractionModel.ActionClearProperty, "CustomerEmailTextBox", InteractionModel.TargetPropertyText),
+                Interaction("ClearCustomerButton", InteractionModel.EventButtonClick, InteractionModel.ActionClearProperty, "CustomerPhoneTextBox", InteractionModel.TargetPropertyText),
+                Interaction("ClearCustomerButton", InteractionModel.EventButtonClick, InteractionModel.ActionClearProperty, "CustomerStatusTextBlock", InteractionModel.TargetPropertyText),
+                Interaction("MessageCustomerButton", InteractionModel.EventButtonClick, InteractionModel.ActionShowMessage, textTemplate: "Демо форма клиентов готова: DataGrid, детали, кнопки и interactions экспортируются в Avalonia.", messageTitle: "Customers CRUD Demo")
             }
         };
     }
@@ -206,7 +296,10 @@ public static class ReusableTemplateCatalog
         double thickness = 1,
         double radius = 6,
         double fontSize = 14,
-        string fontWeight = "Normal")
+        string fontWeight = "Normal",
+        string textBindingPath = "",
+        string generatedButtonActionKey = "",
+        double padding = 8)
     {
         return new DesignerControlFileModel
         {
@@ -223,6 +316,9 @@ public static class ReusableTemplateCatalog
             CornerRadius = radius,
             FontSize = fontSize,
             FontWeight = fontWeight,
+            Padding = padding,
+            TextBindingPath = textBindingPath,
+            GeneratedButtonActionKey = generatedButtonActionKey,
             X = x,
             Y = y,
             Width = width,
@@ -239,7 +335,10 @@ public static class ReusableTemplateCatalog
         double width,
         double height,
         string parentId,
-        string bindingSourceId)
+        string bindingSourceId,
+        bool showFilterRow = true,
+        bool showGroupPanel = true,
+        bool showFooter = true)
     {
         return new DesignerControlFileModel
         {
@@ -266,10 +365,10 @@ public static class ReusableTemplateCatalog
             DataGridShowRowLines = true,
             DataGridShowColumnLines = true,
             DataGridShowAlternatingRows = true,
-            ShowFilterRow = true,
-            ShowGroupPanel = true,
+            ShowFilterRow = showFilterRow,
+            ShowGroupPanel = showGroupPanel,
             AllowGrouping = true,
-            ShowFooter = true,
+            ShowFooter = showFooter,
             AutoGenerateColumns = false,
             BindingSourceId = bindingSourceId,
             X = x,
@@ -277,6 +376,30 @@ public static class ReusableTemplateCatalog
             Width = width,
             Height = height,
             IsVisible = true
+        };
+    }
+
+    private static InteractionFileModel Interaction(
+        string sourceControlName,
+        string eventName,
+        string actionType,
+        string targetControlName = "",
+        string targetProperty = InteractionModel.TargetPropertyText,
+        string sourcePath = "",
+        string textTemplate = "",
+        string messageTitle = "")
+    {
+        return new InteractionFileModel
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            SourceControlName = sourceControlName,
+            EventName = eventName,
+            ActionType = actionType,
+            TargetControlName = targetControlName,
+            TargetProperty = targetProperty,
+            SourcePath = sourcePath,
+            TextTemplate = textTemplate,
+            MessageTitle = messageTitle
         };
     }
 
