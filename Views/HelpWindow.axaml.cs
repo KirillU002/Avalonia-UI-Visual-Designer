@@ -8,21 +8,23 @@ namespace FormDesigner.Views;
 
 public partial class HelpWindow : Window
 {
-    private readonly DispatcherTimer _demoTimer = new() { Interval = TimeSpan.FromSeconds(3.4) };
+    private readonly DispatcherTimer _demoTimer = new() { Interval = TimeSpan.FromSeconds(4.5) };
     private readonly (string Title, string Description)[] _demoSteps =
     {
-        ("Шаг 1. Перетащите компоненты", "Начните с toolbox слева. После drop на рабочую поверхность элемент становится частью документа и сразу доступен для настройки."),
-        ("Шаг 2. Настройте свойства", "После выбора элемента меняйте текст, размеры, цвета, типографику, границы и дополнительные descriptor-driven свойства в правой панели."),
-        ("Шаг 3. Подключите данные", "Создайте BindingSource вручную, импортируйте его из DLL или подтяните из SQL Server, затем привяжите DataGrid или TreeList и при необходимости примените мастер привязок."),
-        ("Шаг 4. Проверьте результат", "Используйте F5 для полноценного preview запуска в отдельном окне.")
+        ("Designer canvas", "Toolbox, canvas и properties работают как единый поток: добавьте control, выделите его и настройте внешний вид без перехода в код."),
+        ("DataGrid + BindingSource", "BindingSource задает реальные поля, а DataGrid использует их как колонки для preview, export и interactions."),
+        ("Interaction Designer", "Свяжите событие с действием: selection заполняет поля, кнопки показывают сообщение, очищают форму или скрывают панель."),
+        ("Export XAML/C#", "Code/Export mode показывает XAML, C# и checklist: target, layout mode, DataGrid mode, NuGet и exported interactions."),
+        ("Plugin system", "Plugin DLL регистрирует descriptor, preview provider и export provider, после чего control появляется в toolbox."),
+        ("Preview mode", "Preview запускает форму как пользовательский сценарий: клики, selection, show/hide и diagnostics проверяются до переноса в проект.")
     };
 
     private Border[] _demoFrames = Array.Empty<Border>();
     private Border[] _demoDots = Array.Empty<Border>();
     private int _currentDemoIndex;
 
-    private static readonly IBrush ActiveDotBrush = new SolidColorBrush(Color.Parse("#2563EB"));
-    private static readonly IBrush InactiveDotBrush = new SolidColorBrush(Color.Parse("#D7E3EF"));
+    private static readonly IBrush ActiveDotBrush = new SolidColorBrush(Color.Parse("#93C5FD"));
+    private static readonly IBrush InactiveDotBrush = new SolidColorBrush(Color.Parse("#64748B"));
 
     public HelpWindow()
     {
@@ -37,8 +39,8 @@ public partial class HelpWindow : Window
 
     private void BuildDemoState()
     {
-        _demoFrames = new[] { DemoFrame0, DemoFrame1, DemoFrame2, DemoFrame3 };
-        _demoDots = new[] { DemoDot0, DemoDot1, DemoDot2, DemoDot3 };
+        _demoFrames = new[] { DemoFrame0, DemoFrame1, DemoFrame2, DemoFrame3, DemoFrame4, DemoFrame5 };
+        _demoDots = new[] { DemoDot0, DemoDot1, DemoDot2, DemoDot3, DemoDot4, DemoDot5 };
         ShowDemoStep(0);
     }
 
@@ -78,6 +80,19 @@ public partial class HelpWindow : Window
         RestartDemoTimer();
     }
 
+    private void DemoDot_Click(object? sender, PointerPressedEventArgs e)
+    {
+        if (sender is not Border dot)
+            return;
+
+        var index = Array.IndexOf(_demoDots, dot);
+        if (index < 0)
+            return;
+
+        ShowDemoStep(index);
+        RestartDemoTimer();
+    }
+
     private void RestartDemoTimer()
     {
         _demoTimer.Stop();
@@ -86,6 +101,9 @@ public partial class HelpWindow : Window
 
     private void ShowDemoStep(int index)
     {
+        if (index < 0 || index >= _demoSteps.Length)
+            return;
+
         _currentDemoIndex = index;
 
         for (var i = 0; i < _demoFrames.Length; i++)
