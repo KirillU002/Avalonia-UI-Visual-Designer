@@ -1296,35 +1296,6 @@
                 </StackPanel>
               </Border>
 
-              <Border Background="#0F172AEF"
-                      BorderBrush="#60A5FA"
-                      BorderThickness="1"
-                      CornerRadius="16"
-                      Padding="14,10"
-                      HorizontalAlignment="Right"
-                      VerticalAlignment="Top"
-                      Margin="0,12,12,0"
-                      IsVisible="{Binding IsUserPreviewMode}">
-                <StackPanel Orientation="Horizontal"
-                            Spacing="12"
-                            VerticalAlignment="Center">
-                  <StackPanel Spacing="2">
-                    <TextBlock Text="Режим просмотра"
-                               Foreground="White"
-                               FontWeight="Bold"/>
-                    <TextBlock Text="Скрыты рамки, бейджи и ручки дизайнера. Runtime открывайте через «Предпросмотр запуска»."
-                               Foreground="#BFDBFE"
-                               FontSize="12"/>
-                  </StackPanel>
-
-                  <Button Content="Показать рамки"
-                          Classes="toolbar-button"
-                          Command="{Binding ToggleUserPreviewModeCommand}"
-                          Padding="12,7"
-                          ToolTip.Tip="Вернуться в режим редактирования"/>
-                </StackPanel>
-              </Border>
-
               <Border x:Name="MiniMapHost"
                       Width="250"
                       Padding="12"

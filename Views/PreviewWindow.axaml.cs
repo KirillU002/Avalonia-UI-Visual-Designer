@@ -34,6 +34,7 @@ namespace FormDesigner.Views;
 /// </summary>
 public partial class PreviewWindow : Window
 {
+    private const double RuntimeToolbarHeight = 52;
     private const int MaxPreviewDataGridRows = 120;
     private static readonly DataFormat<string> RuntimeDataGridGroupFieldFormat =
         DataFormat.CreateStringApplicationFormat("formdesigner-preview-datagrid-group-field");
@@ -347,7 +348,7 @@ public partial class PreviewWindow : Window
         WindowStartupLocation = NormalizeStartupLocation(_document.FormStartupLocation);
 
         Width = Math.Max(320, _document.DesignWidth);
-        Height = Math.Max(220, _document.DesignHeight);
+        Height = Math.Max(220, _document.DesignHeight) + RuntimeToolbarHeight;
         WindowState = NormalizeWindowState(_document.FormWindowState);
 
         PreviewSurfaceBorder.Background = ParseBrush(_document.SurfaceBackground, "#FFFFFF");
