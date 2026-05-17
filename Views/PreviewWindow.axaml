@@ -13,6 +13,35 @@
               ClipToBounds="True"/>
     </Border>
 
+    <Border Background="#0F172AEF"
+            BorderBrush="#334155"
+            BorderThickness="1"
+            CornerRadius="14"
+            Padding="10"
+            HorizontalAlignment="Right"
+            VerticalAlignment="Top"
+            Margin="14">
+      <StackPanel Orientation="Horizontal"
+                  Spacing="8"
+                  VerticalAlignment="Center">
+        <TextBlock x:Name="PreviewRuntimeStatusText"
+                   Text="Runtime ready"
+                   Foreground="#CBD5E1"
+                   VerticalAlignment="Center"
+                   MaxWidth="320"
+                   TextTrimming="CharacterEllipsis"/>
+        <Button Content="Reset Preview"
+                Click="ResetPreviewButton_Click"
+                Padding="12,7"/>
+        <Button Content="Reload Preview"
+                Click="ReloadPreviewButton_Click"
+                Padding="12,7"/>
+        <Button Content="Закрыть предпросмотр"
+                Click="ClosePreviewButton_Click"
+                Padding="12,7"/>
+      </StackPanel>
+    </Border>
+
     <Border x:Name="LoadingOverlay"
             Background="#0F172AB8">
       <Grid>

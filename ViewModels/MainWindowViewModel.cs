@@ -88,6 +88,7 @@ public partial class MainWindowViewModel : ObservableObject
     private readonly IDesignerRegistry _registry;
     private readonly DocumentDiagnosticsService _diagnosticsService;
     private readonly ReusableTemplateStorageService _templateStorageService = new();
+    private readonly List<DocumentDiagnosticModel> _previewRuntimeDiagnostics = new();
     private IXamlWriter? _activeXamlWriter;
     private XamlExportContext? _activeXamlExportContext;
     private Dictionary<string, IDesignControlNode>? _activeXamlControlNodes;
@@ -557,7 +558,7 @@ public partial class MainWindowViewModel : ObservableObject
     public bool IsPluginsModePanelVisible => IsPluginsMode && IsDesignerSidePanelsVisible;
     public bool IsLogicModePanelVisible => IsLogicMode && IsDesignerSidePanelsVisible;
     public bool IsContextualToolbarVisible => HasSelectedControl && IsDesignMode && !IsUserPreviewMode;
-    public bool IsCompactDiagnosticsBarVisible => IsDesignerSidePanelsVisible && !IsDiagnosticsMode && !IsUserPreviewMode;
+    public bool IsCompactDiagnosticsBarVisible => IsDesignerSidePanelsVisible && !IsDiagnosticsMode;
     public int LeftRailSelectedIndex => IsDataMode ? 4 : IsHistoryMode ? 3 : 0;
     public int RightInspectorSelectedIndex => IsDataMode ? 1 : IsPluginsMode ? 2 : IsCodeMode ? 3 : IsLogicMode ? 5 : 0;
     public string WorkspaceModeDescription => WorkspaceMode switch
@@ -681,9 +682,9 @@ public partial class MainWindowViewModel : ObservableObject
     public bool CanChangeZOrder => GetEditableSelectedRootControls().Count > 0;
     public bool CanArrangeSelection => GetVisibleEditableSelectedRootControls().Count > 1;
     public bool CanDistributeSelection => GetVisibleEditableSelectedRootControls().Count > 2;
-    public bool IsDesignerShellHeaderVisible => !IsImmersiveDesignerMode && !IsUserPreviewMode;
-    public bool IsDesignerSidePanelsVisible => !IsImmersiveDesignerMode && !IsUserPreviewMode;
-    public bool IsDesignerSurfaceToolbarVisible => !IsUserPreviewMode;
+    public bool IsDesignerShellHeaderVisible => !IsImmersiveDesignerMode;
+    public bool IsDesignerSidePanelsVisible => !IsImmersiveDesignerMode;
+    public bool IsDesignerSurfaceToolbarVisible => true;
     public bool IsFormSizeManagedByMonitor => FormWindowState is WindowStateMaximized or WindowStateFullScreen;
     public bool IsFormSizeEditable => !IsFormSizeManagedByMonitor;
     public bool CanResizeDesignSurface => FormWindowState == WindowStateNormal && !IsUserPreviewMode;
@@ -707,7 +708,7 @@ public partial class MainWindowViewModel : ObservableObject
         _ => "Размер задается вручную и влияет на обычное окно."
     };
     public string ImmersiveModeButtonText => IsImmersiveDesignerMode ? "Выйти из полноэкранного режима" : "Полноэкранное редактирование";
-    public string UserPreviewModeButtonText => IsUserPreviewMode ? "Вернуться в редактор" : "Как увидит пользователь";
+    public string UserPreviewModeButtonText => IsUserPreviewMode ? "Показать рамки дизайнера" : "Скрыть рамки дизайнера";
     public string FormWindowDecorationsSummary => FormHasSystemDecorations ? "Системная рамка" : "Без системной рамки";
 
     public string FormThemeDescription => DesignerThemeCatalog.NormalizeThemeName(FormTheme) == DesignerThemeCatalog.Dark
@@ -2328,6 +2329,7 @@ public partial class MainWindowViewModel : ObservableObject
             .Validate(Controls, BindingSources, Interactions, CurrentDocumentPath, DesignWidth, DesignHeight)
             .ToList();
         AppendExportDiagnostics(diagnostics);
+        AppendPreviewRuntimeDiagnostics(diagnostics);
 
         Diagnostics.Clear();
         foreach (var diagnostic in diagnostics)
@@ -2335,6 +2337,28 @@ public partial class MainWindowViewModel : ObservableObject
 
         RaiseDiagnosticsProperties();
         RaiseExportChecklistProperties();
+    }
+
+    public void SetPreviewRuntimeDiagnostics(IEnumerable<DocumentDiagnosticModel> diagnostics)
+    {
+        _previewRuntimeDiagnostics.Clear();
+        _previewRuntimeDiagnostics.AddRange(diagnostics);
+        RefreshDiagnostics();
+    }
+
+    public void ClearPreviewRuntimeDiagnostics()
+    {
+        if (_previewRuntimeDiagnostics.Count == 0)
+            return;
+
+        _previewRuntimeDiagnostics.Clear();
+        RefreshDiagnostics();
+    }
+
+    private void AppendPreviewRuntimeDiagnostics(ICollection<DocumentDiagnosticModel> diagnostics)
+    {
+        foreach (var diagnostic in _previewRuntimeDiagnostics)
+            diagnostics.Add(diagnostic);
     }
 
     private void AppendExportDiagnostics(ICollection<DocumentDiagnosticModel> diagnostics)
@@ -3939,8 +3963,8 @@ public partial class MainWindowViewModel : ObservableObject
     {
         IsUserPreviewMode = !IsUserPreviewMode;
         StatusText = IsUserPreviewMode
-            ? "Включен режим пользовательского предпросмотра"
-            : "Возвращен режим редактирования";
+            ? "Режим просмотра: рамки и служебные элементы дизайнера скрыты"
+            : "Рамки и служебные элементы дизайнера снова видны";
     }
 
     [RelayCommand]

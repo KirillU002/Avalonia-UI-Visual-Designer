@@ -16,6 +16,7 @@ using FormDesigner.DesignerSystem.BuiltIn;
 using FormDesigner.DesignerSystem.Infrastructure;
 using FormDesigner.Models;
 using FormDesigner.PluginContracts;
+using FormDesigner.Services;
 using FormDesigner.ViewModels;
 using System;
 using System.Collections.Generic;
@@ -40,17 +41,26 @@ public partial class PreviewWindow : Window
     private DesignerDocumentFileModel _document = new();
     private readonly Dictionary<string, Bitmap?> _imageCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, (string Signature, IReadOnlyList<Dictionary<string, string>> Rows)> _sqlPreviewRowsBySourceId = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, Dictionary<string, string>> _dataGridFilterValuesByControlId = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, string> _runtimeTextBoxValuesByControlId = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, string> _runtimeTextBlockValuesByControlId = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, string> _runtimeButtonContentByControlId = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, bool> _runtimeCheckBoxValuesByControlId = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, bool> _runtimeVisibilityByControlId = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, bool> _runtimeEnabledByControlId = new(StringComparer.OrdinalIgnoreCase);
+    private readonly PreviewRuntimeService _previewRuntimeService = new();
     private readonly IDesignerRegistry _registry;
     private RuntimeDataGridHeaderDragState? _runtimeDataGridHeaderDrag;
     private bool _isRenderingDocument;
     private bool _renderDocumentAgainRequested;
+    private int _lastSyncedPreviewDiagnosticsVersion = -1;
+
+    private Dictionary<string, Dictionary<string, string>> _dataGridFilterValuesByControlId => EnsurePreviewRuntimeContext().DataGridFilterValuesByControlId;
+
+    private Dictionary<string, string> _runtimeTextBoxValuesByControlId => EnsurePreviewRuntimeContext().TextBoxValuesByControlId;
+
+    private Dictionary<string, string> _runtimeTextBlockValuesByControlId => EnsurePreviewRuntimeContext().TextBlockValuesByControlId;
+
+    private Dictionary<string, string> _runtimeButtonContentByControlId => EnsurePreviewRuntimeContext().ButtonContentByControlId;
+
+    private Dictionary<string, bool> _runtimeCheckBoxValuesByControlId => EnsurePreviewRuntimeContext().CheckBoxValuesByControlId;
+
+    private Dictionary<string, bool> _runtimeVisibilityByControlId => EnsurePreviewRuntimeContext().VisibilityByControlId;
+
+    private Dictionary<string, bool> _runtimeEnabledByControlId => EnsurePreviewRuntimeContext().EnabledByControlId;
 
     public PreviewWindow()
         : this(CreateFallbackRegistry())
@@ -76,6 +86,68 @@ public partial class PreviewWindow : Window
         ApplyWindowSettings();
     }
 
+    private PreviewRuntimeContext EnsurePreviewRuntimeContext()
+    {
+        if (_previewRuntimeService.Current is { } context)
+            return context;
+
+        var nextContext = _previewRuntimeService.Start(
+            _document.Controls.Select(CreateRuntimeControlModel),
+            ToRuntimeBindingSources(),
+            ToRuntimeInteractions());
+        SyncPreviewRuntimeDiagnostics();
+        return nextContext;
+    }
+
+    private void ReloadPreviewRuntimeContext()
+    {
+        _previewRuntimeService.Reload(
+            _document.Controls.Select(CreateRuntimeControlModel),
+            ToRuntimeBindingSources(),
+            ToRuntimeInteractions());
+        _lastSyncedPreviewDiagnosticsVersion = -1;
+        SyncPreviewRuntimeDiagnostics();
+    }
+
+    private void SyncPreviewRuntimeDiagnostics()
+    {
+        if (_previewRuntimeService.Current is not { } context)
+            return;
+
+        if (context.DiagnosticsVersion == _lastSyncedPreviewDiagnosticsVersion)
+            return;
+
+        _lastSyncedPreviewDiagnosticsVersion = context.DiagnosticsVersion;
+        var errors = context.Diagnostics.Count(item => item.Severity == DocumentDiagnosticSeverity.Error);
+        var warnings = context.Diagnostics.Count(item => item.Severity == DocumentDiagnosticSeverity.Warning);
+        PreviewRuntimeStatusText.Text = errors > 0
+            ? $"Runtime errors: {errors}, warnings: {warnings}"
+            : warnings > 0
+                ? $"Runtime warnings: {warnings}"
+                : "Runtime ready";
+        ToolTip.SetTip(
+            PreviewRuntimeStatusText,
+            context.Diagnostics.Count == 0
+                ? "Preview runtime is isolated from the document model."
+                : string.Join(Environment.NewLine, context.Diagnostics.Take(6).Select(item => $"{item.Category}: {item.Message}")));
+    }
+
+    private IEnumerable<InteractionModel> ToRuntimeInteractions()
+    {
+        return _document.Interactions.Select(interaction => new InteractionModel
+        {
+            Id = interaction.Id,
+            SourceControlName = interaction.SourceControlName,
+            EventName = interaction.EventName,
+            ActionType = interaction.ActionType,
+            TargetControlName = interaction.TargetControlName,
+            TargetProperty = interaction.TargetProperty,
+            SourcePath = interaction.SourcePath,
+            TextTemplate = interaction.TextTemplate,
+            MessageTitle = interaction.MessageTitle
+        });
+    }
+
     private static IDesignerRegistry CreateFallbackRegistry()
     {
         var registry = new DesignerRegistry();
@@ -90,6 +162,7 @@ public partial class PreviewWindow : Window
         try
         {
             await Task.Delay(180);
+            EnsurePreviewRuntimeContext();
             await PreloadBindingPreviewRowsAsync();
             RenderDocument();
         }
@@ -105,6 +178,55 @@ public partial class PreviewWindow : Window
         {
             Close();
             e.Handled = true;
+        }
+    }
+
+    private async void ResetPreviewButton_Click(object? sender, RoutedEventArgs e)
+    {
+        await ResetPreviewRuntimeAsync();
+    }
+
+    private async void ReloadPreviewButton_Click(object? sender, RoutedEventArgs e)
+    {
+        await ReloadPreviewRuntimeAsync();
+    }
+
+    private void ClosePreviewButton_Click(object? sender, RoutedEventArgs e)
+    {
+        Close();
+    }
+
+    private async Task ResetPreviewRuntimeAsync()
+    {
+        ShowLoading("Reset Preview", "Сбрасываем runtime-состояние и заново применяем preview data.");
+        try
+        {
+            EnsurePreviewRuntimeContext();
+            _previewRuntimeService.Reset();
+            _lastSyncedPreviewDiagnosticsVersion = -1;
+            SyncPreviewRuntimeDiagnostics();
+            await PreloadBindingPreviewRowsAsync();
+            RenderDocument();
+        }
+        finally
+        {
+            HideLoading();
+        }
+    }
+
+    private async Task ReloadPreviewRuntimeAsync()
+    {
+        ShowLoading("Reload Preview", "Пересобираем runtime tree, bindings и interactions.");
+        try
+        {
+            _sqlPreviewRowsBySourceId.Clear();
+            ReloadPreviewRuntimeContext();
+            await PreloadBindingPreviewRowsAsync();
+            RenderDocument();
+        }
+        finally
+        {
+            HideLoading();
         }
     }
 
@@ -493,6 +615,92 @@ public partial class PreviewWindow : Window
                 ValueJson = property.ValueJson
             }).ToList()
         };
+    }
+
+    private static DesignControlModel CreateRuntimeControlModel(DesignerControlFileModel control)
+    {
+        var model = new DesignControlModel
+        {
+            Id = control.Id,
+            Type = control.Type,
+            Name = control.Name,
+            DescriptorId = control.DescriptorId,
+            PluginId = control.PluginId,
+            PluginVersion = control.PluginVersion,
+            ParentId = control.ParentId,
+            Text = control.Text,
+            PlaceholderText = control.PlaceholderText,
+            ImageSource = control.ImageSource,
+            Background = control.Background,
+            Foreground = control.Foreground,
+            BorderBrush = control.BorderBrush,
+            BorderThickness = control.BorderThickness,
+            CornerRadius = control.CornerRadius,
+            FontFamily = control.FontFamily,
+            FontSize = control.FontSize,
+            FontWeight = control.FontWeight,
+            Opacity = control.Opacity,
+            Padding = control.Padding,
+            LayoutOrientation = control.LayoutOrientation,
+            LayoutSpacing = control.LayoutSpacing,
+            IsVisible = control.IsVisible,
+            IsLocked = control.IsLocked,
+            Stretch = control.Stretch,
+            X = control.X,
+            Y = control.Y,
+            Width = control.Width,
+            Height = control.Height,
+            AnchorLeft = control.AnchorLeft,
+            AnchorTop = control.AnchorTop,
+            AnchorRight = control.AnchorRight,
+            AnchorBottom = control.AnchorBottom,
+            Columns = control.Columns,
+            Rows = control.Rows,
+            ShowGridLines = control.ShowGridLines,
+            AutoGenerateColumns = control.AutoGenerateColumns,
+            BindingSourceId = control.BindingSourceId,
+            TextBindingPath = control.TextBindingPath,
+            GeneratedButtonActionKey = control.GeneratedButtonActionKey,
+            DataGridGlowColor = control.DataGridGlowColor,
+            DataGridRowBackground = control.DataGridRowBackground,
+            DataGridAlternateRowBackground = control.DataGridAlternateRowBackground,
+            DataGridTextAlignment = control.DataGridTextAlignment,
+            DataGridHeaderBackground = control.DataGridHeaderBackground,
+            DataGridHeaderForeground = control.DataGridHeaderForeground,
+            DataGridRowForeground = control.DataGridRowForeground,
+            DataGridHoverRowBackground = control.DataGridHoverRowBackground,
+            DataGridSelectedRowBackground = control.DataGridSelectedRowBackground,
+            DataGridSelectedRowForeground = control.DataGridSelectedRowForeground,
+            DataGridGridLineBrush = control.DataGridGridLineBrush,
+            DataGridOuterBorderBrush = control.DataGridOuterBorderBrush,
+            DataGridHeaderFontSize = control.DataGridHeaderFontSize,
+            DataGridHeaderFontWeight = control.DataGridHeaderFontWeight,
+            DataGridRowFontSize = control.DataGridRowFontSize,
+            DataGridRowFontWeight = control.DataGridRowFontWeight,
+            DataGridHeaderHeight = control.DataGridHeaderHeight,
+            DataGridRowHeight = control.DataGridRowHeight,
+            DataGridCellPadding = control.DataGridCellPadding,
+            DataGridShowHeader = control.DataGridShowHeader,
+            DataGridShowRowLines = control.DataGridShowRowLines,
+            DataGridShowColumnLines = control.DataGridShowColumnLines,
+            DataGridShowAlternatingRows = control.DataGridShowAlternatingRows,
+            ShowFilterRow = control.ShowFilterRow,
+            FilterMode = DesignControlModel.NormalizeDataGridFilterMode(control.FilterMode),
+            ShowGroupPanel = control.ShowGroupPanel,
+            AllowGrouping = control.AllowGrouping,
+            ShowFooter = control.ShowFooter
+        };
+
+        foreach (var property in control.CustomProperties)
+        {
+            model.CustomProperties.Add(new DesignPropertyValueModel
+            {
+                Key = property.Key,
+                ValueJson = property.ValueJson
+            });
+        }
+
+        return model;
     }
 
     private Control CreatePreviewControl(DesignerControlFileModel control)
@@ -990,219 +1198,63 @@ public partial class PreviewWindow : Window
         string eventName,
         IReadOnlyDictionary<string, string> sourceValues)
     {
-        var changed = false;
-        var normalizedEventName = InteractionModel.NormalizeEventName(eventName);
-        foreach (var interaction in _document.Interactions
-            .Where(interaction => string.Equals(interaction.SourceControlName, source.Name, StringComparison.OrdinalIgnoreCase))
-            .Where(interaction => string.Equals(InteractionModel.NormalizeEventName(interaction.EventName), normalizedEventName, StringComparison.OrdinalIgnoreCase)))
+        var context = EnsurePreviewRuntimeContext();
+        var runtimeSource = context.FindControlById(source.Id) ?? CreateRuntimeControlModel(source);
+        var result = _previewRuntimeService.ExecuteInteractions(runtimeSource, eventName, sourceValues);
+        foreach (var message in result.Messages)
         {
-            changed |= ApplyRuntimeInteraction(interaction, normalizedEventName, sourceValues);
+            _ = ShowRuntimeMessageAsync(message.Message, message.Title);
         }
 
-        return changed;
-    }
-
-    private bool ApplyRuntimeInteraction(
-        InteractionFileModel interaction,
-        string eventName,
-        IReadOnlyDictionary<string, string> sourceValues)
-    {
-        var value = ResolveRuntimeInteractionValue(interaction, sourceValues);
-        if (string.Equals(interaction.ActionType, InteractionModel.ActionShowMessage, StringComparison.OrdinalIgnoreCase))
-        {
-            _ = ShowRuntimeMessageAsync(value, interaction.MessageTitle);
-            return false;
-        }
-
-        var target = _document.Controls.FirstOrDefault(control =>
-            string.Equals(control.Name, interaction.TargetControlName, StringComparison.OrdinalIgnoreCase));
-        if (target is null)
-            return false;
-
-        if (string.Equals(interaction.ActionType, InteractionModel.ActionToggleVisibility, StringComparison.OrdinalIgnoreCase))
-        {
-            if (TryGetBooleanStateForInteractionEvent(eventName, out var nextVisible))
-            {
-                _runtimeVisibilityByControlId[target.Id] = nextVisible;
-            }
-            else
-            {
-                var current = _runtimeVisibilityByControlId.TryGetValue(target.Id, out var visible) ? visible : target.IsVisible;
-                _runtimeVisibilityByControlId[target.Id] = !current;
-            }
-
-            return true;
-        }
-
-        if (string.Equals(interaction.ActionType, InteractionModel.ActionEnableDisable, StringComparison.OrdinalIgnoreCase))
-        {
-            _runtimeEnabledByControlId[target.Id] = TryGetBooleanStateForInteractionEvent(eventName, out var enabled)
-                ? enabled
-                : ParseRuntimeBool(value);
-            return true;
-        }
-
-        var targetProperty = string.IsNullOrWhiteSpace(interaction.TargetProperty)
-            ? InteractionModel.TargetPropertyText
-            : interaction.TargetProperty.Trim();
-
-        if (string.Equals(interaction.ActionType, InteractionModel.ActionClearProperty, StringComparison.OrdinalIgnoreCase))
-            return ClearRuntimeTargetProperty(target, targetProperty);
-
-        return SetRuntimeTargetProperty(target, targetProperty, value);
-    }
-
-    private bool ClearRuntimeTargetProperty(DesignerControlFileModel target, string targetProperty)
-    {
-        if (target.Type == DesignerControlTypes.CheckBox
-            && string.Equals(targetProperty, InteractionModel.TargetPropertyIsChecked, StringComparison.OrdinalIgnoreCase))
-        {
-            _runtimeCheckBoxValuesByControlId[target.Id] = false;
-            return true;
-        }
-
-        if (string.Equals(targetProperty, InteractionModel.TargetPropertyIsVisible, StringComparison.OrdinalIgnoreCase))
-        {
-            _runtimeVisibilityByControlId[target.Id] = false;
-            return true;
-        }
-
-        if (string.Equals(targetProperty, InteractionModel.TargetPropertyIsEnabled, StringComparison.OrdinalIgnoreCase))
-        {
-            _runtimeEnabledByControlId[target.Id] = false;
-            return true;
-        }
-
-        return SetRuntimeTargetProperty(target, targetProperty, string.Empty);
-    }
-
-    private bool SetRuntimeTargetProperty(DesignerControlFileModel target, string targetProperty, string value)
-    {
-        if (target.Type == DesignerControlTypes.TextBox
-            && string.Equals(targetProperty, InteractionModel.TargetPropertyText, StringComparison.OrdinalIgnoreCase))
-        {
-            _runtimeTextBoxValuesByControlId[target.Id] = value;
-            return true;
-        }
-
-        if ((target.Type == DesignerControlTypes.TextBlock || target.Type == DesignerControlTypes.Border)
-            && string.Equals(targetProperty, InteractionModel.TargetPropertyText, StringComparison.OrdinalIgnoreCase))
-        {
-            _runtimeTextBlockValuesByControlId[target.Id] = value;
-            return true;
-        }
-
-        if (target.Type == DesignerControlTypes.Button
-            && string.Equals(targetProperty, InteractionModel.TargetPropertyContent, StringComparison.OrdinalIgnoreCase))
-        {
-            _runtimeButtonContentByControlId[target.Id] = value;
-            return true;
-        }
-
-        if (target.Type == DesignerControlTypes.CheckBox
-            && string.Equals(targetProperty, InteractionModel.TargetPropertyIsChecked, StringComparison.OrdinalIgnoreCase))
-        {
-            _runtimeCheckBoxValuesByControlId[target.Id] = ParseRuntimeBool(value);
-            return true;
-        }
-
-        return false;
-    }
-
-    private static string ResolveRuntimeInteractionValue(
-        InteractionFileModel interaction,
-        IReadOnlyDictionary<string, string> rowValues)
-    {
-        if (!string.IsNullOrWhiteSpace(interaction.TextTemplate))
-            return ApplyRuntimeInteractionTemplate(interaction.TextTemplate, rowValues);
-
-        return GetRuntimeRowValue(rowValues, interaction.SourcePath);
-    }
-
-    private static string ApplyRuntimeInteractionTemplate(
-        string template,
-        IReadOnlyDictionary<string, string> rowValues)
-    {
-        return System.Text.RegularExpressions.Regex.Replace(
-            template,
-            "\\{(?<name>[^{}]+)\\}",
-            match => GetRuntimeRowValue(rowValues, match.Groups["name"].Value.Trim()));
-    }
-
-    private static string GetRuntimeRowValue(IReadOnlyDictionary<string, string> rowValues, string? path)
-    {
-        if (string.IsNullOrWhiteSpace(path))
-            return string.Empty;
-
-        if (rowValues.TryGetValue(path.Trim(), out var directValue))
-            return directValue;
-
-        var match = rowValues.FirstOrDefault(pair => string.Equals(pair.Key, path.Trim(), StringComparison.OrdinalIgnoreCase));
-        return string.IsNullOrEmpty(match.Key) ? string.Empty : match.Value;
-    }
-
-    private static bool ParseRuntimeBool(string value)
-    {
-        if (bool.TryParse(value, out var boolValue))
-            return boolValue;
-
-        if (int.TryParse(value, out var intValue))
-            return intValue != 0;
-
-        return false;
-    }
-
-    private static bool TryGetBooleanStateForInteractionEvent(string eventName, out bool value)
-    {
-        if (string.Equals(eventName, InteractionModel.EventCheckBoxChecked, StringComparison.OrdinalIgnoreCase))
-        {
-            value = true;
-            return true;
-        }
-
-        if (string.Equals(eventName, InteractionModel.EventCheckBoxUnchecked, StringComparison.OrdinalIgnoreCase))
-        {
-            value = false;
-            return true;
-        }
-
-        value = false;
-        return false;
+        SyncPreviewRuntimeDiagnostics();
+        return result.HasVisualChanges;
     }
 
     private async Task ShowRuntimeMessageAsync(string message, string? title)
     {
-        var closeButton = new Button
+        try
         {
-            Content = "OK",
-            MinWidth = 92,
-            HorizontalAlignment = HorizontalAlignment.Right
-        };
-
-        var dialog = new Window
-        {
-            Title = string.IsNullOrWhiteSpace(title) ? "Сообщение" : title,
-            Width = 380,
-            Height = 180,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Content = new StackPanel
+            var closeButton = new Button
             {
-                Margin = new Thickness(18),
-                Spacing = 16,
-                Children =
-                {
-                    new TextBlock
-                    {
-                        Text = string.IsNullOrWhiteSpace(message) ? "Сообщение" : message,
-                        TextWrapping = TextWrapping.Wrap
-                    },
-                    closeButton
-                }
-            }
-        };
+                Content = "OK",
+                MinWidth = 92,
+                HorizontalAlignment = HorizontalAlignment.Right
+            };
 
-        closeButton.Click += (_, _) => dialog.Close();
-        await dialog.ShowDialog(this);
+            var dialog = new Window
+            {
+                Title = string.IsNullOrWhiteSpace(title) ? "Сообщение" : title,
+                Width = 380,
+                Height = 180,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                Content = new StackPanel
+                {
+                    Margin = new Thickness(18),
+                    Spacing = 16,
+                    Children =
+                    {
+                        new TextBlock
+                        {
+                            Text = string.IsNullOrWhiteSpace(message) ? "Сообщение" : message,
+                            TextWrapping = TextWrapping.Wrap
+                        },
+                        closeButton
+                    }
+                }
+            };
+
+            closeButton.Click += (_, _) => dialog.Close();
+            await dialog.ShowDialog(this);
+        }
+        catch (Exception ex)
+        {
+            EnsurePreviewRuntimeContext().AddError(
+                "Preview interaction failed",
+                "Preview errors",
+                $"ShowMessage failed in preview runtime. {ex.Message}",
+                "Check that the preview window is still active and try the interaction again.");
+            SyncPreviewRuntimeDiagnostics();
+        }
     }
 
     private Control CreateImagePreview(DesignerControlFileModel control)
@@ -1689,8 +1741,19 @@ public partial class PreviewWindow : Window
             var rowValues = dataGrid.SelectedItem is IReadOnlyDictionary<string, string> selectedRow
                 ? selectedRow
                 : null;
-            if (rowValues is not null
-                && ApplyRuntimeInteractions(control, InteractionModel.EventDataGridSelectionChanged, rowValues))
+            if (rowValues is null)
+            {
+                EnsurePreviewRuntimeContext().AddWarning(
+                    control.Name,
+                    "Preview warnings",
+                    $"DataGrid selected item is null for '{control.Name}'.",
+                    "Select a row with runtime data before testing SelectionChanged.",
+                    CreateRuntimeControlModel(control));
+                SyncPreviewRuntimeDiagnostics();
+                return;
+            }
+
+            if (ApplyRuntimeInteractions(control, InteractionModel.EventDataGridSelectionChanged, rowValues))
             {
                 Dispatcher.UIThread.Post(RenderDocument, DispatcherPriority.Background);
             }

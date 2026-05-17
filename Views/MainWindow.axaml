@@ -1309,15 +1309,15 @@
                             Spacing="12"
                             VerticalAlignment="Center">
                   <StackPanel Spacing="2">
-                    <TextBlock Text="Режим предпросмотра"
+                    <TextBlock Text="Режим просмотра"
                                Foreground="White"
                                FontWeight="Bold"/>
-                    <TextBlock Text="Форма интерактивна. Esc вернёт режим дизайна."
+                    <TextBlock Text="Скрыты рамки, бейджи и ручки дизайнера. Runtime открывайте через «Предпросмотр запуска»."
                                Foreground="#BFDBFE"
                                FontSize="12"/>
                   </StackPanel>
 
-                  <Button Content="Режим дизайна"
+                  <Button Content="Показать рамки"
                           Classes="toolbar-button"
                           Command="{Binding ToggleUserPreviewModeCommand}"
                           Padding="12,7"
