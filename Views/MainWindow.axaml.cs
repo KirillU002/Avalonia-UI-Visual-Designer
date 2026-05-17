@@ -2406,11 +2406,11 @@ public partial class MainWindow : Window
                 {
                     Background = new SolidColorBrush(Color.Parse(background)),
                     CornerRadius = new CornerRadius(999),
-                    Padding = new Thickness(8, 3),
+                    Padding = new Thickness(7, 2.5),
                     Child = new TextBlock
                     {
                         Text = text,
-                        FontSize = 11,
+                        FontSize = 10.5,
                         FontWeight = FontWeight.SemiBold,
                         Foreground = Brushes.White
                     },
@@ -2424,13 +2424,13 @@ public partial class MainWindow : Window
             }
 
             if (!model.IsVisible)
-                AddTopRightBadge("Скрыт", "#F59E0B", 72);
+                AddTopRightBadge("Скрыт", "#B45309", 72);
 
             if (model.IsLocked)
                 AddTopRightBadge("Locked", "#334155", 82);
 
             if (isSelected && VM.HasMultipleSelection)
-                AddTopRightBadge(isPrimary ? "Главный" : "Выбран", isPrimary ? "#2563EB" : "#F97316", isPrimary ? 84 : 92);
+                AddTopRightBadge(isPrimary ? "Главный" : "Выбран", isPrimary ? "#2563EB" : "#C2410C", isPrimary ? 84 : 92);
 
             var resizeHitArea = new Border
             {
@@ -2444,18 +2444,20 @@ public partial class MainWindow : Window
 
             var resizeVisual = new Border
             {
-                Width = 10,
-                Height = 10,
-                Background = new SolidColorBrush(Color.Parse("#2563EB")),
-                CornerRadius = new CornerRadius(2),
+                Width = 11,
+                Height = 11,
+                Background = Brushes.White,
+                BorderBrush = new SolidColorBrush(Color.Parse("#2563EB")),
+                BorderThickness = new Thickness(2),
+                CornerRadius = new CornerRadius(5),
                 IsHitTestVisible = false,
                 IsVisible = isPrimary && CanResizeControl(model)
             };
 
             Canvas.SetLeft(resizeHitArea, Math.Max(0, renderedWidth - 9));
             Canvas.SetTop(resizeHitArea, Math.Max(0, renderedHeight - 9));
-            Canvas.SetLeft(resizeVisual, Math.Max(0, renderedWidth - 10));
-            Canvas.SetTop(resizeVisual, Math.Max(0, renderedHeight - 10));
+            Canvas.SetLeft(resizeVisual, Math.Max(0, renderedWidth - 11));
+            Canvas.SetTop(resizeVisual, Math.Max(0, renderedHeight - 11));
 
             resizeHitArea.PointerPressed += ResizeHandle_PointerPressed;
             resizeHitArea.PointerMoved += ResizeHandle_PointerMoved;
@@ -2471,12 +2473,12 @@ public partial class MainWindow : Window
             Height = renderedHeight,
             BorderThickness = isUserPreviewMode
                 ? new Thickness(0)
-                : isSelected ? new Thickness(isPrimary ? 3 : 2) : new Thickness(1),
+                : isSelected ? new Thickness(isPrimary ? 2 : 1.5) : new Thickness(1),
             BorderBrush = isUserPreviewMode
                 ? Brushes.Transparent
                 : isSelected
-                    ? new SolidColorBrush(Color.Parse(model.IsLocked ? "#0F766E" : isPrimary ? "#2563EB" : "#F59E0B"))
-                    : new SolidColorBrush(Color.Parse(model.IsLocked ? "#64748B" : "#94A3B8")),
+                    ? new SolidColorBrush(Color.Parse(model.IsLocked ? "#0F766E" : isPrimary ? "#2563EB" : "#F97316"))
+                    : new SolidColorBrush(Color.Parse(model.IsLocked ? "#64748B" : "#66CBD5E1")),
             Background = Brushes.Transparent,
             Opacity = model.Opacity,
             Tag = model,
