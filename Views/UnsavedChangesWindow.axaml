@@ -1,0 +1,56 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="FormDesigner.Views.UnsavedChangesWindow"
+        Width="500"
+        Height="260"
+        MinWidth="460"
+        MinHeight="240"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        Title="Несохранённые изменения"
+        Background="#EEF4FA">
+  <Border Margin="18"
+          Background="White"
+          BorderBrush="#D7E2EE"
+          BorderThickness="1"
+          CornerRadius="18"
+          Padding="18">
+    <Grid RowDefinitions="Auto,*,Auto"
+          RowSpacing="16">
+      <StackPanel Spacing="6">
+        <TextBlock Text="Есть несохранённые изменения"
+                   FontSize="22"
+                   FontWeight="Bold"/>
+        <TextBlock x:Name="DocumentNameTextBlock"
+                   Foreground="#475569"
+                   TextWrapping="Wrap"/>
+      </StackPanel>
+
+      <Border Grid.Row="1"
+              Background="#FEF3C7"
+              BorderBrush="#F59E0B"
+              BorderThickness="1"
+              CornerRadius="14"
+              Padding="14">
+        <TextBlock Text="Сохраните документ, чтобы не потерять последние изменения. Можно продолжить без сохранения или отменить действие."
+                   Foreground="#78350F"
+                   TextWrapping="Wrap"/>
+      </Border>
+
+      <StackPanel Grid.Row="2"
+                  Orientation="Horizontal"
+                  HorizontalAlignment="Right"
+                  Spacing="10">
+        <Button Content="Отмена"
+                MinWidth="100"
+                Click="CancelButton_Click"/>
+        <Button Content="Не сохранять"
+                MinWidth="130"
+                Click="DiscardButton_Click"/>
+        <Button Content="Сохранить"
+                MinWidth="120"
+                Click="SaveButton_Click"/>
+      </StackPanel>
+    </Grid>
+  </Border>
+</Window>

@@ -1,0 +1,53 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="FormDesigner.Views.RecentFileUnavailableWindow"
+        Width="520"
+        Height="250"
+        MinWidth="480"
+        MinHeight="230"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        Title="Файл недоступен"
+        Background="#EEF4FA">
+  <Border Margin="18"
+          Background="White"
+          BorderBrush="#D7E2EE"
+          BorderThickness="1"
+          CornerRadius="18"
+          Padding="18">
+    <Grid RowDefinitions="Auto,*,Auto"
+          RowSpacing="16">
+      <StackPanel Spacing="6">
+        <TextBlock Text="Файл из списка последних недоступен"
+                   FontSize="21"
+                   FontWeight="Bold"/>
+        <TextBlock x:Name="PathTextBlock"
+                   Foreground="#475569"
+                   TextWrapping="Wrap"/>
+      </StackPanel>
+
+      <Border Grid.Row="1"
+              Background="#F8FAFC"
+              BorderBrush="#D7E2EE"
+              BorderThickness="1"
+              CornerRadius="14"
+              Padding="14">
+        <TextBlock Text="Возможно, файл был перемещён, удалён или находится на недоступном диске."
+                   Foreground="#475569"
+                   TextWrapping="Wrap"/>
+      </Border>
+
+      <StackPanel Grid.Row="2"
+                  Orientation="Horizontal"
+                  HorizontalAlignment="Right"
+                  Spacing="10">
+        <Button Content="Оставить"
+                MinWidth="110"
+                Click="KeepButton_Click"/>
+        <Button Content="Удалить из Recent"
+                MinWidth="160"
+                Click="RemoveButton_Click"/>
+      </StackPanel>
+    </Grid>
+  </Border>
+</Window>

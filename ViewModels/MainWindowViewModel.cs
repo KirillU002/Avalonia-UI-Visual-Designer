@@ -18,6 +18,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.Loader;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -101,6 +102,9 @@ public partial class MainWindowViewModel : ObservableObject
     private bool _isUpdatingSelectionState;
     private string _currentSnapshot = "";
     private string _savedSnapshot = "";
+    private string _exportCacheDocumentSnapshotHash = "";
+    private string _exportCacheSettingsSignature = "";
+    private DateTime _exportCacheGeneratedUtc;
     private DateTime _lastHistoryMutationUtc = DateTime.UtcNow;
     private DesignerDocumentFileModel? _clipboardDocument;
     private ControlStyleSnapshot? _styleClipboard;
@@ -127,6 +131,7 @@ public partial class MainWindowViewModel : ObservableObject
     public ObservableCollection<StructureTreeItemModel> StructureTreeItems { get; } = new();
     public ObservableCollection<UndoRedoHistoryItemModel> UndoRedoHistoryItems { get; } = new();
     public ObservableCollection<ReusableTemplateModel> ReusableTemplates { get; } = new();
+    public ObservableCollection<RecentFileModel> RecentFiles { get; } = new();
 
     // Плоский список всех контролов документа. Иерархия восстанавливается через ParentId.
     public ObservableCollection<DesignControlModel> Controls { get; } = new();
@@ -668,6 +673,20 @@ public partial class MainWindowViewModel : ObservableObject
         ? "История пока пуста. Сделайте изменение на форме, и оно появится здесь."
         : $"Шаг {UndoRedoHistoryCurrentIndex + 1} из {UndoRedoHistoryTotalCount}. Undo: {_undoStack.Count}, Redo: {_redoStack.Count}.";
     public bool HasUnsavedChanges => _currentSnapshot != _savedSnapshot;
+    public string DirtyStateText => HasUnsavedChanges ? "Есть несохранённые изменения" : "Все изменения сохранены";
+    public bool HasRecentFiles => RecentFiles.Count > 0;
+    public string RecentFilesSummary => HasRecentFiles
+        ? $"Последних файлов: {RecentFiles.Count}"
+        : "Последние файлы появятся после открытия или сохранения проекта.";
+    public bool IsExportCacheStale => string.IsNullOrWhiteSpace(GeneratedXaml)
+        || !string.Equals(GetSnapshotHash(_currentSnapshot), _exportCacheDocumentSnapshotHash, StringComparison.Ordinal)
+        || !string.Equals(BuildExportSettingsSignature(), _exportCacheSettingsSignature, StringComparison.Ordinal);
+    public string ExportCacheStatusText => IsExportCacheStale
+        ? "Export устарел, нажмите «Обновить»"
+        : $"Export актуален{(_exportCacheGeneratedUtc == default ? "" : $" · {_exportCacheGeneratedUtc.ToLocalTime():HH:mm:ss}")}";
+    public string ExportCacheStatusBackground => IsExportCacheStale ? "#FEF3C7" : "#DCFCE7";
+    public string ExportCacheStatusBorder => IsExportCacheStale ? "#F59E0B" : "#86EFAC";
+    public string ExportCacheStatusForeground => IsExportCacheStale ? "#78350F" : "#166534";
     public bool HasMultipleSelection => SelectedControlIds.Count > 1;
     public int SelectionCount => SelectedControlIds.Count;
     public bool CanDuplicateSelected => SelectedControlIds.Count > 0;
@@ -1231,6 +1250,7 @@ public partial class MainWindowViewModel : ObservableObject
         BindingSources.CollectionChanged += BindingSources_CollectionChanged;
         Interactions.CollectionChanged += Interactions_CollectionChanged;
         SelectedControlIds.CollectionChanged += SelectedControlIds_CollectionChanged;
+        RecentFiles.CollectionChanged += RecentFiles_CollectionChanged;
 
         RefreshRegistryBackedCollections();
         LoadReusableTemplates();
@@ -1239,6 +1259,7 @@ public partial class MainWindowViewModel : ObservableObject
         RebuildStructureTree();
         RebuildImportedDllCatalog();
         RefreshDiagnostics();
+        GenerateXaml();
     }
 
     public void RefreshRegistryBackedCollections()
@@ -1447,7 +1468,7 @@ public partial class MainWindowViewModel : ObservableObject
         _previewScreenName = normalizedScreenName;
 
         RaisePreviewProperties();
-        GenerateXaml();
+        MarkExportCacheStale();
     }
 
     partial void OnImportedDllSearchTextChanged(string value)
@@ -2969,6 +2990,115 @@ public partial class MainWindowViewModel : ObservableObject
         RaiseDocumentStateProperties();
     }
 
+    public void ApplyAppSettings(AppSettingsModel settings)
+    {
+        ApplyExportCache(settings.ExportCache);
+
+        RecentFiles.Clear();
+        foreach (var recentFile in settings.RecentFiles
+                     .Where(item => !string.IsNullOrWhiteSpace(item.FilePath))
+                     .GroupBy(item => item.FilePath, StringComparer.OrdinalIgnoreCase)
+                     .Select(group => group.OrderByDescending(item => item.LastOpenedUtc).First())
+                     .OrderByDescending(item => item.LastOpenedUtc)
+                     .Take(10))
+        {
+            RecentFiles.Add(recentFile);
+        }
+
+        if (AvailableWorkspaceModes.Contains(settings.Session.WorkspaceMode))
+            WorkspaceMode = settings.Session.WorkspaceMode;
+    }
+
+    public ExportCacheModel CaptureExportCache()
+    {
+        return new ExportCacheModel
+        {
+            ExportTarget = ExportTarget,
+            ExportProjectNamespace = ExportProjectNamespace,
+            DataGridExportMode = DataGridExportMode,
+            LayoutExportMode = LayoutExportMode,
+            XamlVerbosity = XamlVerbosity,
+            IncludeExportComments = IncludeExportComments,
+            IncludeSampleData = IncludeSampleData,
+            IncludeCrudSkeleton = IncludeCrudSkeleton,
+            IncludeCommunityToolkitAttributes = IncludeCommunityToolkitAttributes,
+            IncludePluginRuntimeReferences = IncludePluginRuntimeReferences,
+            GeneratedXaml = GeneratedXaml,
+            GeneratedCSharp = GeneratedCSharp,
+            GeneratedBindingGuide = GeneratedBindingGuide,
+            DocumentSnapshotHash = _exportCacheDocumentSnapshotHash,
+            SettingsSignature = _exportCacheSettingsSignature,
+            GeneratedUtc = _exportCacheGeneratedUtc
+        };
+    }
+
+    public void AddOrUpdateRecentFile(string? filePath)
+    {
+        if (string.IsNullOrWhiteSpace(filePath))
+            return;
+
+        var normalizedPath = Path.GetFullPath(filePath);
+        var existing = RecentFiles.FirstOrDefault(item => string.Equals(item.FilePath, normalizedPath, StringComparison.OrdinalIgnoreCase));
+        if (existing is not null)
+            RecentFiles.Remove(existing);
+
+        RecentFiles.Insert(0, new RecentFileModel
+        {
+            FilePath = normalizedPath,
+            DisplayName = Path.GetFileName(normalizedPath),
+            LastOpenedUtc = DateTime.UtcNow
+        });
+
+        while (RecentFiles.Count > 10)
+            RecentFiles.RemoveAt(RecentFiles.Count - 1);
+    }
+
+    public void RemoveRecentFile(RecentFileModel? file)
+    {
+        if (file is null)
+            return;
+
+        RecentFiles.Remove(file);
+    }
+
+    public bool TrySelectControlById(string? controlId)
+    {
+        if (string.IsNullOrWhiteSpace(controlId))
+            return false;
+
+        var control = GetControl(controlId);
+        if (control is null)
+            return false;
+
+        SelectSingleControl(control);
+        return true;
+    }
+
+    private void ApplyExportCache(ExportCacheModel? cache)
+    {
+        if (cache is null)
+            return;
+
+        ExportTarget = AvailableExportTargets.Contains(cache.ExportTarget) ? cache.ExportTarget : ExportTargetMainWindow;
+        ExportProjectNamespace = string.IsNullOrWhiteSpace(cache.ExportProjectNamespace) ? "AvaloniaApplication1" : cache.ExportProjectNamespace;
+        DataGridExportMode = NormalizeDataGridExportMode(cache.DataGridExportMode);
+        LayoutExportMode = NormalizeLayoutExportMode(cache.LayoutExportMode);
+        XamlVerbosity = AvailableXamlVerbosities.Contains(cache.XamlVerbosity) ? cache.XamlVerbosity : XamlVerbosityCompact;
+        IncludeExportComments = cache.IncludeExportComments;
+        IncludeSampleData = cache.IncludeSampleData;
+        IncludeCrudSkeleton = cache.IncludeCrudSkeleton;
+        IncludeCommunityToolkitAttributes = cache.IncludeCommunityToolkitAttributes;
+        IncludePluginRuntimeReferences = cache.IncludePluginRuntimeReferences;
+
+        GeneratedXaml = cache.GeneratedXaml;
+        GeneratedCSharp = cache.GeneratedCSharp;
+        GeneratedBindingGuide = cache.GeneratedBindingGuide;
+        _exportCacheDocumentSnapshotHash = cache.DocumentSnapshotHash;
+        _exportCacheSettingsSignature = cache.SettingsSignature;
+        _exportCacheGeneratedUtc = cache.GeneratedUtc;
+        RaiseExportCacheProperties();
+    }
+
     public void BeginBusy(string title, string description)
     {
         BusyTitle = string.IsNullOrWhiteSpace(title) ? "Загрузка" : title.Trim();
@@ -3081,7 +3211,7 @@ public partial class MainWindowViewModel : ObservableObject
         if (updatedControls == 0)
         {
             StatusText = "Рекомендуемые привязки уже были применены.";
-            GenerateXaml();
+            MarkExportCacheStale();
             return;
         }
 
@@ -4265,8 +4395,51 @@ public partial class MainWindowViewModel : ObservableObject
         GeneratedXaml = sb.ToString();
         GeneratedCSharp = BuildGeneratedCSharp();
         GeneratedBindingGuide = BuildGeneratedBindingGuide();
+        _exportCacheDocumentSnapshotHash = GetSnapshotHash(_currentSnapshot);
+        _exportCacheSettingsSignature = BuildExportSettingsSignature();
+        _exportCacheGeneratedUtc = DateTime.UtcNow;
         _activeLayoutExportPlan = null;
         RaiseExportChecklistProperties();
+        RaiseExportCacheProperties();
+    }
+
+    private void MarkExportCacheStale()
+    {
+        RaiseExportChecklistProperties();
+        RaiseExportCacheProperties();
+    }
+
+    private void RaiseExportCacheProperties()
+    {
+        OnPropertyChanged(nameof(IsExportCacheStale));
+        OnPropertyChanged(nameof(ExportCacheStatusText));
+        OnPropertyChanged(nameof(ExportCacheStatusBackground));
+        OnPropertyChanged(nameof(ExportCacheStatusBorder));
+        OnPropertyChanged(nameof(ExportCacheStatusForeground));
+    }
+
+    private string BuildExportSettingsSignature()
+    {
+        return string.Join("|",
+            ExportTarget,
+            ExportProjectNamespace,
+            DataGridExportMode,
+            LayoutExportMode,
+            XamlVerbosity,
+            IncludeExportComments,
+            IncludeSampleData,
+            IncludeCrudSkeleton,
+            IncludeCommunityToolkitAttributes,
+            IncludePluginRuntimeReferences);
+    }
+
+    private static string GetSnapshotHash(string snapshot)
+    {
+        if (string.IsNullOrWhiteSpace(snapshot))
+            return "";
+
+        var bytes = Encoding.UTF8.GetBytes(snapshot);
+        return Convert.ToHexString(SHA256.HashData(bytes));
     }
 
     private void AppendExportDependencyComments(StringBuilder sb)
@@ -9074,7 +9247,7 @@ public partial class MainWindowViewModel : ObservableObject
 
         RaiseDocumentStateProperties();
         RefreshDiagnostics();
-        GenerateXaml();
+        MarkExportCacheStale();
         DesignerChanged?.Invoke(this, EventArgs.Empty);
     }
 
@@ -9472,6 +9645,12 @@ public partial class MainWindowViewModel : ObservableObject
         RefreshStructureSelection();
     }
 
+    private void RecentFiles_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        OnPropertyChanged(nameof(HasRecentFiles));
+        OnPropertyChanged(nameof(RecentFilesSummary));
+    }
+
     private void RegisterHistorySnapshot()
     {
         if (_isHistorySuspended)
@@ -9505,8 +9684,10 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(UndoRedoHistoryTotalCount));
         OnPropertyChanged(nameof(UndoRedoHistorySummary));
         OnPropertyChanged(nameof(HasUnsavedChanges));
+        OnPropertyChanged(nameof(DirtyStateText));
         OnPropertyChanged(nameof(CurrentDocumentDisplayName));
         OnPropertyChanged(nameof(FormWindowDecorationsSummary));
+        RaiseExportCacheProperties();
     }
 
     private void RaiseDiagnosticsProperties()
@@ -10545,7 +10726,7 @@ public partial class MainWindowViewModel : ObservableObject
         }
 
         RaiseGenerationOptionsProperties();
-        GenerateXaml();
+        MarkExportCacheStale();
         RefreshDiagnostics();
     }
 
@@ -10559,7 +10740,7 @@ public partial class MainWindowViewModel : ObservableObject
         }
 
         RaiseGenerationOptionsProperties();
-        GenerateXaml();
+        MarkExportCacheStale();
         RefreshDiagnostics();
     }
 
@@ -10572,13 +10753,13 @@ public partial class MainWindowViewModel : ObservableObject
         }
 
         RaiseGenerationOptionsProperties();
-        GenerateXaml();
+        MarkExportCacheStale();
     }
 
     partial void OnExportProjectNamespaceChanged(string value)
     {
         RaiseGenerationOptionsProperties();
-        GenerateXaml();
+        MarkExportCacheStale();
     }
 
     partial void OnXamlVerbosityChanged(string value)
@@ -10590,7 +10771,7 @@ public partial class MainWindowViewModel : ObservableObject
         }
 
         RaiseGenerationOptionsProperties();
-        GenerateXaml();
+        MarkExportCacheStale();
     }
 
     partial void OnLayoutExportModeChanged(string value)
@@ -10603,41 +10784,41 @@ public partial class MainWindowViewModel : ObservableObject
         }
 
         RaiseGenerationOptionsProperties();
-        GenerateXaml();
+        MarkExportCacheStale();
         RefreshDiagnostics();
     }
 
     partial void OnIncludeExportCommentsChanged(bool value)
     {
         RaiseGenerationOptionsProperties();
-        GenerateXaml();
+        MarkExportCacheStale();
     }
 
     partial void OnIncludeSampleDataChanged(bool value)
     {
         RaiseGenerationOptionsProperties();
-        GenerateXaml();
+        MarkExportCacheStale();
         RefreshDiagnostics();
     }
 
     partial void OnIncludeCrudSkeletonChanged(bool value)
     {
         RaiseGenerationOptionsProperties();
-        GenerateXaml();
+        MarkExportCacheStale();
         RefreshDiagnostics();
     }
 
     partial void OnIncludeCommunityToolkitAttributesChanged(bool value)
     {
         RaiseGenerationOptionsProperties();
-        GenerateXaml();
+        MarkExportCacheStale();
         RefreshDiagnostics();
     }
 
     partial void OnIncludePluginRuntimeReferencesChanged(bool value)
     {
         RaiseGenerationOptionsProperties();
-        GenerateXaml();
+        MarkExportCacheStale();
         RefreshDiagnostics();
     }
 
@@ -11003,8 +11184,8 @@ public partial class MainWindowViewModel : ObservableObject
         if (trackHistory)
             RegisterHistorySnapshot();
 
+        MarkExportCacheStale();
         RefreshDiagnostics();
-        GenerateXaml();
         DesignerChanged?.Invoke(this, EventArgs.Empty);
     }
 }

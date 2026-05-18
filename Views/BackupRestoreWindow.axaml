@@ -1,0 +1,76 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:models="clr-namespace:FormDesigner.Models"
+        x:Class="FormDesigner.Views.BackupRestoreWindow"
+        Width="640"
+        Height="420"
+        MinWidth="560"
+        MinHeight="360"
+        WindowStartupLocation="CenterOwner"
+        Title="Восстановить backup"
+        Background="#EEF4FA">
+  <Border Margin="18"
+          Background="White"
+          BorderBrush="#D7E2EE"
+          BorderThickness="1"
+          CornerRadius="18"
+          Padding="18">
+    <Grid RowDefinitions="Auto,*,Auto"
+          RowSpacing="14">
+      <StackPanel Spacing="5">
+        <TextBlock Text="Резервные копии документа"
+                   FontSize="22"
+                   FontWeight="Bold"/>
+        <TextBlock x:Name="DocumentPathTextBlock"
+                   Foreground="#475569"
+                   TextWrapping="Wrap"/>
+      </StackPanel>
+
+      <Border Grid.Row="1"
+              Background="#F8FAFC"
+              BorderBrush="#D7E2EE"
+              BorderThickness="1"
+              CornerRadius="14"
+              Padding="8">
+        <ListBox x:Name="BackupsListBox">
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="models:BackupFileModel">
+              <Grid ColumnDefinitions="*,Auto"
+                    ColumnSpacing="12"
+                    Margin="4"
+                    MinHeight="54">
+                <StackPanel Spacing="3">
+                  <TextBlock Text="{Binding DisplayName}"
+                             FontWeight="SemiBold"/>
+                  <TextBlock Text="{Binding CreatedText}"
+                             Foreground="#475569"
+                             FontSize="12"/>
+                  <TextBlock Text="{Binding FilePath}"
+                             Foreground="#64748B"
+                             FontSize="11"
+                             TextTrimming="CharacterEllipsis"/>
+                </StackPanel>
+                <TextBlock Grid.Column="1"
+                           Text="{Binding SizeText}"
+                           Foreground="#64748B"
+                           VerticalAlignment="Center"/>
+              </Grid>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </Border>
+
+      <StackPanel Grid.Row="2"
+                  Orientation="Horizontal"
+                  HorizontalAlignment="Right"
+                  Spacing="10">
+        <Button Content="Отмена"
+                MinWidth="110"
+                Click="CancelButton_Click"/>
+        <Button Content="Восстановить выбранный"
+                MinWidth="190"
+                Click="RestoreButton_Click"/>
+      </StackPanel>
+    </Grid>
+  </Border>
+</Window>

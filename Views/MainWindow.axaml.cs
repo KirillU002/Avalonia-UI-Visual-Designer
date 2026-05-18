@@ -117,10 +117,16 @@ public partial class MainWindow : Window
     private bool _isClosingInlineCanvasEditor;
     private string _pendingContextMenuControlId = string.Empty;
     private readonly AutosaveRecoveryService _autosaveRecoveryService = new();
+    private readonly AppSettingsService _appSettingsService = new();
+    private readonly DocumentBackupService _documentBackupService = new();
+    private readonly DispatcherTimer _settingsSaveTimer = new();
+    private AppSettingsModel _appSettings = new();
     private readonly DispatcherTimer _autosaveTimer = new();
     private readonly DispatcherTimer _previewFilterRefreshTimer = new();
     private bool _isAutosaveRunning;
     private bool _hasCheckedRecoveryOnStartup;
+    private bool _isApplyingAppSettings;
+    private bool _isCloseConfirmed;
     private bool _suppressRecoverySessionChangeHandling;
     private string _lastObservedDocumentSessionId = string.Empty;
 
@@ -148,17 +154,25 @@ public partial class MainWindow : Window
         };
         Opened += MainWindow_Opened;
         Closing += MainWindow_Closing;
-        PositionChanged += (_, _) => RefreshPreviewMetricsAndSurface();
+        PositionChanged += (_, _) =>
+        {
+            RefreshPreviewMetricsAndSurface();
+            ScheduleSettingsSave();
+        };
         SizeChanged += (_, _) =>
         {
             if (DataContext is MainWindowViewModel viewModel && viewModel.IsImmersiveDesignerMode)
                 RefreshPreviewMetricsAndSurface();
+            ScheduleSettingsSave();
         };
 
         _autosaveTimer.Interval = AutosaveInterval;
         _autosaveTimer.Tick += AutosaveTimer_Tick;
         _previewFilterRefreshTimer.Interval = TimeSpan.FromMilliseconds(350);
         _previewFilterRefreshTimer.Tick += PreviewFilterRefreshTimer_Tick;
+        _settingsSaveTimer.Interval = TimeSpan.FromSeconds(1);
+        _settingsSaveTimer.Tick += SettingsSaveTimer_Tick;
+        _appSettings = _appSettingsService.Load();
         SetZoomPresetSelection(_surfaceZoom);
         UpdateDesignerViewportCursor();
     }
@@ -201,7 +215,9 @@ public partial class MainWindow : Window
         {
             _attachedViewModel.DesignerChanged += ViewModel_DesignerChanged;
             _attachedViewModel.PropertyChanged += ViewModel_PropertyChanged;
+            ApplyAppSettingsToViewModel(_attachedViewModel);
             _lastObservedDocumentSessionId = _attachedViewModel.DocumentSessionId;
+            UpdateWindowTitle();
         }
 
         RefreshPreviewMetrics();
@@ -280,16 +296,34 @@ public partial class MainWindow : Window
         if (_hasCheckedRecoveryOnStartup)
             return;
 
+        ApplySessionWindowState(_appSettings.Session);
         _hasCheckedRecoveryOnStartup = true;
-        await CheckRecoveryOnStartupAsync();
+        var recoveryHandled = await CheckRecoveryOnStartupAsync();
+        if (!recoveryHandled)
+            await TryRestoreLastSessionDocumentAsync();
+
+        ApplySessionViewportState(_appSettings.Session);
         _autosaveTimer.Start();
     }
 
-    private void MainWindow_Closing(object? sender, WindowClosingEventArgs e)
+    private async void MainWindow_Closing(object? sender, WindowClosingEventArgs e)
     {
+        if (!_isCloseConfirmed)
+        {
+            e.Cancel = true;
+            if (!await EnsureUnsavedChangesHandledAsync())
+                return;
+
+            _isCloseConfirmed = true;
+            await SaveAppSettingsNowAsync();
+            _autosaveRecoveryService.TryDeleteDraft();
+            Close();
+            return;
+        }
+
         _autosaveTimer.Stop();
         _previewFilterRefreshTimer.Stop();
-        _autosaveRecoveryService.TryDeleteDraft();
+        _settingsSaveTimer.Stop();
     }
 
     private void ViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -304,6 +338,15 @@ public partial class MainWindow : Window
             RenderDesigner();
             return;
         }
+
+        if (e.PropertyName == nameof(MainWindowViewModel.CurrentDocumentDisplayName)
+            || e.PropertyName == nameof(MainWindowViewModel.HasUnsavedChanges))
+        {
+            UpdateWindowTitle();
+        }
+
+        if (IsSessionProperty(e.PropertyName) || IsExportSettingsProperty(e.PropertyName))
+            ScheduleSettingsSave();
 
         if (e.PropertyName != nameof(MainWindowViewModel.DocumentSessionId))
             return;
@@ -332,6 +375,131 @@ public partial class MainWindow : Window
 
         if (DataContext is MainWindowViewModel viewModel)
             viewModel.ClearPreviewRuntimeDiagnostics();
+    }
+
+    private void UpdateWindowTitle()
+    {
+        if (DataContext is MainWindowViewModel viewModel)
+            Title = $"{viewModel.CurrentDocumentDisplayName} - Конструктор форм Avalonia";
+    }
+
+    private void ApplyAppSettingsToViewModel(MainWindowViewModel viewModel)
+    {
+        _isApplyingAppSettings = true;
+        try
+        {
+            viewModel.ApplyAppSettings(_appSettings);
+        }
+        finally
+        {
+            _isApplyingAppSettings = false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(_appSettingsService.LastError))
+            viewModel.StatusText = $"Настройки приложения сброшены: {_appSettingsService.LastError}";
+    }
+
+    private void ApplySessionWindowState(SessionStateModel session)
+    {
+        try
+        {
+            if (session.WindowWidth >= 900)
+                Width = session.WindowWidth;
+            if (session.WindowHeight >= 640)
+                Height = session.WindowHeight;
+            if (session.WindowX != 0 || session.WindowY != 0)
+                Position = new PixelPoint(session.WindowX, session.WindowY);
+            if (Enum.TryParse<WindowState>(session.WindowState, out var state))
+                WindowState = state;
+        }
+        catch
+        {
+            // Broken session geometry should never block startup.
+        }
+    }
+
+    private void ApplySessionViewportState(SessionStateModel session)
+    {
+        if (session.SurfaceZoom > 0)
+            SetSurfaceZoom(Math.Clamp(session.SurfaceZoom, 0.25, 2.0));
+
+        Dispatcher.UIThread.Post(() =>
+        {
+            DesignerViewportScrollViewer.Offset = new Vector(
+                Math.Max(0, session.ViewportOffsetX),
+                Math.Max(0, session.ViewportOffsetY));
+
+            if (!string.IsNullOrWhiteSpace(session.SelectedControlId))
+                VM.TrySelectControlById(session.SelectedControlId);
+        }, DispatcherPriority.Loaded);
+    }
+
+    private void ScheduleSettingsSave()
+    {
+        if (_isApplyingAppSettings || DataContext is not MainWindowViewModel)
+            return;
+
+        _settingsSaveTimer.Stop();
+        _settingsSaveTimer.Start();
+    }
+
+    private async void SettingsSaveTimer_Tick(object? sender, EventArgs e)
+    {
+        _settingsSaveTimer.Stop();
+        await SaveAppSettingsNowAsync();
+    }
+
+    private async Task SaveAppSettingsNowAsync()
+    {
+        if (DataContext is not MainWindowViewModel)
+            return;
+
+        _appSettings.RecentFiles = VM.RecentFiles.ToList();
+        _appSettings.ExportCache = VM.CaptureExportCache();
+        _appSettings.Session = CaptureSessionState();
+        await _appSettingsService.SaveAsync(_appSettings);
+    }
+
+    private SessionStateModel CaptureSessionState()
+    {
+        return new SessionStateModel
+        {
+            LastDocumentPath = VM.CurrentDocumentPath,
+            WindowWidth = Width,
+            WindowHeight = Height,
+            WindowX = Position.X,
+            WindowY = Position.Y,
+            WindowState = WindowState.ToString(),
+            SurfaceZoom = _surfaceZoom,
+            ViewportOffsetX = DesignerViewportScrollViewer.Offset.X,
+            ViewportOffsetY = DesignerViewportScrollViewer.Offset.Y,
+            WorkspaceMode = VM.WorkspaceMode,
+            SelectedControlId = VM.SelectedControl?.Id ?? ""
+        };
+    }
+
+    private static bool IsSessionProperty(string? propertyName)
+    {
+        return propertyName is nameof(MainWindowViewModel.CurrentDocumentPath)
+            or nameof(MainWindowViewModel.WorkspaceMode);
+    }
+
+    private static bool IsExportSettingsProperty(string? propertyName)
+    {
+        return propertyName is nameof(MainWindowViewModel.ExportTarget)
+            or nameof(MainWindowViewModel.ExportProjectNamespace)
+            or nameof(MainWindowViewModel.DataGridExportMode)
+            or nameof(MainWindowViewModel.LayoutExportMode)
+            or nameof(MainWindowViewModel.XamlVerbosity)
+            or nameof(MainWindowViewModel.IncludeExportComments)
+            or nameof(MainWindowViewModel.IncludeSampleData)
+            or nameof(MainWindowViewModel.IncludeCrudSkeleton)
+            or nameof(MainWindowViewModel.IncludeCommunityToolkitAttributes)
+            or nameof(MainWindowViewModel.IncludePluginRuntimeReferences)
+            or nameof(MainWindowViewModel.GeneratedXaml)
+            or nameof(MainWindowViewModel.GeneratedCSharp)
+            or nameof(MainWindowViewModel.IsExportCacheStale)
+            or nameof(MainWindowViewModel.ExportCacheStatusText);
     }
 
     private async void AutosaveTimer_Tick(object? sender, EventArgs e)
@@ -365,6 +533,9 @@ public partial class MainWindow : Window
 
             await _autosaveRecoveryService.SaveDraftAsync(draft);
             VM.AutosaveStatusText = $"Черновик автосохранён: {DateTime.Now:HH:mm:ss}";
+            _appSettings.Autosave.LastAutosaveUtc = draft.LastAutosaveUtc;
+            _appSettings.Autosave.LastDraftPath = _autosaveRecoveryService.RecoveryFilePath;
+            ScheduleSettingsSave();
         }
         catch (Exception ex)
         {
@@ -390,16 +561,16 @@ public partial class MainWindow : Window
         _previewFilterRefreshTimer.Start();
     }
 
-    private async Task CheckRecoveryOnStartupAsync()
+    private async Task<bool> CheckRecoveryOnStartupAsync()
     {
         var draft = await _autosaveRecoveryService.TryLoadDraftAsync();
         if (draft is null)
-            return;
+            return false;
 
         if (!draft.HasUnsavedChanges)
         {
             _autosaveRecoveryService.TryDeleteDraft();
-            return;
+            return false;
         }
 
         var recoveryWindow = new RecoveryWindow(draft);
@@ -422,27 +593,58 @@ public partial class MainWindow : Window
                     _lastObservedDocumentSessionId = VM.DocumentSessionId;
                 }
 
+                if (!string.IsNullOrWhiteSpace(draft.DocumentPath))
+                    VM.AddOrUpdateRecentFile(draft.DocumentPath);
                 VM.StatusText = "Восстановлен автосохранённый черновик.";
                 VM.AutosaveStatusText = $"Восстановлен черновик от {draft.LastAutosaveUtc.ToLocalTime():dd.MM.yyyy HH:mm:ss}";
-                break;
+                await SaveAppSettingsNowAsync();
+                return true;
 
             case RecoveryDialogResult.DeleteDraft:
                 _autosaveRecoveryService.TryDeleteDraft();
                 VM.AutosaveStatusText = "Recovery-файл удалён.";
-                break;
+                return false;
 
             case RecoveryDialogResult.OpenNormally:
             case RecoveryDialogResult.None:
             default:
                 VM.AutosaveStatusText = $"Найден черновик от {draft.LastAutosaveUtc.ToLocalTime():dd.MM.yyyy HH:mm:ss}. Восстановление отложено.";
-                break;
+                return false;
+        }
+    }
+
+    private async Task TryRestoreLastSessionDocumentAsync()
+    {
+        var lastPath = _appSettings.Session.LastDocumentPath;
+        if (string.IsNullOrWhiteSpace(lastPath))
+            return;
+
+        if (!File.Exists(lastPath))
+        {
+            VM.StatusText = $"Последний файл недоступен: {lastPath}";
+            return;
+        }
+
+        try
+        {
+            var json = await File.ReadAllTextAsync(lastPath);
+            VM.LoadDocumentJson(json, lastPath);
+            VM.AddOrUpdateRecentFile(lastPath);
+            VM.StatusText = $"Восстановлена последняя сессия: {System.IO.Path.GetFileName(lastPath)}";
+        }
+        catch (Exception ex)
+        {
+            VM.StatusText = $"Не удалось восстановить последнюю сессию: {ex.Message}";
         }
     }
 
     private void DesignerViewportScrollViewer_PropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
     {
         if (e.Property == ScrollViewer.OffsetProperty)
+        {
             RenderMiniMap();
+            ScheduleSettingsSave();
+        }
     }
 
     private void ViewModel_DesignerChanged(object? sender, EventArgs e)
@@ -527,6 +729,7 @@ public partial class MainWindow : Window
                 (designAnchor.X * _surfaceZoom) - anchor.X,
                 (designAnchor.Y * _surfaceZoom) - anchor.Y);
             DesignerViewportScrollViewer.Offset = ClampViewportOffset(targetOffset);
+            ScheduleSettingsSave();
         }, DispatcherPriority.Render);
     }
 
@@ -6814,6 +7017,9 @@ public partial class MainWindow : Window
 
     private async void OpenDocumentButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
+        if (!await EnsureUnsavedChangesHandledAsync())
+            return;
+
         if (StorageProvider is null || !StorageProvider.CanOpen)
         {
             VM.StatusText = "Открытие файла недоступно в этом окружении";
@@ -6836,10 +7042,13 @@ public partial class MainWindow : Window
             await using var stream = await file.OpenReadAsync();
             using var reader = new StreamReader(stream);
             var json = await reader.ReadToEndAsync();
-            VM.LoadDocumentJson(json, file.TryGetLocalPath() ?? file.Name);
+            var localPath = file.TryGetLocalPath() ?? file.Name;
+            VM.LoadDocumentJson(json, localPath);
+            VM.AddOrUpdateRecentFile(localPath);
             _autosaveRecoveryService.TryDeleteDraft();
             VM.AutosaveStatusText = "Черновик очищен после открытия документа.";
             VM.StatusText = $"Открыт документ: {file.Name}";
+            await SaveAppSettingsNowAsync();
         }
         catch (Exception ex)
         {
@@ -6847,11 +7056,98 @@ public partial class MainWindow : Window
         }
     }
 
-    private void NewDocumentButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    private async void OpenRecentFileButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
+        if (sender is not Button { Tag: RecentFileModel recentFile })
+            return;
+
+        if (!await EnsureUnsavedChangesHandledAsync())
+            return;
+
+        if (!File.Exists(recentFile.FilePath))
+        {
+            var unavailableWindow = new RecentFileUnavailableWindow(recentFile.FilePath);
+            var decision = await unavailableWindow.ShowDialog<RecentFileUnavailableDialogResult>(this);
+            if (decision == RecentFileUnavailableDialogResult.Remove)
+            {
+                VM.RemoveRecentFile(recentFile);
+                await SaveAppSettingsNowAsync();
+            }
+
+            VM.StatusText = $"Recent file недоступен: {recentFile.FilePath}";
+            return;
+        }
+
+        try
+        {
+            var json = await File.ReadAllTextAsync(recentFile.FilePath);
+            VM.LoadDocumentJson(json, recentFile.FilePath);
+            VM.AddOrUpdateRecentFile(recentFile.FilePath);
+            _autosaveRecoveryService.TryDeleteDraft();
+            VM.AutosaveStatusText = "Черновик очищен после открытия документа.";
+            VM.StatusText = $"Открыт документ: {System.IO.Path.GetFileName(recentFile.FilePath)}";
+            await SaveAppSettingsNowAsync();
+        }
+        catch (Exception ex)
+        {
+            VM.StatusText = $"Ошибка открытия recent file: {ex.Message}";
+        }
+    }
+
+    private async void RemoveRecentFileButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: RecentFileModel recentFile })
+            return;
+
+        VM.RemoveRecentFile(recentFile);
+        await SaveAppSettingsNowAsync();
+    }
+
+    private async void RestoreBackupButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (string.IsNullOrWhiteSpace(VM.CurrentDocumentPath))
+        {
+            VM.StatusText = "Backup доступен после сохранения документа в файл.";
+            return;
+        }
+
+        var backups = _documentBackupService.ListBackups(VM.CurrentDocumentPath);
+        if (backups.Count == 0)
+        {
+            VM.StatusText = "Для текущего документа backup ещё не создавался.";
+            return;
+        }
+
+        if (!await EnsureUnsavedChangesHandledAsync())
+            return;
+
+        var dialog = new BackupRestoreWindow(VM.CurrentDocumentPath, backups);
+        var backup = await dialog.ShowDialog<BackupFileModel?>(this);
+        if (backup is null)
+            return;
+
+        try
+        {
+            var json = await File.ReadAllTextAsync(backup.FilePath);
+            VM.LoadDocumentJson(json, VM.CurrentDocumentPath, markAsSaved: false);
+            VM.StatusText = $"Восстановлен backup: {backup.DisplayName}";
+            VM.AutosaveStatusText = "Backup открыт как несохранённое состояние.";
+        }
+        catch (Exception ex)
+        {
+            VM.StatusText = $"Ошибка восстановления backup: {ex.Message}";
+        }
+    }
+
+    private async void NewDocumentButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (!await EnsureUnsavedChangesHandledAsync())
+            return;
+
         VM.NewDocumentCommand.Execute(null);
         _autosaveRecoveryService.TryDeleteDraft();
         VM.AutosaveStatusText = "Черновик очищен для нового документа.";
+        await SaveAppSettingsNowAsync();
     }
 
     private async void CopyGeneratedXamlButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
@@ -6913,15 +7209,24 @@ public partial class MainWindow : Window
         VM.StatusText = successStatus;
     }
 
+    private async Task<bool> EnsureUnsavedChangesHandledAsync()
+    {
+        if (DataContext is not MainWindowViewModel || !VM.HasUnsavedChanges)
+            return true;
+
+        var dialog = new UnsavedChangesWindow(VM.CurrentDocumentDisplayName);
+        var decision = await dialog.ShowDialog<UnsavedChangesDialogResult>(this);
+        return decision switch
+        {
+            UnsavedChangesDialogResult.Save => await SaveCurrentDocumentAsync(),
+            UnsavedChangesDialogResult.Discard => true,
+            _ => false
+        };
+    }
+
     private async void SaveDocumentButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        if (string.IsNullOrWhiteSpace(VM.CurrentDocumentPath))
-        {
-            await SaveDocumentAsAsync();
-            return;
-        }
-
-        await SaveDocumentToPathAsync(VM.CurrentDocumentPath);
+        await SaveCurrentDocumentAsync();
     }
 
     private async void SaveDocumentAsButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
@@ -6929,12 +7234,20 @@ public partial class MainWindow : Window
         await SaveDocumentAsAsync();
     }
 
-    private async Task SaveDocumentAsAsync()
+    private async Task<bool> SaveCurrentDocumentAsync()
+    {
+        if (string.IsNullOrWhiteSpace(VM.CurrentDocumentPath))
+            return await SaveDocumentAsAsync();
+
+        return await SaveDocumentToPathAsync(VM.CurrentDocumentPath);
+    }
+
+    private async Task<bool> SaveDocumentAsAsync()
     {
         if (StorageProvider is null || !StorageProvider.CanSave)
         {
             VM.StatusText = "Сохранение недоступно в этом окружении";
-            return;
+            return false;
         }
 
         try
@@ -6951,50 +7264,83 @@ public partial class MainWindow : Window
             });
 
             if (file is null)
-                return;
+                return false;
 
-            await SaveDocumentToStorageFileAsync(file);
+            return await SaveDocumentToStorageFileAsync(file);
         }
         catch (Exception ex)
         {
             VM.StatusText = $"Ошибка сохранения: {ex.Message}";
+            return false;
         }
     }
 
-    private async Task SaveDocumentToPathAsync(string path)
+    private async Task<bool> SaveDocumentToPathAsync(string path)
     {
         try
         {
             var json = VM.ExportDocumentJson();
-            await File.WriteAllTextAsync(path, json);
+            var backup = await _documentBackupService.TryCreateBackupAsync(path);
+            await SaveTextAtomicallyAsync(path, json);
             VM.MarkDocumentSaved(path);
+            VM.AddOrUpdateRecentFile(path);
             _autosaveRecoveryService.TryDeleteDraft();
-            VM.AutosaveStatusText = "Черновик очищен после сохранения.";
+            VM.AutosaveStatusText = backup is null
+                ? "Черновик очищен после сохранения."
+                : $"Черновик очищен. Backup: {backup.DisplayName}";
+            await SaveAppSettingsNowAsync();
+            return true;
         }
         catch (Exception ex)
         {
             VM.StatusText = $"Ошибка сохранения: {ex.Message}";
+            return false;
         }
     }
 
-    private async Task SaveDocumentToStorageFileAsync(IStorageFile file)
+    private async Task<bool> SaveDocumentToStorageFileAsync(IStorageFile file)
     {
-        var json = VM.ExportDocumentJson();
-
-        await using var stream = await file.OpenWriteAsync();
-        if (stream.CanSeek)
+        try
         {
-            stream.SetLength(0);
-            stream.Seek(0, SeekOrigin.Begin);
+            var localPath = file.TryGetLocalPath();
+            if (!string.IsNullOrWhiteSpace(localPath))
+                return await SaveDocumentToPathAsync(localPath);
+
+            var json = VM.ExportDocumentJson();
+
+            await using var stream = await file.OpenWriteAsync();
+            if (stream.CanSeek)
+            {
+                stream.SetLength(0);
+                stream.Seek(0, SeekOrigin.Begin);
+            }
+
+            using var writer = new StreamWriter(stream);
+            await writer.WriteAsync(json);
+            await writer.FlushAsync();
+
+            VM.MarkDocumentSaved(file.Name);
+            _autosaveRecoveryService.TryDeleteDraft();
+            VM.AutosaveStatusText = "Черновик очищен после сохранения.";
+            await SaveAppSettingsNowAsync();
+            return true;
         }
+        catch (Exception ex)
+        {
+            VM.StatusText = $"Ошибка сохранения: {ex.Message}";
+            return false;
+        }
+    }
 
-        using var writer = new StreamWriter(stream);
-        await writer.WriteAsync(json);
-        await writer.FlushAsync();
+    private static async Task SaveTextAtomicallyAsync(string path, string text)
+    {
+        var directory = System.IO.Path.GetDirectoryName(path);
+        if (!string.IsNullOrWhiteSpace(directory))
+            Directory.CreateDirectory(directory);
 
-        VM.MarkDocumentSaved(file.TryGetLocalPath() ?? file.Name);
-        _autosaveRecoveryService.TryDeleteDraft();
-        VM.AutosaveStatusText = "Черновик очищен после сохранения.";
+        var tempPath = $"{path}.{Guid.NewGuid():N}.tmp";
+        await File.WriteAllTextAsync(tempPath, text);
+        File.Move(tempPath, path, overwrite: true);
     }
 
     private async void BrowseImageButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
