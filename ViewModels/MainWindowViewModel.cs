@@ -96,6 +96,8 @@ public partial class MainWindowViewModel : ObservableObject
     private LayoutExportPlan? _activeLayoutExportPlan;
 
     private bool _isHistorySuspended;
+    private int _undoBatchDepth;
+    private bool _undoBatchTrackHistory;
     private bool _isUpdatingSelectionState;
     private string _currentSnapshot = "";
     private string _savedSnapshot = "";
@@ -2687,14 +2689,22 @@ public partial class MainWindowViewModel : ObservableObject
         if (roots.Count == 0)
             return;
 
-        foreach (var control in roots)
+        BeginUndoBatch();
+        try
         {
-            if (!IsAbsoluteLayoutParent(control.ParentId))
-                continue;
+            foreach (var control in roots)
+            {
+                if (!IsAbsoluteLayoutParent(control.ParentId))
+                    continue;
 
-            control.X += dx;
-            control.Y += dy;
-            ClampControlToSurface(control);
+                control.X += dx;
+                control.Y += dy;
+                ClampControlToSurface(control);
+            }
+        }
+        finally
+        {
+            CommitUndoBatch();
         }
     }
 
@@ -2776,17 +2786,26 @@ public partial class MainWindowViewModel : ObservableObject
         var importedCount = 0;
         BindingSourceModel? firstImported = null;
 
-        foreach (var importedSource in importedSources)
+        BeginUndoBatch();
+        try
         {
-            var bindingSource = MergeImportedBindingSource(importedSource);
-            firstImported ??= bindingSource;
-            importedCount++;
+            foreach (var importedSource in importedSources)
+            {
+                var bindingSource = MergeImportedBindingSource(importedSource);
+                firstImported ??= bindingSource;
+                importedCount++;
+            }
+
+            if (firstImported is not null)
+                SelectedBindingSource = firstImported;
+
+            StatusText = BuildBindingImportSuccessStatus(assemblyPath, importedCount, discoveryResult);
+        }
+        finally
+        {
+            CommitUndoBatch();
         }
 
-        if (firstImported is not null)
-            SelectedBindingSource = firstImported;
-
-        StatusText = BuildBindingImportSuccessStatus(assemblyPath, importedCount, discoveryResult);
         return importedCount;
     }
 
@@ -2799,16 +2818,25 @@ public partial class MainWindowViewModel : ObservableObject
         // чтобы сохранить ручные подписи, сортировки и видимость колонок.
         var originalConnectionString = SelectedBindingSource.SourceConnectionString;
         var importedSource = await CreateBindingSourceFromDatabaseAsync(SelectedBindingSource);
-        ApplyDatabaseSourceToSelectedBindingSource(importedSource);
 
         var objectLabel = !string.IsNullOrWhiteSpace(importedSource.SourceQuery)
             ? "SQL-запрос"
             : $"{NormalizeSqlSchemaName(importedSource.SourceSchemaName)}.{NormalizeSqlTableName(importedSource.SourceTableName)}";
         var usedCertificateFallback = !string.Equals(originalConnectionString, importedSource.SourceConnectionString, StringComparison.Ordinal);
 
-        StatusText = usedCertificateFallback
-            ? $"Подтянуто полей из БД: {importedSource.Fields.Count} ({objectLabel}). Для подключения автоматически включен TrustServerCertificate=True."
-            : $"Подтянуто полей из БД: {importedSource.Fields.Count} ({objectLabel})";
+        BeginUndoBatch();
+        try
+        {
+            ApplyDatabaseSourceToSelectedBindingSource(importedSource);
+            StatusText = usedCertificateFallback
+                ? $"Подтянуто полей из БД: {importedSource.Fields.Count} ({objectLabel}). Для подключения автоматически включен TrustServerCertificate=True."
+                : $"Подтянуто полей из БД: {importedSource.Fields.Count} ({objectLabel})";
+        }
+        finally
+        {
+            CommitUndoBatch();
+        }
+
         return importedSource.Fields.Count;
     }
 
@@ -2826,15 +2854,23 @@ public partial class MainWindowViewModel : ObservableObject
         if (SelectedBindingSource is null)
             return;
 
-        var removedId = SelectedBindingSource.Id;
-        BindingSources.Remove(SelectedBindingSource);
+        BeginUndoBatch();
+        try
+        {
+            var removedId = SelectedBindingSource.Id;
+            BindingSources.Remove(SelectedBindingSource);
 
-        foreach (var control in Controls.Where(control => control.BindingSourceId == removedId))
-            control.BindingSourceId = "";
+            foreach (var control in Controls.Where(control => control.BindingSourceId == removedId))
+                control.BindingSourceId = "";
 
-        SelectedBindingSource = BindingSources.FirstOrDefault();
-        OnPropertyChanged(nameof(SelectedBindingSourceForControl));
-        OnPropertyChanged(nameof(SelectedDataGridBindingSummary));
+            SelectedBindingSource = BindingSources.FirstOrDefault();
+            OnPropertyChanged(nameof(SelectedBindingSourceForControl));
+            OnPropertyChanged(nameof(SelectedDataGridBindingSummary));
+        }
+        finally
+        {
+            CommitUndoBatch();
+        }
     }
 
     public BindingFieldModel? AddBindingField()
@@ -2870,18 +2906,26 @@ public partial class MainWindowViewModel : ObservableObject
         if (SelectedBindingSource is null)
             return;
 
-        var changed = false;
-        foreach (var field in SelectedBindingSource.Fields.Where(field => field.GroupOrder >= 0).ToList())
+        BeginUndoBatch();
+        try
         {
-            field.GroupOrder = -1;
-            changed = true;
+            var changed = false;
+            foreach (var field in SelectedBindingSource.Fields.Where(field => field.GroupOrder >= 0).ToList())
+            {
+                field.GroupOrder = -1;
+                changed = true;
+            }
+
+            if (!changed)
+                return;
+
+            StatusText = "Группировка колонок очищена.";
+            NotifyDesignerStateChanged();
         }
-
-        if (!changed)
-            return;
-
-        StatusText = "Группировка колонок очищена.";
-        NotifyDesignerStateChanged();
+        finally
+        {
+            CommitUndoBatch();
+        }
     }
 
     public void ApplySampleImageToSelected()
@@ -3169,17 +3213,25 @@ public partial class MainWindowViewModel : ObservableObject
         if (roots.Count == 0)
             return;
 
-        var toRemove = roots.SelectMany(GetControlAndDescendants).DistinctBy(control => control.Id).ToList();
-        var removedNames = toRemove
-            .Select(control => control.Name)
-            .Where(name => !string.IsNullOrWhiteSpace(name))
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        foreach (var control in toRemove)
-            Controls.Remove(control);
+        BeginUndoBatch();
+        try
+        {
+            var toRemove = roots.SelectMany(GetControlAndDescendants).DistinctBy(control => control.Id).ToList();
+            var removedNames = toRemove
+                .Select(control => control.Name)
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            foreach (var control in toRemove)
+                Controls.Remove(control);
 
-        RemoveInteractionsReferencingControls(removedNames);
-        ClearSelection();
-        NotifyDesignerStateChanged();
+            RemoveInteractionsReferencingControls(removedNames);
+            ClearSelection();
+            NotifyDesignerStateChanged();
+        }
+        finally
+        {
+            CommitUndoBatch();
+        }
     }
 
     [RelayCommand]
@@ -3212,44 +3264,52 @@ public partial class MainWindowViewModel : ObservableObject
         if (selectedRoots.Count == 0)
             return;
 
-        var originals = selectedRoots.SelectMany(GetControlAndDescendants).DistinctBy(control => control.Id).ToList();
-        var clonesByOriginalId = new Dictionary<string, DesignControlModel>(StringComparer.OrdinalIgnoreCase);
-        var newlyCreatedRoots = new List<DesignControlModel>();
-
-        foreach (var original in originals)
+        BeginUndoBatch();
+        try
         {
-            var clone = original.Clone();
-            clone.Id = Guid.NewGuid().ToString("N");
-            clone.Name = GetUniqueControlName(clone.Type);
-            clonesByOriginalId[original.Id] = clone;
-        }
+            var originals = selectedRoots.SelectMany(GetControlAndDescendants).DistinctBy(control => control.Id).ToList();
+            var clonesByOriginalId = new Dictionary<string, DesignControlModel>(StringComparer.OrdinalIgnoreCase);
+            var newlyCreatedRoots = new List<DesignControlModel>();
 
-        foreach (var original in originals)
-        {
-            var clone = clonesByOriginalId[original.Id];
-            clone.ParentId = clonesByOriginalId.TryGetValue(NormalizeId(original.ParentId), out var parentClone)
-                ? parentClone.Id
-                : NormalizeId(original.ParentId);
-
-            if (selectedRoots.Any(root => root.Id == original.Id))
+            foreach (var original in originals)
             {
-                clone.X += Math.Max(10, SnapStep);
-                clone.Y += Math.Max(10, SnapStep);
-                ClampControlToSurface(clone);
-                newlyCreatedRoots.Add(clone);
+                var clone = original.Clone();
+                clone.Id = Guid.NewGuid().ToString("N");
+                clone.Name = GetUniqueControlName(clone.Type);
+                clonesByOriginalId[original.Id] = clone;
             }
 
-            Controls.Add(clone);
+            foreach (var original in originals)
+            {
+                var clone = clonesByOriginalId[original.Id];
+                clone.ParentId = clonesByOriginalId.TryGetValue(NormalizeId(original.ParentId), out var parentClone)
+                    ? parentClone.Id
+                    : NormalizeId(original.ParentId);
+
+                if (selectedRoots.Any(root => root.Id == original.Id))
+                {
+                    clone.X += Math.Max(10, SnapStep);
+                    clone.Y += Math.Max(10, SnapStep);
+                    ClampControlToSurface(clone);
+                    newlyCreatedRoots.Add(clone);
+                }
+
+                Controls.Add(clone);
+            }
+
+            var clonedNameMap = originals
+                .Where(original => !string.IsNullOrWhiteSpace(original.Name))
+                .Where(original => clonesByOriginalId.ContainsKey(original.Id))
+                .ToDictionary(original => original.Name, original => clonesByOriginalId[original.Id].Name, StringComparer.OrdinalIgnoreCase);
+            CloneInteractionsForNameMap(clonedNameMap);
+
+            SetSelection(newlyCreatedRoots, newlyCreatedRoots.LastOrDefault());
+            NotifyDesignerStateChanged();
         }
-
-        var clonedNameMap = originals
-            .Where(original => !string.IsNullOrWhiteSpace(original.Name))
-            .Where(original => clonesByOriginalId.ContainsKey(original.Id))
-            .ToDictionary(original => original.Name, original => clonesByOriginalId[original.Id].Name, StringComparer.OrdinalIgnoreCase);
-        CloneInteractionsForNameMap(clonedNameMap);
-
-        SetSelection(newlyCreatedRoots, newlyCreatedRoots.LastOrDefault());
-        NotifyDesignerStateChanged();
+        finally
+        {
+            CommitUndoBatch();
+        }
     }
 
     [RelayCommand]
@@ -3276,6 +3336,9 @@ public partial class MainWindowViewModel : ObservableObject
         var insertY = Snap(40 + (_templateInsertionOffset % 8) * 24);
         _templateInsertionOffset++;
 
+        BeginUndoBatch();
+        try
+        {
         _isHistorySuspended = true;
         _isStructureTreeRefreshSuspended = true;
 
@@ -3351,6 +3414,11 @@ public partial class MainWindowViewModel : ObservableObject
         StatusText = insertedRoots.Count == 1
             ? $"Шаблон «{template.Name}» вставлен как {insertedRoots[0].Name}."
             : $"Шаблон «{template.Name}» вставлен: элементов {controlFiles.Count}.";
+        }
+        finally
+        {
+            CommitUndoBatch();
+        }
     }
 
     [RelayCommand]
@@ -3467,6 +3535,9 @@ public partial class MainWindowViewModel : ObservableObject
             return;
         }
 
+        BeginUndoBatch();
+        try
+        {
         var sourceBefore = Controls.ToList();
         var siblingOrderBefore = sourceBefore
             .Where(control => NormalizeId(control.ParentId) == commonParentId)
@@ -3530,6 +3601,11 @@ public partial class MainWindowViewModel : ObservableObject
         SetSelection(new[] { group }, group);
         NotifyDesignerStateChanged();
         StatusText = $"Создана группа {group.Name}: элементов {orderedChildren.Count}.";
+        }
+        finally
+        {
+            CommitUndoBatch();
+        }
     }
 
     [RelayCommand]
@@ -3542,6 +3618,9 @@ public partial class MainWindowViewModel : ObservableObject
         if (selectedGroups.Count == 0)
             return;
 
+        BeginUndoBatch();
+        try
+        {
         var sourceBefore = Controls.ToList();
         var releasedControls = new List<DesignControlModel>();
         var customOrderByParent = new Dictionary<string, List<DesignControlModel>>(StringComparer.OrdinalIgnoreCase);
@@ -3601,6 +3680,11 @@ public partial class MainWindowViewModel : ObservableObject
         SetSelection(releasedRoots, releasedRoots.LastOrDefault());
         NotifyDesignerStateChanged();
         StatusText = $"Групп снято: {selectedGroups.Count}.";
+        }
+        finally
+        {
+            CommitUndoBatch();
+        }
     }
 
     public bool CanWrapSelectionInContainer()
@@ -3626,6 +3710,9 @@ public partial class MainWindowViewModel : ObservableObject
             return;
         }
 
+        BeginUndoBatch();
+        try
+        {
         var sourceBefore = Controls.ToList();
         var siblingOrderBefore = sourceBefore
             .Where(control => NormalizeId(control.ParentId) == commonParentId)
@@ -3695,6 +3782,11 @@ public partial class MainWindowViewModel : ObservableObject
         SetSelection(new[] { container }, container);
         NotifyDesignerStateChanged();
         StatusText = $"Элементы обернуты в контейнер {container.Name}.";
+        }
+        finally
+        {
+            CommitUndoBatch();
+        }
     }
 
     [RelayCommand]
@@ -3741,6 +3833,9 @@ public partial class MainWindowViewModel : ObservableObject
         if (_clipboardDocument is null || _clipboardDocument.Controls.Count == 0)
             return;
 
+        BeginUndoBatch();
+        try
+        {
         foreach (var bindingSourceFile in _clipboardDocument.BindingSources)
         {
             if (BindingSources.Any(source => source.Id == bindingSourceFile.Id))
@@ -3793,6 +3888,11 @@ public partial class MainWindowViewModel : ObservableObject
         StatusText = pastedRoots.Count == 1
             ? $"Вставлен элемент {pastedRoots[0].Name}"
             : $"Вставлено элементов: {pastedRoots.Count}";
+        }
+        finally
+        {
+            CommitUndoBatch();
+        }
     }
 
     private void RemoveInteractionsReferencingControls(ISet<string> controlNames)
@@ -3989,6 +4089,30 @@ public partial class MainWindowViewModel : ObservableObject
         _undoStack.Push(_currentSnapshot);
         RestoreFromSnapshot(targetSnapshot);
         StatusText = "Повторено последнее действие";
+    }
+
+    public void BeginUndoBatch(bool trackHistory = true)
+    {
+        if (_undoBatchDepth == 0)
+            _undoBatchTrackHistory = trackHistory;
+        else
+            _undoBatchTrackHistory |= trackHistory;
+
+        _undoBatchDepth++;
+    }
+
+    public void CommitUndoBatch()
+    {
+        if (_undoBatchDepth <= 0)
+            return;
+
+        _undoBatchDepth--;
+        if (_undoBatchDepth > 0)
+            return;
+
+        var trackHistory = _undoBatchTrackHistory;
+        _undoBatchTrackHistory = false;
+        NotifyDesignerStateChanged(trackHistory);
     }
 
     [RelayCommand]
@@ -8928,6 +9052,11 @@ public partial class MainWindowViewModel : ObservableObject
         // Undo/redo хранит состояние целиком в JSON.
         // При восстановлении проще и надежнее пересобрать документ полностью.
         var currentPath = CurrentDocumentPath;
+        var selectedControlIds = SelectedControlIds.ToList();
+        var primaryControlId = SelectedControl?.Id ?? "";
+        var selectedBindingSourceId = SelectedBindingSource?.Id ?? "";
+        var selectedInteractionId = SelectedInteraction?.Id ?? "";
+
         ApplyDocument(
             JsonSerializer.Deserialize<DesignerDocumentFileModel>(snapshot, JsonOptions) ?? new DesignerDocumentFileModel(),
             currentPath,
@@ -8936,7 +9065,48 @@ public partial class MainWindowViewModel : ObservableObject
             resetHistory: false);
         _currentSnapshot = snapshot;
         _lastHistoryMutationUtc = DateTime.UtcNow;
+
+        RestoreSelectionContextAfterSnapshot(
+            selectedControlIds,
+            primaryControlId,
+            selectedBindingSourceId,
+            selectedInteractionId);
+
         RaiseDocumentStateProperties();
+        RefreshDiagnostics();
+        GenerateXaml();
+        DesignerChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void RestoreSelectionContextAfterSnapshot(
+        IReadOnlyList<string> selectedControlIds,
+        string primaryControlId,
+        string selectedBindingSourceId,
+        string selectedInteractionId)
+    {
+        var restoredSelection = selectedControlIds
+            .Select(GetControl)
+            .Where(control => control is not null)
+            .Cast<DesignControlModel>()
+            .ToList();
+
+        var primaryControl = GetControl(primaryControlId)
+            ?? restoredSelection.LastOrDefault();
+        if (primaryControl is not null && restoredSelection.All(control => control.Id != primaryControl.Id))
+            restoredSelection.Add(primaryControl);
+        SetSelection(restoredSelection, primaryControl);
+
+        if (!string.IsNullOrWhiteSpace(selectedBindingSourceId))
+            SelectedBindingSource = BindingSources.FirstOrDefault(source => string.Equals(source.Id, selectedBindingSourceId, StringComparison.OrdinalIgnoreCase))
+                ?? BindingSources.FirstOrDefault();
+
+        SelectedInteraction = !string.IsNullOrWhiteSpace(selectedInteractionId)
+            ? Interactions.FirstOrDefault(interaction => string.Equals(interaction.Id, selectedInteractionId, StringComparison.OrdinalIgnoreCase))
+            : null;
+
+        RaiseBindingEditorProperties();
+        RaiseInteractionDesignerProperties();
+        RaiseInteractionLookupProperties();
     }
 
     private void ResetHistory(bool markAsSaved)
@@ -9549,6 +9719,9 @@ public partial class MainWindowViewModel : ObservableObject
         if (anchor is null || selectedRoots.Count < 2)
             return;
 
+        BeginUndoBatch();
+        try
+        {
         var anchorAbsolute = GetAbsolutePosition(anchor);
         var anchorLeft = anchorAbsolute.X;
         var anchorTop = anchorAbsolute.Y;
@@ -9600,6 +9773,11 @@ public partial class MainWindowViewModel : ObservableObject
             SelectionAlignment.Middle => "Выделенное выровнено по середине",
             _ => "Выделенное выровнено"
         };
+        }
+        finally
+        {
+            CommitUndoBatch();
+        }
     }
 
     private void DistributeSelectionCore(bool distributeHorizontally)
@@ -9616,6 +9794,9 @@ public partial class MainWindowViewModel : ObservableObject
         if (selectedRoots.Count < 3)
             return;
 
+        BeginUndoBatch();
+        try
+        {
         var start = distributeHorizontally
             ? selectedRoots.Min(item => item.Bounds.X)
             : selectedRoots.Min(item => item.Bounds.Y);
@@ -9647,6 +9828,11 @@ public partial class MainWindowViewModel : ObservableObject
         StatusText = distributeHorizontally
             ? "Выделенное распределено по горизонтали"
             : "Выделенное распределено по вертикали";
+        }
+        finally
+        {
+            CommitUndoBatch();
+        }
     }
 
     private RectInfo GetAbsoluteBounds(DesignControlModel control)
@@ -9662,6 +9848,9 @@ public partial class MainWindowViewModel : ObservableObject
         if (anchor is null || selectedRoots.Count < 2)
             return;
 
+        BeginUndoBatch();
+        try
+        {
         foreach (var control in selectedRoots.Where(control => control.Id != anchor.Id))
         {
             if (matchWidth)
@@ -9681,6 +9870,11 @@ public partial class MainWindowViewModel : ObservableObject
             (false, true) => "Высота выделения выровнена",
             _ => "Размер выделения обновлен"
         };
+        }
+        finally
+        {
+            CommitUndoBatch();
+        }
     }
 
     private DesignControlModel? GetSelectionAnchorControl(IReadOnlyList<DesignControlModel> selectedRoots)
@@ -10797,6 +10991,15 @@ public partial class MainWindowViewModel : ObservableObject
     {
         // Общая точка синхронизации всего конструктора:
         // фиксируем историю, пересобираем XAML и просим окно перерисовать поверхность.
+        if (_isApplyingDocument)
+            return;
+
+        if (_undoBatchDepth > 0)
+        {
+            _undoBatchTrackHistory |= trackHistory;
+            return;
+        }
+
         if (trackHistory)
             RegisterHistorySnapshot();
 

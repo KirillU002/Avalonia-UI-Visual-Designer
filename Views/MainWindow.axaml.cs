@@ -3941,6 +3941,7 @@ public partial class MainWindow : Window
                     startPointerX = e.GetPosition(overlay).X;
                     startWidth = GetInteractivePreviewColumnWidth(headerTable.ColumnDefinitions[handleIndex], fallbackWidth);
                     _isResizingGridColumn = true;
+                    VM.BeginUndoBatch();
                     e.Pointer.Capture(handle);
                     e.Handled = true;
                 };
@@ -3965,6 +3966,7 @@ public partial class MainWindow : Window
                     _isResizingGridColumn = false;
                     activeIndex = -1;
                     CommitResize(handleIndex);
+                    VM.CommitUndoBatch();
                     e.Pointer.Capture(null);
                     e.Handled = true;
                 };
@@ -3977,6 +3979,7 @@ public partial class MainWindow : Window
                     _isResizingGridColumn = false;
                     activeIndex = -1;
                     CommitResize(handleIndex);
+                    VM.CommitUndoBatch();
                 };
 
                 overlay.Children.Add(handle);
@@ -5583,6 +5586,7 @@ public partial class MainWindow : Window
         _draggedBorder = border;
         _draggedModel = model;
         _dragStartPointerPosition = GetDesignCanvasPosition(e);
+        VM.BeginUndoBatch();
 
         e.Pointer.Capture(border);
         e.Handled = true;
@@ -5700,6 +5704,7 @@ public partial class MainWindow : Window
         _draggedModel = null;
         _dragSelectionRoots.Clear();
         _dragRootStartPositions.Clear();
+        VM.CommitUndoBatch();
         RenderDesigner();
     }
 
@@ -5720,6 +5725,7 @@ public partial class MainWindow : Window
         _resizeStart = GetDesignCanvasPosition(e);
         _startWidth = model.Width;
         _startHeight = model.Height;
+        VM.BeginUndoBatch();
 
         e.Pointer.Capture(border);
         e.Handled = true;
@@ -5773,6 +5779,7 @@ public partial class MainWindow : Window
         _resizingModel = null;
         e.Pointer.Capture(null);
         ClearGuideOverlay();
+        VM.CommitUndoBatch();
         RenderDesigner();
     }
 
@@ -5785,6 +5792,7 @@ public partial class MainWindow : Window
         _designResizeStart = GetDesignHostPosition(e);
         _designStartWidth = VM.DesignWidth;
         _designStartHeight = VM.DesignHeight;
+        VM.BeginUndoBatch();
 
         if (sender is InputElement element)
             e.Pointer.Capture(element);
@@ -5818,6 +5826,7 @@ public partial class MainWindow : Window
 
         _isResizingDesignSurface = false;
         e.Pointer.Capture(null);
+        VM.CommitUndoBatch();
         RenderDesigner();
     }
 
@@ -6756,8 +6765,16 @@ public partial class MainWindow : Window
             return;
         }
 
-        field.Width = preset;
-        VM.StatusText = $"Ширина колонки «{field.Header}» установлена: {preset}";
+        VM.BeginUndoBatch();
+        try
+        {
+            field.Width = preset;
+            VM.StatusText = $"Ширина колонки «{field.Header}» установлена: {preset}";
+        }
+        finally
+        {
+            VM.CommitUndoBatch();
+        }
     }
 
     private void MakeSelectedGridColumnsEqualWidthButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
@@ -6766,10 +6783,18 @@ public partial class MainWindow : Window
         if (columns.Count == 0)
             return;
 
-        foreach (var field in columns.Where(static field => field.IsVisible))
-            field.Width = "*";
+        VM.BeginUndoBatch();
+        try
+        {
+            foreach (var field in columns.Where(static field => field.IsVisible))
+                field.Width = "*";
 
-        VM.StatusText = "Для всех видимых колонок установлена одинаковая ширина";
+            VM.StatusText = "Для всех видимых колонок установлена одинаковая ширина";
+        }
+        finally
+        {
+            VM.CommitUndoBatch();
+        }
     }
 
     private void OpenDataGridColumnEditorButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)

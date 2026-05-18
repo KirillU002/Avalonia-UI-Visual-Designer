@@ -80,7 +80,7 @@ public partial class DataGridColumnEditorWindow : Window
         if (sender is Button { DataContext: BindingFieldModel field, Tag: string preset }
             && !string.IsNullOrWhiteSpace(preset))
         {
-            field.Width = preset;
+            _editor?.SetColumnWidthPreset(field, preset);
         }
     }
 }
@@ -230,10 +230,18 @@ public sealed partial class DataGridColumnEditorViewModel : ObservableObject, ID
             VisibleIndex = _bindingSource.Fields.Count
         };
 
-        _bindingSource.Fields.Add(field);
-        SearchText = string.Empty;
-        SelectField(field);
-        _owner.StatusText = $"Добавлена колонка «{field.Header}»";
+        _owner.BeginUndoBatch();
+        try
+        {
+            _bindingSource.Fields.Add(field);
+            SearchText = string.Empty;
+            SelectField(field);
+            _owner.StatusText = $"Добавлена колонка «{field.Header}»";
+        }
+        finally
+        {
+            _owner.CommitUndoBatch();
+        }
     }
 
     public void DeleteSelectedColumn()
@@ -245,12 +253,20 @@ public sealed partial class DataGridColumnEditorViewModel : ObservableObject, ID
         var orderedFields = OrderedFields().ToList();
         var removedIndex = orderedFields.IndexOf(field);
 
-        _bindingSource.Fields.Remove(field);
-        NormalizeVisibleIndexes(OrderedFields());
+        _owner.BeginUndoBatch();
+        try
+        {
+            _bindingSource.Fields.Remove(field);
+            NormalizeVisibleIndexes(OrderedFields());
 
-        var nextField = OrderedFields().ElementAtOrDefault(Math.Max(0, removedIndex - 1));
-        SelectField(nextField);
-        _owner.StatusText = $"Удалена колонка «{field.Header}»";
+            var nextField = OrderedFields().ElementAtOrDefault(Math.Max(0, removedIndex - 1));
+            SelectField(nextField);
+            _owner.StatusText = $"Удалена колонка «{field.Header}»";
+        }
+        finally
+        {
+            _owner.CommitUndoBatch();
+        }
     }
 
     public void MoveSelectedColumn(int direction)
@@ -264,10 +280,18 @@ public sealed partial class DataGridColumnEditorViewModel : ObservableObject, ID
         if (currentIndex < 0 || currentIndex == targetIndex)
             return;
 
-        (orderedFields[currentIndex], orderedFields[targetIndex]) = (orderedFields[targetIndex], orderedFields[currentIndex]);
-        NormalizeVisibleIndexes(orderedFields);
-        RebuildFilteredFields(SelectedItem.Field);
-        _owner.StatusText = $"Порядок колонки «{SelectedItem.Field.Header}» изменен";
+        _owner.BeginUndoBatch();
+        try
+        {
+            (orderedFields[currentIndex], orderedFields[targetIndex]) = (orderedFields[targetIndex], orderedFields[currentIndex]);
+            NormalizeVisibleIndexes(orderedFields);
+            RebuildFilteredFields(SelectedItem.Field);
+            _owner.StatusText = $"Порядок колонки «{SelectedItem.Field.Header}» изменен";
+        }
+        finally
+        {
+            _owner.CommitUndoBatch();
+        }
     }
 
     public void SetAllColumnsVisible(bool isVisible)
@@ -275,13 +299,21 @@ public sealed partial class DataGridColumnEditorViewModel : ObservableObject, ID
         if (_bindingSource is null)
             return;
 
-        foreach (var field in _bindingSource.Fields)
-            field.IsVisible = isVisible;
+        _owner.BeginUndoBatch();
+        try
+        {
+            foreach (var field in _bindingSource.Fields)
+                field.IsVisible = isVisible;
 
-        OnPropertyChanged(nameof(SummaryText));
-        _owner.StatusText = isVisible
-            ? "Все колонки DataGrid показаны"
-            : "Все колонки DataGrid скрыты";
+            OnPropertyChanged(nameof(SummaryText));
+            _owner.StatusText = isVisible
+                ? "Все колонки DataGrid показаны"
+                : "Все колонки DataGrid скрыты";
+        }
+        finally
+        {
+            _owner.CommitUndoBatch();
+        }
     }
 
     public void ResetColumnWidths()
@@ -289,10 +321,35 @@ public sealed partial class DataGridColumnEditorViewModel : ObservableObject, ID
         if (_bindingSource is null)
             return;
 
-        foreach (var field in _bindingSource.Fields)
-            field.Width = "*";
+        _owner.BeginUndoBatch();
+        try
+        {
+            foreach (var field in _bindingSource.Fields)
+                field.Width = "*";
 
-        _owner.StatusText = "Ширины колонок DataGrid сброшены";
+            _owner.StatusText = "Ширины колонок DataGrid сброшены";
+        }
+        finally
+        {
+            _owner.CommitUndoBatch();
+        }
+    }
+
+    public void SetColumnWidthPreset(BindingFieldModel field, string preset)
+    {
+        if (_bindingSource is null || !_bindingSource.Fields.Contains(field) || string.IsNullOrWhiteSpace(preset))
+            return;
+
+        _owner.BeginUndoBatch();
+        try
+        {
+            field.Width = preset;
+            _owner.StatusText = $"Ширина колонки «{field.Header}» установлена: {preset}";
+        }
+        finally
+        {
+            _owner.CommitUndoBatch();
+        }
     }
 
     public void Dispose()
