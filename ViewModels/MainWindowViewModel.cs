@@ -797,6 +797,25 @@ public partial class MainWindowViewModel : ObservableObject
     public string InstalledPluginsSummary => !HasInstalledPlugins
         ? "Пока не установлено ни одного plugin-пакета. Нажмите «Установить plugin...», выберите DLL плагина и конструктор добавит его контролы в этот раздел."
         : $"Установлено plugin-пакетов: {InstalledPlugins.Count}. Перетаскивайте карточки ниже прямо на форму.";
+    public string PluginDiagnosticsSummary
+    {
+        get
+        {
+            if (_registry is not DesignerRegistry registry)
+                return "Plugin diagnostics недоступны для текущего registry.";
+
+            var reports = registry.GetPluginLoadReports();
+            var okCount = reports.Count(report => report.Status == PluginLoadStatus.Ok);
+            var warningCount = reports.Count(report => report.Status == PluginLoadStatus.Warning);
+            var errorCount = reports.Count(report => report.Status == PluginLoadStatus.Error);
+            var controlCount = _registry.GetControls()
+                .Count(descriptor => descriptor is not MissingPluginDescriptor && IsPluginDescriptor(descriptor));
+
+            return $"DLL найдено: {registry.LastPluginAssemblyScanCount}. Загружено: {okCount}. Warning: {warningCount}. Error: {errorCount}. Controls: {controlCount}.";
+        }
+    }
+    public bool HasPluginLoadIssues => _registry is DesignerRegistry registry
+        && registry.GetPluginLoadReports().Any(report => report.Status is PluginLoadStatus.Warning or PluginLoadStatus.Error);
     public string SelectedTextLabel => GetPropertyDisplayTitle(SelectedControl, nameof(DesignControlModel.Text), "Текст");
     public string SelectedBackgroundLabel => SelectedControl?.Type == DesignerControlTypes.DataGrid ? "Шапка таблицы" : "Фон";
     public string SelectedLockStateSummary => SelectedControl switch
@@ -1269,6 +1288,29 @@ public partial class MainWindowViewModel : ObservableObject
         RefreshDiagnostics();
     }
 
+    [RelayCommand]
+    private void ReloadPlugins()
+    {
+        if (_registry is not DesignerRegistry registry)
+        {
+            StatusText = "Plugin reload недоступен для текущего registry.";
+            return;
+        }
+
+        try
+        {
+            registry.ClearPluginRegistrations();
+            var loader = new PluginLoader(new TraceDesignerLogger());
+            loader.LoadFromFolder(PluginInstallFolderPath, registry, replaceDiagnostics: true);
+            RefreshRegistryBackedCollections();
+            StatusText = "Plugins reloaded. Toolbox и diagnostics обновлены.";
+        }
+        catch (Exception ex)
+        {
+            StatusText = $"Ошибка reload plugins: {ex.Message}";
+        }
+    }
+
     private void RefreshToolboxItemsFromRegistry()
     {
         ToolboxItems.Clear();
@@ -1336,7 +1378,34 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void RebuildInstalledPluginCatalog()
     {
-        var pluginGroups = _registry.GetControls()
+        var pluginGroups = BuildInstalledPluginCatalogItems();
+
+        InstalledPlugins.Clear();
+        foreach (var plugin in pluginGroups)
+            InstalledPlugins.Add(plugin);
+
+        OnPropertyChanged(nameof(HasInstalledPlugins));
+        OnPropertyChanged(nameof(InstalledPluginsSummary));
+        OnPropertyChanged(nameof(PluginDiagnosticsSummary));
+        OnPropertyChanged(nameof(HasPluginLoadIssues));
+    }
+
+    private IReadOnlyList<InstalledPluginInfoModel> BuildInstalledPluginCatalogItems()
+    {
+        if (_registry is DesignerRegistry designerRegistry)
+        {
+            var reports = designerRegistry.GetPluginLoadReports()
+                .Where(report => report.HasPluginIdentity || report.Status is PluginLoadStatus.Warning or PluginLoadStatus.Error)
+                .OrderBy(report => report.DisplayName, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(report => report.AssemblyPath, StringComparer.OrdinalIgnoreCase)
+                .Select(ToInstalledPluginInfo)
+                .ToList();
+
+            if (reports.Count > 0)
+                return reports;
+        }
+
+        return _registry.GetControls()
             .Where(descriptor => descriptor is not MissingPluginDescriptor && IsPluginDescriptor(descriptor))
             .GroupBy(descriptor => descriptor.GetType().Assembly.Location, StringComparer.OrdinalIgnoreCase)
             .OrderBy(group => Path.GetFileNameWithoutExtension(group.Key), StringComparer.OrdinalIgnoreCase)
@@ -1345,7 +1414,7 @@ public partial class MainWindowViewModel : ObservableObject
                 var sampleDescriptor = group.First();
                 var assembly = sampleDescriptor.GetType().Assembly;
                 var controls = group
-                    .Select(descriptor => descriptor.Title)
+                    .Select(descriptor => $"{descriptor.Title} ({descriptor.TypeKey})")
                     .Distinct(StringComparer.OrdinalIgnoreCase)
                     .OrderBy(title => title, StringComparer.OrdinalIgnoreCase)
                     .ToList();
@@ -1356,21 +1425,36 @@ public partial class MainWindowViewModel : ObservableObject
                 return new InstalledPluginInfoModel
                 {
                     PluginName = pluginName,
+                    PluginId = pluginName,
                     Version = version,
                     AssemblyPath = group.Key,
                     ControlCount = controls.Count,
                     ControlsSummary = controls.Count == 0 ? "Без контролов" : string.Join(", ", controls),
-                    Summary = $"Контролов: {controls.Count}"
+                    Summary = $"Контролов: {controls.Count}",
+                    Status = "OK"
                 };
             })
             .ToList();
+    }
 
-        InstalledPlugins.Clear();
-        foreach (var plugin in pluginGroups)
-            InstalledPlugins.Add(plugin);
-
-        OnPropertyChanged(nameof(HasInstalledPlugins));
-        OnPropertyChanged(nameof(InstalledPluginsSummary));
+    private static InstalledPluginInfoModel ToInstalledPluginInfo(PluginLoadReport report)
+    {
+        var details = report.Errors.Concat(report.Warnings).ToList();
+        return new InstalledPluginInfoModel
+        {
+            PluginName = report.DisplayName,
+            PluginId = string.IsNullOrWhiteSpace(report.PluginId) ? report.AssemblyFileName : report.PluginId,
+            Version = string.IsNullOrWhiteSpace(report.PluginVersion) ? "n/a" : report.PluginVersion,
+            ApiVersion = string.IsNullOrWhiteSpace(report.ApiVersion) ? "n/a" : report.ApiVersion,
+            AssemblyPath = report.AssemblyPath,
+            ControlCount = report.ControlCount,
+            ControlsSummary = report.RegisteredControls.Count == 0
+                ? "Контролы не зарегистрированы"
+                : string.Join(", ", report.RegisteredControls),
+            Summary = report.Message,
+            Status = report.StatusTitle,
+            ErrorDetails = details.Count == 0 ? "" : string.Join(Environment.NewLine, details)
+        };
     }
 
     private void RebuildImportedDllCatalog()
@@ -2351,6 +2435,7 @@ public partial class MainWindowViewModel : ObservableObject
         var diagnostics = _diagnosticsService
             .Validate(Controls, BindingSources, Interactions, CurrentDocumentPath, DesignWidth, DesignHeight)
             .ToList();
+        AppendPluginLoaderDiagnostics(diagnostics);
         AppendExportDiagnostics(diagnostics);
         AppendPreviewRuntimeDiagnostics(diagnostics);
 
@@ -2360,6 +2445,30 @@ public partial class MainWindowViewModel : ObservableObject
 
         RaiseDiagnosticsProperties();
         RaiseExportChecklistProperties();
+    }
+
+    private void AppendPluginLoaderDiagnostics(ICollection<DocumentDiagnosticModel> diagnostics)
+    {
+        if (_registry is not DesignerRegistry registry)
+            return;
+
+        foreach (var report in registry.GetPluginLoadReports()
+                     .Where(report => report.Status is PluginLoadStatus.Warning or PluginLoadStatus.Error))
+        {
+            var details = report.Errors.Concat(report.Warnings).ToList();
+            diagnostics.Add(new DocumentDiagnosticModel
+            {
+                Severity = report.Status == PluginLoadStatus.Error
+                    ? DocumentDiagnosticSeverity.Error
+                    : DocumentDiagnosticSeverity.Warning,
+                Source = report.DisplayName,
+                Category = "Plugin loading",
+                Message = report.Message,
+                Recommendation = details.Count == 0
+                    ? "Проверьте DLL во вкладке Plugins."
+                    : string.Join(Environment.NewLine, details)
+            });
+        }
     }
 
     public void SetPreviewRuntimeDiagnostics(IEnumerable<DocumentDiagnosticModel> diagnostics)

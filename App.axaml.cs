@@ -61,6 +61,6 @@ public partial class App : Application
         var logger = new TraceDesignerLogger();
         var loader = new PluginLoader(logger);
         var pluginFolder = Path.Combine(AppContext.BaseDirectory, "Plugins");
-        loader.LoadFromFolder(pluginFolder, _registry);
+        loader.LoadFromFolder(pluginFolder, _registry, replaceDiagnostics: true);
     }
 }

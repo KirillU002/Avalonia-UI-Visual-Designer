@@ -4242,11 +4242,17 @@
                                Foreground="#475569"
                                TextWrapping="Wrap"/>
 
-                    <Button Content="Установить плагин..."
-                            Classes="data-action-button"
-                            Click="InstallPluginButton_Click"
-                            Padding="14,10"
-                            HorizontalAlignment="Left"/>
+                    <StackPanel Orientation="Horizontal"
+                                Spacing="8">
+                      <Button Content="Установить плагин..."
+                              Classes="data-action-button"
+                              Click="InstallPluginButton_Click"
+                              Padding="14,10"/>
+                      <Button Content="Reload plugins"
+                              Classes="data-action-button"
+                              Command="{Binding ReloadPluginsCommand}"
+                              Padding="14,10"/>
+                    </StackPanel>
 
                     <Border Background="#F8FAFC"
                             BorderBrush="#D7E2EE"
@@ -4267,9 +4273,15 @@
                             BorderThickness="1"
                             CornerRadius="10"
                             Padding="10">
-                      <TextBlock Text="{Binding InstalledPluginsSummary}"
-                                 Foreground="#475569"
-                                 TextWrapping="Wrap"/>
+                      <StackPanel Spacing="4">
+                        <TextBlock Text="{Binding InstalledPluginsSummary}"
+                                   Foreground="#475569"
+                                   TextWrapping="Wrap"/>
+                        <TextBlock Text="{Binding PluginDiagnosticsSummary}"
+                                   Foreground="#1D4ED8"
+                                   FontWeight="SemiBold"
+                                   TextWrapping="Wrap"/>
+                      </StackPanel>
                     </Border>
                   </StackPanel>
                 </Border>
@@ -4298,18 +4310,26 @@
                                 <TextBlock Text="{Binding PluginName}"
                                            FontSize="16"
                                            FontWeight="SemiBold"/>
-                                <Border Background="#DBEAFE"
+                                <Border Background="{Binding StatusBadgeBackground}"
+                                        BorderBrush="{Binding StatusBadgeBorder}"
+                                        BorderThickness="1"
                                         CornerRadius="999"
                                         Padding="8,2"
                                         HorizontalAlignment="Right">
-                                  <TextBlock Text="{Binding Summary}"
-                                             Foreground="#1D4ED8"
+                                  <TextBlock Text="{Binding Status}"
+                                             Foreground="{Binding StatusBadgeForeground}"
                                              FontSize="11"
                                              FontWeight="SemiBold"/>
                                 </Border>
                               </DockPanel>
 
+                              <TextBlock Text="{Binding PluginId, StringFormat='Id: {0}'}"
+                                         Foreground="#64748B"/>
+
                               <TextBlock Text="{Binding Version, StringFormat='Версия: {0}'}"
+                                         Foreground="#64748B"/>
+
+                              <TextBlock Text="{Binding ApiVersion, StringFormat='SDK API: {0}'}"
                                          Foreground="#64748B"/>
 
                               <TextBlock Text="{Binding AssemblyPath}"
@@ -4324,6 +4344,17 @@
                                            Foreground="#475569"
                                            TextWrapping="Wrap"/>
                               </StackPanel>
+
+                              <Border Background="#FFF7ED"
+                                      BorderBrush="#FDBA74"
+                                      BorderThickness="1"
+                                      CornerRadius="8"
+                                      Padding="8"
+                                      IsVisible="{Binding HasErrorDetails}">
+                                <TextBlock Text="{Binding ErrorDetails}"
+                                           Foreground="#9A3412"
+                                           TextWrapping="Wrap"/>
+                              </Border>
                             </StackPanel>
                           </Border>
                         </DataTemplate>

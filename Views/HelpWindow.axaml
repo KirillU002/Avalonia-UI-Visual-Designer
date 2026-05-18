@@ -958,6 +958,18 @@
                                 </Border>
                             </Grid>
 
+                            <Border Background="#F8FAFC"
+                                    BorderBrush="#D7E2EE"
+                                    BorderThickness="1"
+                                    CornerRadius="12"
+                                    Padding="14">
+                                <StackPanel Spacing="6">
+                                    <TextBlock Classes="section-title" Text="SDK examples and template" />
+                                    <TextBlock Classes="body" Text="MinimalDesignerPlugin показывает самый маленький рабочий control plugin: один descriptor, preview, custom property и XAML export. DesignerPluginTemplate можно скопировать как основу нового plugin." />
+                                    <TextBlock Classes="body" Text="Сборка: dotnet build .\Plugins\MinimalDesignerPlugin\MinimalDesignerPlugin.csproj. Шаблон: templates\DesignerPluginTemplate. Ошибки загрузки смотрите во вкладке Plugins: DLL count, статус, controls, duplicate TypeKey и dependency errors." />
+                                </StackPanel>
+                            </Border>
+
                             <Grid ColumnDefinitions="*,*"
                                   ColumnSpacing="12">
                                 <Border Classes="tinted-card">

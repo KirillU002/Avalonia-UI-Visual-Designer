@@ -50,5 +50,6 @@
   <ItemGroup>
     <ProjectReference Include="PluginContracts\FormDesigner.PluginContracts.csproj" />
     <ProjectReference Include="Plugins\DemoDesignerPlugin\DemoDesignerPlugin.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="Plugins\MinimalDesignerPlugin\MinimalDesignerPlugin.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 </Project>

@@ -25,4 +25,39 @@ public partial class InstalledPluginInfoModel : ObservableObject
 
     [ObservableProperty]
     private string summary = "";
+
+    [ObservableProperty]
+    private string status = "OK";
+
+    [ObservableProperty]
+    private string apiVersion = "";
+
+    [ObservableProperty]
+    private string pluginId = "";
+
+    [ObservableProperty]
+    private string errorDetails = "";
+
+    public bool HasErrorDetails => !string.IsNullOrWhiteSpace(ErrorDetails);
+
+    public string StatusBadgeBackground => Status switch
+    {
+        "Error" => "#FEE2E2",
+        "Warning" => "#FEF3C7",
+        _ => "#DCFCE7"
+    };
+
+    public string StatusBadgeBorder => Status switch
+    {
+        "Error" => "#FCA5A5",
+        "Warning" => "#FCD34D",
+        _ => "#86EFAC"
+    };
+
+    public string StatusBadgeForeground => Status switch
+    {
+        "Error" => "#B91C1C",
+        "Warning" => "#92400E",
+        _ => "#166534"
+    };
 }
