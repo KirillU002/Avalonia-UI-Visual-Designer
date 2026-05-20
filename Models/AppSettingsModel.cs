@@ -57,6 +57,29 @@ public class SessionStateModel
     public string WorkspaceMode { get; set; } = "Дизайн";
 
     public string SelectedControlId { get; set; } = "";
+
+    public EditorShellLayoutState EditorShell { get; set; } = new();
+}
+
+public sealed class EditorShellLayoutState
+{
+    public bool IsLeftPanelVisible { get; set; } = true;
+
+    public bool IsRightPanelVisible { get; set; } = true;
+
+    public bool IsBottomPanelVisible { get; set; }
+
+    public double LeftPanelWidth { get; set; } = 280;
+
+    public double RightPanelWidth { get; set; } = 380;
+
+    public double BottomPanelHeight { get; set; } = 220;
+
+    public string ActiveLeftTab { get; set; } = "Components";
+
+    public string ActiveRightTab { get; set; } = "Properties";
+
+    public string ActiveBottomTab { get; set; } = "Diagnostics";
 }
 
 public class ExportCacheModel

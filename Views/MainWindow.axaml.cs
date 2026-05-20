@@ -75,6 +75,8 @@ public partial class MainWindow : Window
     private bool _isMiniMapDraggingViewport;
     private bool _isResizing;
     private bool _isResizingDiagnosticsPane;
+    private bool _isResizingLeftDockPanel;
+    private bool _isResizingRightDockPanel;
     private bool _isResizingGridColumn;
     private DesignControlModel? _resizingModel;
     private Rect _miniMapContentBounds;
@@ -83,10 +85,12 @@ public partial class MainWindow : Window
     private Point _marqueeCurrent;
     private Point _panStartViewportPosition;
     private Point _diagnosticsPaneResizeStart;
+    private Point _dockPanelResizeStart;
     private Point _resizeStart;
     private double _startWidth;
     private double _startHeight;
     private double _diagnosticsPaneResizeStartHeight;
+    private double _dockPanelResizeStartSize;
     private double _miniMapScale = 1.0;
     private Vector _panStartViewportOffset;
     private Vector _miniMapDragOffset;
@@ -474,14 +478,22 @@ public partial class MainWindow : Window
             ViewportOffsetX = DesignerViewportScrollViewer.Offset.X,
             ViewportOffsetY = DesignerViewportScrollViewer.Offset.Y,
             WorkspaceMode = VM.WorkspaceMode,
-            SelectedControlId = VM.SelectedControl?.Id ?? ""
+            SelectedControlId = VM.SelectedControl?.Id ?? "",
+            EditorShell = VM.CaptureEditorShellLayoutState()
         };
     }
 
     private static bool IsSessionProperty(string? propertyName)
     {
         return propertyName is nameof(MainWindowViewModel.CurrentDocumentPath)
-            or nameof(MainWindowViewModel.WorkspaceMode);
+            or nameof(MainWindowViewModel.WorkspaceMode)
+            or nameof(MainWindowViewModel.IsLeftDockOpen)
+            or nameof(MainWindowViewModel.IsRightDockOpen)
+            or nameof(MainWindowViewModel.IsBottomDockOpen)
+            or nameof(MainWindowViewModel.LeftDockPanelWidth)
+            or nameof(MainWindowViewModel.RightDockPanelWidth)
+            or nameof(MainWindowViewModel.DiagnosticsPaneHeight)
+            or nameof(MainWindowViewModel.IsDiagnosticsPaneExpanded);
     }
 
     private static bool IsExportSettingsProperty(string? propertyName)
@@ -6033,6 +6045,74 @@ public partial class MainWindow : Window
         RenderDesigner();
     }
 
+    private void LeftDockSplitter_PointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        BeginDockPanelResize(sender, e, DockPanelResizeKind.Left);
+    }
+
+    private void LeftDockSplitter_PointerMoved(object? sender, PointerEventArgs e)
+    {
+        if (!_isResizingLeftDockPanel)
+            return;
+
+        var current = e.GetPosition(this);
+        VM.LeftDockPanelWidth = Math.Clamp(_dockPanelResizeStartSize + current.X - _dockPanelResizeStart.X, 220, 420);
+        e.Handled = true;
+    }
+
+    private void RightDockSplitter_PointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        BeginDockPanelResize(sender, e, DockPanelResizeKind.Right);
+    }
+
+    private void RightDockSplitter_PointerMoved(object? sender, PointerEventArgs e)
+    {
+        if (!_isResizingRightDockPanel)
+            return;
+
+        var current = e.GetPosition(this);
+        VM.RightDockPanelWidth = Math.Clamp(_dockPanelResizeStartSize + _dockPanelResizeStart.X - current.X, 280, 560);
+        e.Handled = true;
+    }
+
+    private void BeginDockPanelResize(object? sender, PointerPressedEventArgs e, DockPanelResizeKind kind)
+    {
+        var point = e.GetCurrentPoint(this);
+        if (!point.Properties.IsLeftButtonPressed)
+            return;
+
+        _isResizingLeftDockPanel = kind == DockPanelResizeKind.Left;
+        _isResizingRightDockPanel = kind == DockPanelResizeKind.Right;
+        _dockPanelResizeStart = e.GetPosition(this);
+        _dockPanelResizeStartSize = kind == DockPanelResizeKind.Left
+            ? VM.LeftDockPanelWidth
+            : VM.RightDockPanelWidth;
+
+        if (sender is InputElement element)
+            e.Pointer.Capture(element);
+
+        e.Handled = true;
+    }
+
+    private void DockSplitter_PointerReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        if (!_isResizingLeftDockPanel && !_isResizingRightDockPanel)
+            return;
+
+        _isResizingLeftDockPanel = false;
+        _isResizingRightDockPanel = false;
+        e.Pointer.Capture(null);
+        ScheduleSettingsSave();
+        e.Handled = true;
+    }
+
+    private void DockSplitter_PointerCaptureLost(object? sender, PointerCaptureLostEventArgs e)
+    {
+        _isResizingLeftDockPanel = false;
+        _isResizingRightDockPanel = false;
+        ScheduleSettingsSave();
+    }
+
     private void DiagnosticsPaneResizeHandle_PointerPressed(object? sender, PointerPressedEventArgs e)
     {
         if (!VM.IsDiagnosticsPaneExpanded)
@@ -6060,7 +6140,7 @@ public partial class MainWindow : Window
         var current = e.GetPosition(this);
         var delta = _diagnosticsPaneResizeStart.Y - current.Y;
         var maxHeight = Math.Max(140, Bounds.Height - 180);
-        VM.DiagnosticsPaneHeight = Math.Clamp(_diagnosticsPaneResizeStartHeight + delta, 140, maxHeight);
+        VM.BottomDockPanelHeight = Math.Clamp(_diagnosticsPaneResizeStartHeight + delta, 140, maxHeight);
         e.Handled = true;
     }
 
@@ -6071,12 +6151,20 @@ public partial class MainWindow : Window
 
         _isResizingDiagnosticsPane = false;
         e.Pointer.Capture(null);
+        ScheduleSettingsSave();
         e.Handled = true;
     }
 
     private void DiagnosticsPaneResizeHandle_PointerCaptureLost(object? sender, PointerCaptureLostEventArgs e)
     {
         _isResizingDiagnosticsPane = false;
+        ScheduleSettingsSave();
+    }
+
+    private enum DockPanelResizeKind
+    {
+        Left,
+        Right
     }
 
     private void RefreshFromPropertyPanel()

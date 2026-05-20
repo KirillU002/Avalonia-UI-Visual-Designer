@@ -53,6 +53,10 @@ public partial class MainWindowViewModel : ObservableObject
     public const string WorkspaceModeLogic = "Логика";
     public const string WorkspaceModeDiagnostics = "Диагностика";
     public const string WorkspaceModeHistory = "История";
+    public const string ProblemsFilterAll = "All";
+    public const string ProblemsFilterErrors = "Errors";
+    public const string ProblemsFilterWarnings = "Warnings";
+    public const string ProblemsFilterHints = "Hints";
 
     public const string WindowStateNormal = "Обычное";
     public const string WindowStateMaximized = "Рабочая область";
@@ -348,8 +352,15 @@ public partial class MainWindowViewModel : ObservableObject
         WorkspaceModeCode,
         WorkspaceModePlugins,
         WorkspaceModeLogic,
-        WorkspaceModeDiagnostics,
         WorkspaceModeHistory
+    };
+
+    public ObservableCollection<string> AvailableProblemsFilters { get; } = new()
+    {
+        ProblemsFilterAll,
+        ProblemsFilterErrors,
+        ProblemsFilterWarnings,
+        ProblemsFilterHints
     };
 
     [ObservableProperty]
@@ -525,6 +536,24 @@ public partial class MainWindowViewModel : ObservableObject
     private double diagnosticsPaneHeight = 250;
 
     [ObservableProperty]
+    private bool isLeftDockOpen = true;
+
+    [ObservableProperty]
+    private bool isRightDockOpen = true;
+
+    [ObservableProperty]
+    private bool isBottomDockOpen;
+
+    [ObservableProperty]
+    private double leftDockPanelWidth = 280;
+
+    [ObservableProperty]
+    private double rightDockPanelWidth = 380;
+
+    [ObservableProperty]
+    private string selectedProblemsFilter = ProblemsFilterAll;
+
+    [ObservableProperty]
     private string importedDllSearchText = "";
 
     public event EventHandler? DesignerChanged;
@@ -557,15 +586,36 @@ public partial class MainWindowViewModel : ObservableObject
     public bool IsLogicMode => string.Equals(WorkspaceMode, WorkspaceModeLogic, StringComparison.Ordinal);
     public bool IsDiagnosticsMode => string.Equals(WorkspaceMode, WorkspaceModeDiagnostics, StringComparison.Ordinal);
     public bool IsHistoryMode => string.Equals(WorkspaceMode, WorkspaceModeHistory, StringComparison.Ordinal);
-    public bool IsLeftRailVisible => IsDesignerSidePanelsVisible && (IsDesignMode || IsDataMode || IsHistoryMode);
-    public bool IsRightInspectorVisible => IsDesignerSidePanelsVisible && !IsDiagnosticsMode && !IsHistoryMode;
+    public bool CanShowLeftDock => IsDesignerSidePanelsVisible && (IsDesignMode || IsDataMode || IsHistoryMode);
+    public bool CanShowRightDock => IsDesignerSidePanelsVisible && !IsHistoryMode;
+    public bool IsLeftDockPanelVisible => CanShowLeftDock && IsLeftDockOpen;
+    public bool IsRightDockPanelVisible => CanShowRightDock && IsRightDockOpen;
+    public bool IsLeftDockRailVisible => CanShowLeftDock && !IsLeftDockOpen;
+    public bool IsRightDockRailVisible => CanShowRightDock && !IsRightDockOpen;
+    public bool IsBottomDockPanelVisible => IsDesignerSidePanelsVisible && IsBottomDockOpen;
+    public bool IsBottomDockRailVisible => IsDesignerSidePanelsVisible && !IsBottomDockOpen;
+    public bool IsLeftRailVisible => IsLeftDockPanelVisible;
+    public bool IsRightInspectorVisible => IsRightDockPanelVisible;
     public bool IsDesignModePanelVisible => IsDesignMode && IsDesignerSidePanelsVisible;
     public bool IsDataModePanelVisible => IsDataMode && IsDesignerSidePanelsVisible;
     public bool IsCodeModePanelVisible => IsCodeMode && IsDesignerSidePanelsVisible;
     public bool IsPluginsModePanelVisible => IsPluginsMode && IsDesignerSidePanelsVisible;
     public bool IsLogicModePanelVisible => IsLogicMode && IsDesignerSidePanelsVisible;
     public bool IsContextualToolbarVisible => HasSelectedControl && IsDesignMode && !IsUserPreviewMode;
-    public bool IsCompactDiagnosticsBarVisible => IsDesignerSidePanelsVisible && !IsDiagnosticsMode;
+    public bool IsCompactDiagnosticsBarVisible => IsBottomDockRailVisible;
+    public string LeftDockToggleText => IsLeftDockOpen ? "Скрыть левую" : "Показать левую";
+    public string RightDockToggleText => IsRightDockOpen ? "Скрыть правую" : "Показать правую";
+    public string LeftDockHeaderTitle => IsDataMode ? "Данные" : IsHistoryMode ? "История" : "Компоненты";
+    public string RightDockHeaderTitle => IsDataMode ? "Данные" : IsPluginsMode ? "Плагины" : IsCodeMode ? "Экспорт" : IsLogicMode ? "Логика" : "Свойства";
+    public string ProblemsDockButtonText => HasDiagnostics
+        ? $"Problems {Diagnostics.Count}"
+        : "Problems";
+    public string ProblemsPanelTitle => HasDiagnostics ? $"Problems ({Diagnostics.Count})" : "Problems";
+    public string ProblemsRailSummary => HasDiagnostics
+        ? $"Errors {DiagnosticErrorCount} · Warnings {DiagnosticWarningCount} · Hints {DiagnosticInfoCount}"
+        : "No problems";
+    public string EditorShellLayoutSummary =>
+        $"Левая {LeftDockPanelWidth:0}px · Правая {RightDockPanelWidth:0}px · Problems {DiagnosticsPaneHeight:0}px";
     public int LeftRailSelectedIndex => IsDataMode ? 4 : IsHistoryMode ? 3 : 0;
     public int RightInspectorSelectedIndex => IsDataMode ? 1 : IsPluginsMode ? 2 : IsCodeMode ? 3 : IsLogicMode ? 5 : 0;
     public string WorkspaceModeDescription => WorkspaceMode switch
@@ -625,7 +675,28 @@ public partial class MainWindowViewModel : ObservableObject
     public int DiagnosticErrorCount => Diagnostics.Count(item => item.Severity == DocumentDiagnosticSeverity.Error);
     public int DiagnosticWarningCount => Diagnostics.Count(item => item.Severity == DocumentDiagnosticSeverity.Warning);
     public int DiagnosticInfoCount => Diagnostics.Count(item => item.Severity == DocumentDiagnosticSeverity.Info);
+    public IReadOnlyList<DocumentDiagnosticModel> FilteredDiagnostics => SelectedProblemsFilter switch
+    {
+        ProblemsFilterErrors => Diagnostics.Where(item => item.Severity == DocumentDiagnosticSeverity.Error).ToList(),
+        ProblemsFilterWarnings => Diagnostics.Where(item => item.Severity == DocumentDiagnosticSeverity.Warning).ToList(),
+        ProblemsFilterHints => Diagnostics.Where(item => item.Severity == DocumentDiagnosticSeverity.Info).ToList(),
+        _ => Diagnostics.ToList()
+    };
+    public bool HasFilteredDiagnostics => FilteredDiagnostics.Count > 0;
+    public bool HasNoFilteredDiagnostics => !HasFilteredDiagnostics;
+    public string ProblemsFilterSummary => SelectedProblemsFilter switch
+    {
+        ProblemsFilterErrors => $"Ошибки: {DiagnosticErrorCount}",
+        ProblemsFilterWarnings => $"Предупреждения: {DiagnosticWarningCount}",
+        ProblemsFilterHints => $"Подсказки: {DiagnosticInfoCount}",
+        _ => DiagnosticsSummary
+    };
     public double DiagnosticsPaneHostHeight => IsDiagnosticsPaneExpanded ? DiagnosticsPaneHeight : 56;
+    public double BottomDockPanelHeight
+    {
+        get => DiagnosticsPaneHeight;
+        set => DiagnosticsPaneHeight = Math.Clamp(value, 140, 520);
+    }
     public string DiagnosticsPaneToggleText => IsDiagnosticsPaneExpanded ? "Скрыть список" : "Показать список";
     public string DiagnosticsCompactSummary => $"Ошибки: {DiagnosticErrorCount}  Предупреждения: {DiagnosticWarningCount}  Подсказки: {DiagnosticInfoCount}";
     public string DiagnosticsSummary => HasDiagnostics
@@ -1268,6 +1339,7 @@ public partial class MainWindowViewModel : ObservableObject
         Controls.CollectionChanged += Controls_CollectionChanged;
         BindingSources.CollectionChanged += BindingSources_CollectionChanged;
         Interactions.CollectionChanged += Interactions_CollectionChanged;
+        Diagnostics.CollectionChanged += Diagnostics_CollectionChanged;
         SelectedControlIds.CollectionChanged += SelectedControlIds_CollectionChanged;
         RecentFiles.CollectionChanged += RecentFiles_CollectionChanged;
 
@@ -2666,8 +2738,83 @@ public partial class MainWindowViewModel : ObservableObject
     [RelayCommand]
     private void OpenDiagnosticsMode()
     {
-        WorkspaceMode = WorkspaceModeDiagnostics;
+        IsBottomDockOpen = true;
         IsDiagnosticsPaneExpanded = true;
+        StatusText = HasDiagnostics
+            ? "Открыта нижняя панель Problems."
+            : "Problems открыты: активных сообщений нет.";
+    }
+
+    [RelayCommand]
+    private void ToggleLeftDockPanel()
+    {
+        IsLeftDockOpen = !IsLeftDockOpen;
+    }
+
+    [RelayCommand]
+    private void ShowLeftDockPanel()
+    {
+        IsLeftDockOpen = true;
+    }
+
+    [RelayCommand]
+    private void HideLeftDockPanel()
+    {
+        IsLeftDockOpen = false;
+    }
+
+    [RelayCommand]
+    private void ToggleRightDockPanel()
+    {
+        IsRightDockOpen = !IsRightDockOpen;
+    }
+
+    [RelayCommand]
+    private void ShowRightDockPanel()
+    {
+        IsRightDockOpen = true;
+    }
+
+    [RelayCommand]
+    private void HideRightDockPanel()
+    {
+        IsRightDockOpen = false;
+    }
+
+    [RelayCommand]
+    private void ToggleBottomDockPanel()
+    {
+        IsBottomDockOpen = !IsBottomDockOpen;
+        if (IsBottomDockOpen)
+            IsDiagnosticsPaneExpanded = true;
+    }
+
+    [RelayCommand]
+    private void CloseBottomDockPanel()
+    {
+        IsBottomDockOpen = false;
+    }
+
+    [RelayCommand]
+    private void SetProblemsFilter(string? filter)
+    {
+        SelectedProblemsFilter = AvailableProblemsFilters.Contains(filter ?? "")
+            ? filter!
+            : ProblemsFilterAll;
+    }
+
+    [RelayCommand]
+    private void ResetEditorShellLayout()
+    {
+        IsLeftDockOpen = true;
+        IsRightDockOpen = true;
+        IsBottomDockOpen = HasDiagnosticErrors;
+        IsDiagnosticsPaneExpanded = true;
+        LeftDockPanelWidth = 280;
+        RightDockPanelWidth = 380;
+        DiagnosticsPaneHeight = 220;
+        SelectedProblemsFilter = ProblemsFilterAll;
+        StatusText = "Расположение панелей сброшено.";
     }
 
     private void SetLockStateForSelection(bool isLocked)
@@ -3116,6 +3263,8 @@ public partial class MainWindowViewModel : ObservableObject
 
         if (AvailableWorkspaceModes.Contains(settings.Session.WorkspaceMode))
             WorkspaceMode = settings.Session.WorkspaceMode;
+
+        ApplyEditorShellLayout(settings.Session.EditorShell);
     }
 
     public ExportCacheModel CaptureExportCache()
@@ -3139,6 +3288,35 @@ public partial class MainWindowViewModel : ObservableObject
             SettingsSignature = _exportCacheSettingsSignature,
             GeneratedUtc = _exportCacheGeneratedUtc
         };
+    }
+
+    public EditorShellLayoutState CaptureEditorShellLayoutState()
+    {
+        return new EditorShellLayoutState
+        {
+            IsLeftPanelVisible = IsLeftDockOpen,
+            IsRightPanelVisible = IsRightDockOpen,
+            IsBottomPanelVisible = IsBottomDockOpen,
+            LeftPanelWidth = Math.Clamp(LeftDockPanelWidth, 220, 420),
+            RightPanelWidth = Math.Clamp(RightDockPanelWidth, 280, 560),
+            BottomPanelHeight = Math.Clamp(DiagnosticsPaneHeight, 140, 520),
+            ActiveLeftTab = IsDataMode ? "Data" : IsHistoryMode ? "History" : "Components",
+            ActiveRightTab = IsDataMode ? "Data" : IsPluginsMode ? "Plugins" : IsCodeMode ? "Code" : IsLogicMode ? "Logic" : "Properties",
+            ActiveBottomTab = "Diagnostics"
+        };
+    }
+
+    public void ApplyEditorShellLayout(EditorShellLayoutState? layout)
+    {
+        if (layout is null)
+            return;
+
+        IsLeftDockOpen = layout.IsLeftPanelVisible;
+        IsRightDockOpen = layout.IsRightPanelVisible;
+        IsBottomDockOpen = layout.IsBottomPanelVisible;
+        LeftDockPanelWidth = Math.Clamp(layout.LeftPanelWidth <= 0 ? 280 : layout.LeftPanelWidth, 220, 420);
+        RightDockPanelWidth = Math.Clamp(layout.RightPanelWidth <= 0 ? 380 : layout.RightPanelWidth, 280, 560);
+        DiagnosticsPaneHeight = Math.Clamp(layout.BottomPanelHeight <= 0 ? 220 : layout.BottomPanelHeight, 140, 520);
     }
 
     public void AddOrUpdateRecentFile(string? filePath)
@@ -9760,6 +9938,11 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(RecentFilesSummary));
     }
 
+    private void Diagnostics_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        RaiseDiagnosticsProperties();
+    }
+
     private void RegisterHistorySnapshot()
     {
         if (_isHistorySuspended)
@@ -9815,6 +9998,20 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(DiagnosticsCompactSummary));
         OnPropertyChanged(nameof(DiagnosticsSummary));
         OnPropertyChanged(nameof(DiagnosticsStateText));
+        OnPropertyChanged(nameof(ProblemsDockButtonText));
+        OnPropertyChanged(nameof(ProblemsPanelTitle));
+        OnPropertyChanged(nameof(ProblemsRailSummary));
+        OnPropertyChanged(nameof(IsCompactDiagnosticsBarVisible));
+        OnPropertyChanged(nameof(EditorShellLayoutSummary));
+        RaiseProblemsFilterProperties();
+    }
+
+    private void RaiseProblemsFilterProperties()
+    {
+        OnPropertyChanged(nameof(FilteredDiagnostics));
+        OnPropertyChanged(nameof(HasFilteredDiagnostics));
+        OnPropertyChanged(nameof(HasNoFilteredDiagnostics));
+        OnPropertyChanged(nameof(ProblemsFilterSummary));
     }
 
     private void RaiseSelectionProperties()
@@ -10707,17 +10904,71 @@ public partial class MainWindowViewModel : ObservableObject
     partial void OnIsDiagnosticsPaneExpandedChanged(bool value)
     {
         RaiseDiagnosticsProperties();
+        RaiseEditorShellLayoutProperties();
     }
 
     partial void OnDiagnosticsPaneHeightChanged(double value)
     {
-        if (value < 140)
+        var clamped = Math.Clamp(value, 140, 520);
+        if (Math.Abs(value - clamped) > 0.01)
         {
-            DiagnosticsPaneHeight = 140;
+            DiagnosticsPaneHeight = clamped;
             return;
         }
 
         OnPropertyChanged(nameof(DiagnosticsPaneHostHeight));
+        OnPropertyChanged(nameof(BottomDockPanelHeight));
+        OnPropertyChanged(nameof(EditorShellLayoutSummary));
+    }
+
+    partial void OnIsLeftDockOpenChanged(bool value)
+    {
+        RaiseEditorShellLayoutProperties();
+    }
+
+    partial void OnIsRightDockOpenChanged(bool value)
+    {
+        RaiseEditorShellLayoutProperties();
+    }
+
+    partial void OnIsBottomDockOpenChanged(bool value)
+    {
+        RaiseEditorShellLayoutProperties();
+    }
+
+    partial void OnLeftDockPanelWidthChanged(double value)
+    {
+        var clamped = Math.Clamp(value, 220, 420);
+        if (Math.Abs(value - clamped) > 0.01)
+        {
+            LeftDockPanelWidth = clamped;
+            return;
+        }
+
+        OnPropertyChanged(nameof(EditorShellLayoutSummary));
+    }
+
+    partial void OnRightDockPanelWidthChanged(double value)
+    {
+        var clamped = Math.Clamp(value, 280, 560);
+        if (Math.Abs(value - clamped) > 0.01)
+        {
+            RightDockPanelWidth = clamped;
+            return;
+        }
+
+        OnPropertyChanged(nameof(EditorShellLayoutSummary));
+    }
+
+    partial void OnSelectedProblemsFilterChanged(string value)
+    {
+        if (!AvailableProblemsFilters.Contains(value))
+        {
+            SelectedProblemsFilter = ProblemsFilterAll;
+            return;
+        }
+
+        RaiseProblemsFilterProperties();
     }
 
     partial void OnFormThemeChanged(string value)
@@ -10807,14 +11058,19 @@ public partial class MainWindowViewModel : ObservableObject
 
     partial void OnWorkspaceModeChanged(string value)
     {
+        if (string.Equals(value, WorkspaceModeDiagnostics, StringComparison.Ordinal))
+        {
+            IsBottomDockOpen = true;
+            IsDiagnosticsPaneExpanded = true;
+            WorkspaceMode = WorkspaceModeDesign;
+            return;
+        }
+
         if (!AvailableWorkspaceModes.Contains(value))
         {
             WorkspaceMode = WorkspaceModeDesign;
             return;
         }
-
-        if (IsDiagnosticsMode)
-            IsDiagnosticsPaneExpanded = true;
 
         RaiseWorkspaceModeProperties();
     }
@@ -10982,6 +11238,14 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(IsLogicMode));
         OnPropertyChanged(nameof(IsDiagnosticsMode));
         OnPropertyChanged(nameof(IsHistoryMode));
+        OnPropertyChanged(nameof(CanShowLeftDock));
+        OnPropertyChanged(nameof(CanShowRightDock));
+        OnPropertyChanged(nameof(IsLeftDockPanelVisible));
+        OnPropertyChanged(nameof(IsRightDockPanelVisible));
+        OnPropertyChanged(nameof(IsLeftDockRailVisible));
+        OnPropertyChanged(nameof(IsRightDockRailVisible));
+        OnPropertyChanged(nameof(IsBottomDockPanelVisible));
+        OnPropertyChanged(nameof(IsBottomDockRailVisible));
         OnPropertyChanged(nameof(IsLeftRailVisible));
         OnPropertyChanged(nameof(IsRightInspectorVisible));
         OnPropertyChanged(nameof(IsDesignModePanelVisible));
@@ -10994,6 +11258,26 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(LeftRailSelectedIndex));
         OnPropertyChanged(nameof(RightInspectorSelectedIndex));
         OnPropertyChanged(nameof(WorkspaceModeDescription));
+        OnPropertyChanged(nameof(LeftDockToggleText));
+        OnPropertyChanged(nameof(RightDockToggleText));
+        OnPropertyChanged(nameof(LeftDockHeaderTitle));
+        OnPropertyChanged(nameof(RightDockHeaderTitle));
+    }
+
+    private void RaiseEditorShellLayoutProperties()
+    {
+        OnPropertyChanged(nameof(IsLeftDockPanelVisible));
+        OnPropertyChanged(nameof(IsRightDockPanelVisible));
+        OnPropertyChanged(nameof(IsLeftDockRailVisible));
+        OnPropertyChanged(nameof(IsRightDockRailVisible));
+        OnPropertyChanged(nameof(IsBottomDockPanelVisible));
+        OnPropertyChanged(nameof(IsBottomDockRailVisible));
+        OnPropertyChanged(nameof(IsLeftRailVisible));
+        OnPropertyChanged(nameof(IsRightInspectorVisible));
+        OnPropertyChanged(nameof(IsCompactDiagnosticsBarVisible));
+        OnPropertyChanged(nameof(LeftDockToggleText));
+        OnPropertyChanged(nameof(RightDockToggleText));
+        OnPropertyChanged(nameof(EditorShellLayoutSummary));
     }
 
     private sealed class CrudGenerationContext
