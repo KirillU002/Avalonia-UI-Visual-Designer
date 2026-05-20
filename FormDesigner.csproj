@@ -13,18 +13,30 @@
 
   <ItemGroup>
     <Compile Remove="artifacts\**\*.cs" />
+    <Compile Remove="smoke-tests\**\*.cs" />
+    <Compile Remove="templates\**\*.cs" />
     <Compile Remove="tempobj\**\*.cs" />
     <AvaloniaXaml Remove="artifacts\**\*.axaml" />
+    <AvaloniaXaml Remove="smoke-tests\**\*.axaml" />
+    <AvaloniaXaml Remove="templates\**\*.axaml" />
     <AvaloniaResource Remove="artifacts\**\*.axaml" />
+    <AvaloniaResource Remove="smoke-tests\**\*.axaml" />
+    <AvaloniaResource Remove="templates\**\*.axaml" />
     <AvaloniaResource Remove="tempobj\**\*.axaml" />
     <Compile Remove="PluginContracts\**\*.cs" />
     <Compile Remove="Plugins\**\*.cs" />
     <EmbeddedResource Remove="artifacts\**" />
+    <EmbeddedResource Remove="smoke-tests\**" />
+    <EmbeddedResource Remove="templates\**" />
     <EmbeddedResource Remove="tempobj\**" />
     <EmbeddedResource Remove="PluginContracts\**" />
     <EmbeddedResource Remove="Plugins\**" />
     <Content Remove="artifacts\**" />
+    <Content Remove="smoke-tests\**" />
+    <Content Remove="templates\**" />
     <None Remove="artifacts\**" />
+    <None Remove="smoke-tests\**" />
+    <None Remove="templates\**" />
     <None Remove="tempobj\**" />
     <None Remove="PluginContracts\**" />
     <None Remove="Plugins\**" />

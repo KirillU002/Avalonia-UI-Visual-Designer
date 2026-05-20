@@ -17,7 +17,7 @@ internal interface IBuiltInXamlBridge
     void AppendXaml(string typeKey, IXamlWriter writer, IDesignControlNode control, int indentLevel, IXamlExportContext context);
 }
 
-internal static class BuiltInControlRegistrar
+public static class BuiltInControlRegistrar
 {
     public static void Register(IDesignerRegistry registry)
     {
