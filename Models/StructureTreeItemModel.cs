@@ -21,7 +21,8 @@ public partial class StructureTreeItemModel : ObservableObject
         bool isContainer,
         bool isGroup,
         bool isHidden,
-        bool isLocked)
+        bool isLocked,
+        bool isMissingPlugin = false)
     {
         _control = control;
         this.id = id;
@@ -32,6 +33,7 @@ public partial class StructureTreeItemModel : ObservableObject
         this.isGroup = isGroup;
         this.isHidden = isHidden;
         this.isLocked = isLocked;
+        this.isMissingPlugin = isMissingPlugin;
     }
 
     public DesignControlModel? Control => _control;
@@ -64,11 +66,28 @@ public partial class StructureTreeItemModel : ObservableObject
     [ObservableProperty]
     private bool isSelected;
 
+    [ObservableProperty]
+    private bool isExpanded = true;
+
+    [ObservableProperty]
+    private bool isSearchMatch;
+
+    [ObservableProperty]
+    private bool isMissingPlugin;
+
+    [ObservableProperty]
+    private int diagnosticErrorCount;
+
+    [ObservableProperty]
+    private int diagnosticWarningCount;
+
     public bool IsRoot => _control is null;
     public bool CanRename => _control is not null;
     public bool CanActOnControl => _control is not null;
     public bool HasChildren => Children.Count > 0;
     public bool HasTextPreview => !string.IsNullOrWhiteSpace(Text);
+    public bool HasDiagnostics => DiagnosticErrorCount > 0 || DiagnosticWarningCount > 0;
+    public bool HasDiagnosticErrors => DiagnosticErrorCount > 0;
     public bool ShowSelectedBadge => IsSelected && !IsRoot;
     public bool ShowHiddenBadge => IsHidden && !IsRoot;
     public bool ShowLockedBadge => IsLocked && !IsRoot;
@@ -97,10 +116,53 @@ public partial class StructureTreeItemModel : ObservableObject
 
     public string VisibilityActionText => IsHidden ? "Показать" : "Скрыть";
     public string LockActionText => IsLocked ? "Разблокировать" : "Заблокировать";
+    public string VisibilityGlyph => IsHidden ? "○" : "●";
+    public string LockGlyph => IsLocked ? "L" : "U";
     public double ItemOpacity => IsHidden ? 0.58 : 1.0;
-    public string CardBackground => IsSelected ? "#EFF6FF" : IsRoot ? "#F8FAFC" : "#FFFFFF";
-    public string CardBorderBrush => IsSelected ? "#2563EB" : IsLocked ? "#F59E0B" : "#D7E2EE";
+    public string RowBackground => IsSelected
+        ? "#DBEAFE"
+        : IsSearchMatch
+            ? "#FFF7ED"
+            : IsRoot
+                ? "#F8FAFC"
+                : "Transparent";
+    public string RowBorderBrush => IsSelected
+        ? "#2563EB"
+        : IsSearchMatch
+            ? "#FDBA74"
+            : "Transparent";
+    public string CardBackground => RowBackground;
+    public string CardBorderBrush => RowBorderBrush;
     public string NameForeground => IsHidden ? "#64748B" : "#0F172A";
+    public string DiagnosticBadgeText => DiagnosticErrorCount > 0
+        ? DiagnosticErrorCount.ToString(System.Globalization.CultureInfo.InvariantCulture)
+        : DiagnosticWarningCount.ToString(System.Globalization.CultureInfo.InvariantCulture);
+    public string DiagnosticBadgeBackground => DiagnosticErrorCount > 0 ? "#DC2626" : "#D97706";
+    public string TypeBadgeText => IsRoot ? "F" : IsMissingPlugin ? "?" : Type switch
+    {
+        "Button" => "B",
+        "TextBox" => "TB",
+        "TextBlock" => "T",
+        "CheckBox" => "CB",
+        "DataGrid" => "DG",
+        "Border" => "P",
+        "StackPanel" => "SP",
+        "Grid" => "GR",
+        "WrapPanel" => "WP",
+        "Group" => "G",
+        _ => "PL"
+    };
+    public string TypeBadgeBackground => IsRoot
+        ? "#E0F2FE"
+        : IsMissingPlugin
+            ? "#FEE2E2"
+            : IsGroup
+                ? "#EEF2FF"
+                : IsContainer
+                    ? "#E0F2FE"
+                    : "#EAF2FF";
+    public string TypeBadgeForeground => IsMissingPlugin ? "#991B1B" : IsGroup ? "#3730A3" : "#075985";
+    public string CompactTypeText => IsMissingPlugin ? $"{Type} missing" : Type;
 
     partial void OnNameChanged(string value)
     {
@@ -115,6 +177,8 @@ public partial class StructureTreeItemModel : ObservableObject
         OnPropertyChanged(nameof(ShowSelectedBadge));
         OnPropertyChanged(nameof(CardBackground));
         OnPropertyChanged(nameof(CardBorderBrush));
+        OnPropertyChanged(nameof(RowBackground));
+        OnPropertyChanged(nameof(RowBorderBrush));
     }
 
     partial void OnTextChanged(string value)
@@ -127,6 +191,7 @@ public partial class StructureTreeItemModel : ObservableObject
     {
         OnPropertyChanged(nameof(ShowHiddenBadge));
         OnPropertyChanged(nameof(VisibilityActionText));
+        OnPropertyChanged(nameof(VisibilityGlyph));
         OnPropertyChanged(nameof(ItemOpacity));
         OnPropertyChanged(nameof(NameForeground));
     }
@@ -135,6 +200,39 @@ public partial class StructureTreeItemModel : ObservableObject
     {
         OnPropertyChanged(nameof(ShowLockedBadge));
         OnPropertyChanged(nameof(LockActionText));
+        OnPropertyChanged(nameof(LockGlyph));
         OnPropertyChanged(nameof(CardBorderBrush));
+        OnPropertyChanged(nameof(RowBorderBrush));
+    }
+
+    partial void OnIsSearchMatchChanged(bool value)
+    {
+        OnPropertyChanged(nameof(CardBackground));
+        OnPropertyChanged(nameof(CardBorderBrush));
+        OnPropertyChanged(nameof(RowBackground));
+        OnPropertyChanged(nameof(RowBorderBrush));
+    }
+
+    partial void OnIsMissingPluginChanged(bool value)
+    {
+        OnPropertyChanged(nameof(TypeBadgeText));
+        OnPropertyChanged(nameof(TypeBadgeBackground));
+        OnPropertyChanged(nameof(TypeBadgeForeground));
+        OnPropertyChanged(nameof(CompactTypeText));
+    }
+
+    partial void OnDiagnosticErrorCountChanged(int value)
+    {
+        OnPropertyChanged(nameof(HasDiagnostics));
+        OnPropertyChanged(nameof(HasDiagnosticErrors));
+        OnPropertyChanged(nameof(DiagnosticBadgeText));
+        OnPropertyChanged(nameof(DiagnosticBadgeBackground));
+    }
+
+    partial void OnDiagnosticWarningCountChanged(int value)
+    {
+        OnPropertyChanged(nameof(HasDiagnostics));
+        OnPropertyChanged(nameof(DiagnosticBadgeText));
+        OnPropertyChanged(nameof(DiagnosticBadgeBackground));
     }
 }

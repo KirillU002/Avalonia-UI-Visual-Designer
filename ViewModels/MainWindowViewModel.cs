@@ -554,6 +554,9 @@ public partial class MainWindowViewModel : ObservableObject
     private string selectedProblemsFilter = ProblemsFilterAll;
 
     [ObservableProperty]
+    private string structureSearchText = "";
+
+    [ObservableProperty]
     private string importedDllSearchText = "";
 
     public event EventHandler? DesignerChanged;
@@ -724,6 +727,14 @@ public partial class MainWindowViewModel : ObservableObject
     }
 
     public bool HasStructureTreeControls => Controls.Count > 0;
+    public bool HasNoStructureTreeControls => !HasStructureTreeControls;
+    public bool HasStructureSearchText => !string.IsNullOrWhiteSpace(StructureSearchText);
+    public bool IsStructureTreeEmptyStateVisible =>
+        !HasStructureTreeControls
+        || (HasStructureSearchText && (StructureTreeItems.FirstOrDefault()?.Children.Count ?? 0) == 0);
+    public string StructureTreeEmptyText => HasStructureSearchText
+        ? "Ничего не найдено. Попробуйте другой фрагмент имени или типа."
+        : "Элементов пока нет. Перетащите компонент на форму.";
     public string StructureTreeSummary
     {
         get
@@ -1766,6 +1777,115 @@ public partial class MainWindowViewModel : ObservableObject
             : $"{control.Name} перемещен на слой дальше.";
     }
 
+    [RelayCommand]
+    private void SelectStructureTreeItem(StructureTreeItemModel? item)
+    {
+        if (item?.Control is { } control)
+            SelectSingleControl(control);
+    }
+
+    [RelayCommand]
+    private void RenameStructureTreeItem(StructureTreeItemModel? item)
+    {
+        if (item?.Control is not { } control)
+            return;
+
+        SelectSingleControl(control);
+        StatusText = $"Переименуйте {control.Name} прямо в строке дерева.";
+    }
+
+    [RelayCommand]
+    private void DuplicateStructureTreeItem(StructureTreeItemModel? item)
+    {
+        if (item?.Control is not { } control)
+            return;
+
+        SelectSingleControl(control);
+        DuplicateSelected();
+    }
+
+    [RelayCommand]
+    private void DeleteStructureTreeItem(StructureTreeItemModel? item)
+    {
+        if (item?.Control is not { } control)
+            return;
+
+        SelectSingleControl(control);
+        DeleteSelected();
+    }
+
+    [RelayCommand]
+    private void ToggleStructureTreeVisibility(StructureTreeItemModel? item)
+    {
+        ToggleStructureControlVisibility(item?.Control);
+    }
+
+    [RelayCommand]
+    private void ToggleStructureTreeLock(StructureTreeItemModel? item)
+    {
+        ToggleStructureControlLock(item?.Control);
+    }
+
+    [RelayCommand]
+    private void BringStructureTreeItemToFront(StructureTreeItemModel? item)
+    {
+        if (item?.Control is not { } control)
+            return;
+
+        SelectSingleControl(control);
+        BringSelectionToFront();
+    }
+
+    [RelayCommand]
+    private void SendStructureTreeItemToBack(StructureTreeItemModel? item)
+    {
+        if (item?.Control is not { } control)
+            return;
+
+        SelectSingleControl(control);
+        SendSelectionToBack();
+    }
+
+    [RelayCommand]
+    private void GroupStructureTreeSelection()
+    {
+        GroupSelection();
+    }
+
+    [RelayCommand]
+    private void UngroupStructureTreeItem(StructureTreeItemModel? item)
+    {
+        if (item?.Control is { } control)
+            SelectSingleControl(control);
+
+        UngroupSelection();
+    }
+
+    [RelayCommand]
+    private void ExpandStructureTreeItem(StructureTreeItemModel? item)
+    {
+        SetStructureTreeExpanded(item, isExpanded: true, includeDescendants: true);
+    }
+
+    [RelayCommand]
+    private void CollapseStructureTreeItem(StructureTreeItemModel? item)
+    {
+        SetStructureTreeExpanded(item, isExpanded: false, includeDescendants: true);
+    }
+
+    private static void SetStructureTreeExpanded(StructureTreeItemModel? item, bool isExpanded, bool includeDescendants)
+    {
+        if (item is null)
+            return;
+
+        item.IsExpanded = isExpanded;
+        if (!includeDescendants)
+            return;
+
+        foreach (var child in item.Children)
+            SetStructureTreeExpanded(child, isExpanded, includeDescendants: true);
+    }
+
     private IReadOnlyList<DesignPropertyDescriptor> GetCustomDescriptorProperties(DesignControlModel? control)
     {
         if (control is null)
@@ -2332,6 +2452,12 @@ public partial class MainWindowViewModel : ObservableObject
         if (_isStructureTreeRefreshSuspended)
             return;
 
+        var previousExpandedIds = EnumerateStructureTreeItems()
+            .Where(item => item.IsExpanded)
+            .Select(item => item.Id)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var query = StructureSearchText.Trim();
+        var hasSearch = !string.IsNullOrWhiteSpace(query);
         var source = Controls.ToList();
         var validIds = source
             .Select(control => control.Id)
@@ -2355,8 +2481,35 @@ public partial class MainWindowViewModel : ObservableObject
             isGroup: false,
             isHidden: false,
             isLocked: false);
+        root.IsExpanded = true;
+        root.IsSearchMatch = hasSearch && MatchesStructureSearch(root.Name, root.Type, root.Text, query);
 
         var visitedIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        StructureTreeItemModel? BuildNode(DesignControlModel control)
+        {
+            if (!visitedIds.Add(control.Id))
+                return null;
+
+            var node = CreateStructureNode(control);
+            node.IsExpanded = hasSearch
+                || node.IsContainer
+                || previousExpandedIds.Count == 0
+                || previousExpandedIds.Contains(node.Id);
+            node.IsSearchMatch = hasSearch && MatchesStructureSearch(control.Name, control.Type, control.Text, query);
+
+            if (childrenByParent.TryGetValue(control.Id, out var children))
+            {
+                foreach (var child in children)
+                {
+                    var childNode = BuildNode(child);
+                    if (childNode is not null)
+                        node.Children.Add(childNode);
+                }
+            }
+
+            return !hasSearch || node.IsSearchMatch || node.Children.Count > 0 ? node : null;
+        }
 
         void AddChildren(StructureTreeItemModel parentNode, string parentId)
         {
@@ -2365,12 +2518,9 @@ public partial class MainWindowViewModel : ObservableObject
 
             foreach (var child in children)
             {
-                if (!visitedIds.Add(child.Id))
-                    continue;
-
-                var childNode = CreateStructureNode(child);
-                parentNode.Children.Add(childNode);
-                AddChildren(childNode, child.Id);
+                var childNode = BuildNode(child);
+                if (childNode is not null)
+                    parentNode.Children.Add(childNode);
             }
         }
 
@@ -2378,16 +2528,14 @@ public partial class MainWindowViewModel : ObservableObject
 
         foreach (var orphan in source.Where(control => !visitedIds.Contains(control.Id)))
         {
-            if (!visitedIds.Add(orphan.Id))
-                continue;
-
-            var orphanNode = CreateStructureNode(orphan);
-            root.Children.Add(orphanNode);
-            AddChildren(orphanNode, orphan.Id);
+            var orphanNode = BuildNode(orphan);
+            if (orphanNode is not null)
+                root.Children.Add(orphanNode);
         }
 
         StructureTreeItems.Clear();
         StructureTreeItems.Add(root);
+        ApplyStructureDiagnosticsBadges();
         RefreshStructureSelection();
         RaiseStructureTreeProperties();
     }
@@ -2395,6 +2543,7 @@ public partial class MainWindowViewModel : ObservableObject
     private StructureTreeItemModel CreateStructureNode(DesignControlModel control)
     {
         var isGroup = string.Equals(control.Type, DesignerControlTypes.Group, StringComparison.OrdinalIgnoreCase);
+        var isMissingPlugin = !_registry.TryGetControl(control.Type, out _);
         return new StructureTreeItemModel(
             control,
             control.Id,
@@ -2404,7 +2553,15 @@ public partial class MainWindowViewModel : ObservableObject
             CanHostChildren(control),
             isGroup,
             !control.IsVisible,
-            control.IsLocked);
+            control.IsLocked,
+            isMissingPlugin);
+    }
+
+    private static bool MatchesStructureSearch(string name, string type, string text, string query)
+    {
+        return name.Contains(query, StringComparison.OrdinalIgnoreCase)
+            || type.Contains(query, StringComparison.OrdinalIgnoreCase)
+            || (!string.IsNullOrWhiteSpace(text) && text.Contains(query, StringComparison.OrdinalIgnoreCase));
     }
 
     private void RefreshStructureSelection()
@@ -2463,7 +2620,39 @@ public partial class MainWindowViewModel : ObservableObject
     private void RaiseStructureTreeProperties()
     {
         OnPropertyChanged(nameof(HasStructureTreeControls));
+        OnPropertyChanged(nameof(HasNoStructureTreeControls));
+        OnPropertyChanged(nameof(HasStructureSearchText));
+        OnPropertyChanged(nameof(IsStructureTreeEmptyStateVisible));
+        OnPropertyChanged(nameof(StructureTreeEmptyText));
         OnPropertyChanged(nameof(StructureTreeSummary));
+    }
+
+    private void ApplyStructureDiagnosticsBadges()
+    {
+        var diagnosticsByControlId = Diagnostics
+            .Where(diagnostic => !string.IsNullOrWhiteSpace(diagnostic.RelatedControlId))
+            .GroupBy(diagnostic => diagnostic.RelatedControlId, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                group => group.Key,
+                group => new
+                {
+                    Errors = group.Count(item => item.Severity == DocumentDiagnosticSeverity.Error),
+                    Warnings = group.Count(item => item.Severity == DocumentDiagnosticSeverity.Warning)
+                },
+                StringComparer.OrdinalIgnoreCase);
+
+        foreach (var item in EnumerateStructureTreeItems())
+        {
+            if (item.Control is null || !diagnosticsByControlId.TryGetValue(item.Control.Id, out var counts))
+            {
+                item.DiagnosticErrorCount = 0;
+                item.DiagnosticWarningCount = 0;
+                continue;
+            }
+
+            item.DiagnosticErrorCount = counts.Errors;
+            item.DiagnosticWarningCount = counts.Warnings;
+        }
     }
 
     private void RefreshStructureNode(DesignControlModel control)
@@ -9984,6 +10173,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void RaiseDiagnosticsProperties()
     {
+        ApplyStructureDiagnosticsBadges();
         OnPropertyChanged(nameof(HasDiagnostics));
         OnPropertyChanged(nameof(HasNoDiagnostics));
         OnPropertyChanged(nameof(IsDiagnosticsPaneCollapsed));
@@ -10969,6 +11159,12 @@ public partial class MainWindowViewModel : ObservableObject
         }
 
         RaiseProblemsFilterProperties();
+    }
+
+    partial void OnStructureSearchTextChanged(string value)
+    {
+        RebuildStructureTree();
+        RaiseStructureTreeProperties();
     }
 
     partial void OnFormThemeChanged(string value)

@@ -812,165 +812,211 @@
 
           <TabItem Header="Структура"
                    IsVisible="{Binding IsDesignMode}">
-            <Grid RowDefinitions="Auto,*"
+            <Grid RowDefinitions="Auto,Auto,*"
                   Margin="0,12,0,0">
               <StackPanel Spacing="6">
-                <TextBlock Text="Структура формы"
-                           FontSize="18"
-                           FontWeight="Bold"/>
-                <TextBlock Text="{Binding StructureTreeSummary}"
-                           Foreground="#334155"
-                           TextWrapping="Wrap"/>
-                <TextBlock Text="{Binding SelectedControlSummary}"
-                           Foreground="#475569"
-                           TextWrapping="Wrap"/>
+                <Grid ColumnDefinitions="*,Auto"
+                      ColumnSpacing="8">
+                  <StackPanel Spacing="3">
+                    <TextBlock Text="Структура формы"
+                               FontSize="16"
+                               FontWeight="Bold"/>
+                    <TextBlock Text="{Binding StructureTreeSummary}"
+                               Foreground="#64748B"
+                               FontSize="12"
+                               TextTrimming="CharacterEllipsis"/>
+                  </StackPanel>
+                  <Button Grid.Column="1"
+                          Content="↺"
+                          Command="{Binding RefreshDiagnosticsCommand}"
+                          Classes="dock-collapse"
+                          ToolTip.Tip="Обновить структуру и диагностику"/>
+                </Grid>
               </StackPanel>
 
-              <Border Grid.Row="1"
-                      Margin="0,12,0,0"
+              <TextBox Grid.Row="1"
+                       Margin="0,10,0,8"
+                       Watermark="Поиск по имени или типу..."
+                       Text="{Binding StructureSearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                       MinHeight="34"/>
+
+              <Border Grid.Row="2"
                       Background="#F8FAFC"
                       BorderBrush="#D7E2EE"
                       BorderThickness="1"
-                      CornerRadius="14"
-                      Padding="8">
+                      CornerRadius="10"
+                      Padding="6"
+                      ClipToBounds="True">
+                <Grid>
                 <TreeView ItemsSource="{Binding StructureTreeItems}"
                           SelectedItem="{Binding SelectedStructureItem, Mode=TwoWay}">
+                  <TreeView.Styles>
+                    <Style Selector="TreeViewItem"
+                           x:DataType="models:StructureTreeItemModel">
+                      <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
+                      <Setter Property="MinHeight" Value="30"/>
+                      <Setter Property="Padding" Value="0"/>
+                    </Style>
+                  </TreeView.Styles>
                   <TreeView.DataTemplates>
                     <TreeDataTemplate x:DataType="models:StructureTreeItemModel"
                                       ItemsSource="{Binding Children}">
-                      <Border Margin="0,0,0,7"
-                              Padding="10"
-                              Background="{Binding CardBackground}"
-                              BorderBrush="{Binding CardBorderBrush}"
+                      <Border Margin="0,1"
+                              Padding="4,3"
+                              Background="{Binding RowBackground}"
+                              BorderBrush="{Binding RowBorderBrush}"
                               BorderThickness="1"
-                              CornerRadius="12"
+                              CornerRadius="7"
                               Opacity="{Binding ItemOpacity}">
-                        <StackPanel Spacing="8">
-                          <Grid ColumnDefinitions="*,Auto"
-                                ColumnSpacing="8">
-                            <StackPanel Spacing="4">
-                              <StackPanel Orientation="Horizontal"
-                                          Spacing="6">
-                                <Border Background="#E0F2FE"
-                                        BorderBrush="#7DD3FC"
-                                        BorderThickness="1"
-                                        CornerRadius="999"
-                                        Padding="7,2">
-                                  <TextBlock Text="{Binding KindLabel}"
-                                             Foreground="#075985"
-                                             FontSize="10"
-                                             FontWeight="SemiBold"/>
-                                </Border>
-                                <Border Background="#DCFCE7"
-                                        CornerRadius="999"
-                                        Padding="7,2"
-                                        IsVisible="{Binding ShowSelectedBadge}">
-                                  <TextBlock Text="Выбрано"
-                                             Foreground="#166534"
-                                             FontSize="10"
-                                             FontWeight="SemiBold"/>
-                                </Border>
-                                <Border Background="#FEF3C7"
-                                        CornerRadius="999"
-                                        Padding="7,2"
-                                        IsVisible="{Binding ShowLockedBadge}">
-                                  <TextBlock Text="Заблокировано"
-                                             Foreground="#92400E"
-                                             FontSize="10"
-                                             FontWeight="SemiBold"/>
-                                </Border>
-                                <Border Background="#E2E8F0"
-                                        CornerRadius="999"
-                                        Padding="7,2"
-                                        IsVisible="{Binding ShowHiddenBadge}">
-                                  <TextBlock Text="Скрыто"
-                                             Foreground="#475569"
-                                             FontSize="10"
-                                             FontWeight="SemiBold"/>
-                                </Border>
-                                <Border Background="#EEF2FF"
-                                        CornerRadius="999"
-                                        Padding="7,2"
-                                        IsVisible="{Binding ShowGroupBadge}">
-                                  <TextBlock Text="Группа"
-                                             Foreground="#3730A3"
-                                             FontSize="10"
-                                             FontWeight="SemiBold"/>
-                                </Border>
-                                <Border Background="#F1F5F9"
-                                        CornerRadius="999"
-                                        Padding="7,2"
-                                        IsVisible="{Binding ShowContainerBadge}">
-                                  <TextBlock Text="Контейнер"
-                                             Foreground="#334155"
-                                             FontSize="10"
-                                             FontWeight="SemiBold"/>
-                                </Border>
-                              </StackPanel>
+                        <Border.ContextMenu>
+                          <ContextMenu>
+                            <MenuItem Header="Select"
+                                      Command="{Binding #RootWindow.DataContext.SelectStructureTreeItemCommand}"
+                                      CommandParameter="{Binding}"
+                                      IsVisible="{Binding CanActOnControl}"/>
+                            <MenuItem Header="Rename"
+                                      Command="{Binding #RootWindow.DataContext.RenameStructureTreeItemCommand}"
+                                      CommandParameter="{Binding}"
+                                      IsVisible="{Binding CanActOnControl}"/>
+                            <MenuItem Header="Duplicate"
+                                      Command="{Binding #RootWindow.DataContext.DuplicateStructureTreeItemCommand}"
+                                      CommandParameter="{Binding}"
+                                      IsVisible="{Binding CanActOnControl}"/>
+                            <MenuItem Header="Delete"
+                                      Command="{Binding #RootWindow.DataContext.DeleteStructureTreeItemCommand}"
+                                      CommandParameter="{Binding}"
+                                      IsVisible="{Binding CanActOnControl}"/>
+                            <Separator/>
+                            <MenuItem Header="{Binding LockActionText}"
+                                      Command="{Binding #RootWindow.DataContext.ToggleStructureTreeLockCommand}"
+                                      CommandParameter="{Binding}"
+                                      IsVisible="{Binding CanActOnControl}"/>
+                            <MenuItem Header="{Binding VisibilityActionText}"
+                                      Command="{Binding #RootWindow.DataContext.ToggleStructureTreeVisibilityCommand}"
+                                      CommandParameter="{Binding}"
+                                      IsVisible="{Binding CanActOnControl}"/>
+                            <Separator/>
+                            <MenuItem Header="Bring to Front"
+                                      Command="{Binding #RootWindow.DataContext.BringStructureTreeItemToFrontCommand}"
+                                      CommandParameter="{Binding}"
+                                      IsVisible="{Binding CanActOnControl}"/>
+                            <MenuItem Header="Send to Back"
+                                      Command="{Binding #RootWindow.DataContext.SendStructureTreeItemToBackCommand}"
+                                      CommandParameter="{Binding}"
+                                      IsVisible="{Binding CanActOnControl}"/>
+                            <MenuItem Header="Group selected"
+                                      Command="{Binding #RootWindow.DataContext.GroupStructureTreeSelectionCommand}"/>
+                            <MenuItem Header="Ungroup"
+                                      Command="{Binding #RootWindow.DataContext.UngroupStructureTreeItemCommand}"
+                                      CommandParameter="{Binding}"
+                                      IsVisible="{Binding CanActOnControl}"/>
+                            <Separator/>
+                            <MenuItem Header="Expand children"
+                                      Command="{Binding #RootWindow.DataContext.ExpandStructureTreeItemCommand}"
+                                      CommandParameter="{Binding}"/>
+                            <MenuItem Header="Collapse children"
+                                      Command="{Binding #RootWindow.DataContext.CollapseStructureTreeItemCommand}"
+                                      CommandParameter="{Binding}"/>
+                          </ContextMenu>
+                        </Border.ContextMenu>
 
+                          <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto"
+                                ColumnSpacing="5">
+                            <Border Width="24"
+                                    Height="22"
+                                    Background="{Binding TypeBadgeBackground}"
+                                    CornerRadius="6"
+                                    VerticalAlignment="Center">
+                              <TextBlock Text="{Binding TypeBadgeText}"
+                                         Foreground="{Binding TypeBadgeForeground}"
+                                         FontSize="10"
+                                         FontWeight="Bold"
+                                         HorizontalAlignment="Center"
+                                         VerticalAlignment="Center"/>
+                            </Border>
+
+                            <Grid Grid.Column="1"
+                                  ColumnDefinitions="*,Auto"
+                                  ColumnSpacing="6"
+                                  MinWidth="0"
+                                  VerticalAlignment="Center">
                               <TextBox Text="{Binding Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                        IsEnabled="{Binding CanRename}"
                                        Foreground="{Binding NameForeground}"
+                                       Background="Transparent"
+                                       BorderThickness="0"
+                                       Padding="0"
+                                       MinHeight="24"
                                        FontWeight="SemiBold"
-                                       FontSize="14"
-                                       MinHeight="34"
-                                       Padding="8,5"/>
-                              <TextBlock Text="{Binding Subtitle}"
+                                       TextWrapping="NoWrap"/>
+                              <TextBlock Grid.Column="1"
+                                         Text="{Binding CompactTypeText}"
                                          Foreground="#64748B"
-                                         FontSize="12"
-                                         TextWrapping="Wrap"/>
-                            </StackPanel>
+                                         FontSize="11"
+                                         VerticalAlignment="Center"
+                                         TextTrimming="CharacterEllipsis"
+                                         MaxWidth="84"/>
+                            </Grid>
 
-                            <StackPanel Grid.Column="1"
-                                        Spacing="4"
-                                        MinWidth="112">
-                              <Button Content="Выбрать"
-                                      MinHeight="28"
-                                      FontSize="11"
-                                      Click="StructureSelectButton_Click"
-                                      IsVisible="{Binding CanActOnControl}"/>
-                              <Button Content="{Binding VisibilityActionText}"
-                                      MinHeight="28"
-                                      FontSize="11"
-                                      Click="StructureToggleVisibilityButton_Click"
-                                      IsVisible="{Binding CanActOnControl}"/>
-                              <Button Content="{Binding LockActionText}"
-                                      MinHeight="28"
-                                      FontSize="11"
-                                      Click="StructureToggleLockButton_Click"
-                                      IsVisible="{Binding CanActOnControl}"/>
-                            </StackPanel>
-                          </Grid>
+                            <Border Grid.Column="2"
+                                    MinWidth="18"
+                                    Height="18"
+                                    CornerRadius="999"
+                                    Background="{Binding DiagnosticBadgeBackground}"
+                                    IsVisible="{Binding HasDiagnostics}">
+                              <TextBlock Text="{Binding DiagnosticBadgeText}"
+                                         Foreground="White"
+                                         FontSize="10"
+                                         FontWeight="Bold"
+                                         HorizontalAlignment="Center"
+                                         VerticalAlignment="Center"/>
+                            </Border>
 
-                          <Grid ColumnDefinitions="*,*,*,*"
-                                ColumnSpacing="6"
-                                IsVisible="{Binding CanActOnControl}">
-                            <Button Grid.Column="0"
-                                    Content="Дубль"
-                                    MinHeight="28"
-                                    FontSize="11"
-                                    Click="StructureDuplicateButton_Click"/>
-                            <Button Grid.Column="1"
-                                    Content="Удалить"
-                                    MinHeight="28"
-                                    FontSize="11"
-                                    Click="StructureDeleteButton_Click"/>
-                            <Button Grid.Column="2"
-                                    Content="Вверх"
-                                    MinHeight="28"
-                                    FontSize="11"
-                                    Click="StructureMoveUpButton_Click"/>
                             <Button Grid.Column="3"
-                                    Content="Вниз"
-                                    MinHeight="28"
-                                    FontSize="11"
-                                    Click="StructureMoveDownButton_Click"/>
+                                    Content="{Binding VisibilityGlyph}"
+                                    Classes="dock-collapse"
+                                    Width="24"
+                                    Height="24"
+                                    MinWidth="24"
+                                    MinHeight="24"
+                                    FontSize="10"
+                                    Command="{Binding #RootWindow.DataContext.ToggleStructureTreeVisibilityCommand}"
+                                    CommandParameter="{Binding}"
+                                    IsVisible="{Binding CanActOnControl}"
+                                    ToolTip.Tip="{Binding VisibilityActionText}"/>
+                            <Button Grid.Column="4"
+                                    Content="{Binding LockGlyph}"
+                                    Classes="dock-collapse"
+                                    Width="24"
+                                    Height="24"
+                                    MinWidth="24"
+                                    MinHeight="24"
+                                    FontSize="10"
+                                    Command="{Binding #RootWindow.DataContext.ToggleStructureTreeLockCommand}"
+                                    CommandParameter="{Binding}"
+                                    IsVisible="{Binding CanActOnControl}"
+                                    ToolTip.Tip="{Binding LockActionText}"/>
                           </Grid>
-                        </StackPanel>
                       </Border>
                     </TreeDataTemplate>
                   </TreeView.DataTemplates>
                 </TreeView>
+
+                <Border Background="#FFFFFF"
+                        BorderBrush="#D7E2EE"
+                        BorderThickness="1"
+                        CornerRadius="8"
+                        Padding="12"
+                        HorizontalAlignment="Stretch"
+                        VerticalAlignment="Bottom"
+                        IsVisible="{Binding IsStructureTreeEmptyStateVisible}">
+                  <TextBlock Text="{Binding StructureTreeEmptyText}"
+                             Foreground="#64748B"
+                             FontSize="12"
+                             TextWrapping="Wrap"
+                             TextAlignment="Center"/>
+                </Border>
+                </Grid>
               </Border>
             </Grid>
           </TabItem>
