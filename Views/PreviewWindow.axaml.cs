@@ -38,6 +38,8 @@ public partial class PreviewWindow : Window
     private const int MaxPreviewDataGridRows = 120;
     private static readonly DataFormat<string> RuntimeDataGridGroupFieldFormat =
         DataFormat.CreateStringApplicationFormat("formdesigner-preview-datagrid-group-field");
+    private static readonly DataFormat<string> RuntimeDataGridUngroupFieldFormat =
+        DataFormat.CreateStringApplicationFormat("formdesigner-preview-datagrid-ungroup-field");
 
     private DesignerDocumentFileModel _document = new();
     private readonly Dictionary<string, Bitmap?> _imageCache = new(StringComparer.OrdinalIgnoreCase);
@@ -1827,23 +1829,11 @@ public partial class PreviewWindow : Window
 
             foreach (var field in groupedFields)
             {
-                chips.Children.Add(new Border
-                {
-                    Background = new SolidColorBrush(Color.Parse("#E0F2FE")),
-                    BorderBrush = new SolidColorBrush(Color.Parse("#7DD3FC")),
-                    BorderThickness = new Thickness(1),
-                    CornerRadius = new CornerRadius(999),
-                    Padding = new Thickness(10, 5),
-                    Margin = new Thickness(0, 0, 8, 8),
-                    Child = new TextBlock
-                    {
-                        Text = $"Группа {field.GroupOrder + 1}: {field.Header}",
-                        Foreground = new SolidColorBrush(Color.Parse("#0C4A6E")),
-                        FontSize = Math.Max(10, control.FontSize - 1),
-                        FontWeight = FontWeight.SemiBold
-                    }
-                });
+                chips.Children.Add(CreateRuntimeDataGridGroupChip(control, field));
             }
+
+            if (groupedFields.Count > 0)
+                chips.Children.Add(CreateRuntimeDataGridClearGroupingButton(control));
 
             var groupDropTarget = new Border
             {
@@ -1857,6 +1847,7 @@ public partial class PreviewWindow : Window
                 Child = chips
             };
             AttachRuntimeDataGridGroupDropTarget(groupDropTarget, control);
+            AttachRuntimeDataGridUngroupDropTarget(dataGrid, control);
             AttachRuntimeDataGridHeaderDrag(dataGrid, groupDropTarget, control);
 
             Grid.SetRow(groupDropTarget, rowIndex++);
@@ -2022,6 +2013,123 @@ public partial class PreviewWindow : Window
         });
     }
 
+    private Border CreateRuntimeDataGridGroupChip(DesignerControlFileModel control, BindingFieldFileModel field)
+    {
+        var removeButton = new Button
+        {
+            Content = "×",
+            Width = 22,
+            Height = 22,
+            MinWidth = 22,
+            MinHeight = 22,
+            Padding = new Thickness(0),
+            Background = Brushes.Transparent,
+            BorderBrush = Brushes.Transparent,
+            Foreground = new SolidColorBrush(Color.Parse("#0C4A6E")),
+            FontSize = Math.Max(12, control.FontSize),
+            FontWeight = FontWeight.Bold
+        };
+        ToolTip.SetTip(removeButton, "Убрать группировку");
+        removeButton.Click += (_, e) =>
+        {
+            RemovePreviewWindowDataGridGroup(control, field);
+            e.Handled = true;
+        };
+
+        var chip = new Border
+        {
+            Background = new SolidColorBrush(Color.Parse("#E0F2FE")),
+            BorderBrush = new SolidColorBrush(Color.Parse("#7DD3FC")),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(999),
+            Padding = new Thickness(10, 5),
+            Margin = new Thickness(0, 0, 8, 8),
+            Cursor = new Cursor(StandardCursorType.Hand),
+            Child = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 6,
+                Children =
+                {
+                    new TextBlock
+                    {
+                        Text = $"Группа {field.GroupOrder + 1}: {field.Header}",
+                        Foreground = new SolidColorBrush(Color.Parse("#0C4A6E")),
+                        FontSize = Math.Max(10, control.FontSize - 1),
+                        FontWeight = FontWeight.SemiBold,
+                        VerticalAlignment = VerticalAlignment.Center
+                    },
+                    removeButton
+                }
+            }
+        };
+
+        chip.PointerPressed += async (_, e) =>
+        {
+            var pointer = e.GetCurrentPoint(chip);
+            if (!pointer.Properties.IsLeftButtonPressed)
+                return;
+
+            var data = new DataTransfer();
+            data.Add(DataTransferItem.Create(RuntimeDataGridUngroupFieldFormat, field.Path));
+            data.Add(DataTransferItem.CreateText(field.Header));
+            await DragDrop.DoDragDropAsync(e, data, DragDropEffects.Move);
+            e.Handled = true;
+        };
+
+        return chip;
+    }
+
+    private Button CreateRuntimeDataGridClearGroupingButton(DesignerControlFileModel control)
+    {
+        var button = new Button
+        {
+            Content = "Очистить группировку",
+            Background = new SolidColorBrush(Color.Parse("#F8FAFC")),
+            BorderBrush = new SolidColorBrush(Color.Parse("#CBD5E1")),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(999),
+            Padding = new Thickness(10, 5),
+            Margin = new Thickness(0, 0, 8, 8),
+            Foreground = new SolidColorBrush(Color.Parse("#334155")),
+            FontSize = Math.Max(10, control.FontSize - 1),
+            FontWeight = FontWeight.SemiBold
+        };
+        ToolTip.SetTip(button, "Снять группировку со всех колонок");
+        button.Click += (_, e) =>
+        {
+            ClearPreviewWindowDataGridGrouping(control);
+            e.Handled = true;
+        };
+
+        return button;
+    }
+
+    private void AttachRuntimeDataGridUngroupDropTarget(Control target, DesignerControlFileModel control)
+    {
+        DragDrop.SetAllowDrop(target, true);
+        DragDrop.AddDragOverHandler(target, (_, e) =>
+        {
+            if (TryResolveRuntimeDataGridUngroupField(e, control, out BindingFieldFileModel? ignoredField))
+            {
+                e.DragEffects = DragDropEffects.Move;
+                e.Handled = true;
+                return;
+            }
+
+            if (e.DataTransfer.Contains(RuntimeDataGridUngroupFieldFormat))
+                e.DragEffects = DragDropEffects.None;
+        });
+        DragDrop.AddDropHandler(target, (_, e) =>
+        {
+            if (!TryResolveRuntimeDataGridUngroupField(e, control, out var field) || field is null)
+                return;
+
+            RemovePreviewWindowDataGridGroup(control, field);
+            e.Handled = true;
+        });
+    }
+
     private bool TryResolveRuntimeDataGridGroupField(DragEventArgs e, DesignerControlFileModel control, out BindingFieldFileModel? field)
     {
         field = null;
@@ -2036,6 +2144,22 @@ public partial class PreviewWindow : Window
             .FirstOrDefault(item => string.Equals(item.Path, path, StringComparison.OrdinalIgnoreCase));
 
         return field is { IsVisible: true };
+    }
+
+    private bool TryResolveRuntimeDataGridUngroupField(DragEventArgs e, DesignerControlFileModel control, out BindingFieldFileModel? field)
+    {
+        field = null;
+        if (!control.AllowGrouping || !e.DataTransfer.Contains(RuntimeDataGridUngroupFieldFormat))
+            return false;
+
+        var path = e.DataTransfer.TryGetValue(RuntimeDataGridUngroupFieldFormat);
+        if (string.IsNullOrWhiteSpace(path))
+            return false;
+
+        field = GetBindingFields(control.BindingSourceId)
+            .FirstOrDefault(item => string.Equals(item.Path, path, StringComparison.OrdinalIgnoreCase));
+
+        return field is { GroupOrder: >= 0 };
     }
 
     private void AddPreviewWindowDataGridGroup(DesignerControlFileModel control, BindingFieldFileModel targetField)
@@ -2060,6 +2184,30 @@ public partial class PreviewWindow : Window
 
         NormalizePreviewWindowGroupOrders(fields);
         control.ShowGroupPanel = true;
+        RenderDocument();
+    }
+
+    private void RemovePreviewWindowDataGridGroup(DesignerControlFileModel control, BindingFieldFileModel targetField)
+    {
+        var fields = GetBindingFields(control.BindingSourceId).ToList();
+        var field = fields.FirstOrDefault(item => string.Equals(item.Path, targetField.Path, StringComparison.OrdinalIgnoreCase));
+        if (field is null || field.GroupOrder < 0)
+            return;
+
+        field.GroupOrder = -1;
+        NormalizePreviewWindowGroupOrders(fields);
+        RenderDocument();
+    }
+
+    private void ClearPreviewWindowDataGridGrouping(DesignerControlFileModel control)
+    {
+        var fields = GetBindingFields(control.BindingSourceId).ToList();
+        if (!fields.Any(field => field.GroupOrder >= 0))
+            return;
+
+        foreach (var field in fields.Where(field => field.GroupOrder >= 0))
+            field.GroupOrder = -1;
+
         RenderDocument();
     }
 
@@ -2269,23 +2417,11 @@ public partial class PreviewWindow : Window
 
             foreach (var field in groupedFields)
             {
-                chips.Children.Add(new Border
-                {
-                    Background = groupChipBackground,
-                    BorderBrush = groupChipBorder,
-                    BorderThickness = new Thickness(1),
-                    CornerRadius = new CornerRadius(999),
-                    Padding = new Thickness(10, 5),
-                    Margin = new Thickness(0, 0, 8, 8),
-                    Child = new TextBlock
-                    {
-                        Text = $"Группа {field.GroupOrder + 1}: {field.Header}",
-                        Foreground = groupChipForeground,
-                        FontSize = Math.Max(10, control.FontSize - 1),
-                        FontWeight = FontWeight.SemiBold
-                    }
-                });
+                chips.Children.Add(CreatePreviewDataGridGroupChip(control, field, groupChipBackground, groupChipBorder, groupChipForeground));
             }
+
+            if (groupedFields.Count > 0)
+                chips.Children.Add(CreatePreviewDataGridClearGroupingButton(control, groupChipForeground));
 
             Grid.SetRow(chips, 0);
             layout.Children.Add(chips);
@@ -2501,6 +2637,87 @@ public partial class PreviewWindow : Window
             return source.Name.Trim();
 
         return string.IsNullOrWhiteSpace(control.Name) ? "Таблица" : control.Name.Trim();
+    }
+
+    private Control CreatePreviewDataGridGroupChip(
+        DesignerControlFileModel control,
+        BindingFieldFileModel field,
+        IBrush background,
+        IBrush border,
+        IBrush foreground)
+    {
+        var removeButton = new Button
+        {
+            Content = "×",
+            Width = 22,
+            Height = 22,
+            MinWidth = 22,
+            MinHeight = 22,
+            Padding = new Thickness(0),
+            Background = Brushes.Transparent,
+            BorderBrush = Brushes.Transparent,
+            Foreground = foreground,
+            FontSize = Math.Max(12, control.FontSize),
+            FontWeight = FontWeight.Bold
+        };
+        ToolTip.SetTip(removeButton, "Убрать группировку");
+        removeButton.Click += (_, e) =>
+        {
+            RemovePreviewWindowDataGridGroup(control, field);
+            e.Handled = true;
+        };
+
+        return new Border
+        {
+            Background = background,
+            BorderBrush = border,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(999),
+            Padding = new Thickness(10, 5),
+            Margin = new Thickness(0, 0, 8, 8),
+            Child = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 6,
+                Children =
+                {
+                    new TextBlock
+                    {
+                        Text = $"Группа {field.GroupOrder + 1}: {field.Header}",
+                        Foreground = foreground,
+                        FontSize = Math.Max(10, control.FontSize - 1),
+                        FontWeight = FontWeight.SemiBold,
+                        VerticalAlignment = VerticalAlignment.Center
+                    },
+                    removeButton
+                }
+            }
+        };
+    }
+
+    private Button CreatePreviewDataGridClearGroupingButton(DesignerControlFileModel control, IBrush foreground)
+    {
+        var button = new Button
+        {
+            Content = "Очистить группировку",
+            Background = Brushes.Transparent,
+            BorderBrush = new SolidColorBrush(Color.Parse("#CBD5E1")),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(999),
+            Padding = new Thickness(10, 5),
+            Margin = new Thickness(0, 0, 8, 8),
+            Foreground = foreground,
+            FontSize = Math.Max(10, control.FontSize - 1),
+            FontWeight = FontWeight.SemiBold
+        };
+        ToolTip.SetTip(button, "Снять группировку со всех колонок");
+        button.Click += (_, e) =>
+        {
+            ClearPreviewWindowDataGridGrouping(control);
+            e.Handled = true;
+        };
+
+        return button;
     }
 
     private void TogglePreviewWindowSort(DesignerControlFileModel control, BindingFieldFileModel targetField)

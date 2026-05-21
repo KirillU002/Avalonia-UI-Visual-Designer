@@ -75,6 +75,16 @@ public partial class DataGridColumnEditorWindow : Window
         _editor?.ResetColumnWidths();
     }
 
+    private void ClearGroupingButton_Click(object? sender, RoutedEventArgs e)
+    {
+        _editor?.ClearGrouping();
+    }
+
+    private void RemoveSelectedGroupingButton_Click(object? sender, RoutedEventArgs e)
+    {
+        _editor?.RemoveSelectedGrouping();
+    }
+
     private void SetColumnWidthPresetButton_Click(object? sender, RoutedEventArgs e)
     {
         if (sender is Button { DataContext: BindingFieldModel field, Tag: string preset }
@@ -180,6 +190,10 @@ public sealed partial class DataGridColumnEditorViewModel : ObservableObject, ID
     public bool HasSelectedField => SelectedItem is not null;
 
     public bool HasNoSelectedField => SelectedItem is null;
+
+    public bool HasGroupedFields => _bindingSource?.Fields.Any(field => field.GroupOrder >= 0) == true;
+
+    public bool CanRemoveSelectedGrouping => SelectedField?.GroupOrder >= 0;
 
     public BindingFieldModel? SelectedField => SelectedItem?.Field;
 
@@ -335,6 +349,45 @@ public sealed partial class DataGridColumnEditorViewModel : ObservableObject, ID
         }
     }
 
+    public void ClearGrouping()
+    {
+        if (_bindingSource is null || !HasGroupedFields)
+            return;
+
+        _owner.BeginUndoBatch();
+        try
+        {
+            foreach (var field in _bindingSource.Fields.Where(field => field.GroupOrder >= 0))
+                field.GroupOrder = -1;
+
+            RaiseGroupingProperties();
+            _owner.StatusText = "Группировка DataGrid очищена";
+        }
+        finally
+        {
+            _owner.CommitUndoBatch();
+        }
+    }
+
+    public void RemoveSelectedGrouping()
+    {
+        if (_bindingSource is null || SelectedField is not { GroupOrder: >= 0 } field)
+            return;
+
+        _owner.BeginUndoBatch();
+        try
+        {
+            field.GroupOrder = -1;
+            NormalizeGroupOrders();
+            RaiseGroupingProperties();
+            _owner.StatusText = $"Группировка колонки «{field.Header}» снята";
+        }
+        finally
+        {
+            _owner.CommitUndoBatch();
+        }
+    }
+
     public void SetColumnWidthPreset(BindingFieldModel field, string preset)
     {
         if (_bindingSource is null || !_bindingSource.Fields.Contains(field) || string.IsNullOrWhiteSpace(preset))
@@ -376,6 +429,7 @@ public sealed partial class DataGridColumnEditorViewModel : ObservableObject, ID
         OnPropertyChanged(nameof(SelectedField));
         OnPropertyChanged(nameof(HasSelectedField));
         OnPropertyChanged(nameof(HasNoSelectedField));
+        OnPropertyChanged(nameof(CanRemoveSelectedGrouping));
     }
 
     private void BindingFields_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
@@ -394,6 +448,7 @@ public sealed partial class DataGridColumnEditorViewModel : ObservableObject, ID
 
         RebuildFilteredFields(SelectedItem?.Field);
         OnPropertyChanged(nameof(SummaryText));
+        RaiseGroupingProperties();
     }
 
     private void Field_PropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -407,6 +462,8 @@ public sealed partial class DataGridColumnEditorViewModel : ObservableObject, ID
         }
 
         OnPropertyChanged(nameof(SummaryText));
+        if (e.PropertyName is nameof(BindingFieldModel.GroupOrder))
+            RaiseGroupingProperties();
     }
 
     private void AttachField(BindingFieldModel field)
@@ -483,6 +540,28 @@ public sealed partial class DataGridColumnEditorViewModel : ObservableObject, ID
         var index = 0;
         foreach (var field in orderedFields)
             field.VisibleIndex = index++;
+    }
+
+    private void NormalizeGroupOrders()
+    {
+        if (_bindingSource is null)
+            return;
+
+        var groupedFields = _bindingSource.Fields
+            .Where(field => field.GroupOrder >= 0)
+            .OrderBy(field => field.GroupOrder)
+            .ThenBy(field => field.Header)
+            .ToList();
+
+        for (var index = 0; index < groupedFields.Count; index++)
+            groupedFields[index].GroupOrder = index;
+    }
+
+    private void RaiseGroupingProperties()
+    {
+        OnPropertyChanged(nameof(HasGroupedFields));
+        OnPropertyChanged(nameof(CanRemoveSelectedGrouping));
+        OnPropertyChanged(nameof(SummaryText));
     }
 
     private bool IsFieldMatch(BindingFieldModel field, string? search)
