@@ -459,6 +459,8 @@ public partial class MainWindow : Window
             return;
 
         _appSettings.RecentFiles = VM.RecentFiles.ToList();
+        _appSettings.PropertyGridFavorites = VM.CapturePropertyGridFavorites();
+        _appSettings.PropertyGridCollapsedCategories = VM.CapturePropertyGridCollapsedCategories();
         _appSettings.ExportCache = VM.CaptureExportCache();
         _appSettings.Session = CaptureSessionState();
         await _appSettingsService.SaveAsync(_appSettings);
@@ -6819,6 +6821,53 @@ public partial class MainWindow : Window
 
         ApplyBoolPropertyToSelection(propertyName, checkBox.IsChecked == true);
         RefreshFromPropertyPanel();
+    }
+
+    private void PropertyGridTextBox_LostFocus(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Control { DataContext: PropertyGridRowViewModel row })
+            return;
+
+        row.CommitValue();
+        RefreshFromPropertyPanel();
+    }
+
+    private void PropertyGridTextBox_KeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter || sender is not Control { DataContext: PropertyGridRowViewModel row })
+            return;
+
+        row.CommitValue();
+        RefreshFromPropertyPanel();
+        e.Handled = true;
+    }
+
+    private async void PropertyGridColorButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Button button || button.DataContext is not PropertyGridRowViewModel row)
+            return;
+
+        var selectedColor = await ShowColorPickerFlyoutAsync(button, row.Key, row.Value);
+        if (string.IsNullOrWhiteSpace(selectedColor))
+            return;
+
+        row.Value = selectedColor;
+        row.CommitValue();
+        RefreshFromPropertyPanel();
+    }
+
+    private void PropertyGridActionButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { DataContext: PropertyGridRowViewModel row })
+            return;
+
+        if (string.Equals(row.Key, "Columns", StringComparison.OrdinalIgnoreCase))
+        {
+            OpenDataGridColumnEditorButton_Click(sender, e);
+            return;
+        }
+
+        VM.StatusText = $"Action editor is not available for {row.Label}.";
     }
 
     private void SurfaceNumericTextBox_TextChanged(object? sender, TextChangedEventArgs e)

@@ -57,6 +57,15 @@ public partial class MainWindowViewModel : ObservableObject
     public const string ProblemsFilterErrors = "Errors";
     public const string ProblemsFilterWarnings = "Warnings";
     public const string ProblemsFilterHints = "Hints";
+    public const string PropertyGridCategoryFavorites = "Favorites";
+    public const string PropertyGridCategoryCommon = "Common";
+    public const string PropertyGridCategoryLayout = "Layout";
+    public const string PropertyGridCategoryAppearance = "Appearance";
+    public const string PropertyGridCategoryData = "Data";
+    public const string PropertyGridCategoryBehavior = "Behavior";
+    public const string PropertyGridCategoryInteraction = "Interaction";
+    public const string PropertyGridCategoryExport = "Export";
+    public const string PropertyGridCategoryAdvanced = "Advanced";
 
     public const string WindowStateNormal = "Обычное";
     public const string WindowStateMaximized = "Рабочая область";
@@ -117,12 +126,18 @@ public partial class MainWindowViewModel : ObservableObject
     private bool _isApplyingDocument;
     private bool _isUpdatingStructureSelection;
     private bool _isStructureTreeRefreshSuspended;
+    private bool _isRebuildingPropertyGrid;
     private double _previewScreenWidth = 1920;
     private double _previewScreenHeight = 1080;
     private double _previewWorkingAreaWidth = 1920;
     private double _previewWorkingAreaHeight = 1040;
     private string _previewScreenName = "Текущий монитор";
     private int _templateInsertionOffset;
+    private readonly HashSet<string> _propertyGridFavoriteKeys = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _propertyGridCollapsedCategories = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Advanced"
+    };
 
     // Toolbox теперь строится из registry дескрипторов, а не из зашитого списка.
     public ObservableCollection<ToolboxItem> ToolboxItems { get; } = new();
@@ -133,6 +148,7 @@ public partial class MainWindowViewModel : ObservableObject
     public ObservableCollection<InstalledPluginInfoModel> InstalledPlugins { get; } = new();
     public ObservableCollection<DocumentDiagnosticModel> Diagnostics { get; } = new();
     public ObservableCollection<StructureTreeItemModel> StructureTreeItems { get; } = new();
+    public ObservableCollection<PropertyGridCategoryViewModel> PropertyGridCategories { get; } = new();
     public ObservableCollection<UndoRedoHistoryItemModel> UndoRedoHistoryItems { get; } = new();
     public ObservableCollection<ReusableTemplateModel> ReusableTemplates { get; } = new();
     public ObservableCollection<RecentFileModel> RecentFiles { get; } = new();
@@ -557,6 +573,9 @@ public partial class MainWindowViewModel : ObservableObject
     private string structureSearchText = "";
 
     [ObservableProperty]
+    private string propertyGridSearchText = "";
+
+    [ObservableProperty]
     private string importedDllSearchText = "";
 
     public event EventHandler? DesignerChanged;
@@ -896,6 +915,15 @@ public partial class MainWindowViewModel : ObservableObject
             return $"DLL найдено: {registry.LastPluginAssemblyScanCount}. Загружено: {okCount}. Warning: {warningCount}. Error: {errorCount}. Controls: {controlCount}.";
         }
     }
+
+    public bool HasPropertyGridRows => PropertyGridCategories.Any(category => category.Rows.Count > 0);
+    public bool HasNoPropertyGridRows => !HasPropertyGridRows;
+    public string PropertyGridSelectionTitle => SelectedControl is null
+        ? "Форма"
+        : $"{SelectedControl.Name} · {SelectedControl.Type}";
+    public string PropertyGridEmptyText => SelectedControl is null
+        ? "Выберите элемент на canvas или в структуре, чтобы редактировать его свойства."
+        : "Поиск не нашел свойств для выбранного элемента.";
     public bool HasPluginLoadIssues => _registry is DesignerRegistry registry
         && registry.GetPluginLoadReports().Any(report => report.Status is PluginLoadStatus.Warning or PluginLoadStatus.Error);
     public string SelectedTextLabel => GetPropertyDisplayTitle(SelectedControl, nameof(DesignControlModel.Text), "Текст");
@@ -3438,6 +3466,7 @@ public partial class MainWindowViewModel : ObservableObject
     public void ApplyAppSettings(AppSettingsModel settings)
     {
         ApplyExportCache(settings.ExportCache);
+        ApplyPropertyGridSettings(settings.PropertyGridFavorites, settings.PropertyGridCollapsedCategories);
 
         RecentFiles.Clear();
         foreach (var recentFile in settings.RecentFiles
@@ -3454,6 +3483,16 @@ public partial class MainWindowViewModel : ObservableObject
             WorkspaceMode = settings.Session.WorkspaceMode;
 
         ApplyEditorShellLayout(settings.Session.EditorShell);
+    }
+
+    public List<string> CapturePropertyGridFavorites()
+    {
+        return _propertyGridFavoriteKeys.OrderBy(key => key, StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    public List<string> CapturePropertyGridCollapsedCategories()
+    {
+        return _propertyGridCollapsedCategories.OrderBy(key => key, StringComparer.OrdinalIgnoreCase).ToList();
     }
 
     public ExportCacheModel CaptureExportCache()
@@ -3506,6 +3545,477 @@ public partial class MainWindowViewModel : ObservableObject
         LeftDockPanelWidth = Math.Clamp(layout.LeftPanelWidth <= 0 ? 280 : layout.LeftPanelWidth, 220, 420);
         RightDockPanelWidth = Math.Clamp(layout.RightPanelWidth <= 0 ? 380 : layout.RightPanelWidth, 280, 560);
         DiagnosticsPaneHeight = Math.Clamp(layout.BottomPanelHeight <= 0 ? 220 : layout.BottomPanelHeight, 140, 520);
+    }
+
+    private void ApplyPropertyGridSettings(IEnumerable<string>? favorites, IEnumerable<string>? collapsedCategories)
+    {
+        _propertyGridFavoriteKeys.Clear();
+        var savedFavorites = favorites?
+            .Where(item => !string.IsNullOrWhiteSpace(item))
+            .Select(item => item.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList() ?? new List<string>();
+
+        if (savedFavorites.Count == 0)
+        {
+            AddDefaultPropertyGridFavorites();
+        }
+        else
+        {
+            foreach (var favorite in savedFavorites)
+                _propertyGridFavoriteKeys.Add(favorite);
+        }
+
+        _propertyGridCollapsedCategories.Clear();
+        _propertyGridCollapsedCategories.Add(PropertyGridCategoryAdvanced);
+        if (collapsedCategories is not null)
+        {
+            foreach (var category in collapsedCategories.Where(item => !string.IsNullOrWhiteSpace(item)))
+                _propertyGridCollapsedCategories.Add(category.Trim());
+        }
+
+        RebuildPropertyGrid();
+    }
+
+    private void AddDefaultPropertyGridFavorites()
+    {
+        foreach (var key in new[]
+        {
+            FavoriteKey("*", nameof(DesignControlModel.Name)),
+            FavoriteKey("*", nameof(DesignControlModel.Text)),
+            FavoriteKey("*", nameof(DesignControlModel.X)),
+            FavoriteKey("*", nameof(DesignControlModel.Y)),
+            FavoriteKey("*", nameof(DesignControlModel.Width)),
+            FavoriteKey("*", nameof(DesignControlModel.Height)),
+            FavoriteKey("*", nameof(DesignControlModel.IsVisible)),
+            FavoriteKey("*", nameof(DesignControlModel.IsLocked)),
+            FavoriteKey(DesignerControlTypes.DataGrid, nameof(DesignControlModel.BindingSourceId)),
+            FavoriteKey(DesignerControlTypes.DataGrid, "Columns"),
+            FavoriteKey(DesignerControlTypes.DataGrid, nameof(DesignControlModel.AutoGenerateColumns)),
+            FavoriteKey(DesignerControlTypes.DataGrid, nameof(DesignControlModel.AllowGrouping)),
+            FavoriteKey(DesignerControlTypes.DataGrid, nameof(DesignControlModel.ShowFilterRow)),
+            FavoriteKey(DesignerControlTypes.DataGrid, nameof(DesignControlModel.ShowGroupPanel))
+        })
+        {
+            _propertyGridFavoriteKeys.Add(key);
+        }
+    }
+
+    private static string FavoriteKey(string typeKey, string propertyKey)
+    {
+        return $"{(string.IsNullOrWhiteSpace(typeKey) ? "*" : typeKey)}.{propertyKey}";
+    }
+
+    private bool IsPropertyGridFavorite(string propertyKey)
+    {
+        var type = SelectedControl?.Type ?? "*";
+        return _propertyGridFavoriteKeys.Contains(FavoriteKey(type, propertyKey))
+            || _propertyGridFavoriteKeys.Contains(FavoriteKey("*", propertyKey));
+    }
+
+    [RelayCommand]
+    private void TogglePropertyGridFavorite(PropertyGridRowViewModel? row)
+    {
+        if (row is null)
+            return;
+
+        var typedKey = FavoriteKey(SelectedControl?.Type ?? "*", row.Key);
+        var globalKey = FavoriteKey("*", row.Key);
+        if (row.IsFavorite)
+        {
+            _propertyGridFavoriteKeys.Remove(typedKey);
+            _propertyGridFavoriteKeys.Remove(globalKey);
+        }
+        else
+        {
+            _propertyGridFavoriteKeys.Add(typedKey);
+        }
+
+        RebuildPropertyGrid();
+    }
+
+    [RelayCommand]
+    private void ClearPropertyGridSearch()
+    {
+        PropertyGridSearchText = "";
+    }
+
+    private void SetPropertyGridCategoryExpanded(PropertyGridCategoryViewModel category, bool isExpanded)
+    {
+        if (_isRebuildingPropertyGrid)
+            return;
+
+        if (isExpanded)
+            _propertyGridCollapsedCategories.Remove(category.Key);
+        else
+            _propertyGridCollapsedCategories.Add(category.Key);
+    }
+
+    private void RebuildPropertyGrid()
+    {
+        if (_isApplyingDocument)
+            return;
+
+        _isRebuildingPropertyGrid = true;
+        try
+        {
+            var query = PropertyGridSearchText.Trim();
+            var hasSearch = !string.IsNullOrWhiteSpace(query);
+            var rows = BuildPropertyGridRows().ToList();
+            if (hasSearch)
+            {
+                rows = rows
+                    .Where(row => row.Label.Contains(query, StringComparison.OrdinalIgnoreCase)
+                        || row.Key.Contains(query, StringComparison.OrdinalIgnoreCase)
+                        || row.Category.Contains(query, StringComparison.OrdinalIgnoreCase)
+                        || row.Description.Contains(query, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+            }
+
+            PropertyGridCategories.Clear();
+
+            var favorites = rows.Where(row => row.IsFavorite).ToList();
+            if (favorites.Count > 0)
+                AddPropertyGridCategory(PropertyGridCategoryFavorites, "\u2605 Favorites", favorites, hasSearch);
+
+            foreach (var category in new[]
+                     {
+                         PropertyGridCategoryCommon,
+                         PropertyGridCategoryLayout,
+                         PropertyGridCategoryAppearance,
+                         PropertyGridCategoryData,
+                         PropertyGridCategoryBehavior,
+                         PropertyGridCategoryInteraction,
+                         PropertyGridCategoryExport,
+                         PropertyGridCategoryAdvanced
+                     })
+            {
+                var categoryRows = rows.Where(row => string.Equals(row.Category, category, StringComparison.Ordinal)).ToList();
+                if (categoryRows.Count > 0)
+                    AddPropertyGridCategory(category, category, categoryRows, hasSearch);
+            }
+        }
+        finally
+        {
+            _isRebuildingPropertyGrid = false;
+        }
+
+        RaisePropertyGridProperties();
+    }
+
+    private void RaisePropertyGridProperties()
+    {
+        OnPropertyChanged(nameof(HasPropertyGridRows));
+        OnPropertyChanged(nameof(HasNoPropertyGridRows));
+        OnPropertyChanged(nameof(PropertyGridSelectionTitle));
+        OnPropertyChanged(nameof(PropertyGridEmptyText));
+    }
+
+    partial void OnPropertyGridSearchTextChanged(string value)
+    {
+        RebuildPropertyGrid();
+    }
+
+    private void AddPropertyGridCategory(string key, string title, IReadOnlyList<PropertyGridRowViewModel> rows, bool forceExpanded)
+    {
+        var category = new PropertyGridCategoryViewModel(
+            key,
+            title,
+            forceExpanded || !_propertyGridCollapsedCategories.Contains(key),
+            SetPropertyGridCategoryExpanded);
+
+        foreach (var row in rows)
+            category.Rows.Add(row);
+
+        category.NotifyRowsChanged();
+        PropertyGridCategories.Add(category);
+    }
+
+    private IEnumerable<PropertyGridRowViewModel> BuildPropertyGridRows()
+    {
+        if (SelectedControl is null)
+        {
+            yield return CreateTextRow(PropertyGridCategoryCommon, "FormTitle", "Title", FormTitle, "Window title.", value => FormTitle = value);
+            yield return CreateNumberRow(PropertyGridCategoryLayout, nameof(DesignWidth), "Width", DesignWidth, "Form width.", value => DesignWidth = Math.Max(300, value));
+            yield return CreateNumberRow(PropertyGridCategoryLayout, nameof(DesignHeight), "Height", DesignHeight, "Form height.", value => DesignHeight = Math.Max(200, value));
+            yield return CreateColorRow(PropertyGridCategoryAppearance, nameof(SurfaceBackground), "Background", SurfaceBackground, "Form background color.", value => SurfaceBackground = value);
+            yield return CreateEnumRow(PropertyGridCategoryBehavior, nameof(FormWindowState), "WindowState", FormWindowState, AvailableFormWindowStates, "Startup window state.", value => FormWindowState = value);
+            yield return CreateEnumRow(PropertyGridCategoryBehavior, nameof(FormStartupLocation), "StartupLocation", FormStartupLocation, AvailableFormStartupLocations, "Startup location.", value => FormStartupLocation = value);
+            yield break;
+        }
+
+        var control = SelectedControl;
+        yield return CreateTextRow(PropertyGridCategoryCommon, nameof(DesignControlModel.Name), "Name", control.Name, "Element name used by export and interactions.", value => control.Name = value);
+        if (control.Type == DesignerControlTypes.DataGrid)
+            yield return CreateTextRow(PropertyGridCategoryCommon, nameof(DesignControlModel.Text), "Title", control.Text, "Optional DataGrid title shown in designer/export.", value => control.Text = value);
+        if (control.Type != DesignerControlTypes.DataGrid && SupportsText(control))
+            yield return CreateTextRow(PropertyGridCategoryCommon, nameof(DesignControlModel.Text), "Text / Content", control.Text, "Displayed text or content.", value => control.Text = value);
+        if (SupportsPlaceholder(control))
+            yield return CreateTextRow(PropertyGridCategoryCommon, nameof(DesignControlModel.PlaceholderText), "Watermark", control.PlaceholderText, "Placeholder text.", value => control.PlaceholderText = value);
+        if (SupportsImageSource(control))
+            yield return CreateTextRow(PropertyGridCategoryCommon, nameof(DesignControlModel.ImageSource), "ImageSource", control.ImageSource, "Image path or URI.", value => control.ImageSource = value);
+
+        yield return CreateNumberRow(PropertyGridCategoryLayout, nameof(DesignControlModel.X), "X", control.X, "Left position on canvas.", value => { control.X = Math.Max(0, value); ClampControlToSurface(control); });
+        yield return CreateNumberRow(PropertyGridCategoryLayout, nameof(DesignControlModel.Y), "Y", control.Y, "Top position on canvas.", value => { control.Y = Math.Max(0, value); ClampControlToSurface(control); });
+        yield return CreateNumberRow(PropertyGridCategoryLayout, nameof(DesignControlModel.Width), "Width", control.Width, "Element width.", value => { control.Width = value; ClampControlToSurface(control); });
+        yield return CreateNumberRow(PropertyGridCategoryLayout, nameof(DesignControlModel.Height), "Height", control.Height, "Element height.", value => { control.Height = value; ClampControlToSurface(control); });
+        yield return CreateBoolRow(PropertyGridCategoryLayout, nameof(DesignControlModel.AnchorLeft), "AnchorLeft", control.AnchorLeft, "Anchor to left edge.", value => control.AnchorLeft = value);
+        yield return CreateBoolRow(PropertyGridCategoryLayout, nameof(DesignControlModel.AnchorTop), "AnchorTop", control.AnchorTop, "Anchor to top edge.", value => control.AnchorTop = value);
+        yield return CreateBoolRow(PropertyGridCategoryLayout, nameof(DesignControlModel.AnchorRight), "AnchorRight", control.AnchorRight, "Anchor to right edge.", value => control.AnchorRight = value);
+        yield return CreateBoolRow(PropertyGridCategoryLayout, nameof(DesignControlModel.AnchorBottom), "AnchorBottom", control.AnchorBottom, "Anchor to bottom edge.", value => control.AnchorBottom = value);
+
+        if (CanHostChildren(control))
+        {
+            yield return CreateEnumRow(PropertyGridCategoryLayout, nameof(DesignControlModel.LayoutOrientation), "Orientation", control.LayoutOrientation, AvailableLayoutOrientations, "Child layout orientation.", value => control.LayoutOrientation = value);
+            yield return CreateNumberRow(PropertyGridCategoryLayout, nameof(DesignControlModel.LayoutSpacing), "Spacing", control.LayoutSpacing, "Spacing between child elements.", value => control.LayoutSpacing = Math.Max(0, value));
+        }
+
+        yield return CreateBoolRow(PropertyGridCategoryCommon, nameof(DesignControlModel.IsVisible), "IsVisible", control.IsVisible, "Show element on canvas/export.", value => control.IsVisible = value);
+        yield return CreateBoolRow(PropertyGridCategoryCommon, nameof(DesignControlModel.IsLocked), "IsLocked", control.IsLocked, "Lock move/resize on canvas.", value => control.IsLocked = value);
+        yield return CreateNumberRow(PropertyGridCategoryAppearance, nameof(DesignControlModel.Opacity), "Opacity", control.Opacity, "Opacity 0..1.", value => control.Opacity = Math.Clamp(value, 0, 1));
+        yield return CreateColorRow(PropertyGridCategoryAppearance, nameof(DesignControlModel.Background), "Background", control.Background, "Background color.", value => control.Background = value);
+        yield return CreateColorRow(PropertyGridCategoryAppearance, nameof(DesignControlModel.Foreground), "Foreground", control.Foreground, "Text foreground color.", value => control.Foreground = value);
+        yield return CreateColorRow(PropertyGridCategoryAppearance, nameof(DesignControlModel.BorderBrush), "BorderBrush", control.BorderBrush, "Border color.", value => control.BorderBrush = value);
+        yield return CreateNumberRow(PropertyGridCategoryAppearance, nameof(DesignControlModel.BorderThickness), "BorderThickness", control.BorderThickness, "Border thickness.", value => control.BorderThickness = Math.Max(0, value));
+        yield return CreateNumberRow(PropertyGridCategoryAppearance, nameof(DesignControlModel.CornerRadius), "CornerRadius", control.CornerRadius, "Corner radius.", value => control.CornerRadius = Math.Max(0, value));
+        yield return CreateEnumRow(PropertyGridCategoryAppearance, nameof(DesignControlModel.FontFamily), "FontFamily", control.FontFamily, AvailableFontFamilies, "Font family.", value => control.FontFamily = value);
+        yield return CreateNumberRow(PropertyGridCategoryAppearance, nameof(DesignControlModel.FontSize), "FontSize", control.FontSize, "Font size.", value => control.FontSize = Math.Max(1, value));
+        yield return CreateEnumRow(PropertyGridCategoryAppearance, nameof(DesignControlModel.FontWeight), "FontWeight", control.FontWeight, AvailableFontWeights, "Font weight.", value => control.FontWeight = value);
+
+        if (SupportsStretch(control))
+            yield return CreateEnumRow(PropertyGridCategoryAppearance, nameof(DesignControlModel.Stretch), "Stretch", control.Stretch, AvailableStretchModes, "Image stretch mode.", value => control.Stretch = value);
+
+        if (control.Type == DesignerControlTypes.DataGrid)
+        {
+            foreach (var row in BuildDataGridPropertyRows(control))
+                yield return row;
+        }
+
+        var interactionCount = Interactions.Count(interaction =>
+            string.Equals(interaction.SourceControlName, control.Name, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(interaction.TargetControlName, control.Name, StringComparison.OrdinalIgnoreCase));
+        yield return CreateReadOnlyRow(PropertyGridCategoryInteraction, "Interactions", "Interactions", interactionCount.ToString(CultureInfo.InvariantCulture), "Rules that use this control.");
+
+        var descriptorProperties = GetCustomDescriptorProperties(control).ToList();
+        foreach (var descriptor in descriptorProperties)
+            yield return CreateDescriptorPropertyRow(descriptor);
+
+        var descriptorKeys = descriptorProperties.Select(descriptor => descriptor.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var customProperty in control.CustomProperties.Where(property => !descriptorKeys.Contains(property.Key)))
+        {
+            yield return CreateTextRow(
+                PropertyGridCategoryAdvanced,
+                customProperty.Key,
+                customProperty.Key,
+                customProperty.ValueJson,
+                "Raw custom property preserved for missing/unknown plugin descriptors.",
+                value =>
+                {
+                    customProperty.ValueJson = value;
+                    NotifyDesignerStateChanged();
+                },
+                isAdvanced: true);
+        }
+    }
+
+    private IEnumerable<PropertyGridRowViewModel> BuildDataGridPropertyRows(DesignControlModel control)
+    {
+        yield return CreateBindingSourceRow(control);
+        yield return CreateBoolRow(PropertyGridCategoryData, nameof(DesignControlModel.AutoGenerateColumns), "AutoGenerateColumns", control.AutoGenerateColumns, "Generate columns from BindingSource fields.", value => control.AutoGenerateColumns = value);
+        yield return CreateActionRow(PropertyGridCategoryData, "Columns", "Columns", SelectedGridColumnCompactSummary, "Open the DataGrid column editor.", "Edit...");
+        yield return CreateColorRow(PropertyGridCategoryAppearance, nameof(DesignControlModel.DataGridHeaderBackground), "HeaderBackground", control.DataGridHeaderBackground, "Header background.", value => control.DataGridHeaderBackground = value);
+        yield return CreateColorRow(PropertyGridCategoryAppearance, nameof(DesignControlModel.DataGridRowBackground), "RowBackground", control.DataGridRowBackground, "Row background.", value => control.DataGridRowBackground = value);
+        yield return CreateColorRow(PropertyGridCategoryAppearance, nameof(DesignControlModel.DataGridAlternateRowBackground), "AlternateRowBackground", control.DataGridAlternateRowBackground, "Alternate row background.", value => control.DataGridAlternateRowBackground = value);
+        yield return CreateColorRow(PropertyGridCategoryAppearance, nameof(DesignControlModel.DataGridOuterBorderBrush), "BorderBrush", control.DataGridOuterBorderBrush, "DataGrid outer border.", value => control.DataGridOuterBorderBrush = value);
+        yield return CreateNumberRow(PropertyGridCategoryAppearance, nameof(DesignControlModel.DataGridRowFontSize), "FontSize", control.DataGridRowFontSize, "Row font size.", value => control.DataGridRowFontSize = Math.Max(1, value));
+        yield return CreateNumberRow(PropertyGridCategoryAppearance, nameof(DesignControlModel.DataGridRowHeight), "RowHeight", control.DataGridRowHeight, "Row height.", value => control.DataGridRowHeight = Math.Max(20, value));
+        yield return CreateNumberRow(PropertyGridCategoryAppearance, nameof(DesignControlModel.DataGridHeaderHeight), "HeaderHeight", control.DataGridHeaderHeight, "Header height.", value => control.DataGridHeaderHeight = Math.Max(20, value));
+        yield return CreateBoolRow(PropertyGridCategoryBehavior, nameof(DesignControlModel.DataGridShowHeader), "ShowHeader", control.DataGridShowHeader, "Show column headers.", value => control.DataGridShowHeader = value);
+        yield return CreateBoolRow(PropertyGridCategoryBehavior, nameof(DesignControlModel.ShowFilterRow), "AllowFilter", control.ShowFilterRow, "Show filter row for quick filtering.", value => control.ShowFilterRow = value);
+        yield return CreateEnumRow(PropertyGridCategoryBehavior, nameof(DesignControlModel.FilterMode), "FilterMode", control.FilterMode, AvailableDataGridFilterModes, "Filter matching mode.", value => control.FilterMode = value);
+        yield return CreateBoolRow(PropertyGridCategoryBehavior, nameof(DesignControlModel.ShowGroupPanel), "GroupPanel", control.ShowGroupPanel, "Show grouping panel.", value => control.ShowGroupPanel = value);
+        yield return CreateBoolRow(PropertyGridCategoryBehavior, nameof(DesignControlModel.AllowGrouping), "AllowGrouping", control.AllowGrouping, "Allow grouping fields.", value => control.AllowGrouping = value);
+        yield return CreateReadOnlyRow(PropertyGridCategoryBehavior, "AllowSort", "AllowSort", "true", "Sorting is exported per generated column.");
+        yield return CreateBoolRow(PropertyGridCategoryBehavior, nameof(DesignControlModel.ShowFooter), "FooterSummaryRow", control.ShowFooter, "Show footer summary row.", value => control.ShowFooter = value);
+        yield return CreateEnumRow(PropertyGridCategoryExport, nameof(DataGridExportMode), "DataGridExportMode", DataGridExportMode, AvailableDataGridExportModes, "Export mode used for DataGrid controls.", value => DataGridExportMode = value);
+        yield return CreateReadOnlyRow(PropertyGridCategoryExport, "RuntimeNuGetRequired", "RuntimeNuGetRequired", ShouldExportRealDataGrid ? "Avalonia.Controls.DataGrid" : "none", "Required NuGet for the current DataGrid export mode.");
+        yield return CreateColorRow(PropertyGridCategoryAdvanced, nameof(DesignControlModel.DataGridGridLineBrush), "GridLineBrush", control.DataGridGridLineBrush, "Grid line color.", value => control.DataGridGridLineBrush = value, isAdvanced: true);
+        yield return CreateEnumRow(PropertyGridCategoryAdvanced, nameof(DesignControlModel.DataGridTextAlignment), "TextAlignment", control.DataGridTextAlignment, AvailableDataGridTextAlignments, "Cell text alignment.", value => control.DataGridTextAlignment = value, isAdvanced: true);
+        yield return CreateNumberRow(PropertyGridCategoryAdvanced, nameof(DesignControlModel.DataGridCellPadding), "CellPadding", control.DataGridCellPadding, "Cell padding.", value => control.DataGridCellPadding = Math.Max(0, value), isAdvanced: true);
+    }
+
+    private PropertyGridRowViewModel CreateDescriptorPropertyRow(DesignPropertyDescriptor descriptor)
+    {
+        var category = string.IsNullOrWhiteSpace(descriptor.Category) ? PropertyGridCategoryAdvanced : NormalizePropertyGridCategory(descriptor.Category);
+        var value = GetDescriptorCustomPropertyString(descriptor);
+        var description = GetPropertyGridDescriptorDescription(descriptor);
+        return descriptor.Editor switch
+        {
+            PropertyEditorKind.Bool => CreateBoolRow(category, descriptor.Key, descriptor.Title, GetDescriptorCustomPropertyBool(descriptor), description, boolValue => SetDescriptorCustomPropertyFromBool(descriptor, boolValue), isAdvanced: true),
+            PropertyEditorKind.Color => CreateColorRow(category, descriptor.Key, descriptor.Title, value, description, color => SetDescriptorCustomPropertyFromString(descriptor, color), isAdvanced: true),
+            PropertyEditorKind.Enum => CreateDescriptorEnumRow(category, descriptor, value),
+            PropertyEditorKind.Number => CreateNumberRow(category, descriptor.Key, descriptor.Title, ParsePropertyGridNumber(value, 0), description, number => SetDescriptorCustomPropertyFromString(descriptor, number.ToString(CultureInfo.InvariantCulture)), isAdvanced: true),
+            _ => CreateTextRow(category, descriptor.Key, descriptor.Title, value, description, text => SetDescriptorCustomPropertyFromString(descriptor, text), isAdvanced: true)
+        };
+    }
+
+    private PropertyGridRowViewModel CreateDescriptorEnumRow(string category, DesignPropertyDescriptor descriptor, string value)
+    {
+        var row = CreateRow(category, descriptor.Key, descriptor.Title, PropertyGridEditorKind.Enum, value, GetPropertyGridDescriptorDescription(descriptor), (item, optionValue) => SetDescriptorCustomPropertyFromString(descriptor, optionValue), null, isAdvanced: true);
+        row.SetOptions(descriptor.Options.Select(option => new PropertyGridOptionViewModel(option.Value, option.Title)));
+        return row;
+    }
+
+    private static string GetPropertyGridDescriptorDescription(DesignPropertyDescriptor descriptor)
+    {
+        var editorHint = descriptor.Editor switch
+        {
+            PropertyEditorKind.Color => "HEX color value from plugin descriptor.",
+            PropertyEditorKind.Number => "Numeric value from plugin descriptor.",
+            PropertyEditorKind.Bool => "Boolean value from plugin descriptor.",
+            PropertyEditorKind.Enum => "Plugin descriptor enum value.",
+            PropertyEditorKind.Binding => "Binding-compatible plugin property.",
+            PropertyEditorKind.Collection => "Serialized collection/custom plugin value.",
+            _ => "Custom plugin property."
+        };
+
+        return descriptor.IsBindable ? $"{editorHint} Supports binding." : editorHint;
+    }
+
+    private static string NormalizePropertyGridCategory(string category)
+    {
+        return category.Trim().ToLowerInvariant() switch
+        {
+            "common" => PropertyGridCategoryCommon,
+            "layout" => PropertyGridCategoryLayout,
+            "appearance" => PropertyGridCategoryAppearance,
+            "data" => PropertyGridCategoryData,
+            "behavior" => PropertyGridCategoryBehavior,
+            "interaction" => PropertyGridCategoryInteraction,
+            "export" => PropertyGridCategoryExport,
+            _ => PropertyGridCategoryAdvanced
+        };
+    }
+
+    private static double ParsePropertyGridNumber(string value, double fallback)
+    {
+        if (double.TryParse(value, NumberStyles.Any, CultureInfo.InvariantCulture, out var invariant)
+            || double.TryParse(value, NumberStyles.Any, CultureInfo.CurrentCulture, out invariant))
+        {
+            return invariant;
+        }
+
+        return fallback;
+    }
+
+    private PropertyGridRowViewModel CreateTextRow(string category, string key, string label, string value, string description, Action<string> apply, bool isAdvanced = false)
+    {
+        return CreateRow(category, key, label, PropertyGridEditorKind.Text, value, description, (_, newValue) => apply(newValue), null, isAdvanced);
+    }
+
+    private PropertyGridRowViewModel CreateNumberRow(string category, string key, string label, double value, string description, Action<double> apply, bool isAdvanced = false)
+    {
+        return CreateRow(category, key, label, PropertyGridEditorKind.Number, value.ToString(CultureInfo.InvariantCulture), description, (row, newValue) =>
+        {
+            if (double.TryParse(newValue, NumberStyles.Any, CultureInfo.InvariantCulture, out var invariant)
+                || double.TryParse(newValue, NumberStyles.Any, CultureInfo.CurrentCulture, out invariant))
+            {
+                row.ValidationMessage = "";
+                apply(invariant);
+                return;
+            }
+
+            row.ValidationMessage = "Invalid number";
+        }, null, isAdvanced);
+    }
+
+    private PropertyGridRowViewModel CreateBoolRow(string category, string key, string label, bool value, string description, Action<bool> apply, bool isAdvanced = false)
+    {
+        return CreateRow(category, key, label, PropertyGridEditorKind.Bool, value ? "True" : "False", description, null, (_, boolValue) => apply(boolValue), isAdvanced, boolValue: value);
+    }
+
+    private PropertyGridRowViewModel CreateEnumRow(string category, string key, string label, string value, IEnumerable<string> options, string description, Action<string> apply, bool isAdvanced = false)
+    {
+        var row = CreateRow(category, key, label, PropertyGridEditorKind.Enum, value, description, (_, newValue) => apply(newValue), null, isAdvanced);
+        row.SetOptions(options.Select(option => new PropertyGridOptionViewModel(option, option)));
+        return row;
+    }
+
+    private PropertyGridRowViewModel CreateColorRow(string category, string key, string label, string value, string description, Action<string> apply, bool isAdvanced = false)
+    {
+        return CreateRow(category, key, label, PropertyGridEditorKind.Color, value, description, (_, newValue) => apply(newValue), null, isAdvanced);
+    }
+
+    private PropertyGridRowViewModel CreateReadOnlyRow(string category, string key, string label, string value, string description)
+    {
+        return CreateRow(category, key, label, PropertyGridEditorKind.ReadOnly, value, description, null, null, isReadOnly: true);
+    }
+
+    private PropertyGridRowViewModel CreateActionRow(string category, string key, string label, string value, string description, string actionText)
+    {
+        return CreateRow(category, key, label, PropertyGridEditorKind.Action, value, description, null, null, actionText: actionText);
+    }
+
+    private PropertyGridRowViewModel CreateBindingSourceRow(DesignControlModel control)
+    {
+        var row = CreateRow(PropertyGridCategoryData, nameof(DesignControlModel.BindingSourceId), "BindingSource", PropertyGridEditorKind.BindingSource, control.BindingSourceId, "BindingSource used by this DataGrid.", (_, value) =>
+        {
+            control.BindingSourceId = value;
+            RaiseBindingEditorProperties();
+        }, null, isAdvanced: false);
+        row.SetOptions(new[] { new PropertyGridOptionViewModel("", "(none)") }
+            .Concat(BindingSources.Select(source => new PropertyGridOptionViewModel(source.Id, source.Name))));
+        return row;
+    }
+
+    private PropertyGridRowViewModel CreateRow(
+        string category,
+        string key,
+        string label,
+        PropertyGridEditorKind editor,
+        string value,
+        string description,
+        Action<PropertyGridRowViewModel, string>? applyValue,
+        Action<PropertyGridRowViewModel, bool>? applyBool,
+        bool isAdvanced = false,
+        bool isReadOnly = false,
+        bool boolValue = false,
+        string actionText = "Edit...")
+    {
+        return new PropertyGridRowViewModel(
+            key,
+            label,
+            category,
+            editor,
+            value,
+            description,
+            (row, newValue) =>
+            {
+                applyValue?.Invoke(row, newValue);
+                if (row.HasValidationError)
+                    return;
+
+                RefreshFromPropertyGridEdit();
+            },
+            (row, newValue) =>
+            {
+                applyBool?.Invoke(row, newValue);
+                RefreshFromPropertyGridEdit();
+            },
+            boolValue,
+            IsPropertyGridFavorite(key),
+            isAdvanced,
+            isReadOnly,
+            actionText);
+    }
+
+    private void RefreshFromPropertyGridEdit()
+    {
+        RefreshDescriptorCustomPropertyEditors();
+        RaiseSelectionProperties();
+        RaiseBindingEditorProperties();
+        RaiseGenerationOptionsProperties();
+        RebuildPropertyGrid();
     }
 
     public void AddOrUpdateRecentFile(string? filePath)
@@ -10603,6 +11113,7 @@ public partial class MainWindowViewModel : ObservableObject
         if (sender == SelectedControl)
         {
             RefreshDescriptorCustomPropertyEditors();
+            RebuildPropertyGrid();
             OnPropertyChanged(nameof(SelectedControlSummary));
             OnPropertyChanged(nameof(SelectedLockStateSummary));
             OnPropertyChanged(nameof(CanEditText));
@@ -10692,6 +11203,7 @@ public partial class MainWindowViewModel : ObservableObject
         RaiseBindingEditorProperties();
         RaiseInteractionDesignerProperties();
         RaiseInteractionLookupProperties();
+        RebuildPropertyGrid();
         NotifyDesignerStateChanged();
     }
 
@@ -10717,6 +11229,7 @@ public partial class MainWindowViewModel : ObservableObject
         RaiseBindingEditorProperties();
         RaiseInteractionDesignerProperties();
         RaiseInteractionLookupProperties();
+        RebuildPropertyGrid();
         OnPropertyChanged(nameof(HasSelectedBindingSourceImportMetadata));
         OnPropertyChanged(nameof(SelectedBindingSourceImportSummary));
         NotifyDesignerStateChanged();
@@ -10739,6 +11252,7 @@ public partial class MainWindowViewModel : ObservableObject
         RaiseBindingEditorProperties();
         RaiseInteractionDesignerProperties();
         RaiseInteractionLookupProperties();
+        RebuildPropertyGrid();
         NotifyDesignerStateChanged();
     }
 
@@ -10748,6 +11262,7 @@ public partial class MainWindowViewModel : ObservableObject
         RaiseInteractionDesignerProperties();
         if (e.PropertyName is nameof(BindingFieldModel.Path))
             RaiseInteractionLookupProperties();
+        RebuildPropertyGrid();
         NotifyDesignerStateChanged();
     }
 
@@ -10766,12 +11281,14 @@ public partial class MainWindowViewModel : ObservableObject
         }
 
         RaiseInteractionDesignerProperties();
+        RebuildPropertyGrid();
         NotifyDesignerStateChanged();
     }
 
     private void Interaction_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         RaiseInteractionDesignerProperties();
+        RebuildPropertyGrid();
         NotifyDesignerStateChanged();
     }
 
@@ -10792,6 +11309,7 @@ public partial class MainWindowViewModel : ObservableObject
         }
 
         RebuildDescriptorCustomPropertyEditors();
+        RebuildPropertyGrid();
         OnPropertyChanged(nameof(HasSelectedControl));
         OnPropertyChanged(nameof(CanEditText));
         OnPropertyChanged(nameof(SelectedTextLabel));
@@ -11287,6 +11805,7 @@ public partial class MainWindowViewModel : ObservableObject
         }
 
         RaiseGenerationOptionsProperties();
+        RebuildPropertyGrid();
         MarkExportCacheStale();
         RefreshDiagnostics();
     }
@@ -11301,6 +11820,7 @@ public partial class MainWindowViewModel : ObservableObject
         }
 
         RaiseGenerationOptionsProperties();
+        RebuildPropertyGrid();
         MarkExportCacheStale();
         RefreshDiagnostics();
     }

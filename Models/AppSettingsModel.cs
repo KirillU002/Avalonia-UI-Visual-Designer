@@ -10,6 +10,10 @@ public class AppSettingsModel
 
     public List<RecentFileModel> RecentFiles { get; set; } = new();
 
+    public List<string> PropertyGridFavorites { get; set; } = new();
+
+    public List<string> PropertyGridCollapsedCategories { get; set; } = new();
+
     public SessionStateModel Session { get; set; } = new();
 
     public ExportCacheModel ExportCache { get; set; } = new();
