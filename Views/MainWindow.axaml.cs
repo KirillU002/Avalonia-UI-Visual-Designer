@@ -5806,6 +5806,7 @@ public partial class MainWindow : Window
         _draggedModel = model;
         _dragStartPointerPosition = GetDesignCanvasPosition(e);
         VM.BeginUndoBatch();
+        VM.BeginPropertyGridLiveGesture();
 
         e.Pointer.Capture(border);
         e.Handled = true;
@@ -5882,6 +5883,7 @@ public partial class MainWindow : Window
             _draggedModel = null;
             _dragSelectionRoots.Clear();
             _dragRootStartPositions.Clear();
+            VM.EndPropertyGridLiveGesture();
 
             Dispatcher.UIThread.Post(() =>
             {
@@ -5923,6 +5925,7 @@ public partial class MainWindow : Window
         _draggedModel = null;
         _dragSelectionRoots.Clear();
         _dragRootStartPositions.Clear();
+        VM.EndPropertyGridLiveGesture();
         VM.CommitUndoBatch();
         RenderDesigner();
     }
@@ -5945,6 +5948,7 @@ public partial class MainWindow : Window
         _startWidth = model.Width;
         _startHeight = model.Height;
         VM.BeginUndoBatch();
+        VM.BeginPropertyGridLiveGesture();
 
         e.Pointer.Capture(border);
         e.Handled = true;
@@ -5998,6 +6002,7 @@ public partial class MainWindow : Window
         _resizingModel = null;
         e.Pointer.Capture(null);
         ClearGuideOverlay();
+        VM.EndPropertyGridLiveGesture();
         VM.CommitUndoBatch();
         RenderDesigner();
     }

@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Avalonia.Threading;
 using FormDesigner.DesignerSystem.BuiltIn;
 using FormDesigner.DesignerSystem.Infrastructure;
 using FormDesigner.Models;
@@ -134,6 +135,11 @@ public partial class MainWindowViewModel : ObservableObject
     private string _previewScreenName = "Текущий монитор";
     private int _templateInsertionOffset;
     private readonly PropertyGridUserSettings _propertyGridUserSettings = new();
+    private readonly DispatcherTimer _propertyGridLiveRefreshTimer;
+    private static readonly TimeSpan PropertyGridLiveRefreshInterval = TimeSpan.FromMilliseconds(66);
+    private DateTime _lastPropertyGridLiveRefreshUtc = DateTime.MinValue;
+    private bool _isPropertyGridLiveGesture;
+    private bool _hasPendingPropertyGridLiveRefresh;
     private int _propertyGridSettingsVersion;
 
     // Toolbox теперь строится из registry дескрипторов, а не из зашитого списка.
@@ -1379,6 +1385,11 @@ public partial class MainWindowViewModel : ObservableObject
     {
         _registry = registry ?? throw new ArgumentNullException(nameof(registry));
         _diagnosticsService = new DocumentDiagnosticsService(_registry);
+        _propertyGridLiveRefreshTimer = new DispatcherTimer
+        {
+            Interval = PropertyGridLiveRefreshInterval
+        };
+        _propertyGridLiveRefreshTimer.Tick += PropertyGridLiveRefreshTimer_Tick;
         Controls.CollectionChanged += Controls_CollectionChanged;
         BindingSources.CollectionChanged += BindingSources_CollectionChanged;
         Interactions.CollectionChanged += Interactions_CollectionChanged;
@@ -3840,6 +3851,96 @@ public partial class MainWindowViewModel : ObservableObject
     {
         _propertyGridSettingsVersion++;
         OnPropertyChanged(nameof(PropertyGridSettingsVersion));
+    }
+
+    public void BeginPropertyGridLiveGesture()
+    {
+        _isPropertyGridLiveGesture = true;
+        _hasPendingPropertyGridLiveRefresh = false;
+        _propertyGridLiveRefreshTimer.Stop();
+        _lastPropertyGridLiveRefreshUtc = DateTime.MinValue;
+        RefreshLivePropertyGridLayoutRows();
+    }
+
+    public void RequestPropertyGridLiveGestureRefresh()
+    {
+        if (!_isPropertyGridLiveGesture)
+            return;
+
+        var now = DateTime.UtcNow;
+        if (now - _lastPropertyGridLiveRefreshUtc >= PropertyGridLiveRefreshInterval)
+        {
+            _propertyGridLiveRefreshTimer.Stop();
+            _hasPendingPropertyGridLiveRefresh = false;
+            RefreshLivePropertyGridLayoutRows(now);
+            return;
+        }
+
+        _hasPendingPropertyGridLiveRefresh = true;
+        if (!_propertyGridLiveRefreshTimer.IsEnabled)
+        {
+            var remaining = PropertyGridLiveRefreshInterval - (now - _lastPropertyGridLiveRefreshUtc);
+            _propertyGridLiveRefreshTimer.Interval = remaining <= TimeSpan.Zero ? PropertyGridLiveRefreshInterval : remaining;
+            _propertyGridLiveRefreshTimer.Start();
+        }
+    }
+
+    public void EndPropertyGridLiveGesture()
+    {
+        _isPropertyGridLiveGesture = false;
+        _hasPendingPropertyGridLiveRefresh = false;
+        _propertyGridLiveRefreshTimer.Stop();
+        _propertyGridLiveRefreshTimer.Interval = PropertyGridLiveRefreshInterval;
+        RefreshLivePropertyGridLayoutRows(DateTime.UtcNow);
+    }
+
+    private void PropertyGridLiveRefreshTimer_Tick(object? sender, EventArgs e)
+    {
+        _propertyGridLiveRefreshTimer.Stop();
+        _propertyGridLiveRefreshTimer.Interval = PropertyGridLiveRefreshInterval;
+        if (!_hasPendingPropertyGridLiveRefresh)
+            return;
+
+        _hasPendingPropertyGridLiveRefresh = false;
+        RefreshLivePropertyGridLayoutRows(DateTime.UtcNow);
+    }
+
+    private static bool IsLiveLayoutProperty(string? propertyName)
+    {
+        return propertyName is nameof(DesignControlModel.X)
+            or nameof(DesignControlModel.Y)
+            or nameof(DesignControlModel.Width)
+            or nameof(DesignControlModel.Height);
+    }
+
+    private void RefreshLivePropertyGridLayoutRows(DateTime? refreshedUtc = null)
+    {
+        var control = SelectedControl;
+        if (control is null)
+            return;
+
+        TryRefreshPropertyGridRow(nameof(DesignControlModel.X), control.X.ToString(CultureInfo.InvariantCulture));
+        TryRefreshPropertyGridRow(nameof(DesignControlModel.Y), control.Y.ToString(CultureInfo.InvariantCulture));
+        TryRefreshPropertyGridRow(nameof(DesignControlModel.Width), control.Width.ToString(CultureInfo.InvariantCulture));
+        TryRefreshPropertyGridRow(nameof(DesignControlModel.Height), control.Height.ToString(CultureInfo.InvariantCulture));
+        OnPropertyChanged(nameof(PropertyGridSelectionMetrics));
+        OnPropertyChanged(nameof(SelectedControlSummary));
+        _lastPropertyGridLiveRefreshUtc = refreshedUtc ?? DateTime.UtcNow;
+    }
+
+    private bool TryRefreshPropertyGridRow(string key, string value, bool boolValue = false)
+    {
+        foreach (var category in PropertyGridCategories)
+        {
+            var row = category.Rows.FirstOrDefault(item => string.Equals(item.Key, key, StringComparison.OrdinalIgnoreCase));
+            if (row is null)
+                continue;
+
+            row.Refresh(value, boolValue, row.IsFavorite);
+            return true;
+        }
+
+        return false;
     }
 
     private void RebuildPropertyGrid()
@@ -11295,46 +11396,53 @@ public partial class MainWindowViewModel : ObservableObject
     {
         if (sender == SelectedControl)
         {
-            RefreshDescriptorCustomPropertyEditors();
-            RebuildPropertyGrid();
-            OnPropertyChanged(nameof(SelectedControlSummary));
-            OnPropertyChanged(nameof(SelectedLockStateSummary));
-            OnPropertyChanged(nameof(CanEditText));
-            OnPropertyChanged(nameof(SelectedTextLabel));
-            OnPropertyChanged(nameof(CanEditPlaceholder));
-            OnPropertyChanged(nameof(CanEditImageSource));
-            OnPropertyChanged(nameof(CanEditStretch));
-            OnPropertyChanged(nameof(CanEditBackground));
-            OnPropertyChanged(nameof(CanEditCommonBackground));
-            OnPropertyChanged(nameof(CanEditForeground));
-            OnPropertyChanged(nameof(CanEditCommonForeground));
-            OnPropertyChanged(nameof(CanEditBorder));
-            OnPropertyChanged(nameof(CanEditCommonBorder));
-            OnPropertyChanged(nameof(CanEditCommonFont));
-            OnPropertyChanged(nameof(CanEditClassicBindingEditor));
-            OnPropertyChanged(nameof(CanEditDataGridBasic));
-            OnPropertyChanged(nameof(CanEditDataGridRowBackground));
-            OnPropertyChanged(nameof(CanEditDataGridAlternateRowBackground));
-            OnPropertyChanged(nameof(CanEditDataGridAdvancedVisuals));
-            OnPropertyChanged(nameof(CanEditDataGridTextAlignment));
-            OnPropertyChanged(nameof(CanEditDataGridGlowColor));
-            OnPropertyChanged(nameof(CanEditCornerRadius));
-            OnPropertyChanged(nameof(CanEditFont));
-            OnPropertyChanged(nameof(SelectedBackgroundLabel));
-            OnPropertyChanged(nameof(CanEditPadding));
-            OnPropertyChanged(nameof(CanEditGridLayout));
-            OnPropertyChanged(nameof(CanEditDataBinding));
-            OnPropertyChanged(nameof(CanEditFieldBinding));
-            OnPropertyChanged(nameof(CanEditSelectedLayoutFlow));
-            OnPropertyChanged(nameof(CanEditSelectedLayoutGrid));
-            OnPropertyChanged(nameof(CanEditSelectedAbsolutePosition));
-            OnPropertyChanged(nameof(CanEditSelectedAnchors));
-            OnPropertyChanged(nameof(IsSelectedControlManagedByLayout));
-            OnPropertyChanged(nameof(SelectedControlLayoutHint));
-            OnPropertyChanged(nameof(CanSelectedControlHostChildren));
-            OnPropertyChanged(nameof(HasDescriptorCustomProperties));
-            RaiseBindingEditorProperties();
-            RaiseInteractionDesignerProperties();
+            if (_isPropertyGridLiveGesture && IsLiveLayoutProperty(e.PropertyName))
+            {
+                RequestPropertyGridLiveGestureRefresh();
+            }
+            else
+            {
+                RefreshDescriptorCustomPropertyEditors();
+                RebuildPropertyGrid();
+                OnPropertyChanged(nameof(SelectedControlSummary));
+                OnPropertyChanged(nameof(SelectedLockStateSummary));
+                OnPropertyChanged(nameof(CanEditText));
+                OnPropertyChanged(nameof(SelectedTextLabel));
+                OnPropertyChanged(nameof(CanEditPlaceholder));
+                OnPropertyChanged(nameof(CanEditImageSource));
+                OnPropertyChanged(nameof(CanEditStretch));
+                OnPropertyChanged(nameof(CanEditBackground));
+                OnPropertyChanged(nameof(CanEditCommonBackground));
+                OnPropertyChanged(nameof(CanEditForeground));
+                OnPropertyChanged(nameof(CanEditCommonForeground));
+                OnPropertyChanged(nameof(CanEditBorder));
+                OnPropertyChanged(nameof(CanEditCommonBorder));
+                OnPropertyChanged(nameof(CanEditCommonFont));
+                OnPropertyChanged(nameof(CanEditClassicBindingEditor));
+                OnPropertyChanged(nameof(CanEditDataGridBasic));
+                OnPropertyChanged(nameof(CanEditDataGridRowBackground));
+                OnPropertyChanged(nameof(CanEditDataGridAlternateRowBackground));
+                OnPropertyChanged(nameof(CanEditDataGridAdvancedVisuals));
+                OnPropertyChanged(nameof(CanEditDataGridTextAlignment));
+                OnPropertyChanged(nameof(CanEditDataGridGlowColor));
+                OnPropertyChanged(nameof(CanEditCornerRadius));
+                OnPropertyChanged(nameof(CanEditFont));
+                OnPropertyChanged(nameof(SelectedBackgroundLabel));
+                OnPropertyChanged(nameof(CanEditPadding));
+                OnPropertyChanged(nameof(CanEditGridLayout));
+                OnPropertyChanged(nameof(CanEditDataBinding));
+                OnPropertyChanged(nameof(CanEditFieldBinding));
+                OnPropertyChanged(nameof(CanEditSelectedLayoutFlow));
+                OnPropertyChanged(nameof(CanEditSelectedLayoutGrid));
+                OnPropertyChanged(nameof(CanEditSelectedAbsolutePosition));
+                OnPropertyChanged(nameof(CanEditSelectedAnchors));
+                OnPropertyChanged(nameof(IsSelectedControlManagedByLayout));
+                OnPropertyChanged(nameof(SelectedControlLayoutHint));
+                OnPropertyChanged(nameof(CanSelectedControlHostChildren));
+                OnPropertyChanged(nameof(HasDescriptorCustomProperties));
+                RaiseBindingEditorProperties();
+                RaiseInteractionDesignerProperties();
+            }
         }
 
         if (e.PropertyName is nameof(DesignControlModel.Name) or nameof(DesignControlModel.Type))
