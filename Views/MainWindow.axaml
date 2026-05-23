@@ -117,16 +117,16 @@
     </Style>
 
     <Style Selector="Button.property-star">
-      <Setter Property="Width" Value="22"/>
+      <Setter Property="Width" Value="18"/>
       <Setter Property="Height" Value="22"/>
-      <Setter Property="MinWidth" Value="22"/>
+      <Setter Property="MinWidth" Value="18"/>
       <Setter Property="MinHeight" Value="22"/>
       <Setter Property="Padding" Value="0"/>
       <Setter Property="Background" Value="Transparent"/>
       <Setter Property="Foreground" Value="#94A3B8"/>
       <Setter Property="BorderThickness" Value="0"/>
-      <Setter Property="CornerRadius" Value="4"/>
-      <Setter Property="FontSize" Value="12"/>
+      <Setter Property="CornerRadius" Value="3"/>
+      <Setter Property="FontSize" Value="11"/>
       <Setter Property="HorizontalContentAlignment" Value="Center"/>
       <Setter Property="VerticalContentAlignment" Value="Center"/>
     </Style>
@@ -137,9 +137,9 @@
     </Style>
 
     <Style Selector="Button.property-action">
-      <Setter Property="MinHeight" Value="26"/>
-      <Setter Property="Padding" Value="8,3"/>
-      <Setter Property="CornerRadius" Value="5"/>
+      <Setter Property="MinHeight" Value="24"/>
+      <Setter Property="Padding" Value="7,2"/>
+      <Setter Property="CornerRadius" Value="3"/>
       <Setter Property="Background" Value="#EFF6FF"/>
       <Setter Property="BorderBrush" Value="#BFDBFE"/>
       <Setter Property="Foreground" Value="#1D4ED8"/>
@@ -152,35 +152,74 @@
     </Style>
 
     <Style Selector="TextBox.property-editor">
-      <Setter Property="MinHeight" Value="26"/>
-      <Setter Property="Padding" Value="7,3"/>
-      <Setter Property="CornerRadius" Value="5"/>
+      <Setter Property="MinHeight" Value="24"/>
+      <Setter Property="Padding" Value="6,2"/>
+      <Setter Property="CornerRadius" Value="3"/>
       <Setter Property="FontSize" Value="12"/>
     </Style>
 
     <Style Selector="ComboBox.property-editor">
-      <Setter Property="MinHeight" Value="26"/>
-      <Setter Property="Padding" Value="7,3"/>
-      <Setter Property="CornerRadius" Value="5"/>
+      <Setter Property="MinHeight" Value="24"/>
+      <Setter Property="Padding" Value="6,2"/>
+      <Setter Property="CornerRadius" Value="3"/>
       <Setter Property="FontSize" Value="12"/>
     </Style>
 
     <Style Selector="Button.property-header-action">
-      <Setter Property="MinHeight" Value="26"/>
-      <Setter Property="MinWidth" Value="26"/>
-      <Setter Property="Padding" Value="7,3"/>
+      <Setter Property="MinHeight" Value="23"/>
+      <Setter Property="MinWidth" Value="23"/>
+      <Setter Property="Padding" Value="6,2"/>
       <Setter Property="Background" Value="#F8FAFC"/>
       <Setter Property="Foreground" Value="#334155"/>
       <Setter Property="BorderBrush" Value="#CBD5E1"/>
       <Setter Property="BorderThickness" Value="1"/>
-      <Setter Property="CornerRadius" Value="6"/>
-      <Setter Property="FontSize" Value="11"/>
+      <Setter Property="CornerRadius" Value="4"/>
+      <Setter Property="FontSize" Value="10"/>
       <Setter Property="FontWeight" Value="SemiBold"/>
     </Style>
 
     <Style Selector="Button.property-header-action:pointerover">
       <Setter Property="Background" Value="#EFF6FF"/>
       <Setter Property="BorderBrush" Value="#60A5FA"/>
+    </Style>
+
+    <Style Selector="ToggleButton.property-category-header">
+      <Setter Property="MinHeight" Value="24"/>
+      <Setter Property="Padding" Value="4,3"/>
+      <Setter Property="Background" Value="#F8FAFC"/>
+      <Setter Property="Foreground" Value="#0F172A"/>
+      <Setter Property="BorderBrush" Value="#E2E8F0"/>
+      <Setter Property="BorderThickness" Value="0,1,0,1"/>
+      <Setter Property="CornerRadius" Value="0"/>
+      <Setter Property="FontSize" Value="11"/>
+      <Setter Property="FontWeight" Value="Bold"/>
+      <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+      <Setter Property="VerticalContentAlignment" Value="Center"/>
+    </Style>
+
+    <Style Selector="ToggleButton.property-category-header:pointerover">
+      <Setter Property="Background" Value="#EFF6FF"/>
+      <Setter Property="BorderBrush" Value="#BFDBFE"/>
+    </Style>
+
+    <Style Selector="ToggleButton.property-category-header:checked">
+      <Setter Property="Background" Value="#F8FAFC"/>
+      <Setter Property="Foreground" Value="#0F172A"/>
+      <Setter Property="BorderBrush" Value="#E2E8F0"/>
+    </Style>
+
+    <Style Selector="Border.property-grid-table">
+      <Setter Property="Background" Value="#FFFFFF"/>
+      <Setter Property="BorderBrush" Value="#CBD5E1"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="4"/>
+    </Style>
+
+    <Style Selector="Border.property-row">
+      <Setter Property="Background" Value="#FFFFFF"/>
+      <Setter Property="BorderBrush" Value="#E5E7EB"/>
+      <Setter Property="BorderThickness" Value="0,0,0,1"/>
+      <Setter Property="Padding" Value="3,1"/>
     </Style>
 
     <Style Selector="Button.header-action">
@@ -1659,26 +1698,22 @@
           <Border Background="#EEF4FB"
                   BorderBrush="#D7E2EE"
                   BorderThickness="0,0,0,1"
-                  Padding="10,8">
+                  Padding="8,6">
             <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto"
-                  ColumnSpacing="6">
-              <StackPanel Spacing="2"
+                  ColumnSpacing="4">
+              <StackPanel Spacing="1"
                           VerticalAlignment="Center">
                 <TextBlock Text="{Binding PropertyGridSelectionTitle}"
                            FontWeight="Bold"
                            FontSize="13"
                            TextTrimming="CharacterEllipsis"/>
-                <TextBlock Text="{Binding PropertyGridSelectionSubtitle}"
+                <TextBlock Text="{Binding PropertyGridSelectionMetrics}"
                            Foreground="#64748B"
                            FontSize="11"
                            TextTrimming="CharacterEllipsis"/>
-                <TextBlock Text="{Binding PropertyGridSelectionMetrics}"
-                           Foreground="#94A3B8"
-                           FontSize="10"
-                           TextTrimming="CharacterEllipsis"/>
               </StackPanel>
               <Button Grid.Column="1"
-                      Content="Reset"
+                      Content="Reset view"
                       Classes="property-header-action"
                       Command="{Binding ResetPropertyGridViewCommand}"
                       ToolTip.Tip="Reset property view for this control type"/>
@@ -1688,7 +1723,7 @@
                       Command="{Binding ExpandBasicPropertyGridCategoriesCommand}"
                       ToolTip.Tip="Expand common property groups"/>
               <Button Grid.Column="3"
-                      Content="Fold"
+                      Content="Collapse"
                       Classes="property-header-action"
                       Command="{Binding CollapseAllPropertyGridCategoriesCommand}"
                       ToolTip.Tip="Collapse all property groups"/>
@@ -1756,27 +1791,40 @@
                                TextWrapping="Wrap"/>
                   </Border>
 
-                  <ItemsControl ItemsSource="{Binding PropertyGridCategories}">
+                  <Border Classes="property-grid-table"
+                          IsVisible="{Binding HasPropertyGridRows}">
+                    <ItemsControl ItemsSource="{Binding PropertyGridCategories}">
                     <ItemsControl.ItemTemplate>
                       <DataTemplate x:DataType="vm:PropertyGridCategoryViewModel">
-                        <Border Background="Transparent"
-                                BorderBrush="Transparent"
-                                BorderThickness="0"
-                                CornerRadius="0"
-                                Margin="0,0,0,4">
-                          <Expander Header="{Binding HeaderText}"
-                                    IsExpanded="{Binding IsExpanded, Mode=TwoWay}"
-                                    Padding="0">
-                            <ItemsControl ItemsSource="{Binding Rows}">
+                        <StackPanel>
+                          <ToggleButton Classes="property-category-header"
+                                        IsChecked="{Binding IsExpanded, Mode=TwoWay}">
+                            <Grid ColumnDefinitions="14,*,Auto"
+                                  ColumnSpacing="4">
+                              <TextBlock Text="{Binding ExpandGlyph}"
+                                         FontSize="10"
+                                         HorizontalAlignment="Center"
+                                         VerticalAlignment="Center"/>
+                              <TextBlock Grid.Column="1"
+                                         Text="{Binding HeaderText}"
+                                         VerticalAlignment="Center"
+                                         TextTrimming="CharacterEllipsis"/>
+                              <TextBlock Grid.Column="2"
+                                         Text="{Binding Count}"
+                                         Foreground="#64748B"
+                                         FontWeight="Normal"
+                                         VerticalAlignment="Center"/>
+                            </Grid>
+                          </ToggleButton>
+
+                          <ItemsControl ItemsSource="{Binding Rows}"
+                                        IsVisible="{Binding IsExpanded}">
                               <ItemsControl.ItemTemplate>
                                 <DataTemplate x:DataType="vm:PropertyGridRowViewModel">
-                                  <Border BorderBrush="#EEF2F7"
-                                          BorderThickness="0,1,0,0"
-                                          Padding="2,3"
+                                  <Border Classes="property-row"
                                           ToolTip.Tip="{Binding Description}">
-                                    <Grid ColumnDefinitions="22,104,*,Auto"
-                                          ColumnSpacing="5"
-                                          MinHeight="26">
+                                    <Grid ColumnDefinitions="18,112,*,Auto"
+                                          MinHeight="28">
                                       <Button Classes="property-star"
                                               Content="{Binding FavoriteGlyph}"
                                               Command="{Binding #RootWindow.DataContext.TogglePropertyGridFavoriteCommand}"
@@ -1790,8 +1838,11 @@
                                                  VerticalAlignment="Center"
                                                  TextTrimming="CharacterEllipsis"/>
 
-                                      <Grid Grid.Column="2"
-                                            MinWidth="116">
+                                      <Border Grid.Column="2"
+                                              BorderBrush="#E5E7EB"
+                                              BorderThickness="1,0,0,0"
+                                              Padding="6,1,0,1">
+                                        <Grid MinWidth="116">
                                         <TextBox Classes="property-editor"
                                                  Text="{Binding Value, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                                  IsVisible="{Binding IsTextEditor}"
@@ -1821,7 +1872,7 @@
 
                                         <Grid IsVisible="{Binding IsColorEditor}"
                                               ColumnDefinitions="*,Auto"
-                                              ColumnSpacing="6">
+                                              ColumnSpacing="4">
                                           <TextBox Classes="property-editor"
                                                    Text="{Binding Value, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                                    LostFocus="PropertyGridTextBox_LostFocus"
@@ -1836,7 +1887,7 @@
                                         <Button Classes="property-action"
                                                 Content="{Binding ActionText}"
                                                 IsVisible="{Binding IsActionEditor}"
-                                                HorizontalAlignment="Left"
+                                                HorizontalAlignment="Stretch"
                                                 Click="PropertyGridActionButton_Click"/>
 
                                         <TextBlock Text="{Binding Value}"
@@ -1845,7 +1896,8 @@
                                                    FontSize="12"
                                                    VerticalAlignment="Center"
                                                    TextTrimming="CharacterEllipsis"/>
-                                      </Grid>
+                                        </Grid>
+                                      </Border>
 
                                       <TextBlock Grid.Column="3"
                                                  Text="!"
@@ -1859,11 +1911,11 @@
                                 </DataTemplate>
                               </ItemsControl.ItemTemplate>
                             </ItemsControl>
-                          </Expander>
-                        </Border>
+                        </StackPanel>
                       </DataTemplate>
                     </ItemsControl.ItemTemplate>
-                  </ItemsControl>
+                    </ItemsControl>
+                  </Border>
                 </StackPanel>
               </ScrollViewer>
 

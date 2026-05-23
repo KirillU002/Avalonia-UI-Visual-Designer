@@ -3581,6 +3581,7 @@ public partial class MainWindowViewModel : ObservableObject
             MigrateLegacyPropertyGridCollapsedCategories(legacyCollapsedCategories);
         }
 
+        RemoveLegacyAutoFavorites();
         RebuildPropertyGrid();
     }
 
@@ -3637,8 +3638,51 @@ public partial class MainWindowViewModel : ObservableObject
 
             var typeKey = favorite[..dotIndex];
             var propertyKey = favorite[(dotIndex + 1)..];
+            if (typeKey == "*" || IsLegacyDefaultPropertyGridFavorite(typeKey, propertyKey))
+                continue;
+
             GetPropertyGridFavoriteSet(typeKey, create: true).Add(propertyKey);
             _propertyGridUserSettings.UserCustomizedTypeKeys.Add(typeKey);
+        }
+    }
+
+    private static bool IsLegacyDefaultPropertyGridFavorite(string typeKey, string propertyKey)
+    {
+        if (string.Equals(typeKey, DesignerControlTypes.DataGrid, StringComparison.OrdinalIgnoreCase))
+        {
+            return propertyKey is nameof(DesignControlModel.BindingSourceId)
+                or "Columns"
+                or nameof(DesignControlModel.AutoGenerateColumns)
+                or nameof(DesignControlModel.AllowGrouping)
+                or nameof(DesignControlModel.ShowFilterRow)
+                or nameof(DesignControlModel.ShowGroupPanel);
+        }
+
+        return false;
+    }
+
+    private void RemoveLegacyAutoFavorites()
+    {
+        _propertyGridUserSettings.FavoritePropertiesByTypeKey.Remove("*");
+        _propertyGridUserSettings.UserCustomizedTypeKeys.Remove("*");
+
+        foreach (var pair in _propertyGridUserSettings.FavoritePropertiesByTypeKey.ToList())
+        {
+            var removedAutoFavorite = false;
+            foreach (var propertyKey in pair.Value.ToList())
+            {
+                if (!IsLegacyDefaultPropertyGridFavorite(pair.Key, propertyKey))
+                    continue;
+
+                pair.Value.Remove(propertyKey);
+                removedAutoFavorite = true;
+            }
+
+            if (removedAutoFavorite && pair.Value.Count == 0)
+            {
+                _propertyGridUserSettings.FavoritePropertiesByTypeKey.Remove(pair.Key);
+                _propertyGridUserSettings.UserCustomizedTypeKeys.Remove(pair.Key);
+            }
         }
     }
 
@@ -3676,44 +3720,11 @@ public partial class MainWindowViewModel : ObservableObject
         return set;
     }
 
-    private HashSet<string> GetEffectivePropertyGridFavorites(string typeKey)
-    {
-        var normalizedType = NormalizePropertyGridTypeKey(typeKey);
-        if (_propertyGridUserSettings.UserCustomizedTypeKeys.Contains(normalizedType))
-            return GetPropertyGridFavoriteSet(normalizedType, create: false).ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        return GetDefaultPropertyGridFavorites(normalizedType);
-    }
-
-    private static HashSet<string> GetDefaultPropertyGridFavorites(string typeKey)
-    {
-        var favorites = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            nameof(DesignControlModel.Name),
-            nameof(DesignControlModel.Text),
-            nameof(DesignControlModel.X),
-            nameof(DesignControlModel.Y),
-            nameof(DesignControlModel.Width),
-            nameof(DesignControlModel.Height),
-            nameof(DesignControlModel.IsVisible),
-            nameof(DesignControlModel.IsLocked)
-        };
-
-        if (string.Equals(NormalizePropertyGridTypeKey(typeKey), DesignerControlTypes.DataGrid, StringComparison.OrdinalIgnoreCase))
-        {
-            favorites.Add(nameof(DesignControlModel.BindingSourceId));
-            favorites.Add("Columns");
-            favorites.Add(nameof(DesignControlModel.AutoGenerateColumns));
-            favorites.Add(nameof(DesignControlModel.AllowGrouping));
-            favorites.Add(nameof(DesignControlModel.ShowFilterRow));
-        }
-
-        return favorites;
-    }
-
     private bool IsPropertyGridFavorite(string propertyKey)
     {
-        return GetEffectivePropertyGridFavorites(CurrentPropertyGridTypeKey).Contains(propertyKey);
+        var typeKey = CurrentPropertyGridTypeKey;
+        return _propertyGridUserSettings.UserCustomizedTypeKeys.Contains(typeKey)
+            && GetPropertyGridFavoriteSet(typeKey, create: false).Contains(propertyKey);
     }
 
     [RelayCommand]
@@ -3725,7 +3736,7 @@ public partial class MainWindowViewModel : ObservableObject
         var typeKey = CurrentPropertyGridTypeKey;
         var favorites = _propertyGridUserSettings.UserCustomizedTypeKeys.Contains(typeKey)
             ? GetPropertyGridFavoriteSet(typeKey, create: true)
-            : GetDefaultPropertyGridFavorites(typeKey);
+            : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         if (favorites.Contains(row.Key))
             favorites.Remove(row.Key);

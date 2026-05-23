@@ -29,7 +29,9 @@ public sealed class PropertyGridCategoryViewModel : ObservableObject
 
     public int Count => Rows.Count;
 
-    public string HeaderText => $"{Title} ({Count})";
+    public string HeaderText => Title;
+
+    public string ExpandGlyph => IsExpanded ? "\u25BE" : "\u25B8";
 
     public bool IsExpanded
     {
@@ -39,6 +41,7 @@ public sealed class PropertyGridCategoryViewModel : ObservableObject
             if (!SetProperty(ref _isExpanded, value))
                 return;
 
+            OnPropertyChanged(nameof(ExpandGlyph));
             _expandedChanged?.Invoke(this, value);
         }
     }
