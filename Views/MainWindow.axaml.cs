@@ -459,6 +459,7 @@ public partial class MainWindow : Window
             return;
 
         _appSettings.RecentFiles = VM.RecentFiles.ToList();
+        _appSettings.PropertyGrid = VM.CapturePropertyGridSettings();
         _appSettings.PropertyGridFavorites = VM.CapturePropertyGridFavorites();
         _appSettings.PropertyGridCollapsedCategories = VM.CapturePropertyGridCollapsedCategories();
         _appSettings.ExportCache = VM.CaptureExportCache();
@@ -495,7 +496,8 @@ public partial class MainWindow : Window
             or nameof(MainWindowViewModel.LeftDockPanelWidth)
             or nameof(MainWindowViewModel.RightDockPanelWidth)
             or nameof(MainWindowViewModel.DiagnosticsPaneHeight)
-            or nameof(MainWindowViewModel.IsDiagnosticsPaneExpanded);
+            or nameof(MainWindowViewModel.IsDiagnosticsPaneExpanded)
+            or nameof(MainWindowViewModel.PropertyGridSettingsVersion);
     }
 
     private static bool IsExportSettingsProperty(string? propertyName)

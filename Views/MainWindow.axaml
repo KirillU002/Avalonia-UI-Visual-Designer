@@ -41,6 +41,11 @@
       <Setter Property="BorderBrush" Value="#60A5FA"/>
     </Style>
 
+    <Style Selector="TabControl.right-inspector-tabs TabItem">
+      <Setter Property="FontSize" Value="12"/>
+      <Setter Property="Padding" Value="9,6"/>
+    </Style>
+
     <Style Selector="TextBox">
       <Setter Property="MinHeight" Value="34"/>
       <Setter Property="FontSize" Value="13"/>
@@ -112,16 +117,16 @@
     </Style>
 
     <Style Selector="Button.property-star">
-      <Setter Property="Width" Value="24"/>
-      <Setter Property="Height" Value="24"/>
-      <Setter Property="MinWidth" Value="24"/>
-      <Setter Property="MinHeight" Value="24"/>
+      <Setter Property="Width" Value="22"/>
+      <Setter Property="Height" Value="22"/>
+      <Setter Property="MinWidth" Value="22"/>
+      <Setter Property="MinHeight" Value="22"/>
       <Setter Property="Padding" Value="0"/>
       <Setter Property="Background" Value="Transparent"/>
       <Setter Property="Foreground" Value="#94A3B8"/>
       <Setter Property="BorderThickness" Value="0"/>
-      <Setter Property="CornerRadius" Value="6"/>
-      <Setter Property="FontSize" Value="13"/>
+      <Setter Property="CornerRadius" Value="4"/>
+      <Setter Property="FontSize" Value="12"/>
       <Setter Property="HorizontalContentAlignment" Value="Center"/>
       <Setter Property="VerticalContentAlignment" Value="Center"/>
     </Style>
@@ -132,9 +137,9 @@
     </Style>
 
     <Style Selector="Button.property-action">
-      <Setter Property="MinHeight" Value="28"/>
-      <Setter Property="Padding" Value="10,4"/>
-      <Setter Property="CornerRadius" Value="7"/>
+      <Setter Property="MinHeight" Value="26"/>
+      <Setter Property="Padding" Value="8,3"/>
+      <Setter Property="CornerRadius" Value="5"/>
       <Setter Property="Background" Value="#EFF6FF"/>
       <Setter Property="BorderBrush" Value="#BFDBFE"/>
       <Setter Property="Foreground" Value="#1D4ED8"/>
@@ -147,17 +152,35 @@
     </Style>
 
     <Style Selector="TextBox.property-editor">
-      <Setter Property="MinHeight" Value="28"/>
-      <Setter Property="Padding" Value="8,4"/>
-      <Setter Property="CornerRadius" Value="7"/>
+      <Setter Property="MinHeight" Value="26"/>
+      <Setter Property="Padding" Value="7,3"/>
+      <Setter Property="CornerRadius" Value="5"/>
       <Setter Property="FontSize" Value="12"/>
     </Style>
 
     <Style Selector="ComboBox.property-editor">
-      <Setter Property="MinHeight" Value="28"/>
-      <Setter Property="Padding" Value="8,4"/>
-      <Setter Property="CornerRadius" Value="7"/>
+      <Setter Property="MinHeight" Value="26"/>
+      <Setter Property="Padding" Value="7,3"/>
+      <Setter Property="CornerRadius" Value="5"/>
       <Setter Property="FontSize" Value="12"/>
+    </Style>
+
+    <Style Selector="Button.property-header-action">
+      <Setter Property="MinHeight" Value="26"/>
+      <Setter Property="MinWidth" Value="26"/>
+      <Setter Property="Padding" Value="7,3"/>
+      <Setter Property="Background" Value="#F8FAFC"/>
+      <Setter Property="Foreground" Value="#334155"/>
+      <Setter Property="BorderBrush" Value="#CBD5E1"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="6"/>
+      <Setter Property="FontSize" Value="11"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
+
+    <Style Selector="Button.property-header-action:pointerover">
+      <Setter Property="Background" Value="#EFF6FF"/>
+      <Setter Property="BorderBrush" Value="#60A5FA"/>
     </Style>
 
     <Style Selector="Button.header-action">
@@ -1637,47 +1660,64 @@
                   BorderBrush="#D7E2EE"
                   BorderThickness="0,0,0,1"
                   Padding="10,8">
-            <Grid ColumnDefinitions="*,Auto,Auto"
-                  ColumnSpacing="8">
+            <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto"
+                  ColumnSpacing="6">
               <StackPanel Spacing="2"
                           VerticalAlignment="Center">
-                <TextBlock Text="{Binding RightDockHeaderTitle}"
+                <TextBlock Text="{Binding PropertyGridSelectionTitle}"
                            FontWeight="Bold"
-                           FontSize="14"/>
-                <TextBlock Text="Properties · Data · Plugins · Export"
+                           FontSize="13"
+                           TextTrimming="CharacterEllipsis"/>
+                <TextBlock Text="{Binding PropertyGridSelectionSubtitle}"
                            Foreground="#64748B"
                            FontSize="11"
                            TextTrimming="CharacterEllipsis"/>
+                <TextBlock Text="{Binding PropertyGridSelectionMetrics}"
+                           Foreground="#94A3B8"
+                           FontSize="10"
+                           TextTrimming="CharacterEllipsis"/>
               </StackPanel>
               <Button Grid.Column="1"
-                      Content="↺"
-                      Classes="dock-collapse"
-                      Command="{Binding ResetEditorShellLayoutCommand}"
-                      ToolTip.Tip="Сбросить расположение панелей"/>
+                      Content="Reset"
+                      Classes="property-header-action"
+                      Command="{Binding ResetPropertyGridViewCommand}"
+                      ToolTip.Tip="Reset property view for this control type"/>
               <Button Grid.Column="2"
-                      Content="›"
+                      Content="Basic"
+                      Classes="property-header-action"
+                      Command="{Binding ExpandBasicPropertyGridCategoriesCommand}"
+                      ToolTip.Tip="Expand common property groups"/>
+              <Button Grid.Column="3"
+                      Content="Fold"
+                      Classes="property-header-action"
+                      Command="{Binding CollapseAllPropertyGridCategoriesCommand}"
+                      ToolTip.Tip="Collapse all property groups"/>
+              <Button Grid.Column="4"
+                      Content=">"
                       Classes="dock-collapse"
                       Command="{Binding HideRightDockPanelCommand}"
-                      ToolTip.Tip="Скрыть правую панель"/>
+                      ToolTip.Tip="Hide right panel"/>
             </Grid>
           </Border>
 
         <TabControl Grid.Row="1"
-                    Margin="12,0,12,12"
+                    Classes="right-inspector-tabs"
+                    Margin="8,0,8,8"
                     TabStripPlacement="Top"
                     SelectedIndex="{Binding RightInspectorSelectedIndex, Mode=OneWay}">
           <!-- Главная вкладка настройки:
                сверху свойства формы, ниже режимы дизайнера и затем свойства выделенного контрола. -->
-          <TabItem Header="Свойства"
+          <TabItem Header="Properties"
                    IsVisible="{Binding IsDesignModePanelVisible}">
-            <Grid RowDefinitions="Auto,Auto,*"
-                  RowSpacing="8"
-                  Margin="0,12,0,0">
+            <Grid RowDefinitions="Auto,*"
+                  RowSpacing="6"
+                  Margin="0,8,0,0">
               <Border Background="White"
                       BorderBrush="#D7E2EE"
                       BorderThickness="1"
                       CornerRadius="12"
-                      Padding="10">
+                      Padding="10"
+                      IsVisible="False">
                 <StackPanel Spacing="3">
                   <TextBlock Text="{Binding PropertyGridSelectionTitle}"
                              FontSize="14"
@@ -1690,26 +1730,26 @@
                 </StackPanel>
               </Border>
 
-              <Grid Grid.Row="1"
+              <Grid Grid.Row="0"
                     ColumnDefinitions="*,Auto"
-                    ColumnSpacing="6">
+                    ColumnSpacing="4">
                 <TextBox Classes="property-editor"
                          Watermark="Search properties..."
                          Text="{Binding PropertyGridSearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
                 <Button Grid.Column="1"
-                        Classes="property-action"
-                        Content="Clear"
+                        Classes="property-header-action"
+                        Content="X"
                         Command="{Binding ClearPropertyGridSearchCommand}"/>
               </Grid>
 
-              <ScrollViewer Grid.Row="2"
+              <ScrollViewer Grid.Row="1"
                             VerticalScrollBarVisibility="Auto">
-                <StackPanel Spacing="8">
+                <StackPanel Spacing="4">
                   <Border Background="#F8FAFC"
                           BorderBrush="#D7E2EE"
                           BorderThickness="1"
-                          CornerRadius="10"
-                          Padding="12"
+                          CornerRadius="6"
+                          Padding="10"
                           IsVisible="{Binding HasNoPropertyGridRows}">
                     <TextBlock Text="{Binding PropertyGridEmptyText}"
                                Foreground="#64748B"
@@ -1719,24 +1759,24 @@
                   <ItemsControl ItemsSource="{Binding PropertyGridCategories}">
                     <ItemsControl.ItemTemplate>
                       <DataTemplate x:DataType="vm:PropertyGridCategoryViewModel">
-                        <Border Background="White"
-                                BorderBrush="#D7E2EE"
-                                BorderThickness="1"
-                                CornerRadius="10"
-                                Margin="0,0,0,8">
+                        <Border Background="Transparent"
+                                BorderBrush="Transparent"
+                                BorderThickness="0"
+                                CornerRadius="0"
+                                Margin="0,0,0,4">
                           <Expander Header="{Binding HeaderText}"
                                     IsExpanded="{Binding IsExpanded, Mode=TwoWay}"
-                                    Padding="8,4">
+                                    Padding="0">
                             <ItemsControl ItemsSource="{Binding Rows}">
                               <ItemsControl.ItemTemplate>
                                 <DataTemplate x:DataType="vm:PropertyGridRowViewModel">
                                   <Border BorderBrush="#EEF2F7"
                                           BorderThickness="0,1,0,0"
-                                          Padding="4,5"
+                                          Padding="2,3"
                                           ToolTip.Tip="{Binding Description}">
-                                    <Grid ColumnDefinitions="24,112,*,Auto"
-                                          ColumnSpacing="6"
-                                          MinHeight="30">
+                                    <Grid ColumnDefinitions="22,104,*,Auto"
+                                          ColumnSpacing="5"
+                                          MinHeight="26">
                                       <Button Classes="property-star"
                                               Content="{Binding FavoriteGlyph}"
                                               Command="{Binding #RootWindow.DataContext.TogglePropertyGridFavoriteCommand}"
@@ -4184,7 +4224,7 @@
             </Grid>
           </TabItem>
 
-          <TabItem Header="Данные"
+          <TabItem Header="Data"
                    IsVisible="{Binding IsDataModePanelVisible}">
             <ScrollViewer Margin="0,12,0,0"
                           VerticalScrollBarVisibility="Auto">
@@ -4665,7 +4705,7 @@
             </ScrollViewer>
           </TabItem>
 
-          <TabItem Header="Плагины"
+          <TabItem Header="Plugins"
                    IsVisible="{Binding IsPluginsModePanelVisible}">
             <ScrollViewer Margin="0,12,0,0"
                           VerticalScrollBarVisibility="Auto">
@@ -4862,7 +4902,7 @@
             </ScrollViewer>
           </TabItem>
 
-          <TabItem Header="XAML"
+          <TabItem Header="Export XAML"
                    IsVisible="{Binding IsCodeModePanelVisible}">
             <Grid Margin="0,12,0,0"
                   RowDefinitions="Auto,*">
@@ -5158,7 +5198,7 @@
             </Grid>
           </TabItem>
 
-          <TabItem Header="C#"
+          <TabItem Header="Export C#"
                    IsVisible="{Binding IsCodeModePanelVisible}">
             <Grid Margin="0,12,0,0"
                   RowDefinitions="Auto,*">
@@ -5454,7 +5494,7 @@
             </Grid>
           </TabItem>
 
-          <TabItem Header="Логика"
+          <TabItem Header="Logic"
                    IsVisible="{Binding IsLogicModePanelVisible}">
             <ScrollViewer Margin="0,12,0,0"
                           VerticalScrollBarVisibility="Auto">

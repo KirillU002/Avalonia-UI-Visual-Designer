@@ -133,11 +133,8 @@ public partial class MainWindowViewModel : ObservableObject
     private double _previewWorkingAreaHeight = 1040;
     private string _previewScreenName = "Текущий монитор";
     private int _templateInsertionOffset;
-    private readonly HashSet<string> _propertyGridFavoriteKeys = new(StringComparer.OrdinalIgnoreCase);
-    private readonly HashSet<string> _propertyGridCollapsedCategories = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "Advanced"
-    };
+    private readonly PropertyGridUserSettings _propertyGridUserSettings = new();
+    private int _propertyGridSettingsVersion;
 
     // Toolbox теперь строится из registry дескрипторов, а не из зашитого списка.
     public ObservableCollection<ToolboxItem> ToolboxItems { get; } = new();
@@ -921,6 +918,13 @@ public partial class MainWindowViewModel : ObservableObject
     public string PropertyGridSelectionTitle => SelectedControl is null
         ? "Форма"
         : $"{SelectedControl.Name} · {SelectedControl.Type}";
+    public string PropertyGridSelectionSubtitle => SelectedControl is null
+        ? "Document"
+        : SelectedControl.Type;
+    public string PropertyGridSelectionMetrics => SelectedControl is null
+        ? $"{DesignWidth:0} x {DesignHeight:0}"
+        : $"X:{SelectedControl.X:0} Y:{SelectedControl.Y:0}  {SelectedControl.Width:0} x {SelectedControl.Height:0}";
+    public int PropertyGridSettingsVersion => _propertyGridSettingsVersion;
     public string PropertyGridEmptyText => SelectedControl is null
         ? "Выберите элемент на canvas или в структуре, чтобы редактировать его свойства."
         : "Поиск не нашел свойств для выбранного элемента.";
@@ -3466,7 +3470,7 @@ public partial class MainWindowViewModel : ObservableObject
     public void ApplyAppSettings(AppSettingsModel settings)
     {
         ApplyExportCache(settings.ExportCache);
-        ApplyPropertyGridSettings(settings.PropertyGridFavorites, settings.PropertyGridCollapsedCategories);
+        ApplyPropertyGridSettings(settings.PropertyGrid, settings.PropertyGridFavorites, settings.PropertyGridCollapsedCategories);
 
         RecentFiles.Clear();
         foreach (var recentFile in settings.RecentFiles
@@ -3485,14 +3489,25 @@ public partial class MainWindowViewModel : ObservableObject
         ApplyEditorShellLayout(settings.Session.EditorShell);
     }
 
+    public PropertyGridUserSettings CapturePropertyGridSettings()
+    {
+        return ClonePropertyGridSettings(_propertyGridUserSettings);
+    }
+
     public List<string> CapturePropertyGridFavorites()
     {
-        return _propertyGridFavoriteKeys.OrderBy(key => key, StringComparer.OrdinalIgnoreCase).ToList();
+        return _propertyGridUserSettings.FavoritePropertiesByTypeKey
+            .SelectMany(pair => pair.Value.Select(value => FavoriteKey(pair.Key, value)))
+            .OrderBy(key => key, StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     public List<string> CapturePropertyGridCollapsedCategories()
     {
-        return _propertyGridCollapsedCategories.OrderBy(key => key, StringComparer.OrdinalIgnoreCase).ToList();
+        return _propertyGridUserSettings.ExpandedCategoriesByTypeKey
+            .SelectMany(pair => GetPropertyGridCategoryOrder().Where(category => !pair.Value.Contains(category)).Select(category => $"{pair.Key}.{category}"))
+            .OrderBy(key => key, StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     public ExportCacheModel CaptureExportCache()
@@ -3547,70 +3562,158 @@ public partial class MainWindowViewModel : ObservableObject
         DiagnosticsPaneHeight = Math.Clamp(layout.BottomPanelHeight <= 0 ? 220 : layout.BottomPanelHeight, 140, 520);
     }
 
-    private void ApplyPropertyGridSettings(IEnumerable<string>? favorites, IEnumerable<string>? collapsedCategories)
+    private void ApplyPropertyGridSettings(
+        PropertyGridUserSettings? settings,
+        IEnumerable<string>? legacyFavorites,
+        IEnumerable<string>? legacyCollapsedCategories)
     {
-        _propertyGridFavoriteKeys.Clear();
-        var savedFavorites = favorites?
-            .Where(item => !string.IsNullOrWhiteSpace(item))
-            .Select(item => item.Trim())
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList() ?? new List<string>();
+        CopyPropertyGridSettingsInto(settings ?? new PropertyGridUserSettings(), _propertyGridUserSettings);
 
-        if (savedFavorites.Count == 0)
+        if (_propertyGridUserSettings.FavoritePropertiesByTypeKey.Count == 0
+            && legacyFavorites?.Any(item => !string.IsNullOrWhiteSpace(item)) == true)
         {
-            AddDefaultPropertyGridFavorites();
-        }
-        else
-        {
-            foreach (var favorite in savedFavorites)
-                _propertyGridFavoriteKeys.Add(favorite);
+            MigrateLegacyPropertyGridFavorites(legacyFavorites);
         }
 
-        _propertyGridCollapsedCategories.Clear();
-        _propertyGridCollapsedCategories.Add(PropertyGridCategoryAdvanced);
-        if (collapsedCategories is not null)
+        if (_propertyGridUserSettings.ExpandedCategoriesByTypeKey.Count == 0
+            && legacyCollapsedCategories?.Any(item => !string.IsNullOrWhiteSpace(item)) == true)
         {
-            foreach (var category in collapsedCategories.Where(item => !string.IsNullOrWhiteSpace(item)))
-                _propertyGridCollapsedCategories.Add(category.Trim());
+            MigrateLegacyPropertyGridCollapsedCategories(legacyCollapsedCategories);
         }
 
         RebuildPropertyGrid();
     }
 
-    private void AddDefaultPropertyGridFavorites()
+    private static PropertyGridUserSettings ClonePropertyGridSettings(PropertyGridUserSettings source)
     {
-        foreach (var key in new[]
+        var clone = new PropertyGridUserSettings();
+        CopyPropertyGridSettingsInto(source, clone);
+        return clone;
+    }
+
+    private static void CopyPropertyGridSettingsInto(PropertyGridUserSettings source, PropertyGridUserSettings target)
+    {
+        target.FavoritePropertiesByTypeKey.Clear();
+        target.UserCustomizedTypeKeys.Clear();
+        target.ExpandedCategoriesByTypeKey.Clear();
+
+        var favoriteProperties = source.FavoritePropertiesByTypeKey ?? new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+        var customizedTypeKeys = source.UserCustomizedTypeKeys ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var expandedCategories = source.ExpandedCategoriesByTypeKey ?? new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var pair in favoriteProperties)
         {
-            FavoriteKey("*", nameof(DesignControlModel.Name)),
-            FavoriteKey("*", nameof(DesignControlModel.Text)),
-            FavoriteKey("*", nameof(DesignControlModel.X)),
-            FavoriteKey("*", nameof(DesignControlModel.Y)),
-            FavoriteKey("*", nameof(DesignControlModel.Width)),
-            FavoriteKey("*", nameof(DesignControlModel.Height)),
-            FavoriteKey("*", nameof(DesignControlModel.IsVisible)),
-            FavoriteKey("*", nameof(DesignControlModel.IsLocked)),
-            FavoriteKey(DesignerControlTypes.DataGrid, nameof(DesignControlModel.BindingSourceId)),
-            FavoriteKey(DesignerControlTypes.DataGrid, "Columns"),
-            FavoriteKey(DesignerControlTypes.DataGrid, nameof(DesignControlModel.AutoGenerateColumns)),
-            FavoriteKey(DesignerControlTypes.DataGrid, nameof(DesignControlModel.AllowGrouping)),
-            FavoriteKey(DesignerControlTypes.DataGrid, nameof(DesignControlModel.ShowFilterRow)),
-            FavoriteKey(DesignerControlTypes.DataGrid, nameof(DesignControlModel.ShowGroupPanel))
-        })
-        {
-            _propertyGridFavoriteKeys.Add(key);
+            if (string.IsNullOrWhiteSpace(pair.Key) || pair.Value is null)
+                continue;
+
+            target.FavoritePropertiesByTypeKey[pair.Key.Trim()] = pair.Value
+                .Where(value => !string.IsNullOrWhiteSpace(value))
+                .Select(value => value.Trim())
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
         }
+
+        foreach (var typeKey in customizedTypeKeys.Where(value => !string.IsNullOrWhiteSpace(value)))
+            target.UserCustomizedTypeKeys.Add(typeKey.Trim());
+
+        foreach (var pair in expandedCategories)
+        {
+            if (string.IsNullOrWhiteSpace(pair.Key) || pair.Value is null)
+                continue;
+
+            target.ExpandedCategoriesByTypeKey[pair.Key.Trim()] = pair.Value
+                .Where(value => !string.IsNullOrWhiteSpace(value))
+                .Select(value => value.Trim())
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        }
+    }
+
+    private void MigrateLegacyPropertyGridFavorites(IEnumerable<string> legacyFavorites)
+    {
+        foreach (var favorite in legacyFavorites.Where(item => !string.IsNullOrWhiteSpace(item)).Select(item => item.Trim()))
+        {
+            var dotIndex = favorite.IndexOf('.');
+            if (dotIndex <= 0 || dotIndex >= favorite.Length - 1)
+                continue;
+
+            var typeKey = favorite[..dotIndex];
+            var propertyKey = favorite[(dotIndex + 1)..];
+            GetPropertyGridFavoriteSet(typeKey, create: true).Add(propertyKey);
+            _propertyGridUserSettings.UserCustomizedTypeKeys.Add(typeKey);
+        }
+    }
+
+    private void MigrateLegacyPropertyGridCollapsedCategories(IEnumerable<string> legacyCollapsedCategories)
+    {
+        var expanded = GetDefaultPropertyGridExpandedCategories();
+        foreach (var category in legacyCollapsedCategories.Where(item => !string.IsNullOrWhiteSpace(item)).Select(item => item.Trim()))
+            expanded.Remove(category.Contains('.') ? category[(category.LastIndexOf('.') + 1)..] : category);
+
+        _propertyGridUserSettings.ExpandedCategoriesByTypeKey[CurrentPropertyGridTypeKey] = expanded;
     }
 
     private static string FavoriteKey(string typeKey, string propertyKey)
     {
-        return $"{(string.IsNullOrWhiteSpace(typeKey) ? "*" : typeKey)}.{propertyKey}";
+        return $"{NormalizePropertyGridTypeKey(typeKey)}.{propertyKey}";
+    }
+
+    private string CurrentPropertyGridTypeKey => NormalizePropertyGridTypeKey(SelectedControl?.Type ?? "Form");
+
+    private static string NormalizePropertyGridTypeKey(string? typeKey)
+    {
+        return string.IsNullOrWhiteSpace(typeKey) ? "Form" : typeKey.Trim();
+    }
+
+    private HashSet<string> GetPropertyGridFavoriteSet(string typeKey, bool create)
+    {
+        var normalizedType = NormalizePropertyGridTypeKey(typeKey);
+        if (_propertyGridUserSettings.FavoritePropertiesByTypeKey.TryGetValue(normalizedType, out var set))
+            return set;
+
+        set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (create)
+            _propertyGridUserSettings.FavoritePropertiesByTypeKey[normalizedType] = set;
+
+        return set;
+    }
+
+    private HashSet<string> GetEffectivePropertyGridFavorites(string typeKey)
+    {
+        var normalizedType = NormalizePropertyGridTypeKey(typeKey);
+        if (_propertyGridUserSettings.UserCustomizedTypeKeys.Contains(normalizedType))
+            return GetPropertyGridFavoriteSet(normalizedType, create: false).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        return GetDefaultPropertyGridFavorites(normalizedType);
+    }
+
+    private static HashSet<string> GetDefaultPropertyGridFavorites(string typeKey)
+    {
+        var favorites = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            nameof(DesignControlModel.Name),
+            nameof(DesignControlModel.Text),
+            nameof(DesignControlModel.X),
+            nameof(DesignControlModel.Y),
+            nameof(DesignControlModel.Width),
+            nameof(DesignControlModel.Height),
+            nameof(DesignControlModel.IsVisible),
+            nameof(DesignControlModel.IsLocked)
+        };
+
+        if (string.Equals(NormalizePropertyGridTypeKey(typeKey), DesignerControlTypes.DataGrid, StringComparison.OrdinalIgnoreCase))
+        {
+            favorites.Add(nameof(DesignControlModel.BindingSourceId));
+            favorites.Add("Columns");
+            favorites.Add(nameof(DesignControlModel.AutoGenerateColumns));
+            favorites.Add(nameof(DesignControlModel.AllowGrouping));
+            favorites.Add(nameof(DesignControlModel.ShowFilterRow));
+        }
+
+        return favorites;
     }
 
     private bool IsPropertyGridFavorite(string propertyKey)
     {
-        var type = SelectedControl?.Type ?? "*";
-        return _propertyGridFavoriteKeys.Contains(FavoriteKey(type, propertyKey))
-            || _propertyGridFavoriteKeys.Contains(FavoriteKey("*", propertyKey));
+        return GetEffectivePropertyGridFavorites(CurrentPropertyGridTypeKey).Contains(propertyKey);
     }
 
     [RelayCommand]
@@ -3619,18 +3722,52 @@ public partial class MainWindowViewModel : ObservableObject
         if (row is null)
             return;
 
-        var typedKey = FavoriteKey(SelectedControl?.Type ?? "*", row.Key);
-        var globalKey = FavoriteKey("*", row.Key);
-        if (row.IsFavorite)
-        {
-            _propertyGridFavoriteKeys.Remove(typedKey);
-            _propertyGridFavoriteKeys.Remove(globalKey);
-        }
-        else
-        {
-            _propertyGridFavoriteKeys.Add(typedKey);
-        }
+        var typeKey = CurrentPropertyGridTypeKey;
+        var favorites = _propertyGridUserSettings.UserCustomizedTypeKeys.Contains(typeKey)
+            ? GetPropertyGridFavoriteSet(typeKey, create: true)
+            : GetDefaultPropertyGridFavorites(typeKey);
 
+        if (favorites.Contains(row.Key))
+            favorites.Remove(row.Key);
+        else
+            favorites.Add(row.Key);
+
+        _propertyGridUserSettings.FavoritePropertiesByTypeKey[typeKey] = favorites;
+        _propertyGridUserSettings.UserCustomizedTypeKeys.Add(typeKey);
+        RaisePropertyGridSettingsChanged();
+        RebuildPropertyGrid();
+    }
+
+    [RelayCommand]
+    private void ResetPropertyGridView()
+    {
+        var typeKey = CurrentPropertyGridTypeKey;
+        _propertyGridUserSettings.FavoritePropertiesByTypeKey.Remove(typeKey);
+        _propertyGridUserSettings.UserCustomizedTypeKeys.Remove(typeKey);
+        _propertyGridUserSettings.ExpandedCategoriesByTypeKey.Remove(typeKey);
+        RaisePropertyGridSettingsChanged();
+        RebuildPropertyGrid();
+    }
+
+    [RelayCommand]
+    private void CollapseAllPropertyGridCategories()
+    {
+        _propertyGridUserSettings.ExpandedCategoriesByTypeKey[CurrentPropertyGridTypeKey] = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        RaisePropertyGridSettingsChanged();
+        RebuildPropertyGrid();
+    }
+
+    [RelayCommand]
+    private void ExpandBasicPropertyGridCategories()
+    {
+        _propertyGridUserSettings.ExpandedCategoriesByTypeKey[CurrentPropertyGridTypeKey] = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            PropertyGridCategoryFavorites,
+            PropertyGridCategoryCommon,
+            PropertyGridCategoryLayout,
+            PropertyGridCategoryData
+        };
+        RaisePropertyGridSettingsChanged();
         RebuildPropertyGrid();
     }
 
@@ -3645,10 +3782,53 @@ public partial class MainWindowViewModel : ObservableObject
         if (_isRebuildingPropertyGrid)
             return;
 
+        var expanded = GetPropertyGridExpandedCategories(CurrentPropertyGridTypeKey, create: true);
         if (isExpanded)
-            _propertyGridCollapsedCategories.Remove(category.Key);
+            expanded.Add(category.Key);
         else
-            _propertyGridCollapsedCategories.Add(category.Key);
+            expanded.Remove(category.Key);
+
+        RaisePropertyGridSettingsChanged();
+    }
+
+    private HashSet<string> GetPropertyGridExpandedCategories(string typeKey, bool create)
+    {
+        var normalizedType = NormalizePropertyGridTypeKey(typeKey);
+        if (_propertyGridUserSettings.ExpandedCategoriesByTypeKey.TryGetValue(normalizedType, out var set))
+            return set;
+
+        set = GetDefaultPropertyGridExpandedCategories();
+        if (create)
+            _propertyGridUserSettings.ExpandedCategoriesByTypeKey[normalizedType] = set;
+
+        return set;
+    }
+
+    private static HashSet<string> GetDefaultPropertyGridExpandedCategories()
+    {
+        return new HashSet<string>(GetPropertyGridCategoryOrder().Where(category => category != PropertyGridCategoryAdvanced), StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static IReadOnlyList<string> GetPropertyGridCategoryOrder()
+    {
+        return new[]
+        {
+            PropertyGridCategoryFavorites,
+            PropertyGridCategoryCommon,
+            PropertyGridCategoryLayout,
+            PropertyGridCategoryAppearance,
+            PropertyGridCategoryData,
+            PropertyGridCategoryBehavior,
+            PropertyGridCategoryInteraction,
+            PropertyGridCategoryExport,
+            PropertyGridCategoryAdvanced
+        };
+    }
+
+    private void RaisePropertyGridSettingsChanged()
+    {
+        _propertyGridSettingsVersion++;
+        OnPropertyChanged(nameof(PropertyGridSettingsVersion));
     }
 
     private void RebuildPropertyGrid()
@@ -3678,17 +3858,7 @@ public partial class MainWindowViewModel : ObservableObject
             if (favorites.Count > 0)
                 AddPropertyGridCategory(PropertyGridCategoryFavorites, "\u2605 Favorites", favorites, hasSearch);
 
-            foreach (var category in new[]
-                     {
-                         PropertyGridCategoryCommon,
-                         PropertyGridCategoryLayout,
-                         PropertyGridCategoryAppearance,
-                         PropertyGridCategoryData,
-                         PropertyGridCategoryBehavior,
-                         PropertyGridCategoryInteraction,
-                         PropertyGridCategoryExport,
-                         PropertyGridCategoryAdvanced
-                     })
+            foreach (var category in GetPropertyGridCategoryOrder().Where(category => category != PropertyGridCategoryFavorites))
             {
                 var categoryRows = rows.Where(row => string.Equals(row.Category, category, StringComparison.Ordinal)).ToList();
                 if (categoryRows.Count > 0)
@@ -3708,6 +3878,8 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(HasPropertyGridRows));
         OnPropertyChanged(nameof(HasNoPropertyGridRows));
         OnPropertyChanged(nameof(PropertyGridSelectionTitle));
+        OnPropertyChanged(nameof(PropertyGridSelectionSubtitle));
+        OnPropertyChanged(nameof(PropertyGridSelectionMetrics));
         OnPropertyChanged(nameof(PropertyGridEmptyText));
     }
 
@@ -3721,7 +3893,7 @@ public partial class MainWindowViewModel : ObservableObject
         var category = new PropertyGridCategoryViewModel(
             key,
             title,
-            forceExpanded || !_propertyGridCollapsedCategories.Contains(key),
+            forceExpanded || GetPropertyGridExpandedCategories(CurrentPropertyGridTypeKey, create: false).Contains(key),
             SetPropertyGridCategoryExpanded);
 
         foreach (var row in rows)

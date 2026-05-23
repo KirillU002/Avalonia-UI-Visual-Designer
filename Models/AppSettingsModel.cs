@@ -14,11 +14,22 @@ public class AppSettingsModel
 
     public List<string> PropertyGridCollapsedCategories { get; set; } = new();
 
+    public PropertyGridUserSettings PropertyGrid { get; set; } = new();
+
     public SessionStateModel Session { get; set; } = new();
 
     public ExportCacheModel ExportCache { get; set; } = new();
 
     public AutosaveMetadataModel Autosave { get; set; } = new();
+}
+
+public sealed class PropertyGridUserSettings
+{
+    public Dictionary<string, HashSet<string>> FavoritePropertiesByTypeKey { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    public HashSet<string> UserCustomizedTypeKeys { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    public Dictionary<string, HashSet<string>> ExpandedCategoriesByTypeKey { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 }
 
 public class RecentFileModel
