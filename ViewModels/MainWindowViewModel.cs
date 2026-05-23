@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.Input;
 using Avalonia.Threading;
 using FormDesigner.DesignerSystem.BuiltIn;
 using FormDesigner.DesignerSystem.Infrastructure;
+using FormDesigner.EditorCommands;
 using FormDesigner.Models;
 using FormDesigner.PluginContracts;
 using FormDesigner.Services;
@@ -75,6 +76,8 @@ public partial class MainWindowViewModel : ObservableObject
     public const string StartupLocationCenterScreen = "По центру экрана";
     public const string StartupLocationCenterOwner = "По центру владельца";
 
+    public event Action<EditorCommandId>? ExternalEditorCommandRequested;
+
     private static readonly TimeSpan HistoryGroupingWindow = TimeSpan.FromMilliseconds(500);
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -134,6 +137,7 @@ public partial class MainWindowViewModel : ObservableObject
     private double _previewWorkingAreaHeight = 1040;
     private string _previewScreenName = "Текущий монитор";
     private int _templateInsertionOffset;
+    private readonly EditorCommandService _editorCommandService = new();
     private readonly PropertyGridUserSettings _propertyGridUserSettings = new();
     private readonly DispatcherTimer _propertyGridLiveRefreshTimer;
     private static readonly TimeSpan PropertyGridLiveRefreshInterval = TimeSpan.FromMilliseconds(66);
@@ -145,6 +149,8 @@ public partial class MainWindowViewModel : ObservableObject
     // Toolbox теперь строится из registry дескрипторов, а не из зашитого списка.
     public ObservableCollection<ToolboxItem> ToolboxItems { get; } = new();
     public ObservableCollection<ToolboxItem> PluginToolboxItems { get; } = new();
+    public ObservableCollection<EditorCommand> EditorCommands => _editorCommandService.Commands;
+    public ObservableCollection<EditorCommand> CommandPaletteCommands { get; } = new();
     public ObservableCollection<DescriptorPropertyEditorViewModel> DescriptorCustomPropertyEditors { get; } = new();
     public ObservableCollection<ImportedDllInfoModel> ImportedDllCatalog { get; } = new();
     public ObservableCollection<ImportedDllInfoModel> FilteredImportedDllCatalog { get; } = new();
@@ -384,6 +390,15 @@ public partial class MainWindowViewModel : ObservableObject
 
     [ObservableProperty]
     private DesignControlModel? selectedControl;
+
+    [ObservableProperty]
+    private bool isCommandPaletteOpen;
+
+    [ObservableProperty]
+    private string commandPaletteSearchText = "";
+
+    [ObservableProperty]
+    private EditorCommand? selectedCommandPaletteCommand;
 
     private StructureTreeItemModel? selectedStructureItem;
     public StructureTreeItemModel? SelectedStructureItem
@@ -931,6 +946,33 @@ public partial class MainWindowViewModel : ObservableObject
         ? $"{DesignWidth:0} x {DesignHeight:0}"
         : $"X:{SelectedControl.X:0} Y:{SelectedControl.Y:0}  {SelectedControl.Width:0} x {SelectedControl.Height:0}";
     public int PropertyGridSettingsVersion => _propertyGridSettingsVersion;
+    public EditorCommand? NewEditorCommand => GetEditorCommand(EditorCommandId.New);
+    public EditorCommand? OpenEditorCommand => GetEditorCommand(EditorCommandId.Open);
+    public EditorCommand? SaveEditorCommand => GetEditorCommand(EditorCommandId.Save);
+    public EditorCommand? SaveAsEditorCommand => GetEditorCommand(EditorCommandId.SaveAs);
+    public EditorCommand? UndoEditorCommand => GetEditorCommand(EditorCommandId.Undo);
+    public EditorCommand? RedoEditorCommand => GetEditorCommand(EditorCommandId.Redo);
+    public EditorCommand? DeleteEditorCommand => GetEditorCommand(EditorCommandId.Delete);
+    public EditorCommand? DuplicateEditorCommand => GetEditorCommand(EditorCommandId.Duplicate);
+    public EditorCommand? CopyEditorCommand => GetEditorCommand(EditorCommandId.Copy);
+    public EditorCommand? PasteEditorCommand => GetEditorCommand(EditorCommandId.Paste);
+    public EditorCommand? GroupEditorCommand => GetEditorCommand(EditorCommandId.Group);
+    public EditorCommand? UngroupEditorCommand => GetEditorCommand(EditorCommandId.Ungroup);
+    public EditorCommand? LockEditorCommand => GetEditorCommand(EditorCommandId.Lock);
+    public EditorCommand? UnlockEditorCommand => GetEditorCommand(EditorCommandId.Unlock);
+    public EditorCommand? BringToFrontEditorCommand => GetEditorCommand(EditorCommandId.BringToFront);
+    public EditorCommand? SendToBackEditorCommand => GetEditorCommand(EditorCommandId.SendToBack);
+    public EditorCommand? PreviewEditorCommand => GetEditorCommand(EditorCommandId.TogglePreviewMode);
+    public EditorCommand? HelpEditorCommand => GetEditorCommand(EditorCommandId.OpenHelp);
+    public EditorCommand? ToggleLeftPanelEditorCommand => GetEditorCommand(EditorCommandId.ToggleLeftPanel);
+    public EditorCommand? ToggleRightPanelEditorCommand => GetEditorCommand(EditorCommandId.ToggleRightPanel);
+    public EditorCommand? ToggleProblemsPanelEditorCommand => GetEditorCommand(EditorCommandId.ToggleProblemsPanel);
+    public EditorCommand? ResetLayoutEditorCommand => GetEditorCommand(EditorCommandId.ResetLayout);
+    public EditorCommand? ToggleDesignFramesEditorCommand => GetEditorCommand(EditorCommandId.ToggleDesignFrames);
+    public EditorCommand? RefreshGeneratedCodeEditorCommand => GetEditorCommand(EditorCommandId.RefreshGeneratedCode);
+    public EditorCommand? CopyXamlEditorCommand => GetEditorCommand(EditorCommandId.CopyXaml);
+    public EditorCommand? CopyCSharpEditorCommand => GetEditorCommand(EditorCommandId.CopyCSharp);
+    public EditorCommand? OpenExportDiagnosticsEditorCommand => GetEditorCommand(EditorCommandId.OpenExportDiagnostics);
     public string PropertyGridEmptyText => SelectedControl is null
         ? "Выберите элемент на canvas или в структуре, чтобы редактировать его свойства."
         : "Поиск не нашел свойств для выбранного элемента.";
@@ -1405,6 +1447,9 @@ public partial class MainWindowViewModel : ObservableObject
         RebuildImportedDllCatalog();
         RefreshDiagnostics();
         GenerateXaml();
+        RegisterEditorCommands();
+        RefreshEditorCommands();
+        RaiseEditorCommandProperties();
     }
 
     public void RefreshRegistryBackedCollections()
@@ -1412,6 +1457,238 @@ public partial class MainWindowViewModel : ObservableObject
         RefreshToolboxItemsFromRegistry();
         RebuildInstalledPluginCatalog();
         RefreshDiagnostics();
+    }
+
+    private void RegisterEditorCommands()
+    {
+        RegisterEditorCommand(EditorCommandId.New, "New Document", "Create a new form document.", "\uE710", "Ctrl+N", EditorCommandCategory.File, () => RequestExternalEditorCommand(EditorCommandId.New));
+        RegisterEditorCommand(EditorCommandId.Open, "Open...", "Open an existing .formdesigner.json document.", "\uE8E5", "Ctrl+O", EditorCommandCategory.File, () => RequestExternalEditorCommand(EditorCommandId.Open));
+        RegisterEditorCommand(EditorCommandId.Save, "Save", "Save the current document.", "\uE74E", "Ctrl+S", EditorCommandCategory.File, () => RequestExternalEditorCommand(EditorCommandId.Save));
+        RegisterEditorCommand(EditorCommandId.SaveAs, "Save As...", "Save the current document to a new file.", "\uE792", "Ctrl+Shift+S", EditorCommandCategory.File, () => RequestExternalEditorCommand(EditorCommandId.SaveAs));
+        RegisterEditorCommand(EditorCommandId.RecentFiles, "Recent Files", "Open the recent files flyout.", "", "", EditorCommandCategory.File, () => RequestExternalEditorCommand(EditorCommandId.RecentFiles), () => StateWhen(HasRecentFiles, "No recent files."));
+        RegisterEditorCommand(EditorCommandId.RestoreAutosave, "Restore Autosave", "Open autosave recovery if a draft exists.", "", "", EditorCommandCategory.File, () => RequestExternalEditorCommand(EditorCommandId.RestoreAutosave));
+
+        RegisterEditorCommand(EditorCommandId.Undo, "Undo", "Undo the last document change.", "\uE7A7", "Ctrl+Z", EditorCommandCategory.Edit, Undo, () => StateWhen(HasUndo, "Undo stack is empty."));
+        RegisterEditorCommand(EditorCommandId.Redo, "Redo", "Redo the last undone document change.", "\uE7A6", "Ctrl+Y", EditorCommandCategory.Edit, Redo, () => StateWhen(HasRedo, "Redo stack is empty."));
+        RegisterEditorCommand(EditorCommandId.Cut, "Cut", "Copy and delete the selected elements.", "\uE8C6", "Ctrl+X", EditorCommandCategory.Edit, () => { CopySelection(); DeleteSelected(); }, () => StateWhen(CanCopySelection, "Select at least one element."));
+        RegisterEditorCommand(EditorCommandId.Copy, "Copy", "Copy selected elements.", "\uE8C8", "Ctrl+C", EditorCommandCategory.Edit, CopySelection, () => StateWhen(CanCopySelection, "Select at least one element."));
+        RegisterEditorCommand(EditorCommandId.Paste, "Paste", "Paste copied elements.", "\uE77F", "Ctrl+V", EditorCommandCategory.Edit, PasteSelection, () => StateWhen(CanPasteSelection, "Clipboard is empty."));
+        RegisterEditorCommand(EditorCommandId.Delete, "Delete", "Delete selected elements.", "\uE74D", "Delete", EditorCommandCategory.Edit, DeleteSelected, () => StateWhen(HasSelectedControl, "Select an element to delete."), isDangerous: true);
+        RegisterEditorCommand(EditorCommandId.Duplicate, "Duplicate", "Duplicate selected elements.", "\uE8C8", "Ctrl+D", EditorCommandCategory.Edit, DuplicateSelected, () => StateWhen(CanDuplicateSelected, "Select an element to duplicate."));
+        RegisterEditorCommand(EditorCommandId.SelectAll, "Select All", "Select every top-level element on the form.", "", "Ctrl+A", EditorCommandCategory.Edit, SelectAllControls, () => StateWhen(Controls.Count > 0, "The form is empty."));
+
+        RegisterEditorCommand(EditorCommandId.BringToFront, "Bring to Front", "Move selection to the front.", "", "PageUp", EditorCommandCategory.Arrange, BringSelectionToFront, () => StateWhen(CanChangeZOrder, "Select an editable element."));
+        RegisterEditorCommand(EditorCommandId.SendToBack, "Send to Back", "Move selection to the back.", "", "PageDown", EditorCommandCategory.Arrange, SendSelectionToBack, () => StateWhen(CanChangeZOrder, "Select an editable element."));
+        RegisterEditorCommand(EditorCommandId.AlignLeft, "Align Left", "Align selected elements to the left.", "", "", EditorCommandCategory.Arrange, AlignSelectionLeft, () => StateWhen(CanArrangeSelection, "Select at least two editable elements."));
+        RegisterEditorCommand(EditorCommandId.AlignRight, "Align Right", "Align selected elements to the right.", "", "", EditorCommandCategory.Arrange, AlignSelectionRight, () => StateWhen(CanArrangeSelection, "Select at least two editable elements."));
+        RegisterEditorCommand(EditorCommandId.AlignTop, "Align Top", "Align selected elements to the top.", "", "", EditorCommandCategory.Arrange, AlignSelectionTop, () => StateWhen(CanArrangeSelection, "Select at least two editable elements."));
+        RegisterEditorCommand(EditorCommandId.AlignBottom, "Align Bottom", "Align selected elements to the bottom.", "", "", EditorCommandCategory.Arrange, AlignSelectionBottom, () => StateWhen(CanArrangeSelection, "Select at least two editable elements."));
+        RegisterEditorCommand(EditorCommandId.AlignCenter, "Align Center", "Align selected elements by center.", "", "", EditorCommandCategory.Arrange, AlignSelectionCenter, () => StateWhen(CanArrangeSelection, "Select at least two editable elements."));
+        RegisterEditorCommand(EditorCommandId.DistributeHorizontal, "Distribute Horizontal", "Distribute selected elements horizontally.", "", "", EditorCommandCategory.Arrange, DistributeSelectionHorizontal, () => StateWhen(CanDistributeSelection, "Select at least three editable elements."));
+        RegisterEditorCommand(EditorCommandId.DistributeVertical, "Distribute Vertical", "Distribute selected elements vertically.", "", "", EditorCommandCategory.Arrange, DistributeSelectionVertical, () => StateWhen(CanDistributeSelection, "Select at least three editable elements."));
+
+        RegisterEditorCommand(EditorCommandId.Group, "Group", "Group selected elements.", "", "Ctrl+G", EditorCommandCategory.Group, GroupSelection, () => StateWhen(CanGroupSelection, "Select at least two elements that can be grouped."));
+        RegisterEditorCommand(EditorCommandId.Ungroup, "Ungroup", "Ungroup selected groups.", "", "Ctrl+Shift+G", EditorCommandCategory.Group, UngroupSelection, () => StateWhen(CanUngroupSelection, "Select a group."));
+        RegisterEditorCommand(EditorCommandId.Lock, "Lock", "Lock selected elements.", "", "Ctrl+L", EditorCommandCategory.Group, LockSelected, () => StateWhen(CanLockSelected, "Selection is already locked or empty."));
+        RegisterEditorCommand(EditorCommandId.Unlock, "Unlock", "Unlock selected elements.", "", "Ctrl+Shift+L", EditorCommandCategory.Group, UnlockSelected, () => StateWhen(CanUnlockSelected, "Selection is not locked."));
+        RegisterEditorCommand(EditorCommandId.ToggleVisibility, "Toggle Visibility", "Show or hide selected elements.", "", "", EditorCommandCategory.Group, ToggleSelectedVisibility, () => StateWhen(HasSelectedControl, "Select an element."));
+
+        RegisterEditorCommand(EditorCommandId.ToggleLeftPanel, "Toggle Left Panel", "Show or hide the left dock panel.", "", "", EditorCommandCategory.View, ToggleLeftDockPanel);
+        RegisterEditorCommand(EditorCommandId.ToggleRightPanel, "Toggle Right Panel", "Show or hide the inspector panel.", "", "", EditorCommandCategory.View, ToggleRightDockPanel);
+        RegisterEditorCommand(EditorCommandId.ToggleProblemsPanel, "Toggle Problems", "Show or hide diagnostics/problems.", "", "", EditorCommandCategory.View, ToggleBottomDockPanel);
+        RegisterEditorCommand(EditorCommandId.ResetLayout, "Reset Layout", "Restore default dock panel layout.", "", "", EditorCommandCategory.View, ResetEditorShellLayout);
+        RegisterEditorCommand(EditorCommandId.ZoomIn, "Zoom In", "Increase canvas zoom.", "", "Ctrl++", EditorCommandCategory.View, () => RequestExternalEditorCommand(EditorCommandId.ZoomIn));
+        RegisterEditorCommand(EditorCommandId.ZoomOut, "Zoom Out", "Decrease canvas zoom.", "", "Ctrl+-", EditorCommandCategory.View, () => RequestExternalEditorCommand(EditorCommandId.ZoomOut));
+        RegisterEditorCommand(EditorCommandId.Zoom100, "Zoom 100%", "Reset canvas zoom to 100%.", "", "Ctrl+0", EditorCommandCategory.View, () => RequestExternalEditorCommand(EditorCommandId.Zoom100));
+        RegisterEditorCommand(EditorCommandId.FitToScreen, "Fit to Screen", "Fit canvas in the viewport.", "", "", EditorCommandCategory.View, () => RequestExternalEditorCommand(EditorCommandId.FitToScreen));
+        RegisterEditorCommand(EditorCommandId.ToggleDesignFrames, "Toggle Design Frames", "Hide or show designer frames.", "", "F12", EditorCommandCategory.View, ToggleUserPreviewMode);
+        RegisterEditorCommand(EditorCommandId.TogglePreviewMode, "Launch Preview", "Open runtime preview window.", "", "F5", EditorCommandCategory.View, () => RequestExternalEditorCommand(EditorCommandId.TogglePreviewMode));
+
+        RegisterEditorCommand(EditorCommandId.OpenColumnEditor, "Open Column Editor", "Edit DataGrid columns.", "", "", EditorCommandCategory.Tools, () => RequestExternalEditorCommand(EditorCommandId.OpenColumnEditor), () => StateWhen(SelectedControl?.Type == DesignerControlTypes.DataGrid, "Selected element is not DataGrid."));
+        RegisterEditorCommand(EditorCommandId.OpenBindingSourceEditor, "Open BindingSource Editor", "Switch to Data tools.", "", "", EditorCommandCategory.Tools, () => WorkspaceMode = WorkspaceModeData);
+        RegisterEditorCommand(EditorCommandId.OpenInteractionDesigner, "Open Interaction Designer", "Switch to Logic tools.", "", "", EditorCommandCategory.Tools, () => WorkspaceMode = WorkspaceModeLogic);
+        RegisterEditorCommand(EditorCommandId.OpenPluginDiagnostics, "Open Plugin Diagnostics", "Switch to plugin diagnostics.", "", "", EditorCommandCategory.Tools, () => WorkspaceMode = WorkspaceModePlugins);
+
+        RegisterEditorCommand(EditorCommandId.RefreshGeneratedCode, "Refresh Generated Code", "Regenerate XAML/C# export.", "", "", EditorCommandCategory.Export, GenerateXaml);
+        RegisterEditorCommand(EditorCommandId.CopyXaml, "Copy XAML", "Generate and copy XAML.", "", "", EditorCommandCategory.Export, () => RequestExternalEditorCommand(EditorCommandId.CopyXaml));
+        RegisterEditorCommand(EditorCommandId.CopyCSharp, "Copy C#", "Generate and copy C#.", "", "", EditorCommandCategory.Export, () => RequestExternalEditorCommand(EditorCommandId.CopyCSharp));
+        RegisterEditorCommand(EditorCommandId.RunSmokeTests, "Run Smoke Tests", "Run export smoke tests from the repository.", "", "", EditorCommandCategory.Export, () => RequestExternalEditorCommand(EditorCommandId.RunSmokeTests));
+        RegisterEditorCommand(EditorCommandId.OpenExportDiagnostics, "Open Export Diagnostics", "Open export/code diagnostics.", "", "", EditorCommandCategory.Export, () => WorkspaceMode = WorkspaceModeCode);
+
+        RegisterEditorCommand(EditorCommandId.OpenHelp, "Open Help", "Open product documentation.", "", "F1", EditorCommandCategory.Help, () => RequestExternalEditorCommand(EditorCommandId.OpenHelp));
+        RegisterEditorCommand(EditorCommandId.OpenQuickStart, "Open Quick Start", "Open the onboarding help.", "", "", EditorCommandCategory.Help, () => RequestExternalEditorCommand(EditorCommandId.OpenQuickStart));
+        RegisterEditorCommand(EditorCommandId.OpenPluginSdkDocs, "Open Plugin SDK Docs", "Open plugin developer documentation.", "", "", EditorCommandCategory.Help, () => RequestExternalEditorCommand(EditorCommandId.OpenPluginSdkDocs));
+        RegisterEditorCommand(EditorCommandId.OpenCommandPalette, "Command Palette", "Search and run editor commands.", "", "Ctrl+Shift+P", EditorCommandCategory.Tools, OpenCommandPalette);
+    }
+
+    private EditorCommand RegisterEditorCommand(
+        EditorCommandId id,
+        string title,
+        string description,
+        string icon,
+        string shortcut,
+        EditorCommandCategory category,
+        Action execute,
+        Func<EditorCommandState>? getState = null,
+        bool isDangerous = false)
+    {
+        return _editorCommandService.Register(new EditorCommandDefinition
+        {
+            Id = id,
+            Title = title,
+            Description = description,
+            Icon = icon,
+            Shortcut = shortcut,
+            Category = category,
+            Execute = execute,
+            GetState = getState,
+            IsDangerous = isDangerous
+        });
+    }
+
+    private static EditorCommandState StateWhen(bool condition, string disabledReason)
+    {
+        return condition ? EditorCommandState.Enabled : EditorCommandState.Disabled(disabledReason);
+    }
+
+    private void RequestExternalEditorCommand(EditorCommandId id)
+    {
+        ExternalEditorCommandRequested?.Invoke(id);
+    }
+
+    public EditorCommand? GetEditorCommand(EditorCommandId id)
+    {
+        return _editorCommandService.Find(id);
+    }
+
+    public bool TryExecuteEditorCommand(EditorCommandId id)
+    {
+        var executed = _editorCommandService.TryExecute(id);
+        RefreshEditorCommands();
+        return executed;
+    }
+
+    public void RefreshEditorCommands()
+    {
+        _editorCommandService.Refresh();
+        if (IsCommandPaletteOpen)
+            RefreshCommandPaletteCommands();
+    }
+
+    private void RaiseEditorCommandProperties()
+    {
+        OnPropertyChanged(nameof(NewEditorCommand));
+        OnPropertyChanged(nameof(OpenEditorCommand));
+        OnPropertyChanged(nameof(SaveEditorCommand));
+        OnPropertyChanged(nameof(SaveAsEditorCommand));
+        OnPropertyChanged(nameof(UndoEditorCommand));
+        OnPropertyChanged(nameof(RedoEditorCommand));
+        OnPropertyChanged(nameof(DeleteEditorCommand));
+        OnPropertyChanged(nameof(DuplicateEditorCommand));
+        OnPropertyChanged(nameof(CopyEditorCommand));
+        OnPropertyChanged(nameof(PasteEditorCommand));
+        OnPropertyChanged(nameof(GroupEditorCommand));
+        OnPropertyChanged(nameof(UngroupEditorCommand));
+        OnPropertyChanged(nameof(LockEditorCommand));
+        OnPropertyChanged(nameof(UnlockEditorCommand));
+        OnPropertyChanged(nameof(BringToFrontEditorCommand));
+        OnPropertyChanged(nameof(SendToBackEditorCommand));
+        OnPropertyChanged(nameof(PreviewEditorCommand));
+        OnPropertyChanged(nameof(HelpEditorCommand));
+        OnPropertyChanged(nameof(ToggleLeftPanelEditorCommand));
+        OnPropertyChanged(nameof(ToggleRightPanelEditorCommand));
+        OnPropertyChanged(nameof(ToggleProblemsPanelEditorCommand));
+        OnPropertyChanged(nameof(ResetLayoutEditorCommand));
+        OnPropertyChanged(nameof(ToggleDesignFramesEditorCommand));
+        OnPropertyChanged(nameof(RefreshGeneratedCodeEditorCommand));
+        OnPropertyChanged(nameof(CopyXamlEditorCommand));
+        OnPropertyChanged(nameof(CopyCSharpEditorCommand));
+        OnPropertyChanged(nameof(OpenExportDiagnosticsEditorCommand));
+    }
+
+    [RelayCommand]
+    private void OpenCommandPalette()
+    {
+        IsCommandPaletteOpen = true;
+        RefreshEditorCommands();
+        RefreshCommandPaletteCommands();
+        SelectedCommandPaletteCommand = CommandPaletteCommands.FirstOrDefault(command => command.IsEnabled)
+            ?? CommandPaletteCommands.FirstOrDefault();
+    }
+
+    [RelayCommand]
+    private void CloseCommandPalette()
+    {
+        IsCommandPaletteOpen = false;
+        CommandPaletteSearchText = "";
+        CommandPaletteCommands.Clear();
+    }
+
+    public void CloseCommandPaletteView()
+    {
+        CloseCommandPalette();
+    }
+
+    [RelayCommand]
+    private void ExecuteEditorCommand(EditorCommand? command)
+    {
+        if (command is null)
+            return;
+
+        if (!command.CanExecute(null))
+        {
+            StatusText = string.IsNullOrWhiteSpace(command.DisabledReason)
+                ? $"Command is disabled: {command.Title}"
+                : $"{command.Title}: {command.DisabledReason}";
+            return;
+        }
+
+        command.Execute(null);
+        CloseCommandPalette();
+        RefreshEditorCommands();
+    }
+
+    [RelayCommand]
+    private void ExecuteSelectedCommandPaletteCommand()
+    {
+        ExecuteEditorCommand(SelectedCommandPaletteCommand);
+    }
+
+    public void ExecuteSelectedCommandPaletteView()
+    {
+        ExecuteEditorCommand(SelectedCommandPaletteCommand);
+    }
+
+    private void RefreshCommandPaletteCommands()
+    {
+        var currentId = SelectedCommandPaletteCommand?.Id;
+        CommandPaletteCommands.Clear();
+        foreach (var command in _editorCommandService.Search(CommandPaletteSearchText, includeDisabled: true).Take(80))
+            CommandPaletteCommands.Add(command);
+
+        SelectedCommandPaletteCommand = CommandPaletteCommands.FirstOrDefault(command => command.Id == currentId)
+            ?? CommandPaletteCommands.FirstOrDefault(command => command.IsEnabled)
+            ?? CommandPaletteCommands.FirstOrDefault();
+    }
+
+    partial void OnCommandPaletteSearchTextChanged(string value)
+    {
+        if (IsCommandPaletteOpen)
+            RefreshCommandPaletteCommands();
+    }
+
+    private void ToggleSelectedVisibility()
+    {
+        var targets = GetVisibleEditableSelectedRootControls().ToList();
+        if (targets.Count == 0)
+            return;
+
+        var shouldShow = targets.Any(control => !control.IsVisible);
+        BeginUndoBatch();
+        foreach (var control in targets)
+            control.IsVisible = shouldShow;
+        CommitUndoBatch();
+        StatusText = shouldShow ? "Selection is visible." : "Selection is hidden.";
     }
 
     [RelayCommand]
@@ -11036,6 +11313,7 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(SelectedControlSummary));
         RaiseBindingEditorProperties();
         RaiseInteractionDesignerProperties();
+        RefreshEditorCommands();
     }
 
     private void RaiseBindingEditorProperties()
@@ -12586,6 +12864,7 @@ public partial class MainWindowViewModel : ObservableObject
 
         MarkExportCacheStale();
         RefreshDiagnostics();
+        RefreshEditorCommands();
         DesignerChanged?.Invoke(this, EventArgs.Empty);
     }
 }

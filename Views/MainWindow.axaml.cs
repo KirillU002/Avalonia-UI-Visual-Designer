@@ -14,6 +14,7 @@ using Avalonia.Threading;
 using FormDesigner.DesignerSystem.Binding;
 using FormDesigner.DesignerSystem.BuiltIn;
 using FormDesigner.DesignerSystem.Infrastructure;
+using FormDesigner.EditorCommands;
 using FormDesigner.Models;
 using FormDesigner.PluginContracts;
 using FormDesigner.Services;
@@ -211,6 +212,7 @@ public partial class MainWindow : Window
         {
             _attachedViewModel.DesignerChanged -= ViewModel_DesignerChanged;
             _attachedViewModel.PropertyChanged -= ViewModel_PropertyChanged;
+            _attachedViewModel.ExternalEditorCommandRequested -= ViewModel_ExternalEditorCommandRequested;
         }
 
         _attachedViewModel = DataContext as MainWindowViewModel;
@@ -219,6 +221,7 @@ public partial class MainWindow : Window
         {
             _attachedViewModel.DesignerChanged += ViewModel_DesignerChanged;
             _attachedViewModel.PropertyChanged += ViewModel_PropertyChanged;
+            _attachedViewModel.ExternalEditorCommandRequested += ViewModel_ExternalEditorCommandRequested;
             ApplyAppSettingsToViewModel(_attachedViewModel);
             _lastObservedDocumentSessionId = _attachedViewModel.DocumentSessionId;
             UpdateWindowTitle();
@@ -262,7 +265,7 @@ public partial class MainWindow : Window
         if (GetStructureTreeItem(sender)?.Control is { } control)
         {
             VM.SelectSingleControl(control);
-            VM.DuplicateSelectedCommand.Execute(null);
+            VM.TryExecuteEditorCommand(EditorCommandId.Duplicate);
         }
 
         e.Handled = true;
@@ -273,7 +276,7 @@ public partial class MainWindow : Window
         if (GetStructureTreeItem(sender)?.Control is { } control)
         {
             VM.SelectSingleControl(control);
-            VM.DeleteSelectedCommand.Execute(null);
+            VM.TryExecuteEditorCommand(EditorCommandId.Delete);
         }
 
         e.Handled = true;
@@ -349,6 +352,16 @@ public partial class MainWindow : Window
             UpdateWindowTitle();
         }
 
+        if (e.PropertyName == nameof(MainWindowViewModel.IsCommandPaletteOpen)
+            && viewModel.IsCommandPaletteOpen)
+        {
+            Dispatcher.UIThread.Post(() =>
+            {
+                CommandPaletteSearchTextBox.Focus();
+                CommandPaletteSearchTextBox.SelectAll();
+            }, DispatcherPriority.Background);
+        }
+
         if (IsSessionProperty(e.PropertyName) || IsExportSettingsProperty(e.PropertyName))
             ScheduleSettingsSave();
 
@@ -369,6 +382,88 @@ public partial class MainWindow : Window
             _autosaveRecoveryService.TryDeleteDraft();
             viewModel.AutosaveStatusText = "Черновик очищен для новой сессии.";
         }
+    }
+
+    private async void ViewModel_ExternalEditorCommandRequested(EditorCommandId id)
+    {
+        switch (id)
+        {
+            case EditorCommandId.New:
+                NewDocumentButton_Click(this, new RoutedEventArgs());
+                break;
+            case EditorCommandId.Open:
+                OpenDocumentButton_Click(this, new RoutedEventArgs());
+                break;
+            case EditorCommandId.Save:
+                SaveDocumentButton_Click(this, new RoutedEventArgs());
+                break;
+            case EditorCommandId.SaveAs:
+                SaveDocumentAsButton_Click(this, new RoutedEventArgs());
+                break;
+            case EditorCommandId.RecentFiles:
+                VM.StatusText = "Recent files are available from the toolbar flyout.";
+                break;
+            case EditorCommandId.RestoreAutosave:
+                await CheckRecoveryOnStartupAsync();
+                break;
+            case EditorCommandId.TogglePreviewMode:
+                await LaunchPreviewAsync();
+                break;
+            case EditorCommandId.OpenHelp:
+            case EditorCommandId.OpenQuickStart:
+            case EditorCommandId.OpenPluginSdkDocs:
+                OpenHelpWindow();
+                break;
+            case EditorCommandId.OpenColumnEditor:
+                OpenDataGridColumnEditorButton_Click(this, new RoutedEventArgs());
+                break;
+            case EditorCommandId.CopyXaml:
+                await CopyGeneratedXamlAsync();
+                break;
+            case EditorCommandId.CopyCSharp:
+                await CopyGeneratedCSharpAsync();
+                break;
+            case EditorCommandId.ZoomIn:
+                SetSurfaceZoom(GetAdjacentSurfaceZoom(zoomIn: true));
+                break;
+            case EditorCommandId.ZoomOut:
+                SetSurfaceZoom(GetAdjacentSurfaceZoom(zoomIn: false));
+                break;
+            case EditorCommandId.Zoom100:
+                SetSurfaceZoom(1.0);
+                break;
+            case EditorCommandId.FitToScreen:
+                FitSurfaceToViewport();
+                break;
+            case EditorCommandId.RunSmokeTests:
+                VM.StatusText = "Smoke tests запускаются одной командой: .\\smoke-tests\\run-smoke-tests.ps1";
+                break;
+        }
+    }
+
+    private async Task CopyGeneratedXamlAsync()
+    {
+        VM.GenerateXamlCommand.Execute(null);
+        await CopyTextToClipboardAsync(VM.GeneratedXaml, "XAML copied. Install required NuGet packages when the checklist asks for them.");
+    }
+
+    private async Task CopyGeneratedCSharpAsync()
+    {
+        VM.GenerateXamlCommand.Execute(null);
+        await CopyTextToClipboardAsync(VM.GeneratedCSharp, "C# copied. Check the generated namespace in the target project.");
+    }
+
+    private void FitSurfaceToViewport()
+    {
+        var chromeHeight = VM.FormHasSystemDecorations ? DesignPreviewChromeHeight : 0;
+        var targetWidth = Math.Max(1, VM.PreviewFormWidth);
+        var targetHeight = Math.Max(1, VM.PreviewFormHeight + chromeHeight);
+        var viewportWidth = Math.Max(1, DesignerViewportScrollViewer.Viewport.Width - 48);
+        var viewportHeight = Math.Max(1, DesignerViewportScrollViewer.Viewport.Height - 48);
+        var zoom = Math.Clamp(Math.Min(viewportWidth / targetWidth, viewportHeight / targetHeight), 0.25, 2.0);
+
+        SetSurfaceZoom(zoom);
+        DesignerViewportScrollViewer.Offset = ClampViewportOffset(new Vector(0, 0));
     }
 
     private void ResetInteractiveRuntimePreviewState()
@@ -1130,6 +1225,98 @@ public partial class MainWindow : Window
         StopViewportPan(e);
     }
 
+    private bool TryExecuteEditorShortcut(KeyEventArgs e)
+    {
+        if (DataContext is not MainWindowViewModel viewModel)
+            return false;
+
+        var isCtrl = e.KeyModifiers.HasFlag(KeyModifiers.Control);
+        var isShift = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
+        var sourceEditsText = e.Source is TextBox or ComboBox;
+        EditorCommandId? commandId = null;
+
+        if (isCtrl && isShift && e.Key == Key.P)
+            commandId = EditorCommandId.OpenCommandPalette;
+        else if (e.Key == Key.F1)
+            commandId = EditorCommandId.OpenHelp;
+        else if (e.Key == Key.F5)
+            commandId = EditorCommandId.TogglePreviewMode;
+        else if (e.Key == Key.F12)
+            commandId = EditorCommandId.ToggleDesignFrames;
+        else if (isCtrl && isShift && e.Key == Key.S)
+            commandId = EditorCommandId.SaveAs;
+        else if (isCtrl && e.Key == Key.S)
+            commandId = EditorCommandId.Save;
+        else if (isCtrl && e.Key == Key.O)
+            commandId = EditorCommandId.Open;
+        else if (isCtrl && e.Key == Key.N)
+            commandId = EditorCommandId.New;
+        else if (isCtrl && IsKeyNamed(e, "D0", "NumPad0"))
+            commandId = EditorCommandId.Zoom100;
+        else if (isCtrl && IsKeyNamed(e, "OemPlus", "Add"))
+            commandId = EditorCommandId.ZoomIn;
+        else if (isCtrl && IsKeyNamed(e, "OemMinus", "Subtract"))
+            commandId = EditorCommandId.ZoomOut;
+        else if (!sourceEditsText)
+        {
+            if (isCtrl && e.Key == Key.Z)
+                commandId = EditorCommandId.Undo;
+            else if (isCtrl && e.Key == Key.Y)
+                commandId = EditorCommandId.Redo;
+            else if (isCtrl && e.Key == Key.X)
+                commandId = EditorCommandId.Cut;
+            else if (isCtrl && e.Key == Key.C)
+                commandId = EditorCommandId.Copy;
+            else if (isCtrl && e.Key == Key.V)
+                commandId = EditorCommandId.Paste;
+            else if (isCtrl && e.Key == Key.A)
+                commandId = EditorCommandId.SelectAll;
+            else if (isCtrl && e.Key == Key.D)
+                commandId = EditorCommandId.Duplicate;
+            else if (isCtrl && isShift && e.Key == Key.G)
+                commandId = EditorCommandId.Ungroup;
+            else if (isCtrl && e.Key == Key.G)
+                commandId = EditorCommandId.Group;
+            else if (isCtrl && isShift && e.Key == Key.L)
+                commandId = EditorCommandId.Unlock;
+            else if (isCtrl && e.Key == Key.L)
+                commandId = EditorCommandId.Lock;
+            else if (e.Key == Key.Delete)
+                commandId = EditorCommandId.Delete;
+            else if (e.Key == Key.PageUp)
+                commandId = EditorCommandId.BringToFront;
+            else if (e.Key == Key.PageDown)
+                commandId = EditorCommandId.SendToBack;
+        }
+
+        if (commandId is null)
+            return false;
+
+        var command = viewModel.GetEditorCommand(commandId.Value);
+        if (command is null)
+            return false;
+
+        if (!command.CanExecute(null))
+        {
+            viewModel.StatusText = string.IsNullOrWhiteSpace(command.DisabledReason)
+                ? $"Command is disabled: {command.Title}"
+                : $"{command.Title}: {command.DisabledReason}";
+            e.Handled = true;
+            return true;
+        }
+
+        command.Execute(null);
+        viewModel.RefreshEditorCommands();
+        e.Handled = true;
+        return true;
+    }
+
+    private static bool IsKeyNamed(KeyEventArgs e, params string[] names)
+    {
+        var keyName = e.Key.ToString();
+        return names.Any(name => string.Equals(keyName, name, StringComparison.OrdinalIgnoreCase));
+    }
+
     private void MainWindow_KeyDown(object? sender, KeyEventArgs e)
     {
         if (DataContext is not MainWindowViewModel)
@@ -1147,6 +1334,9 @@ public partial class MainWindow : Window
             e.Handled = true;
             return;
         }
+
+        if (TryExecuteEditorShortcut(e))
+            return;
 
         if (e.Key == Key.F1)
         {
@@ -1374,6 +1564,34 @@ public partial class MainWindow : Window
         _isSpacePressed = false;
         if (!_isPanningViewport)
             UpdateDesignerViewportCursor();
+    }
+
+    private void CommandPaletteTextBox_KeyDown(object? sender, KeyEventArgs e)
+    {
+        if (DataContext is not MainWindowViewModel viewModel)
+            return;
+
+        if (e.Key == Key.Escape)
+        {
+            viewModel.CloseCommandPaletteView();
+            e.Handled = true;
+            return;
+        }
+
+        if (e.Key == Key.Enter)
+        {
+            viewModel.ExecuteSelectedCommandPaletteView();
+            e.Handled = true;
+        }
+    }
+
+    private void CommandPaletteListBox_DoubleTapped(object? sender, TappedEventArgs e)
+    {
+        if (DataContext is not MainWindowViewModel viewModel)
+            return;
+
+        viewModel.ExecuteSelectedCommandPaletteView();
+        e.Handled = true;
     }
 
     private async void ToolboxItem_PointerPressed(object? sender, PointerPressedEventArgs e)
@@ -5257,59 +5475,31 @@ public partial class MainWindow : Window
 
     private ContextMenu CreateControlContextMenu(DesignControlModel model)
     {
-        var duplicateItem = new MenuItem
+        MenuItem CreateCommandItem(EditorCommandId commandId, string? fallbackHeader = null)
         {
-            Header = "Дублировать",
-            Command = VM.DuplicateSelectedCommand
-        };
+            var command = VM.GetEditorCommand(commandId);
+            var header = fallbackHeader ?? command?.Title ?? commandId.ToString();
+            if (command is not null && !string.IsNullOrWhiteSpace(command.Shortcut))
+                header = $"{header}\t{command.Shortcut}";
 
-        var lockItem = new MenuItem
-        {
-            Header = "Заблокировать",
-            Command = VM.LockSelectedCommand
-        };
+            var item = new MenuItem
+            {
+                Header = header,
+                Command = command
+            };
+            ToolTip.SetTip(item, command?.Hint);
+            return item;
+        }
 
-        var unlockItem = new MenuItem
-        {
-            Header = "Разблокировать",
-            Command = VM.UnlockSelectedCommand
-        };
-
-        var deleteItem = new MenuItem
-        {
-            Header = "Удалить",
-            Command = VM.DeleteSelectedCommand
-        };
-
-        var alignLeftItem = new MenuItem
-        {
-            Header = "По левому краю",
-            Command = VM.AlignSelectionLeftCommand
-        };
-
-        var alignTopItem = new MenuItem
-        {
-            Header = "По верхнему краю",
-            Command = VM.AlignSelectionTopCommand
-        };
-
-        var alignRightItem = new MenuItem
-        {
-            Header = "По правому краю",
-            Command = VM.AlignSelectionRightCommand
-        };
-
-        var alignCenterItem = new MenuItem
-        {
-            Header = "По центру",
-            Command = VM.AlignSelectionCenterCommand
-        };
-
-        var alignBottomItem = new MenuItem
-        {
-            Header = "По нижнему краю",
-            Command = VM.AlignSelectionBottomCommand
-        };
+        var duplicateItem = CreateCommandItem(EditorCommandId.Duplicate, "Дублировать");
+        var lockItem = CreateCommandItem(EditorCommandId.Lock, "Заблокировать");
+        var unlockItem = CreateCommandItem(EditorCommandId.Unlock, "Разблокировать");
+        var deleteItem = CreateCommandItem(EditorCommandId.Delete, "Удалить");
+        var alignLeftItem = CreateCommandItem(EditorCommandId.AlignLeft, "По левому краю");
+        var alignTopItem = CreateCommandItem(EditorCommandId.AlignTop, "По верхнему краю");
+        var alignRightItem = CreateCommandItem(EditorCommandId.AlignRight, "По правому краю");
+        var alignCenterItem = CreateCommandItem(EditorCommandId.AlignCenter, "По центру");
+        var alignBottomItem = CreateCommandItem(EditorCommandId.AlignBottom, "По нижнему краю");
 
         var alignMiddleItem = new MenuItem
         {
@@ -5317,17 +5507,8 @@ public partial class MainWindow : Window
             Command = VM.AlignSelectionMiddleCommand
         };
 
-        var distributeHorizontalItem = new MenuItem
-        {
-            Header = "Распределить по горизонтали",
-            Command = VM.DistributeSelectionHorizontalCommand
-        };
-
-        var distributeVerticalItem = new MenuItem
-        {
-            Header = "Распределить по вертикали",
-            Command = VM.DistributeSelectionVerticalCommand
-        };
+        var distributeHorizontalItem = CreateCommandItem(EditorCommandId.DistributeHorizontal, "Распределить по горизонтали");
+        var distributeVerticalItem = CreateCommandItem(EditorCommandId.DistributeVertical, "Распределить по вертикали");
 
         var matchWidthItem = new MenuItem
         {
@@ -5359,17 +5540,8 @@ public partial class MainWindow : Window
             Command = VM.PasteStyleCommand
         };
 
-        var bringToFrontItem = new MenuItem
-        {
-            Header = "На передний план",
-            Command = VM.BringSelectionToFrontCommand
-        };
-
-        var sendToBackItem = new MenuItem
-        {
-            Header = "На задний план",
-            Command = VM.SendSelectionToBackCommand
-        };
+        var bringToFrontItem = CreateCommandItem(EditorCommandId.BringToFront, "На передний план");
+        var sendToBackItem = CreateCommandItem(EditorCommandId.SendToBack, "На задний план");
 
         var wrapInContainerItem = new MenuItem
         {
@@ -5458,6 +5630,7 @@ public partial class MainWindow : Window
 
         contextMenu.Opened += (_, _) =>
         {
+            VM.RefreshEditorCommands();
             var selectedRootCount = VM.GetVisibleEditableSelectedRootControls().Count;
             var canArrange = selectedRootCount > 1;
             var canDistribute = selectedRootCount > 2;

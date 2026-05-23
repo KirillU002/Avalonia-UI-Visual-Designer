@@ -4,6 +4,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:vm="using:FormDesigner.ViewModels"
         xmlns:models="using:FormDesigner.Models"
+        xmlns:commands="using:FormDesigner.EditorCommands"
         xmlns:contracts="clr-namespace:FormDesigner.PluginContracts;assembly=FormDesigner.PluginContracts"
         x:Class="FormDesigner.Views.MainWindow"
         x:Name="RootWindow"
@@ -545,25 +546,29 @@
                 ColumnSpacing="6">
             <Button Content="Создать"
                     Classes="toolbar-button"
-                    Click="NewDocumentButton_Click"
+                    Command="{Binding NewEditorCommand}"
+                    ToolTip.Tip="{Binding NewEditorCommand.Hint}"
                     Padding="12,7"/>
 
             <Button Grid.Column="1"
                     Content="Открыть"
                     Classes="toolbar-button"
-                    Click="OpenDocumentButton_Click"
+                    Command="{Binding OpenEditorCommand}"
+                    ToolTip.Tip="{Binding OpenEditorCommand.Hint}"
                     Padding="12,7"/>
 
             <Button Grid.Column="2"
                     Content="Сохранить"
                     Classes="toolbar-button"
-                    Click="SaveDocumentButton_Click"
+                    Command="{Binding SaveEditorCommand}"
+                    ToolTip.Tip="{Binding SaveEditorCommand.Hint}"
                     Padding="12,7"/>
 
             <Button Grid.Column="3"
                     Content="Сохранить как"
                     Classes="toolbar-button"
-                    Click="SaveDocumentAsButton_Click"
+                    Command="{Binding SaveAsEditorCommand}"
+                    ToolTip.Tip="{Binding SaveAsEditorCommand.Hint}"
                     Padding="12,7"/>
 
             <Button Grid.Column="4"
@@ -626,27 +631,28 @@
             <Button Grid.Column="7"
                     Content="Отменить"
                     Classes="toolbar-button"
-                    Command="{Binding UndoCommand}"
-                    IsEnabled="{Binding HasUndo}"
+                    Command="{Binding UndoEditorCommand}"
+                    ToolTip.Tip="{Binding UndoEditorCommand.Hint}"
                     Padding="12,7"/>
 
             <Button Grid.Column="8"
                     Content="Повторить"
                     Classes="toolbar-button"
-                    Command="{Binding RedoCommand}"
-                    IsEnabled="{Binding HasRedo}"
+                    Command="{Binding RedoEditorCommand}"
+                    ToolTip.Tip="{Binding RedoEditorCommand.Hint}"
                     Padding="12,7"/>
 
             <Button Grid.Column="9"
                     Content="Предпросмотр запуска"
                     Classes="toolbar-button"
-                    Click="LaunchPreviewButton_Click"
+                    Command="{Binding PreviewEditorCommand}"
+                    ToolTip.Tip="{Binding PreviewEditorCommand.Hint}"
                     Padding="12,7"/>
 
             <Button Grid.Column="10"
                     Content="Справка"
                     Classes="toolbar-button"
-                    Click="OpenHelpButton_Click"
+                    Command="{Binding HelpEditorCommand}"
                     Padding="12,7"
                     ToolTip.Tip="Открыть подробную справку по конструктору форм (F1)"/>
 
@@ -694,7 +700,7 @@
               Width="42"
               MinHeight="140"
               Classes="dock-rail"
-              Command="{Binding ShowLeftDockPanelCommand}"
+              Command="{Binding ToggleLeftPanelEditorCommand}"
               IsVisible="{Binding IsLeftDockRailVisible}"
               ToolTip.Tip="Показать левую панель">
         <StackPanel Spacing="8"
@@ -744,7 +750,7 @@
               <Button Grid.Column="1"
                       Content="‹"
                       Classes="dock-collapse"
-                      Command="{Binding HideLeftDockPanelCommand}"
+                      Command="{Binding ToggleLeftPanelEditorCommand}"
                       ToolTip.Tip="Скрыть левую панель"/>
             </Grid>
           </Border>
@@ -1437,11 +1443,11 @@
               <Button
                       Content="{Binding UserPreviewModeButtonText}"
                       Classes="toolbar-button"
-                      Command="{Binding ToggleUserPreviewModeCommand}"
+                      Command="{Binding ToggleDesignFramesEditorCommand}"
+                      ToolTip.Tip="{Binding ToggleDesignFramesEditorCommand.Hint}"
                       VerticalAlignment="Center"
                       Margin="12,0,8,0"
-                      Padding="12,7"
-                      ToolTip.Tip="Переключить режим дизайна / режим предпросмотра (F12)"/>
+                      Padding="12,7"/>
 
               <Button
                       Content="{Binding ImmersiveModeButtonText}"
@@ -1576,52 +1582,62 @@
                             Spacing="8">
                   <Button Content="Дублировать"
                           Classes="data-action-button"
-                          Command="{Binding DuplicateSelectedCommand}"
+                          Command="{Binding DuplicateEditorCommand}"
+                          ToolTip.Tip="{Binding DuplicateEditorCommand.Hint}"
                           IsEnabled="{Binding CanDuplicateSelected}"
                           Padding="10,7"/>
                   <Button Content="Удалить"
                           Classes="data-action-button"
-                          Command="{Binding DeleteSelectedCommand}"
+                          Command="{Binding DeleteEditorCommand}"
+                          ToolTip.Tip="{Binding DeleteEditorCommand.Hint}"
                           IsEnabled="{Binding HasSelectedControl}"
                           Padding="10,7"/>
                   <Button Content="Копировать"
                           Classes="data-action-button"
-                          Command="{Binding CopySelectionCommand}"
+                          Command="{Binding CopyEditorCommand}"
+                          ToolTip.Tip="{Binding CopyEditorCommand.Hint}"
                           IsEnabled="{Binding CanCopySelection}"
                           Padding="10,7"/>
                   <Button Content="Вставить"
                           Classes="data-action-button"
-                          Command="{Binding PasteSelectionCommand}"
+                          Command="{Binding PasteEditorCommand}"
+                          ToolTip.Tip="{Binding PasteEditorCommand.Hint}"
                           IsEnabled="{Binding CanPasteSelection}"
                           Padding="10,7"/>
                   <Button Content="Заблокировать"
                           Classes="data-action-button"
-                          Command="{Binding LockSelectedCommand}"
+                          Command="{Binding LockEditorCommand}"
+                          ToolTip.Tip="{Binding LockEditorCommand.Hint}"
                           IsEnabled="{Binding CanLockSelected}"
                           Padding="10,7"/>
                   <Button Content="Разблокировать"
                           Classes="data-action-button"
-                          Command="{Binding UnlockSelectedCommand}"
+                          Command="{Binding UnlockEditorCommand}"
+                          ToolTip.Tip="{Binding UnlockEditorCommand.Hint}"
                           IsEnabled="{Binding CanUnlockSelected}"
                           Padding="10,7"/>
                   <Button Content="Группа"
                           Classes="data-action-button"
-                          Command="{Binding GroupSelectionCommand}"
+                          Command="{Binding GroupEditorCommand}"
+                          ToolTip.Tip="{Binding GroupEditorCommand.Hint}"
                           IsEnabled="{Binding CanGroupSelection}"
                           Padding="10,7"/>
                   <Button Content="Разгруппировать"
                           Classes="data-action-button"
-                          Command="{Binding UngroupSelectionCommand}"
+                          Command="{Binding UngroupEditorCommand}"
+                          ToolTip.Tip="{Binding UngroupEditorCommand.Hint}"
                           IsEnabled="{Binding CanUngroupSelection}"
                           Padding="10,7"/>
                   <Button Content="Вперёд"
                           Classes="data-action-button"
-                          Command="{Binding BringSelectionToFrontCommand}"
+                          Command="{Binding BringToFrontEditorCommand}"
+                          ToolTip.Tip="{Binding BringToFrontEditorCommand.Hint}"
                           IsEnabled="{Binding CanChangeZOrder}"
                           Padding="10,7"/>
                   <Button Content="Назад"
                           Classes="data-action-button"
-                          Command="{Binding SendSelectionToBackCommand}"
+                          Command="{Binding SendToBackEditorCommand}"
+                          ToolTip.Tip="{Binding SendToBackEditorCommand.Hint}"
                           IsEnabled="{Binding CanChangeZOrder}"
                           Padding="10,7"/>
                 </StackPanel>
@@ -1730,7 +1746,7 @@
               <Button Grid.Column="4"
                       Content=">"
                       Classes="dock-collapse"
-                      Command="{Binding HideRightDockPanelCommand}"
+                      Command="{Binding ToggleRightPanelEditorCommand}"
                       ToolTip.Tip="Hide right panel"/>
             </Grid>
           </Border>
@@ -5028,21 +5044,25 @@
                     <WrapPanel>
                     <Button Content="Копировать XAML"
                             Classes="export-primary"
-                            Click="CopyGeneratedXamlButton_Click"
+                            Command="{Binding CopyXamlEditorCommand}"
+                            ToolTip.Tip="{Binding CopyXamlEditorCommand.Hint}"
                             Margin="0,0,8,8"/>
                     <Button Content="Копировать C#"
                             Classes="export-primary"
-                            Click="CopyGeneratedCSharpButton_Click"
+                            Command="{Binding CopyCSharpEditorCommand}"
+                            ToolTip.Tip="{Binding CopyCSharpEditorCommand.Hint}"
                             Margin="0,0,8,8"/>
                     </WrapPanel>
                     <WrapPanel>
                     <Button Content="Обновить"
                             Classes="export-secondary"
-                            Command="{Binding GenerateXamlCommand}"
+                            Command="{Binding RefreshGeneratedCodeEditorCommand}"
+                            ToolTip.Tip="{Binding RefreshGeneratedCodeEditorCommand.Hint}"
                             Margin="0,0,8,8"/>
                     <Button Content="Диагностика"
                             Classes="export-secondary"
-                            Command="{Binding OpenDiagnosticsModeCommand}"
+                            Command="{Binding OpenExportDiagnosticsEditorCommand}"
+                            ToolTip.Tip="{Binding OpenExportDiagnosticsEditorCommand.Hint}"
                             Margin="0,0,8,8"
                             IsVisible="{Binding HasExportWarnings}"/>
                     <Button Content="Как вставить?"
@@ -5324,21 +5344,25 @@
                     <WrapPanel>
                     <Button Content="Копировать XAML"
                             Classes="export-primary"
-                            Click="CopyGeneratedXamlButton_Click"
+                            Command="{Binding CopyXamlEditorCommand}"
+                            ToolTip.Tip="{Binding CopyXamlEditorCommand.Hint}"
                             Margin="0,0,8,8"/>
                     <Button Content="Копировать C#"
                             Classes="export-primary"
-                            Click="CopyGeneratedCSharpButton_Click"
+                            Command="{Binding CopyCSharpEditorCommand}"
+                            ToolTip.Tip="{Binding CopyCSharpEditorCommand.Hint}"
                             Margin="0,0,8,8"/>
                     </WrapPanel>
                     <WrapPanel>
                     <Button Content="Обновить"
                             Classes="export-secondary"
-                            Command="{Binding GenerateXamlCommand}"
+                            Command="{Binding RefreshGeneratedCodeEditorCommand}"
+                            ToolTip.Tip="{Binding RefreshGeneratedCodeEditorCommand.Hint}"
                             Margin="0,0,8,8"/>
                     <Button Content="Диагностика"
                             Classes="export-secondary"
-                            Command="{Binding OpenDiagnosticsModeCommand}"
+                            Command="{Binding OpenExportDiagnosticsEditorCommand}"
+                            ToolTip.Tip="{Binding OpenExportDiagnosticsEditorCommand.Hint}"
                             Margin="0,0,8,8"
                             IsVisible="{Binding HasExportWarnings}"/>
                     <Button Content="Как вставить?"
@@ -5778,7 +5802,7 @@
               Width="42"
               MinHeight="140"
               Classes="dock-rail"
-              Command="{Binding ShowRightDockPanelCommand}"
+              Command="{Binding ToggleRightPanelEditorCommand}"
               IsVisible="{Binding IsRightDockRailVisible}"
               ToolTip.Tip="Показать правую панель">
         <StackPanel Spacing="8"
@@ -5912,14 +5936,14 @@
 
               <Button Grid.Column="6"
                       Content="↺"
-                      Command="{Binding ResetEditorShellLayoutCommand}"
+                      Command="{Binding ResetLayoutEditorCommand}"
                       Classes="dock-collapse"
                       VerticalAlignment="Center"
                       ToolTip.Tip="Сбросить расположение панелей"/>
 
               <Button Grid.Column="7"
                       Content="×"
-                      Command="{Binding CloseBottomDockPanelCommand}"
+                      Command="{Binding ToggleProblemsPanelEditorCommand}"
                       Classes="dock-collapse"
                       VerticalAlignment="Center"
                       ToolTip.Tip="Закрыть Problems"/>
@@ -6038,7 +6062,7 @@
         <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,*,Auto"
               ColumnSpacing="8">
           <Button Content="{Binding ProblemsDockButtonText}"
-                  Command="{Binding OpenDiagnosticsModeCommand}"
+                  Command="{Binding ToggleProblemsPanelEditorCommand}"
                   Classes="dock-rail"
                   Padding="12,5"
                   MinHeight="30"
@@ -6094,7 +6118,7 @@
 
           <Button Grid.Column="5"
                   Content="↺"
-                  Command="{Binding ResetEditorShellLayoutCommand}"
+                  Command="{Binding ResetLayoutEditorCommand}"
                   Classes="dock-collapse"
                   Width="30"
                   Height="30"
@@ -6105,6 +6129,103 @@
 
     <!-- Глобальный overlay на время долгих операций:
          загрузка документа, импорт DLL, чтение схемы из БД и прочие фоновые задачи. -->
+    <Border Background="#0F172A80"
+            IsVisible="{Binding IsCommandPaletteOpen}">
+      <Grid>
+        <Border Width="620"
+                MaxHeight="520"
+                Padding="14"
+                CornerRadius="{StaticResource EditorRadiusLarge}"
+                Background="{StaticResource EditorBrushSurface}"
+                BorderBrush="{StaticResource EditorBrushPrimary}"
+                BorderThickness="1"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Top"
+                Margin="0,84,0,0">
+          <Grid RowDefinitions="Auto,Auto,*"
+                RowSpacing="10">
+            <Grid ColumnDefinitions="*,Auto"
+                  ColumnSpacing="8">
+              <StackPanel Spacing="2">
+                <TextBlock Text="Command Palette"
+                           FontSize="16"
+                           FontWeight="SemiBold"
+                           Foreground="{StaticResource EditorBrushText}"/>
+                <TextBlock Text="Search actions, tools, export commands and panels"
+                           FontSize="12"
+                           Foreground="{StaticResource EditorBrushTextMuted}"/>
+              </StackPanel>
+              <Button Grid.Column="1"
+                      Content="Esc"
+                      Classes="editor-ghost-button"
+                      Command="{Binding CloseCommandPaletteCommand}"
+                      Padding="10,5"/>
+            </Grid>
+
+            <TextBox x:Name="CommandPaletteSearchTextBox"
+                     Grid.Row="1"
+                     Text="{Binding CommandPaletteSearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                     Watermark="Type a command name, e.g. Export, Preview, Delete, Group"
+                     KeyDown="CommandPaletteTextBox_KeyDown"/>
+
+            <Border Grid.Row="2"
+                    BorderBrush="{StaticResource EditorBrushBorder}"
+                    BorderThickness="1"
+                    CornerRadius="{StaticResource EditorRadiusMedium}"
+                    ClipToBounds="True">
+              <ListBox ItemsSource="{Binding CommandPaletteCommands}"
+                       SelectedItem="{Binding SelectedCommandPaletteCommand, Mode=TwoWay}"
+                       DoubleTapped="CommandPaletteListBox_DoubleTapped"
+                       MaxHeight="360"
+                       Background="{StaticResource EditorBrushSurface}">
+                <ListBox.ItemTemplate>
+                  <DataTemplate x:DataType="commands:EditorCommand">
+                    <Grid ColumnDefinitions="Auto,*,Auto"
+                          ColumnSpacing="10"
+                          MinHeight="38"
+                          Margin="2">
+                      <TextBlock Text="{Binding Icon}"
+                                 Width="22"
+                                 VerticalAlignment="Center"
+                                 TextAlignment="Center"
+                                 Foreground="{StaticResource EditorBrushTextMuted}"/>
+                      <StackPanel Grid.Column="1"
+                                  Spacing="1"
+                                  VerticalAlignment="Center">
+                        <TextBlock Text="{Binding Title}"
+                                   FontWeight="SemiBold"
+                                   Foreground="{StaticResource EditorBrushText}"
+                                   TextTrimming="CharacterEllipsis"/>
+                        <TextBlock Text="{Binding Description}"
+                                   FontSize="11"
+                                   Foreground="{StaticResource EditorBrushTextMuted}"
+                                   TextTrimming="CharacterEllipsis"/>
+                      </StackPanel>
+                      <StackPanel Grid.Column="2"
+                                  Orientation="Horizontal"
+                                  Spacing="8"
+                                  VerticalAlignment="Center">
+                        <Border Classes="editor-badge">
+                          <TextBlock Text="{Binding CategoryText}"
+                                     FontSize="11"
+                                     Foreground="{StaticResource EditorBrushPrimary}"/>
+                        </Border>
+                        <TextBlock Text="{Binding Shortcut}"
+                                   FontFamily="Consolas"
+                                   FontSize="11"
+                                   Foreground="{StaticResource EditorBrushTextMuted}"
+                                   VerticalAlignment="Center"/>
+                      </StackPanel>
+                    </Grid>
+                  </DataTemplate>
+                </ListBox.ItemTemplate>
+              </ListBox>
+            </Border>
+          </Grid>
+        </Border>
+      </Grid>
+    </Border>
+
     <Border Background="#0F172AB8"
             IsVisible="{Binding IsBusy}">
       <Grid>
