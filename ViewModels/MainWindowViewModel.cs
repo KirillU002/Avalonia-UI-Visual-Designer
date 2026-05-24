@@ -60,6 +60,16 @@ public partial class MainWindowViewModel : ObservableObject
     public const string ProblemsFilterErrors = "Errors";
     public const string ProblemsFilterWarnings = "Warnings";
     public const string ProblemsFilterHints = "Hints";
+    public const string BottomDockTabProblems = "Problems";
+    public const string BottomDockTabOutput = "Output";
+    public const string OutputCategoryAll = "All";
+    public const string OutputCategoryGeneral = "General";
+    public const string OutputCategoryExport = "Export";
+    public const string OutputCategoryPlugins = "Plugins";
+    public const string OutputCategoryDiagnostics = "Diagnostics";
+    public const string OutputCategoryPreview = "Preview";
+    public const string OutputCategorySmokeTests = "SmokeTests";
+    public const string OutputCategoryBackgroundTasks = "BackgroundTasks";
     public const string PropertyGridCategoryFavorites = "Favorites";
     public const string PropertyGridCategoryCommon = "Common";
     public const string PropertyGridCategoryLayout = "Layout";
@@ -144,6 +154,9 @@ public partial class MainWindowViewModel : ObservableObject
     private string _previewScreenName = "Текущий монитор";
     private int _templateInsertionOffset;
     private readonly EditorCommandService _editorCommandService = new();
+    private readonly WorkspaceLogService _workspaceLogService = new();
+    private readonly WorkspaceTaskService _workspaceTaskService = new();
+    private readonly WorkspaceNotificationService _workspaceNotificationService = new();
     private readonly PropertyGridUserSettings _propertyGridUserSettings = new();
     private readonly DispatcherTimer _propertyGridLiveRefreshTimer;
     private readonly DispatcherTimer _diagnosticsRefreshTimer;
@@ -183,6 +196,21 @@ public partial class MainWindowViewModel : ObservableObject
     public ObservableCollection<UndoRedoHistoryItemModel> UndoRedoHistoryItems { get; } = new();
     public ObservableCollection<ReusableTemplateModel> ReusableTemplates { get; } = new();
     public ObservableCollection<RecentFileModel> RecentFiles { get; } = new();
+    public ObservableCollection<WorkspaceLogEntryModel> OutputEntries { get; } = new();
+    public ObservableCollection<WorkspaceLogEntryModel> FilteredOutputEntries { get; } = new();
+    public ObservableCollection<WorkspaceTaskModel> WorkspaceTasks => _workspaceTaskService.Tasks;
+    public ObservableCollection<WorkspaceToastModel> WorkspaceToasts => _workspaceNotificationService.Toasts;
+    public ObservableCollection<string> AvailableOutputCategories { get; } = new()
+    {
+        OutputCategoryAll,
+        OutputCategoryGeneral,
+        OutputCategoryExport,
+        OutputCategoryPlugins,
+        OutputCategoryDiagnostics,
+        OutputCategoryPreview,
+        OutputCategorySmokeTests,
+        OutputCategoryBackgroundTasks
+    };
 
     // Плоский список всех контролов документа. Иерархия восстанавливается через ParentId.
     public ObservableCollection<DesignControlModel> Controls { get; } = new();
@@ -610,6 +638,21 @@ public partial class MainWindowViewModel : ObservableObject
     private string selectedProblemsFilter = ProblemsFilterAll;
 
     [ObservableProperty]
+    private string selectedOutputCategory = OutputCategoryAll;
+
+    [ObservableProperty]
+    private string activeBottomDockTab = BottomDockTabProblems;
+
+    [ObservableProperty]
+    private double editorZoom = 1.0;
+
+    [ObservableProperty]
+    private bool reopenLastWorkspaceOnStartup = true;
+
+    [ObservableProperty]
+    private bool isStartScreenVisible;
+
+    [ObservableProperty]
     private string structureSearchText = "";
 
     [ObservableProperty]
@@ -656,6 +699,10 @@ public partial class MainWindowViewModel : ObservableObject
     public bool IsRightDockRailVisible => CanShowRightDock && !IsRightDockOpen;
     public bool IsBottomDockPanelVisible => IsDesignerSidePanelsVisible && IsBottomDockOpen;
     public bool IsBottomDockRailVisible => IsDesignerSidePanelsVisible && !IsBottomDockOpen;
+    public bool IsProblemsPanelActive => string.Equals(ActiveBottomDockTab, BottomDockTabProblems, StringComparison.Ordinal);
+    public bool IsOutputPanelActive => string.Equals(ActiveBottomDockTab, BottomDockTabOutput, StringComparison.Ordinal);
+    public bool IsOutputPanelBodyVisible => IsDiagnosticsPaneExpanded && IsOutputPanelActive;
+    public string BottomDockPanelTitle => IsOutputPanelActive ? OutputPanelTitle : ProblemsPanelTitle;
     public bool IsLeftRailVisible => IsLeftDockPanelVisible;
     public bool IsRightInspectorVisible => IsRightDockPanelVisible;
     public bool IsDesignModePanelVisible => IsDesignMode && IsDesignerSidePanelsVisible;
@@ -672,6 +719,16 @@ public partial class MainWindowViewModel : ObservableObject
     public string ProblemsDockButtonText => HasDiagnostics
         ? $"Problems {Diagnostics.Count}"
         : "Problems";
+    public string OutputDockButtonText => OutputEntries.Count > 0
+        ? $"Output {OutputEntries.Count}"
+        : "Output";
+    public string OutputPanelTitle => OutputEntries.Count > 0 ? $"Output ({OutputEntries.Count})" : "Output";
+    public bool HasOutputEntries => OutputEntries.Count > 0;
+    public bool HasFilteredOutputEntries => FilteredOutputEntries.Count > 0;
+    public bool HasNoFilteredOutputEntries => !HasFilteredOutputEntries;
+    public string OutputFilterSummary => SelectedOutputCategory == OutputCategoryAll
+        ? $"Entries: {OutputEntries.Count}"
+        : $"{SelectedOutputCategory}: {FilteredOutputEntries.Count}";
     public string ProblemsPanelTitle => HasDiagnostics ? $"Problems ({Diagnostics.Count})" : "Problems";
     public string ProblemsRailSummary => HasDiagnostics
         ? $"Errors {DiagnosticErrorCount} · Warnings {DiagnosticWarningCount} · Hints {DiagnosticInfoCount}"
@@ -733,7 +790,7 @@ public partial class MainWindowViewModel : ObservableObject
     public bool HasDiagnostics => Diagnostics.Count > 0;
     public bool HasNoDiagnostics => !HasDiagnostics;
     public bool IsDiagnosticsPaneCollapsed => !IsDiagnosticsPaneExpanded;
-    public bool IsDiagnosticsPaneBodyVisible => IsDiagnosticsPaneExpanded;
+    public bool IsDiagnosticsPaneBodyVisible => IsDiagnosticsPaneExpanded && IsProblemsPanelActive;
     public bool HasDiagnosticErrors => DiagnosticErrorCount > 0;
     public bool HasDiagnosticWarnings => DiagnosticWarningCount > 0;
     public int DiagnosticErrorCount => Diagnostics.Count(item => item.Severity == DocumentDiagnosticSeverity.Error);
@@ -817,6 +874,27 @@ public partial class MainWindowViewModel : ObservableObject
         : $"Шаг {UndoRedoHistoryCurrentIndex + 1} из {UndoRedoHistoryTotalCount}. Undo: {_undoStack.Count}, Redo: {_redoStack.Count}.";
     public bool HasUnsavedChanges => _currentSnapshot != _savedSnapshot;
     public string DirtyStateText => HasUnsavedChanges ? "Есть несохранённые изменения" : "Все изменения сохранены";
+    public string WorkspaceDirtyStatusText => HasUnsavedChanges ? "Unsaved" : "Saved";
+    public string WorkspaceDocumentStatusText => string.IsNullOrWhiteSpace(CurrentDocumentPath)
+        ? "Untitled"
+        : Path.GetFileName(CurrentDocumentPath);
+    public string WorkspaceAutosaveStatusText => AutosaveStatusText;
+    public string WorkspaceZoomStatusText => $"Zoom {EditorZoom * 100:0}%";
+    public string WorkspaceControlsStatusText => $"Controls {Controls.Count}";
+    public string WorkspaceSelectionStatusText => SelectedControl is null
+        ? "Selected none"
+        : $"Selected {SelectedControl.Name} ({SelectedControl.Type})";
+    public string WorkspaceDiagnosticsStatusText => $"Errors {DiagnosticErrorCount} / Warnings {DiagnosticWarningCount}";
+    public string WorkspaceExportStatusText => IsExportCacheStale ? "Export stale" : "Export fresh";
+    public string WorkspaceTaskStatusText
+    {
+        get
+        {
+            var task = _workspaceTaskService.ActiveTask;
+            return task is null ? "Idle" : $"{task.Title}: {task.DisplayStatus}";
+        }
+    }
+    public string WorkspaceStatusMessageText => string.IsNullOrWhiteSpace(StatusText) ? "Ready" : StatusText;
     public bool HasRecentFiles => RecentFiles.Count > 0;
     public string RecentFilesSummary => HasRecentFiles
         ? $"Последних файлов: {RecentFiles.Count}"
@@ -991,6 +1069,9 @@ public partial class MainWindowViewModel : ObservableObject
     public EditorCommand? ToggleLeftPanelEditorCommand => GetEditorCommand(EditorCommandId.ToggleLeftPanel);
     public EditorCommand? ToggleRightPanelEditorCommand => GetEditorCommand(EditorCommandId.ToggleRightPanel);
     public EditorCommand? ToggleProblemsPanelEditorCommand => GetEditorCommand(EditorCommandId.ToggleProblemsPanel);
+    public EditorCommand? ToggleOutputPanelEditorCommand => GetEditorCommand(EditorCommandId.ToggleOutputPanel);
+    public EditorCommand? OpenOutputPanelEditorCommand => GetEditorCommand(EditorCommandId.OpenOutputPanel);
+    public EditorCommand? ClearOutputEditorCommand => GetEditorCommand(EditorCommandId.ClearOutput);
     public EditorCommand? ResetLayoutEditorCommand => GetEditorCommand(EditorCommandId.ResetLayout);
     public EditorCommand? ToggleDesignFramesEditorCommand => GetEditorCommand(EditorCommandId.ToggleDesignFrames);
     public EditorCommand? RefreshGeneratedCodeEditorCommand => GetEditorCommand(EditorCommandId.RefreshGeneratedCode);
@@ -1482,6 +1563,9 @@ public partial class MainWindowViewModel : ObservableObject
         Diagnostics.CollectionChanged += Diagnostics_CollectionChanged;
         SelectedControlIds.CollectionChanged += SelectedControlIds_CollectionChanged;
         RecentFiles.CollectionChanged += RecentFiles_CollectionChanged;
+        OutputEntries.CollectionChanged += OutputEntries_CollectionChanged;
+        _workspaceLogService.EntryAdded += WorkspaceLogService_EntryAdded;
+        _workspaceTaskService.TasksChanged += WorkspaceTaskService_TasksChanged;
 
         RefreshRegistryBackedCollections();
         LoadReusableTemplates();
@@ -1494,6 +1578,7 @@ public partial class MainWindowViewModel : ObservableObject
         RegisterEditorCommands();
         RefreshEditorCommands();
         RaiseEditorCommandProperties();
+        LogWorkspace(WorkspaceLogLevel.Info, OutputCategoryGeneral, "Workspace initialized.");
     }
 
     public void RefreshRegistryBackedCollections()
@@ -1540,6 +1625,9 @@ public partial class MainWindowViewModel : ObservableObject
         RegisterEditorCommand(EditorCommandId.ToggleLeftPanel, "Toggle Left Panel", "Show or hide the left dock panel.", "", "", EditorCommandCategory.View, ToggleLeftDockPanel);
         RegisterEditorCommand(EditorCommandId.ToggleRightPanel, "Toggle Right Panel", "Show or hide the inspector panel.", "", "", EditorCommandCategory.View, ToggleRightDockPanel);
         RegisterEditorCommand(EditorCommandId.ToggleProblemsPanel, "Toggle Problems", "Show or hide diagnostics/problems.", "", "", EditorCommandCategory.View, ToggleBottomDockPanel);
+        RegisterEditorCommand(EditorCommandId.OpenOutputPanel, "Open Output", "Open the workspace output panel.", "", "", EditorCommandCategory.View, OpenOutputPanel);
+        RegisterEditorCommand(EditorCommandId.ToggleOutputPanel, "Toggle Output", "Show or hide workspace output.", "", "", EditorCommandCategory.View, ToggleOutputPanel);
+        RegisterEditorCommand(EditorCommandId.ClearOutput, "Clear Output", "Clear output log entries.", "", "", EditorCommandCategory.View, ClearOutput, () => StateWhen(OutputEntries.Count > 0, "Output is empty."));
         RegisterEditorCommand(EditorCommandId.ResetLayout, "Reset Layout", "Restore default dock panel layout.", "", "", EditorCommandCategory.View, ResetEditorShellLayout);
         RegisterEditorCommand(EditorCommandId.ZoomIn, "Zoom In", "Increase canvas zoom.", "", "Ctrl++", EditorCommandCategory.View, () => RequestExternalEditorCommand(EditorCommandId.ZoomIn));
         RegisterEditorCommand(EditorCommandId.ZoomOut, "Zoom Out", "Decrease canvas zoom.", "", "Ctrl+-", EditorCommandCategory.View, () => RequestExternalEditorCommand(EditorCommandId.ZoomOut));
@@ -1563,6 +1651,10 @@ public partial class MainWindowViewModel : ObservableObject
         RegisterEditorCommand(EditorCommandId.OpenQuickStart, "Open Quick Start", "Open the onboarding help.", "", "", EditorCommandCategory.Help, () => RequestExternalEditorCommand(EditorCommandId.OpenQuickStart));
         RegisterEditorCommand(EditorCommandId.OpenPluginSdkDocs, "Open Plugin SDK Docs", "Open plugin developer documentation.", "", "", EditorCommandCategory.Help, () => RequestExternalEditorCommand(EditorCommandId.OpenPluginSdkDocs));
         RegisterEditorCommand(EditorCommandId.OpenCommandPalette, "Command Palette", "Search and run editor commands.", "", "Ctrl+Shift+P", EditorCommandCategory.Tools, OpenCommandPalette);
+        RegisterEditorCommand(EditorCommandId.ReopenLastWorkspace, "Reopen Last Workspace", "Open the last saved workspace document.", "", "", EditorCommandCategory.File, () => RequestExternalEditorCommand(EditorCommandId.ReopenLastWorkspace));
+        RegisterEditorCommand(EditorCommandId.ToggleReopenLastWorkspace, "Toggle Reopen Last Workspace", "Enable or disable reopening the last document on startup.", "", "", EditorCommandCategory.File, ToggleReopenLastWorkspace, () => new EditorCommandState { IsChecked = ReopenLastWorkspaceOnStartup });
+        RegisterEditorCommand(EditorCommandId.OpenStartScreen, "Open Start Screen", "Show the welcome screen with recent files and templates.", "", "", EditorCommandCategory.View, OpenStartScreen);
+        RegisterEditorCommand(EditorCommandId.CancelBackgroundTask, "Cancel Background Task", "Cancel the current background task when possible.", "", "", EditorCommandCategory.Tools, CancelActiveWorkspaceTask, () => StateWhen(_workspaceTaskService.ActiveTask is not null, "No background task is running."));
     }
 
     private EditorCommand RegisterEditorCommand(
@@ -1598,6 +1690,115 @@ public partial class MainWindowViewModel : ObservableObject
     private void RequestExternalEditorCommand(EditorCommandId id)
     {
         ExternalEditorCommandRequested?.Invoke(id);
+    }
+
+    private void WorkspaceLogService_EntryAdded(object? sender, WorkspaceLogEntryModel entry)
+    {
+        if (!Dispatcher.UIThread.CheckAccess())
+        {
+            Dispatcher.UIThread.Post(() => WorkspaceLogService_EntryAdded(sender, entry));
+            return;
+        }
+
+        OutputEntries.Insert(0, entry);
+        while (OutputEntries.Count > 500)
+            OutputEntries.RemoveAt(OutputEntries.Count - 1);
+
+        FilterOutputEntries();
+    }
+
+    private void WorkspaceTaskService_TasksChanged(object? sender, EventArgs e)
+    {
+        OnPropertyChanged(nameof(WorkspaceTaskStatusText));
+        OnPropertyChanged(nameof(WorkspaceStatusMessageText));
+        ScheduleEditorCommandRefresh();
+    }
+
+    private void OutputEntries_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        OnPropertyChanged(nameof(HasOutputEntries));
+        OnPropertyChanged(nameof(OutputDockButtonText));
+        OnPropertyChanged(nameof(OutputPanelTitle));
+        OnPropertyChanged(nameof(BottomDockPanelTitle));
+        OnPropertyChanged(nameof(OutputFilterSummary));
+        ScheduleEditorCommandRefresh();
+    }
+
+    public void LogWorkspace(WorkspaceLogLevel level, string category, string message, string details = "")
+    {
+        _workspaceLogService.Log(level, category, message, details, CurrentDocumentPath);
+    }
+
+    public void ShowWorkspaceToast(WorkspaceToastLevel level, string title, string message = "", bool isPersistent = false)
+    {
+        _workspaceNotificationService.Show(level, title, message, isPersistent);
+    }
+
+    public WorkspaceTaskModel StartWorkspaceTask(string title, string description = "", double? progress = null)
+    {
+        var task = _workspaceTaskService.Start(title, description, progress);
+        LogWorkspace(WorkspaceLogLevel.Info, OutputCategoryBackgroundTasks, $"Started: {title}", description);
+        return task;
+    }
+
+    public void ReportWorkspaceTask(WorkspaceTaskModel? task, double? progress = null, string statusMessage = "")
+    {
+        _workspaceTaskService.Report(task, progress, statusMessage);
+    }
+
+    public void CompleteWorkspaceTask(WorkspaceTaskModel? task, string statusMessage = "Completed")
+    {
+        _workspaceTaskService.Complete(task, statusMessage);
+        if (task is not null)
+            LogWorkspace(WorkspaceLogLevel.Success, OutputCategoryBackgroundTasks, $"Completed: {task.Title}", statusMessage);
+    }
+
+    public void FailWorkspaceTask(WorkspaceTaskModel? task, string errorMessage)
+    {
+        _workspaceTaskService.Fail(task, errorMessage);
+        if (task is not null)
+            LogWorkspace(WorkspaceLogLevel.Error, OutputCategoryBackgroundTasks, $"Failed: {task.Title}", errorMessage);
+    }
+
+    public void SetEditorZoom(double zoom)
+    {
+        EditorZoom = Math.Clamp(zoom, 0.1, 4.0);
+    }
+
+    public void ToggleRecentFilePinned(RecentFileModel? file)
+    {
+        if (file is null)
+            return;
+
+        file.IsPinned = !file.IsPinned;
+        var path = file.FilePath;
+        var items = RecentFiles
+            .OrderByDescending(item => item.IsPinned)
+            .ThenByDescending(item => item.LastOpenedUtc)
+            .ToList();
+        RecentFiles.Clear();
+        foreach (var item in items)
+            RecentFiles.Add(item);
+
+        StatusText = file.IsPinned ? $"Pinned recent file: {file.Title}" : $"Unpinned recent file: {file.Title}";
+        LogWorkspace(WorkspaceLogLevel.Info, OutputCategoryGeneral, StatusText, path);
+    }
+
+    private void FilterOutputEntries()
+    {
+        var selectedCategory = SelectedOutputCategory;
+        var filtered = OutputEntries
+            .Where(entry => string.Equals(selectedCategory, OutputCategoryAll, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(entry.Category, selectedCategory, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        FilteredOutputEntries.Clear();
+        foreach (var entry in filtered)
+            FilteredOutputEntries.Add(entry);
+
+        OnPropertyChanged(nameof(HasFilteredOutputEntries));
+        OnPropertyChanged(nameof(HasNoFilteredOutputEntries));
+        OnPropertyChanged(nameof(OutputFilterSummary));
     }
 
     public EditorCommand? GetEditorCommand(EditorCommandId id)
@@ -1659,6 +1860,9 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(ToggleLeftPanelEditorCommand));
         OnPropertyChanged(nameof(ToggleRightPanelEditorCommand));
         OnPropertyChanged(nameof(ToggleProblemsPanelEditorCommand));
+        OnPropertyChanged(nameof(ToggleOutputPanelEditorCommand));
+        OnPropertyChanged(nameof(OpenOutputPanelEditorCommand));
+        OnPropertyChanged(nameof(ClearOutputEditorCommand));
         OnPropertyChanged(nameof(ResetLayoutEditorCommand));
         OnPropertyChanged(nameof(ToggleDesignFramesEditorCommand));
         OnPropertyChanged(nameof(RefreshGeneratedCodeEditorCommand));
@@ -1758,19 +1962,25 @@ public partial class MainWindowViewModel : ObservableObject
         if (_registry is not DesignerRegistry registry)
         {
             StatusText = "Plugin reload недоступен для текущего registry.";
+            LogWorkspace(WorkspaceLogLevel.Warning, OutputCategoryPlugins, StatusText);
             return;
         }
 
+        var task = StartWorkspaceTask("Reload plugins", PluginInstallFolderPath);
         try
         {
             registry.ClearPluginRegistrations();
             var loader = new PluginLoader(new TraceDesignerLogger());
             loader.LoadFromFolder(PluginInstallFolderPath, registry, replaceDiagnostics: true);
             RefreshRegistryBackedCollections();
+            CompleteWorkspaceTask(task, "Plugins reloaded.");
+            ShowWorkspaceToast(WorkspaceToastLevel.Success, "Plugins reloaded", PluginDiagnosticsSummary);
             StatusText = "Plugins reloaded. Toolbox и diagnostics обновлены.";
         }
         catch (Exception ex)
         {
+            FailWorkspaceTask(task, ex.Message);
+            ShowWorkspaceToast(WorkspaceToastLevel.Error, "Plugin reload failed", ex.Message, isPersistent: true);
             StatusText = $"Ошибка reload plugins: {ex.Message}";
         }
     }
@@ -3154,6 +3364,10 @@ public partial class MainWindowViewModel : ObservableObject
         stopwatch.Stop();
         _lastDiagnosticsRefreshMs = stopwatch.Elapsed.TotalMilliseconds;
         ReportPerformanceMetric("Diagnostics refresh", _lastDiagnosticsRefreshMs);
+        LogWorkspace(
+            HasDiagnosticErrors ? WorkspaceLogLevel.Error : HasDiagnosticWarnings ? WorkspaceLogLevel.Warning : WorkspaceLogLevel.Info,
+            OutputCategoryDiagnostics,
+            $"Diagnostics refreshed: errors {DiagnosticErrorCount}, warnings {DiagnosticWarningCount}, hints {DiagnosticInfoCount}.");
         OnPropertyChanged(nameof(PerformanceDiagnosticsSummary));
     }
 
@@ -3405,6 +3619,7 @@ public partial class MainWindowViewModel : ObservableObject
     {
         IsBottomDockOpen = true;
         IsDiagnosticsPaneExpanded = true;
+        ActiveBottomDockTab = BottomDockTabProblems;
         StatusText = HasDiagnostics
             ? "Открыта нижняя панель Problems."
             : "Problems открыты: активных сообщений нет.";
@@ -3449,9 +3664,41 @@ public partial class MainWindowViewModel : ObservableObject
     [RelayCommand]
     private void ToggleBottomDockPanel()
     {
-        IsBottomDockOpen = !IsBottomDockOpen;
-        if (IsBottomDockOpen)
-            IsDiagnosticsPaneExpanded = true;
+        if (IsBottomDockOpen && IsProblemsPanelActive)
+        {
+            IsBottomDockOpen = false;
+            return;
+        }
+
+        OpenProblemsPanel();
+    }
+
+    [RelayCommand]
+    private void OpenProblemsPanel()
+    {
+        ActiveBottomDockTab = BottomDockTabProblems;
+        IsBottomDockOpen = true;
+        IsDiagnosticsPaneExpanded = true;
+    }
+
+    [RelayCommand]
+    private void OpenOutputPanel()
+    {
+        ActiveBottomDockTab = BottomDockTabOutput;
+        IsBottomDockOpen = true;
+        IsDiagnosticsPaneExpanded = true;
+    }
+
+    [RelayCommand]
+    private void ToggleOutputPanel()
+    {
+        if (IsBottomDockOpen && IsOutputPanelActive)
+        {
+            IsBottomDockOpen = false;
+            return;
+        }
+
+        OpenOutputPanel();
     }
 
     [RelayCommand]
@@ -3469,6 +3716,59 @@ public partial class MainWindowViewModel : ObservableObject
     }
 
     [RelayCommand]
+    private void SetOutputCategory(string? category)
+    {
+        SelectedOutputCategory = AvailableOutputCategories.Contains(category ?? "")
+            ? category!
+            : OutputCategoryAll;
+    }
+
+    [RelayCommand]
+    private void ClearOutput()
+    {
+        OutputEntries.Clear();
+        FilterOutputEntries();
+        StatusText = "Output cleared.";
+    }
+
+    [RelayCommand]
+    private void DismissToast(WorkspaceToastModel? toast)
+    {
+        _workspaceNotificationService.Dismiss(toast);
+    }
+
+    private void ToggleReopenLastWorkspace()
+    {
+        ReopenLastWorkspaceOnStartup = !ReopenLastWorkspaceOnStartup;
+        StatusText = ReopenLastWorkspaceOnStartup
+            ? "Reopen last workspace enabled."
+            : "Reopen last workspace disabled.";
+        LogWorkspace(WorkspaceLogLevel.Info, OutputCategoryGeneral, StatusText);
+    }
+
+    private void OpenStartScreen()
+    {
+        IsStartScreenVisible = true;
+    }
+
+    [RelayCommand]
+    private void CloseStartScreen()
+    {
+        IsStartScreenVisible = false;
+    }
+
+    private void CancelActiveWorkspaceTask()
+    {
+        var task = _workspaceTaskService.ActiveTask;
+        if (task is null)
+            return;
+
+        _workspaceTaskService.Cancel(task);
+        LogWorkspace(WorkspaceLogLevel.Warning, OutputCategoryBackgroundTasks, $"Cancelled: {task.Title}");
+        ShowWorkspaceToast(WorkspaceToastLevel.Warning, "Task cancelled", task.Title);
+    }
+
+    [RelayCommand]
     private void ResetEditorShellLayout()
     {
         IsLeftDockOpen = true;
@@ -3479,6 +3779,8 @@ public partial class MainWindowViewModel : ObservableObject
         RightDockPanelWidth = 380;
         DiagnosticsPaneHeight = 220;
         SelectedProblemsFilter = ProblemsFilterAll;
+        SelectedOutputCategory = OutputCategoryAll;
+        ActiveBottomDockTab = BottomDockTabProblems;
         StatusText = "Расположение панелей сброшено.";
     }
 
@@ -3921,11 +4223,14 @@ public partial class MainWindowViewModel : ObservableObject
                      .Where(item => !string.IsNullOrWhiteSpace(item.FilePath))
                      .GroupBy(item => item.FilePath, StringComparer.OrdinalIgnoreCase)
                      .Select(group => group.OrderByDescending(item => item.LastOpenedUtc).First())
-                     .OrderByDescending(item => item.LastOpenedUtc)
+                     .OrderByDescending(item => item.IsPinned)
+                     .ThenByDescending(item => item.LastOpenedUtc)
                      .Take(10))
         {
             RecentFiles.Add(recentFile);
         }
+
+        ReopenLastWorkspaceOnStartup = settings.Session.ReopenLastWorkspaceOnStartup;
 
         if (AvailableWorkspaceModes.Contains(settings.Session.WorkspaceMode))
             WorkspaceMode = settings.Session.WorkspaceMode;
@@ -3989,7 +4294,7 @@ public partial class MainWindowViewModel : ObservableObject
             BottomPanelHeight = Math.Clamp(DiagnosticsPaneHeight, 140, 520),
             ActiveLeftTab = IsDataMode ? "Data" : IsHistoryMode ? "History" : "Components",
             ActiveRightTab = IsDataMode ? "Data" : IsPluginsMode ? "Plugins" : IsCodeMode ? "Code" : IsLogicMode ? "Logic" : "Properties",
-            ActiveBottomTab = "Diagnostics"
+            ActiveBottomTab = ActiveBottomDockTab
         };
     }
 
@@ -4001,6 +4306,9 @@ public partial class MainWindowViewModel : ObservableObject
         IsLeftDockOpen = layout.IsLeftPanelVisible;
         IsRightDockOpen = layout.IsRightPanelVisible;
         IsBottomDockOpen = layout.IsBottomPanelVisible;
+        ActiveBottomDockTab = string.Equals(layout.ActiveBottomTab, BottomDockTabOutput, StringComparison.OrdinalIgnoreCase)
+            ? BottomDockTabOutput
+            : BottomDockTabProblems;
         LeftDockPanelWidth = Math.Clamp(layout.LeftPanelWidth <= 0 ? 280 : layout.LeftPanelWidth, 220, 420);
         RightDockPanelWidth = Math.Clamp(layout.RightPanelWidth <= 0 ? 380 : layout.RightPanelWidth, 280, 560);
         DiagnosticsPaneHeight = Math.Clamp(layout.BottomPanelHeight <= 0 ? 220 : layout.BottomPanelHeight, 140, 520);
@@ -4756,18 +5064,29 @@ public partial class MainWindowViewModel : ObservableObject
 
         var normalizedPath = Path.GetFullPath(filePath);
         var existing = RecentFiles.FirstOrDefault(item => string.Equals(item.FilePath, normalizedPath, StringComparison.OrdinalIgnoreCase));
+        var wasPinned = existing?.IsPinned == true;
         if (existing is not null)
             RecentFiles.Remove(existing);
 
-        RecentFiles.Insert(0, new RecentFileModel
+        var recentFile = new RecentFileModel
         {
             FilePath = normalizedPath,
             DisplayName = Path.GetFileName(normalizedPath),
-            LastOpenedUtc = DateTime.UtcNow
-        });
+            LastOpenedUtc = DateTime.UtcNow,
+            IsPinned = wasPinned
+        };
+
+        var insertIndex = wasPinned ? 0 : RecentFiles.TakeWhile(item => item.IsPinned).Count();
+        RecentFiles.Insert(insertIndex, recentFile);
 
         while (RecentFiles.Count > 10)
-            RecentFiles.RemoveAt(RecentFiles.Count - 1);
+        {
+            var removable = RecentFiles.LastOrDefault(item => !item.IsPinned) ?? RecentFiles.LastOrDefault();
+            if (removable is null)
+                break;
+
+            RecentFiles.Remove(removable);
+        }
     }
 
     public void RemoveRecentFile(RecentFileModel? file)
@@ -6123,6 +6442,11 @@ public partial class MainWindowViewModel : ObservableObject
         _lastExportGenerationMs = stopwatch.Elapsed.TotalMilliseconds;
         ReportPerformanceMetric("Export generation", _lastExportGenerationMs);
         OnPropertyChanged(nameof(PerformanceDiagnosticsSummary));
+        LogWorkspace(
+            WorkspaceLogLevel.Success,
+            OutputCategoryExport,
+            "Generated XAML/C# export.",
+            $"XAML {GeneratedXaml.Length} chars, C# {GeneratedCSharp.Length} chars, checklist {ExportChecklistItems.Count} items.");
     }
 
     private void MarkExportCacheStale()
@@ -6166,6 +6490,7 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(ExportCacheStatusBackground));
         OnPropertyChanged(nameof(ExportCacheStatusBorder));
         OnPropertyChanged(nameof(ExportCacheStatusForeground));
+        OnPropertyChanged(nameof(WorkspaceExportStatusText));
     }
 
     private string BuildExportSettingsSignature()
@@ -11399,6 +11724,7 @@ public partial class MainWindowViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(HasRecentFiles));
         OnPropertyChanged(nameof(RecentFilesSummary));
+        RaiseWorkspaceStatusProperties();
     }
 
     private void Diagnostics_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
@@ -11446,6 +11772,7 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(CurrentDocumentDisplayName));
         OnPropertyChanged(nameof(FormWindowDecorationsSummary));
         RaiseExportCacheProperties();
+        RaiseWorkspaceStatusProperties();
     }
 
     private void RaiseDiagnosticsProperties()
@@ -11455,6 +11782,7 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(HasNoDiagnostics));
         OnPropertyChanged(nameof(IsDiagnosticsPaneCollapsed));
         OnPropertyChanged(nameof(IsDiagnosticsPaneBodyVisible));
+        OnPropertyChanged(nameof(IsOutputPanelBodyVisible));
         OnPropertyChanged(nameof(HasDiagnosticErrors));
         OnPropertyChanged(nameof(HasDiagnosticWarnings));
         OnPropertyChanged(nameof(DiagnosticErrorCount));
@@ -11467,9 +11795,11 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(DiagnosticsStateText));
         OnPropertyChanged(nameof(ProblemsDockButtonText));
         OnPropertyChanged(nameof(ProblemsPanelTitle));
+        OnPropertyChanged(nameof(BottomDockPanelTitle));
         OnPropertyChanged(nameof(ProblemsRailSummary));
         OnPropertyChanged(nameof(IsCompactDiagnosticsBarVisible));
         OnPropertyChanged(nameof(EditorShellLayoutSummary));
+        RaiseWorkspaceStatusProperties();
         RaiseProblemsFilterProperties();
     }
 
@@ -11517,9 +11847,24 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(SelectedControlLayoutHint));
         OnPropertyChanged(nameof(SelectedLockStateSummary));
         OnPropertyChanged(nameof(SelectedControlSummary));
+        RaiseWorkspaceStatusProperties();
         RaiseBindingEditorProperties();
         RaiseInteractionDesignerProperties();
         RefreshEditorCommands();
+    }
+
+    private void RaiseWorkspaceStatusProperties()
+    {
+        OnPropertyChanged(nameof(WorkspaceDirtyStatusText));
+        OnPropertyChanged(nameof(WorkspaceDocumentStatusText));
+        OnPropertyChanged(nameof(WorkspaceAutosaveStatusText));
+        OnPropertyChanged(nameof(WorkspaceZoomStatusText));
+        OnPropertyChanged(nameof(WorkspaceControlsStatusText));
+        OnPropertyChanged(nameof(WorkspaceSelectionStatusText));
+        OnPropertyChanged(nameof(WorkspaceDiagnosticsStatusText));
+        OnPropertyChanged(nameof(WorkspaceExportStatusText));
+        OnPropertyChanged(nameof(WorkspaceTaskStatusText));
+        OnPropertyChanged(nameof(WorkspaceStatusMessageText));
     }
 
     private void RaiseBindingEditorProperties()
@@ -11869,6 +12214,7 @@ public partial class MainWindowViewModel : ObservableObject
 
         OnPropertyChanged(nameof(HasControls));
         OnPropertyChanged(nameof(SelectedControlSummary));
+        RaiseWorkspaceStatusProperties();
         RaiseInteractionDesignerProperties();
         RaiseInteractionLookupProperties();
         if (!_isStructureTreeRefreshSuspended)
@@ -12381,12 +12727,61 @@ public partial class MainWindowViewModel : ObservableObject
     partial void OnCurrentDocumentPathChanged(string value)
     {
         OnPropertyChanged(nameof(CurrentDocumentDisplayName));
+        RaiseWorkspaceStatusProperties();
         RefreshDiagnostics();
+    }
+
+    partial void OnStatusTextChanged(string value)
+    {
+        OnPropertyChanged(nameof(WorkspaceStatusMessageText));
+    }
+
+    partial void OnAutosaveStatusTextChanged(string value)
+    {
+        OnPropertyChanged(nameof(WorkspaceAutosaveStatusText));
+    }
+
+    partial void OnEditorZoomChanged(double value)
+    {
+        OnPropertyChanged(nameof(WorkspaceZoomStatusText));
+    }
+
+    partial void OnReopenLastWorkspaceOnStartupChanged(bool value)
+    {
+        RefreshEditorCommands();
+    }
+
+    partial void OnActiveBottomDockTabChanged(string value)
+    {
+        if (!string.Equals(value, BottomDockTabProblems, StringComparison.Ordinal)
+            && !string.Equals(value, BottomDockTabOutput, StringComparison.Ordinal))
+        {
+            ActiveBottomDockTab = BottomDockTabProblems;
+            return;
+        }
+
+        OnPropertyChanged(nameof(IsProblemsPanelActive));
+        OnPropertyChanged(nameof(IsOutputPanelActive));
+        OnPropertyChanged(nameof(IsDiagnosticsPaneBodyVisible));
+        OnPropertyChanged(nameof(IsOutputPanelBodyVisible));
+        OnPropertyChanged(nameof(BottomDockPanelTitle));
+    }
+
+    partial void OnSelectedOutputCategoryChanged(string value)
+    {
+        if (!AvailableOutputCategories.Contains(value))
+        {
+            SelectedOutputCategory = OutputCategoryAll;
+            return;
+        }
+
+        FilterOutputEntries();
     }
 
     partial void OnIsDiagnosticsPaneExpandedChanged(bool value)
     {
         RaiseDiagnosticsProperties();
+        OnPropertyChanged(nameof(IsOutputPanelBodyVisible));
         RaiseEditorShellLayoutProperties();
     }
 
@@ -12737,6 +13132,11 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(IsRightDockRailVisible));
         OnPropertyChanged(nameof(IsBottomDockPanelVisible));
         OnPropertyChanged(nameof(IsBottomDockRailVisible));
+        OnPropertyChanged(nameof(IsProblemsPanelActive));
+        OnPropertyChanged(nameof(IsOutputPanelActive));
+        OnPropertyChanged(nameof(IsDiagnosticsPaneBodyVisible));
+        OnPropertyChanged(nameof(IsOutputPanelBodyVisible));
+        OnPropertyChanged(nameof(BottomDockPanelTitle));
         OnPropertyChanged(nameof(IsLeftRailVisible));
         OnPropertyChanged(nameof(IsRightInspectorVisible));
         OnPropertyChanged(nameof(IsDesignModePanelVisible));

@@ -490,7 +490,7 @@
   </Window.Styles>
 
   <!-- Каркас всего окна: верхняя шапка конструктора и основная рабочая область. -->
-  <Grid RowDefinitions="Auto,*">
+  <Grid RowDefinitions="Auto,*,Auto">
     <!-- Верхняя шапка редактора:
          действия над выделенными, операции с документом и строка состояния. -->
     <Border Grid.Row="0"
@@ -586,7 +586,7 @@
                       <ItemsControl ItemsSource="{Binding RecentFiles}">
                         <ItemsControl.ItemTemplate>
                           <DataTemplate x:DataType="models:RecentFileModel">
-                            <Grid ColumnDefinitions="*,Auto"
+                            <Grid ColumnDefinitions="*,Auto,Auto"
                                   ColumnSpacing="8"
                                   Margin="0,0,0,8">
                               <Button Tag="{Binding}"
@@ -607,6 +607,12 @@
                                 </StackPanel>
                               </Button>
                               <Button Grid.Column="1"
+                                      Content="{Binding PinText}"
+                                      Tag="{Binding}"
+                                      Click="ToggleRecentPinButton_Click"
+                                      MinWidth="54"
+                                      Padding="8,6"/>
+                              <Button Grid.Column="2"
                                       Content="×"
                                       Tag="{Binding}"
                                       Click="RemoveRecentFileButton_Click"
@@ -5852,10 +5858,18 @@
                   Padding="10,8">
             <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,*,Auto,Auto,Auto"
                   ColumnSpacing="8">
-              <TextBlock Text="{Binding ProblemsPanelTitle}"
-                         FontSize="16"
-                         FontWeight="Bold"
-                         VerticalAlignment="Center"/>
+              <StackPanel Orientation="Horizontal"
+                          Spacing="6"
+                          VerticalAlignment="Center">
+                <Button Content="Problems"
+                        Command="{Binding OpenProblemsPanelCommand}"
+                        Classes="problem-filter"
+                        Padding="10,5"/>
+                <Button Content="{Binding OutputDockButtonText}"
+                        Command="{Binding OpenOutputPanelCommand}"
+                        Classes="problem-filter"
+                        Padding="10,5"/>
+              </StackPanel>
 
               <Border Grid.Column="1"
                       Background="#FEE2E2"
@@ -5897,7 +5911,8 @@
               </Border>
 
               <WrapPanel Grid.Column="4"
-                          VerticalAlignment="Center">
+                          VerticalAlignment="Center"
+                          IsVisible="{Binding IsProblemsPanelActive}">
                 <Button Content="All"
                         Command="{Binding SetProblemsFilterCommand}"
                         CommandParameter="All"
@@ -5920,15 +5935,46 @@
                         Margin="0,0,6,0"/>
               </WrapPanel>
 
+              <StackPanel Grid.Column="4"
+                          Orientation="Horizontal"
+                          Spacing="8"
+                          VerticalAlignment="Center"
+                          IsVisible="{Binding IsOutputPanelActive}">
+                <TextBlock Text="Channel"
+                           Foreground="#64748B"
+                           VerticalAlignment="Center"/>
+                <ComboBox ItemsSource="{Binding AvailableOutputCategories}"
+                          SelectedItem="{Binding SelectedOutputCategory, Mode=TwoWay}"
+                          MinWidth="150"/>
+                <Button Content="Clear"
+                        Command="{Binding ClearOutputCommand}"
+                        Classes="problem-filter"
+                        Padding="10,5"/>
+              </StackPanel>
+
               <StackPanel Grid.Column="5"
                           Spacing="2"
                           VerticalAlignment="Center"
-                          IsVisible="{Binding IsDiagnosticsPaneExpanded}">
+                          IsVisible="{Binding IsProblemsPanelActive}">
                 <TextBlock Text="{Binding ProblemsFilterSummary}"
                            Foreground="#334155"
                            FontWeight="SemiBold"
                            TextWrapping="Wrap"/>
                 <TextBlock Text="{Binding DiagnosticsStateText}"
+                           Foreground="#64748B"
+                           FontSize="12"
+                           TextWrapping="Wrap"/>
+              </StackPanel>
+
+              <StackPanel Grid.Column="5"
+                          Spacing="2"
+                          VerticalAlignment="Center"
+                          IsVisible="{Binding IsOutputPanelActive}">
+                <TextBlock Text="{Binding OutputFilterSummary}"
+                           Foreground="#334155"
+                           FontWeight="SemiBold"
+                           TextWrapping="Wrap"/>
+                <TextBlock Text="{Binding WorkspaceTaskStatusText}"
                            Foreground="#64748B"
                            FontSize="12"
                            TextWrapping="Wrap"/>
@@ -5943,7 +5989,7 @@
 
               <Button Grid.Column="7"
                       Content="×"
-                      Command="{Binding ToggleProblemsPanelEditorCommand}"
+                      Command="{Binding CloseBottomDockPanelCommand}"
                       Classes="dock-collapse"
                       VerticalAlignment="Center"
                       ToolTip.Tip="Закрыть Problems"/>
@@ -6049,6 +6095,82 @@
               </ItemsControl>
             </ScrollViewer>
           </Grid>
+
+          <Grid Grid.Row="2"
+                Margin="10"
+                IsVisible="{Binding IsOutputPanelBodyVisible}">
+            <Border Background="#0F172A"
+                    BorderBrush="#334155"
+                    BorderThickness="1"
+                    CornerRadius="12"
+                    Padding="0"
+                    ClipToBounds="True"
+                    IsVisible="{Binding HasNoFilteredOutputEntries}">
+              <StackPanel Spacing="6"
+                          HorizontalAlignment="Center"
+                          VerticalAlignment="Center">
+                <TextBlock Text="Output is empty"
+                           Foreground="#E2E8F0"
+                           FontSize="16"
+                           FontWeight="Bold"
+                           HorizontalAlignment="Center"/>
+                <TextBlock Text="Workspace operations, export, plugins, preview and smoke tests will appear here."
+                           Foreground="#94A3B8"
+                           TextWrapping="Wrap"
+                           TextAlignment="Center"/>
+              </StackPanel>
+            </Border>
+
+            <ScrollViewer VerticalScrollBarVisibility="Auto"
+                          IsVisible="{Binding HasFilteredOutputEntries}">
+              <ItemsControl ItemsSource="{Binding FilteredOutputEntries}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="models:WorkspaceLogEntryModel">
+                    <Grid ColumnDefinitions="72,86,110,*"
+                          ColumnSpacing="10"
+                          MinHeight="30"
+                          Margin="8,0"
+                          VerticalAlignment="Center">
+                      <TextBlock Text="{Binding TimestampText}"
+                                 Foreground="#94A3B8"
+                                 FontFamily="Consolas"
+                                 FontSize="12"
+                                 VerticalAlignment="Center"/>
+                      <Border Grid.Column="1"
+                              Background="{Binding LevelBackground}"
+                              CornerRadius="999"
+                              Padding="7,2"
+                              VerticalAlignment="Center">
+                        <TextBlock Text="{Binding LevelText}"
+                                   Foreground="{Binding LevelBrush}"
+                                   FontSize="11"
+                                   FontWeight="Bold"
+                                   HorizontalAlignment="Center"/>
+                      </Border>
+                      <TextBlock Grid.Column="2"
+                                 Text="{Binding Category}"
+                                 Foreground="#CBD5E1"
+                                 FontWeight="SemiBold"
+                                 TextTrimming="CharacterEllipsis"
+                                 VerticalAlignment="Center"/>
+                      <StackPanel Grid.Column="3"
+                                  Spacing="1"
+                                  VerticalAlignment="Center">
+                        <TextBlock Text="{Binding Message}"
+                                   Foreground="#F8FAFC"
+                                   TextWrapping="Wrap"/>
+                        <TextBlock Text="{Binding Details}"
+                                   Foreground="#94A3B8"
+                                   FontSize="11"
+                                   TextWrapping="Wrap"
+                                   IsVisible="{Binding HasDetails}"/>
+                      </StackPanel>
+                    </Grid>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </ScrollViewer>
+          </Grid>
         </Grid>
       </Border>
 
@@ -6059,7 +6181,7 @@
               CornerRadius="10"
               Padding="8,6"
               IsVisible="{Binding IsCompactDiagnosticsBarVisible}">
-        <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,*,Auto"
+        <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,*,Auto"
               ColumnSpacing="8">
           <Button Content="{Binding ProblemsDockButtonText}"
                   Command="{Binding ToggleProblemsPanelEditorCommand}"
@@ -6068,7 +6190,15 @@
                   MinHeight="30"
                   ToolTip.Tip="Открыть Problems"/>
 
-          <Border Grid.Column="1"
+          <Button Grid.Column="1"
+                  Content="{Binding OutputDockButtonText}"
+                  Command="{Binding ToggleOutputPanelEditorCommand}"
+                  Classes="dock-rail"
+                  Padding="12,5"
+                  MinHeight="30"
+                  ToolTip.Tip="Open Output"/>
+
+          <Border Grid.Column="2"
                   Background="#FEE2E2"
                   BorderBrush="#FCA5A5"
                   BorderThickness="1"
@@ -6081,7 +6211,7 @@
                        FontWeight="Bold"/>
           </Border>
 
-          <Border Grid.Column="2"
+          <Border Grid.Column="3"
                   Background="#FEF3C7"
                   BorderBrush="#FCD34D"
                   BorderThickness="1"
@@ -6094,7 +6224,7 @@
                        FontWeight="Bold"/>
           </Border>
 
-          <Border Grid.Column="3"
+          <Border Grid.Column="4"
                   Background="#DBEAFE"
                   BorderBrush="#93C5FD"
                   BorderThickness="1"
@@ -6107,7 +6237,7 @@
                        FontWeight="Bold"/>
           </Border>
 
-          <StackPanel Grid.Column="4"
+          <StackPanel Grid.Column="5"
                       Orientation="Horizontal"
                       Spacing="10"
                       VerticalAlignment="Center">
@@ -6116,7 +6246,7 @@
                        FontSize="12"/>
           </StackPanel>
 
-          <Button Grid.Column="5"
+          <Button Grid.Column="6"
                   Content="↺"
                   Command="{Binding ResetLayoutEditorCommand}"
                   Classes="dock-collapse"
@@ -6129,7 +6259,178 @@
 
     <!-- Глобальный overlay на время долгих операций:
          загрузка документа, импорт DLL, чтение схемы из БД и прочие фоновые задачи. -->
-    <Border Background="#0F172A80"
+    <Border Grid.Row="2"
+            Background="#0F172A"
+            BorderBrush="#1E293B"
+            BorderThickness="0,1,0,0"
+            Padding="10,5"
+            MinHeight="30">
+      <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,*,Auto"
+            ColumnSpacing="12">
+        <TextBlock Text="{Binding WorkspaceDirtyStatusText}"
+                   Foreground="#E2E8F0"
+                   FontWeight="SemiBold"
+                   VerticalAlignment="Center"/>
+        <TextBlock Grid.Column="1"
+                   Text="{Binding WorkspaceAutosaveStatusText}"
+                   Foreground="#93C5FD"
+                   FontSize="12"
+                   TextTrimming="CharacterEllipsis"
+                   MaxWidth="220"
+                   VerticalAlignment="Center"/>
+        <TextBlock Grid.Column="2"
+                   Text="{Binding WorkspaceZoomStatusText}"
+                   Foreground="#CBD5E1"
+                   VerticalAlignment="Center"/>
+        <TextBlock Grid.Column="3"
+                   Text="{Binding WorkspaceControlsStatusText}"
+                   Foreground="#CBD5E1"
+                   VerticalAlignment="Center"/>
+        <TextBlock Grid.Column="4"
+                   Text="{Binding WorkspaceSelectionStatusText}"
+                   Foreground="#CBD5E1"
+                   TextTrimming="CharacterEllipsis"
+                   MaxWidth="260"
+                   VerticalAlignment="Center"/>
+        <TextBlock Grid.Column="5"
+                   Text="{Binding WorkspaceDiagnosticsStatusText}"
+                   Foreground="#FDE68A"
+                   VerticalAlignment="Center"/>
+        <TextBlock Grid.Column="6"
+                   Text="{Binding WorkspaceExportStatusText}"
+                   Foreground="#BBF7D0"
+                   VerticalAlignment="Center"/>
+        <TextBlock Grid.Column="7"
+                   Text="{Binding WorkspaceTaskStatusText}"
+                   Foreground="#C4B5FD"
+                   TextTrimming="CharacterEllipsis"
+                   MaxWidth="260"
+                   VerticalAlignment="Center"/>
+        <TextBlock Grid.Column="8"
+                   Text="{Binding WorkspaceStatusMessageText}"
+                   Foreground="#94A3B8"
+                   TextTrimming="CharacterEllipsis"
+                   VerticalAlignment="Center"/>
+        <TextBlock Grid.Column="9"
+                   Text="{Binding WorkspaceDocumentStatusText}"
+                   Foreground="#E2E8F0"
+                   FontWeight="SemiBold"
+                   TextTrimming="CharacterEllipsis"
+                   MaxWidth="260"
+                   VerticalAlignment="Center"/>
+      </Grid>
+    </Border>
+
+    <Border Grid.RowSpan="3"
+            Background="#0F172A70"
+            IsVisible="{Binding IsStartScreenVisible}">
+      <Grid>
+        <Border Width="760"
+                MaxHeight="620"
+                Padding="22"
+                CornerRadius="18"
+                Background="#FFFFFF"
+                BorderBrush="#CBD5E1"
+                BorderThickness="1"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center">
+          <Grid RowDefinitions="Auto,Auto,*"
+                RowSpacing="16">
+            <Grid ColumnDefinitions="*,Auto">
+              <StackPanel Spacing="3">
+                <TextBlock Text="Avalonia UI Visual Designer"
+                           FontSize="24"
+                           FontWeight="Bold"
+                           Foreground="#0F172A"/>
+                <TextBlock Text="Start a form, reopen recent work, or jump into docs."
+                           Foreground="#64748B"/>
+              </StackPanel>
+              <Button Grid.Column="1"
+                      Content="Close"
+                      Command="{Binding CloseStartScreenCommand}"
+                      Classes="editor-ghost-button"/>
+            </Grid>
+
+            <WrapPanel Grid.Row="1">
+              <Button Content="New Form"
+                      Command="{Binding NewEditorCommand}"
+                      Classes="editor-primary-button"
+                      Margin="0,0,8,8"/>
+              <Button Content="Open Form"
+                      Command="{Binding OpenEditorCommand}"
+                      Classes="editor-secondary-button"
+                      Margin="0,0,8,8"/>
+              <Button Content="Templates"
+                      Command="{Binding ToggleLeftPanelEditorCommand}"
+                      Classes="editor-secondary-button"
+                      Margin="0,0,8,8"/>
+              <Button Content="Help"
+                      Command="{Binding HelpEditorCommand}"
+                      Classes="editor-secondary-button"
+                      Margin="0,0,8,8"/>
+            </WrapPanel>
+
+            <Grid Grid.Row="2"
+                  ColumnDefinitions="*,*"
+                  ColumnSpacing="16">
+              <Border BorderBrush="#E2E8F0"
+                      BorderThickness="1"
+                      CornerRadius="12"
+                      Padding="12">
+                <StackPanel Spacing="10">
+                  <TextBlock Text="Recent Projects"
+                             FontWeight="Bold"
+                             FontSize="16"/>
+                  <ItemsControl ItemsSource="{Binding RecentFiles}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="models:RecentFileModel">
+                        <Button Tag="{Binding}"
+                                Click="OpenRecentFileButton_Click"
+                                HorizontalContentAlignment="Stretch"
+                                Padding="10,7"
+                                Margin="0,0,0,6">
+                          <StackPanel Spacing="2">
+                            <TextBlock Text="{Binding Title}"
+                                       FontWeight="SemiBold"/>
+                            <TextBlock Text="{Binding PathText}"
+                                       Foreground="#64748B"
+                                       FontSize="11"
+                                       TextTrimming="CharacterEllipsis"/>
+                          </StackPanel>
+                        </Button>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </StackPanel>
+              </Border>
+
+              <Border Grid.Column="1"
+                      BorderBrush="#E2E8F0"
+                      BorderThickness="1"
+                      CornerRadius="12"
+                      Padding="12">
+                <StackPanel Spacing="10">
+                  <TextBlock Text="Workspace"
+                             FontWeight="Bold"
+                             FontSize="16"/>
+                  <CheckBox Content="Reopen last workspace on startup"
+                            IsChecked="{Binding ReopenLastWorkspaceOnStartup, Mode=TwoWay}"/>
+                  <TextBlock Text="{Binding WorkspaceStatusMessageText}"
+                             Foreground="#64748B"
+                             TextWrapping="Wrap"/>
+                  <Button Content="Open Output"
+                          Command="{Binding OpenOutputPanelCommand}"
+                          Classes="editor-secondary-button"/>
+                </StackPanel>
+              </Border>
+            </Grid>
+          </Grid>
+        </Border>
+      </Grid>
+    </Border>
+
+    <Border Grid.RowSpan="3"
+            Background="#0F172A80"
             IsVisible="{Binding IsCommandPaletteOpen}">
       <Grid>
         <Border Width="620"
@@ -6226,7 +6527,52 @@
       </Grid>
     </Border>
 
-    <Border Background="#0F172AB8"
+    <ItemsControl Grid.RowSpan="3"
+                  ItemsSource="{Binding WorkspaceToasts}"
+                  HorizontalAlignment="Right"
+                  VerticalAlignment="Top"
+                  Margin="0,76,18,0"
+                  IsHitTestVisible="True">
+      <ItemsControl.ItemTemplate>
+        <DataTemplate x:DataType="models:WorkspaceToastModel">
+          <Border Width="340"
+                  Background="{Binding BackgroundBrush}"
+                  BorderBrush="{Binding BorderBrush}"
+                  BorderThickness="1"
+                  CornerRadius="12"
+                  Padding="12"
+                  Margin="0,0,0,8">
+            <Grid ColumnDefinitions="4,*,Auto"
+                  ColumnSpacing="10">
+              <Border Background="{Binding LevelBrush}"
+                      CornerRadius="999"/>
+              <StackPanel Grid.Column="1"
+                          Spacing="3">
+                <TextBlock Text="{Binding Title}"
+                           FontWeight="Bold"
+                           Foreground="#0F172A"
+                           TextWrapping="Wrap"/>
+                <TextBlock Text="{Binding Message}"
+                           Foreground="#475569"
+                           FontSize="12"
+                           TextWrapping="Wrap"/>
+              </StackPanel>
+              <Button Grid.Column="2"
+                      Content="x"
+                      Command="{Binding #RootWindow.DataContext.DismissToastCommand}"
+                      CommandParameter="{Binding}"
+                      Classes="dock-collapse"
+                      Width="26"
+                      Height="26"
+                      Padding="0"/>
+            </Grid>
+          </Border>
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+
+    <Border Grid.RowSpan="3"
+            Background="#0F172AB8"
             IsVisible="{Binding IsBusy}">
       <Grid>
         <Border Width="420"

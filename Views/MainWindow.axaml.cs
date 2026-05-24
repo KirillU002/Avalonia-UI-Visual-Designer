@@ -441,8 +441,95 @@ public partial class MainWindow : Window
                 FitSurfaceToViewport();
                 break;
             case EditorCommandId.RunSmokeTests:
-                VM.StatusText = "Smoke tests запускаются одной командой: .\\smoke-tests\\run-smoke-tests.ps1";
+                await RunSmokeTestsAsync();
                 break;
+            case EditorCommandId.ReopenLastWorkspace:
+                await TryRestoreLastSessionDocumentAsync(ignoreSetting: true);
+                break;
+        }
+    }
+
+    private async Task RunSmokeTestsAsync()
+    {
+        var scriptPath = System.IO.Path.Combine(AppContext.BaseDirectory, "smoke-tests", "run-smoke-tests.ps1");
+        if (!File.Exists(scriptPath))
+            scriptPath = System.IO.Path.Combine(Directory.GetCurrentDirectory(), "smoke-tests", "run-smoke-tests.ps1");
+
+        if (!File.Exists(scriptPath))
+        {
+            const string message = "Smoke test script was not found.";
+            VM.StatusText = message;
+            VM.LogWorkspace(WorkspaceLogLevel.Error, MainWindowViewModel.OutputCategorySmokeTests, message);
+            VM.ShowWorkspaceToast(WorkspaceToastLevel.Error, "Smoke tests unavailable", message, isPersistent: true);
+            return;
+        }
+
+        var task = VM.StartWorkspaceTask("Running smoke tests", scriptPath, 0);
+        VM.OpenOutputPanelCommand.Execute(null);
+        VM.LogWorkspace(WorkspaceLogLevel.Info, MainWindowViewModel.OutputCategorySmokeTests, "Smoke tests started.", scriptPath);
+
+        try
+        {
+            var processStartInfo = new ProcessStartInfo
+            {
+                FileName = "powershell",
+                Arguments = $"-NoProfile -ExecutionPolicy Bypass -File \"{scriptPath}\"",
+                WorkingDirectory = Directory.GetCurrentDirectory(),
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true
+            };
+
+            using var process = new Process { StartInfo = processStartInfo, EnableRaisingEvents = true };
+            process.OutputDataReceived += (_, args) =>
+            {
+                if (string.IsNullOrWhiteSpace(args.Data))
+                    return;
+
+                Dispatcher.UIThread.Post(() =>
+                {
+                    VM.LogWorkspace(
+                        args.Data.Contains("FAIL", StringComparison.OrdinalIgnoreCase) ? WorkspaceLogLevel.Error : WorkspaceLogLevel.Info,
+                        MainWindowViewModel.OutputCategorySmokeTests,
+                        args.Data);
+                });
+            };
+            process.ErrorDataReceived += (_, args) =>
+            {
+                if (string.IsNullOrWhiteSpace(args.Data))
+                    return;
+
+                Dispatcher.UIThread.Post(() =>
+                    VM.LogWorkspace(WorkspaceLogLevel.Error, MainWindowViewModel.OutputCategorySmokeTests, args.Data));
+            };
+
+            if (!process.Start())
+                throw new InvalidOperationException("Could not start smoke tests process.");
+
+            process.BeginOutputReadLine();
+            process.BeginErrorReadLine();
+            VM.ReportWorkspaceTask(task, 20, "Building generated projects");
+            await process.WaitForExitAsync();
+
+            if (process.ExitCode == 0)
+            {
+                VM.CompleteWorkspaceTask(task, "Smoke tests passed");
+                VM.StatusText = "Smoke tests passed.";
+                VM.ShowWorkspaceToast(WorkspaceToastLevel.Success, "Smoke tests passed");
+            }
+            else
+            {
+                VM.FailWorkspaceTask(task, $"Exit code {process.ExitCode}");
+                VM.StatusText = $"Smoke tests failed: exit code {process.ExitCode}";
+                VM.ShowWorkspaceToast(WorkspaceToastLevel.Error, "Smoke tests failed", VM.StatusText, isPersistent: true);
+            }
+        }
+        catch (Exception ex)
+        {
+            VM.FailWorkspaceTask(task, ex.Message);
+            VM.StatusText = $"Smoke tests failed: {ex.Message}";
+            VM.ShowWorkspaceToast(WorkspaceToastLevel.Error, "Smoke tests failed", ex.Message, isPersistent: true);
         }
     }
 
@@ -450,12 +537,16 @@ public partial class MainWindow : Window
     {
         VM.GenerateXamlCommand.Execute(null);
         await CopyTextToClipboardAsync(VM.GeneratedXaml, "XAML copied. Install required NuGet packages when the checklist asks for them.");
+        VM.LogWorkspace(WorkspaceLogLevel.Success, MainWindowViewModel.OutputCategoryExport, "XAML copied to clipboard.");
+        VM.ShowWorkspaceToast(WorkspaceToastLevel.Success, "XAML copied");
     }
 
     private async Task CopyGeneratedCSharpAsync()
     {
         VM.GenerateXamlCommand.Execute(null);
         await CopyTextToClipboardAsync(VM.GeneratedCSharp, "C# copied. Check the generated namespace in the target project.");
+        VM.LogWorkspace(WorkspaceLogLevel.Success, MainWindowViewModel.OutputCategoryExport, "C# copied to clipboard.");
+        VM.ShowWorkspaceToast(WorkspaceToastLevel.Success, "C# copied");
     }
 
     private void FitSurfaceToViewport()
@@ -582,6 +673,7 @@ public partial class MainWindow : Window
             ViewportOffsetY = DesignerViewportScrollViewer.Offset.Y,
             WorkspaceMode = VM.WorkspaceMode,
             SelectedControlId = VM.SelectedControl?.Id ?? "",
+            ReopenLastWorkspaceOnStartup = VM.ReopenLastWorkspaceOnStartup,
             EditorShell = VM.CaptureEditorShellLayoutState()
         };
     }
@@ -593,6 +685,9 @@ public partial class MainWindow : Window
             or nameof(MainWindowViewModel.IsLeftDockOpen)
             or nameof(MainWindowViewModel.IsRightDockOpen)
             or nameof(MainWindowViewModel.IsBottomDockOpen)
+            or nameof(MainWindowViewModel.ActiveBottomDockTab)
+            or nameof(MainWindowViewModel.SelectedOutputCategory)
+            or nameof(MainWindowViewModel.ReopenLastWorkspaceOnStartup)
             or nameof(MainWindowViewModel.LeftDockPanelWidth)
             or nameof(MainWindowViewModel.RightDockPanelWidth)
             or nameof(MainWindowViewModel.DiagnosticsPaneHeight)
@@ -651,6 +746,7 @@ public partial class MainWindow : Window
             VM.AutosaveStatusText = $"Черновик автосохранён: {DateTime.Now:HH:mm:ss}";
             _appSettings.Autosave.LastAutosaveUtc = draft.LastAutosaveUtc;
             _appSettings.Autosave.LastDraftPath = _autosaveRecoveryService.RecoveryFilePath;
+            VM.LogWorkspace(WorkspaceLogLevel.Success, MainWindowViewModel.OutputCategoryBackgroundTasks, "Autosave completed.", _autosaveRecoveryService.RecoveryFilePath);
             ScheduleSettingsSave();
         }
         catch (Exception ex)
@@ -729,8 +825,14 @@ public partial class MainWindow : Window
         }
     }
 
-    private async Task TryRestoreLastSessionDocumentAsync()
+    private async Task TryRestoreLastSessionDocumentAsync(bool ignoreSetting = false)
     {
+        if (!ignoreSetting && !_appSettings.Session.ReopenLastWorkspaceOnStartup)
+        {
+            VM.LogWorkspace(WorkspaceLogLevel.Info, MainWindowViewModel.OutputCategoryGeneral, "Reopen last workspace is disabled.");
+            return;
+        }
+
         var lastPath = _appSettings.Session.LastDocumentPath;
         if (string.IsNullOrWhiteSpace(lastPath))
             return;
@@ -738,6 +840,9 @@ public partial class MainWindow : Window
         if (!File.Exists(lastPath))
         {
             VM.StatusText = $"Последний файл недоступен: {lastPath}";
+            VM.LogWorkspace(WorkspaceLogLevel.Warning, MainWindowViewModel.OutputCategoryGeneral, VM.StatusText);
+            VM.ShowWorkspaceToast(WorkspaceToastLevel.Warning, "Last workspace unavailable", lastPath, isPersistent: true);
+            VM.IsStartScreenVisible = true;
             return;
         }
 
@@ -747,10 +852,14 @@ public partial class MainWindow : Window
             VM.LoadDocumentJson(json, lastPath);
             VM.AddOrUpdateRecentFile(lastPath);
             VM.StatusText = $"Восстановлена последняя сессия: {System.IO.Path.GetFileName(lastPath)}";
+            VM.LogWorkspace(WorkspaceLogLevel.Success, MainWindowViewModel.OutputCategoryGeneral, VM.StatusText, lastPath);
         }
         catch (Exception ex)
         {
             VM.StatusText = $"Не удалось восстановить последнюю сессию: {ex.Message}";
+            VM.LogWorkspace(WorkspaceLogLevel.Error, MainWindowViewModel.OutputCategoryGeneral, VM.StatusText, lastPath);
+            VM.ShowWorkspaceToast(WorkspaceToastLevel.Error, "Reopen failed", ex.Message, isPersistent: true);
+            VM.IsStartScreenVisible = true;
         }
     }
 
@@ -858,6 +967,7 @@ public partial class MainWindow : Window
             (currentOffset.Y + anchor.Y) / safeZoom);
 
         _surfaceZoom = normalizedZoom;
+        VM.SetEditorZoom(_surfaceZoom);
         ApplySurfaceZoom();
 
         Dispatcher.UIThread.Post(() =>
@@ -7391,11 +7501,15 @@ public partial class MainWindow : Window
             _autosaveRecoveryService.TryDeleteDraft();
             VM.AutosaveStatusText = "Черновик очищен после открытия документа.";
             VM.StatusText = $"Открыт документ: {file.Name}";
+            VM.LogWorkspace(WorkspaceLogLevel.Success, MainWindowViewModel.OutputCategoryGeneral, "File opened.", localPath);
+            VM.ShowWorkspaceToast(WorkspaceToastLevel.Success, "File opened", file.Name);
             await SaveAppSettingsNowAsync();
         }
         catch (Exception ex)
         {
             VM.StatusText = $"Ошибка открытия: {ex.Message}";
+            VM.LogWorkspace(WorkspaceLogLevel.Error, MainWindowViewModel.OutputCategoryGeneral, "Open failed.", ex.Message);
+            VM.ShowWorkspaceToast(WorkspaceToastLevel.Error, "Open failed", ex.Message, isPersistent: true);
         }
     }
 
@@ -7429,11 +7543,15 @@ public partial class MainWindow : Window
             _autosaveRecoveryService.TryDeleteDraft();
             VM.AutosaveStatusText = "Черновик очищен после открытия документа.";
             VM.StatusText = $"Открыт документ: {System.IO.Path.GetFileName(recentFile.FilePath)}";
+            VM.LogWorkspace(WorkspaceLogLevel.Success, MainWindowViewModel.OutputCategoryGeneral, "Recent file opened.", recentFile.FilePath);
+            VM.ShowWorkspaceToast(WorkspaceToastLevel.Success, "Recent opened", recentFile.Title);
             await SaveAppSettingsNowAsync();
         }
         catch (Exception ex)
         {
             VM.StatusText = $"Ошибка открытия recent file: {ex.Message}";
+            VM.LogWorkspace(WorkspaceLogLevel.Error, MainWindowViewModel.OutputCategoryGeneral, "Recent open failed.", ex.Message);
+            VM.ShowWorkspaceToast(WorkspaceToastLevel.Error, "Recent open failed", ex.Message, isPersistent: true);
         }
     }
 
@@ -7443,6 +7561,16 @@ public partial class MainWindow : Window
             return;
 
         VM.RemoveRecentFile(recentFile);
+        VM.LogWorkspace(WorkspaceLogLevel.Info, MainWindowViewModel.OutputCategoryGeneral, $"Removed recent file: {recentFile.FilePath}");
+        await SaveAppSettingsNowAsync();
+    }
+
+    private async void ToggleRecentPinButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: RecentFileModel recentFile })
+            return;
+
+        VM.ToggleRecentFilePinned(recentFile);
         await SaveAppSettingsNowAsync();
     }
 
@@ -7631,12 +7759,16 @@ public partial class MainWindow : Window
             VM.AutosaveStatusText = backup is null
                 ? "Черновик очищен после сохранения."
                 : $"Черновик очищен. Backup: {backup.DisplayName}";
+            VM.LogWorkspace(WorkspaceLogLevel.Success, MainWindowViewModel.OutputCategoryGeneral, "File saved.", path);
+            VM.ShowWorkspaceToast(WorkspaceToastLevel.Success, "File saved", System.IO.Path.GetFileName(path));
             await SaveAppSettingsNowAsync();
             return true;
         }
         catch (Exception ex)
         {
             VM.StatusText = $"Ошибка сохранения: {ex.Message}";
+            VM.LogWorkspace(WorkspaceLogLevel.Error, MainWindowViewModel.OutputCategoryGeneral, "Save failed.", ex.Message);
+            VM.ShowWorkspaceToast(WorkspaceToastLevel.Error, "Save failed", ex.Message, isPersistent: true);
             return false;
         }
     }
@@ -7665,12 +7797,16 @@ public partial class MainWindow : Window
             VM.MarkDocumentSaved(file.Name);
             _autosaveRecoveryService.TryDeleteDraft();
             VM.AutosaveStatusText = "Черновик очищен после сохранения.";
+            VM.LogWorkspace(WorkspaceLogLevel.Success, MainWindowViewModel.OutputCategoryGeneral, "File saved.", file.Name);
+            VM.ShowWorkspaceToast(WorkspaceToastLevel.Success, "File saved", file.Name);
             await SaveAppSettingsNowAsync();
             return true;
         }
         catch (Exception ex)
         {
             VM.StatusText = $"Ошибка сохранения: {ex.Message}";
+            VM.LogWorkspace(WorkspaceLogLevel.Error, MainWindowViewModel.OutputCategoryGeneral, "Save failed.", ex.Message);
+            VM.ShowWorkspaceToast(WorkspaceToastLevel.Error, "Save failed", ex.Message, isPersistent: true);
             return false;
         }
     }

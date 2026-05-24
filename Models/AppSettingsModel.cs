@@ -40,6 +40,8 @@ public class RecentFileModel
 
     public DateTime LastOpenedUtc { get; set; } = DateTime.UtcNow;
 
+    public bool IsPinned { get; set; }
+
     public string LastOpenedText => LastOpenedUtc.ToLocalTime().ToString("dd.MM.yyyy HH:mm");
 
     public string PathText => string.IsNullOrWhiteSpace(FilePath) ? "Путь не задан" : FilePath;
@@ -47,11 +49,19 @@ public class RecentFileModel
     public string Title => string.IsNullOrWhiteSpace(DisplayName)
         ? string.IsNullOrWhiteSpace(FilePath) ? "Без имени" : Path.GetFileName(FilePath)
         : DisplayName;
+
+    public bool IsAvailable => !string.IsNullOrWhiteSpace(FilePath) && File.Exists(FilePath);
+
+    public string AvailabilityText => IsAvailable ? "Available" : "Missing";
+
+    public string PinText => IsPinned ? "Pinned" : "Pin";
 }
 
 public class SessionStateModel
 {
     public string LastDocumentPath { get; set; } = "";
+
+    public bool ReopenLastWorkspaceOnStartup { get; set; } = true;
 
     public double WindowWidth { get; set; }
 

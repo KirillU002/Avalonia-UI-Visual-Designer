@@ -33,6 +33,9 @@ public enum EditorCommandId
     ToggleLeftPanel,
     ToggleRightPanel,
     ToggleProblemsPanel,
+    OpenOutputPanel,
+    ToggleOutputPanel,
+    ClearOutput,
     ResetLayout,
     ZoomIn,
     ZoomOut,
@@ -52,5 +55,9 @@ public enum EditorCommandId
     OpenHelp,
     OpenQuickStart,
     OpenPluginSdkDocs,
-    OpenCommandPalette
+    OpenCommandPalette,
+    ReopenLastWorkspace,
+    ToggleReopenLastWorkspace,
+    OpenStartScreen,
+    CancelBackgroundTask
 }
