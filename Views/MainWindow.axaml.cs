@@ -422,6 +422,18 @@ public partial class MainWindow : Window
             case EditorCommandId.OpenColumnEditor:
                 OpenDataGridColumnEditorButton_Click(this, new RoutedEventArgs());
                 break;
+            case EditorCommandId.CopyCurrentGeneratedFile:
+                await CopyCurrentGeneratedFileAsync();
+                break;
+            case EditorCommandId.ValidateExportBuild:
+                await ValidateExportBuildAsync();
+                break;
+            case EditorCommandId.ExportToProject:
+                await ExportToProjectAsync();
+                break;
+            case EditorCommandId.ExportAsZip:
+                await ExportAsZipAsync();
+                break;
             case EditorCommandId.CopyXaml:
                 await CopyGeneratedXamlAsync();
                 break;
@@ -547,6 +559,140 @@ public partial class MainWindow : Window
         await CopyTextToClipboardAsync(VM.GeneratedCSharp, "C# copied. Check the generated namespace in the target project.");
         VM.LogWorkspace(WorkspaceLogLevel.Success, MainWindowViewModel.OutputCategoryExport, "C# copied to clipboard.");
         VM.ShowWorkspaceToast(WorkspaceToastLevel.Success, "C# copied");
+    }
+
+    private async Task CopyCurrentGeneratedFileAsync()
+    {
+        var file = VM.SelectedGeneratedFile;
+        if (file is null)
+        {
+            VM.StatusText = "Select a generated file first.";
+            return;
+        }
+
+        await CopyTextToClipboardAsync(file.Content, $"{file.Path} copied.");
+        VM.LogWorkspace(WorkspaceLogLevel.Success, MainWindowViewModel.OutputCategoryExport, $"Copied generated file: {file.Path}");
+    }
+
+    private async Task ValidateExportBuildAsync()
+    {
+        VM.OpenOutputPanelCommand.Execute(null);
+        var task = VM.StartWorkspaceTask("Validate export build", "Temporary Avalonia project", 0);
+        var artifactsRoot = System.IO.Path.Combine(Directory.GetCurrentDirectory(), "artifacts", "export-validation");
+
+        try
+        {
+            var result = await VM.ValidateCurrentExportBuildAsync(
+                artifactsRoot,
+                message =>
+                {
+                    Dispatcher.UIThread.Post(() =>
+                        VM.LogWorkspace(WorkspaceLogLevel.Info, MainWindowViewModel.OutputCategoryExport, message));
+                    return Task.CompletedTask;
+                });
+
+            if (result.Status == ExportBuildValidationStatus.Passed)
+            {
+                VM.CompleteWorkspaceTask(task, "Build passed");
+                VM.StatusText = $"Export build passed: {result.ProjectPath}";
+                VM.ShowWorkspaceToast(WorkspaceToastLevel.Success, "Build passed", result.ProjectPath);
+                VM.LogWorkspace(WorkspaceLogLevel.Success, MainWindowViewModel.OutputCategoryExport, "Export build validation passed.", result.ProjectPath);
+            }
+            else
+            {
+                VM.FailWorkspaceTask(task, $"Exit code {result.ExitCode}");
+                VM.StatusText = $"Export build failed: exit code {result.ExitCode}";
+                VM.ShowWorkspaceToast(WorkspaceToastLevel.Error, "Build failed", VM.StatusText, isPersistent: true);
+                VM.LogWorkspace(WorkspaceLogLevel.Error, MainWindowViewModel.OutputCategoryExport, "Export build validation failed.", result.Output);
+            }
+        }
+        catch (Exception ex)
+        {
+            VM.FailWorkspaceTask(task, ex.Message);
+            VM.StatusText = $"Export build validation failed: {ex.Message}";
+            VM.ShowWorkspaceToast(WorkspaceToastLevel.Error, "Build validation failed", ex.Message, isPersistent: true);
+            VM.LogWorkspace(WorkspaceLogLevel.Error, MainWindowViewModel.OutputCategoryExport, "Build validation failed.", ex.Message);
+        }
+    }
+
+    private async Task ExportToProjectAsync()
+    {
+        if (StorageProvider is null || !StorageProvider.CanPickFolder)
+        {
+            VM.StatusText = "Folder picker is unavailable in this environment.";
+            return;
+        }
+
+        var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+        {
+            Title = "Export generated files to Avalonia project",
+            AllowMultiple = false
+        });
+        var targetPath = folders.FirstOrDefault()?.TryGetLocalPath();
+        if (string.IsNullOrWhiteSpace(targetPath))
+            return;
+
+        VM.OpenOutputPanelCommand.Execute(null);
+        var task = VM.StartWorkspaceTask("Export to project", targetPath, 0);
+        try
+        {
+            await VM.ExportCurrentResultToProjectAsync(
+                targetPath,
+                message =>
+                {
+                    Dispatcher.UIThread.Post(() =>
+                        VM.LogWorkspace(WorkspaceLogLevel.Info, MainWindowViewModel.OutputCategoryExport, message));
+                    return Task.CompletedTask;
+                });
+            VM.CompleteWorkspaceTask(task, "Export completed");
+            VM.StatusText = $"Generated files exported: {targetPath}";
+            VM.ShowWorkspaceToast(WorkspaceToastLevel.Success, "Export completed", targetPath);
+            VM.LogWorkspace(WorkspaceLogLevel.Success, MainWindowViewModel.OutputCategoryExport, "Export to project completed.", targetPath);
+        }
+        catch (Exception ex)
+        {
+            VM.FailWorkspaceTask(task, ex.Message);
+            VM.StatusText = $"Export to project failed: {ex.Message}";
+            VM.ShowWorkspaceToast(WorkspaceToastLevel.Error, "Export failed", ex.Message, isPersistent: true);
+            VM.LogWorkspace(WorkspaceLogLevel.Error, MainWindowViewModel.OutputCategoryExport, "Export to project failed.", ex.Message);
+        }
+    }
+
+    private async Task ExportAsZipAsync()
+    {
+        if (StorageProvider is null || !StorageProvider.CanSave)
+        {
+            VM.StatusText = "ZIP export is unavailable in this environment.";
+            return;
+        }
+
+        var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = "Export generated files as ZIP",
+            SuggestedFileName = "avalonia-generated-export.zip",
+            DefaultExtension = "zip",
+            ShowOverwritePrompt = true
+        });
+        var zipPath = file?.TryGetLocalPath();
+        if (string.IsNullOrWhiteSpace(zipPath))
+            return;
+
+        var task = VM.StartWorkspaceTask("Export ZIP", zipPath, 0);
+        try
+        {
+            await VM.ExportCurrentResultAsZipAsync(zipPath);
+            VM.CompleteWorkspaceTask(task, "ZIP exported");
+            VM.StatusText = $"ZIP exported: {zipPath}";
+            VM.ShowWorkspaceToast(WorkspaceToastLevel.Success, "ZIP exported", zipPath);
+            VM.LogWorkspace(WorkspaceLogLevel.Success, MainWindowViewModel.OutputCategoryExport, "ZIP export completed.", zipPath);
+        }
+        catch (Exception ex)
+        {
+            VM.FailWorkspaceTask(task, ex.Message);
+            VM.StatusText = $"ZIP export failed: {ex.Message}";
+            VM.ShowWorkspaceToast(WorkspaceToastLevel.Error, "ZIP export failed", ex.Message, isPersistent: true);
+            VM.LogWorkspace(WorkspaceLogLevel.Error, MainWindowViewModel.OutputCategoryExport, "ZIP export failed.", ex.Message);
+        }
     }
 
     private void FitSurfaceToViewport()

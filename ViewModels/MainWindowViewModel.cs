@@ -157,6 +157,7 @@ public partial class MainWindowViewModel : ObservableObject
     private readonly WorkspaceLogService _workspaceLogService = new();
     private readonly WorkspaceTaskService _workspaceTaskService = new();
     private readonly WorkspaceNotificationService _workspaceNotificationService = new();
+    private readonly ExportPipelineService _exportPipelineService = new();
     private readonly PropertyGridUserSettings _propertyGridUserSettings = new();
     private readonly DispatcherTimer _propertyGridLiveRefreshTimer;
     private readonly DispatcherTimer _diagnosticsRefreshTimer;
@@ -200,6 +201,10 @@ public partial class MainWindowViewModel : ObservableObject
     public ObservableCollection<WorkspaceLogEntryModel> FilteredOutputEntries { get; } = new();
     public ObservableCollection<WorkspaceTaskModel> WorkspaceTasks => _workspaceTaskService.Tasks;
     public ObservableCollection<WorkspaceToastModel> WorkspaceToasts => _workspaceNotificationService.Toasts;
+    public ObservableCollection<GeneratedFileModel> GeneratedFiles { get; } = new();
+    public ObservableCollection<GeneratedFileTreeNodeModel> GeneratedFileTreeNodes { get; } = new();
+    public ObservableCollection<RequiredPackageModel> RequiredPackages { get; } = new();
+    public ObservableCollection<ExportDiagnosticModel> ExportDiagnostics { get; } = new();
     public ObservableCollection<string> AvailableOutputCategories { get; } = new()
     {
         OutputCategoryAll,
@@ -653,6 +658,15 @@ public partial class MainWindowViewModel : ObservableObject
     private bool isStartScreenVisible;
 
     [ObservableProperty]
+    private GeneratedFileModel? selectedGeneratedFile;
+
+    [ObservableProperty]
+    private GeneratedFileTreeNodeModel? selectedGeneratedFileNode;
+
+    [ObservableProperty]
+    private ExportBuildValidationResult currentExportBuildValidation = new();
+
+    [ObservableProperty]
     private string structureSearchText = "";
 
     [ObservableProperty]
@@ -781,6 +795,18 @@ public partial class MainWindowViewModel : ObservableObject
     public string ExportCompactSummary => BuildExportCompactSummary();
     public string ExportSummaryText => BuildExportSummaryText();
     public string ExportDependenciesSummary => BuildExportDependenciesSummary();
+    public bool HasGeneratedFiles => GeneratedFiles.Count > 0;
+    public bool HasRequiredPackages => RequiredPackages.Count > 0;
+    public bool HasNoRequiredPackages => !HasRequiredPackages;
+    public bool HasExportPipelineDiagnostics => ExportDiagnostics.Any(item => item.Severity != ExportChecklistSeverity.Ok);
+    public bool HasNoExportPipelineDiagnostics => !HasExportPipelineDiagnostics;
+    public string SelectedGeneratedFileContent => SelectedGeneratedFile?.Content ?? "";
+    public string SelectedGeneratedFileSummary => SelectedGeneratedFile is null
+        ? "No generated file selected"
+        : $"{SelectedGeneratedFile.Path} · {SelectedGeneratedFile.Summary}";
+    public string ExportPipelineSummary => $"{ExportStatusText} · {GeneratedFiles.Count} files · {RequiredPackages.Count} NuGet · {CurrentExportBuildValidation.StatusText}";
+    public string ExportValidationStatusText => CurrentExportBuildValidation.StatusText;
+    public string ExportValidationStatusForeground => CurrentExportBuildValidation.StatusForeground;
     public string PerformanceDiagnosticsSummary =>
         $"Controls: {Controls.Count}; PropertyGrid: {_lastPropertyGridRebuildMs:0.0} ms; Structure: {_lastStructureTreeRebuildMs:0.0} ms; Diagnostics: {_lastDiagnosticsRefreshMs:0.0} ms; Export checklist: {_lastExportChecklistRefreshMs:0.0} ms; Export: {_lastExportGenerationMs:0.0} ms";
 
@@ -1075,6 +1101,10 @@ public partial class MainWindowViewModel : ObservableObject
     public EditorCommand? ResetLayoutEditorCommand => GetEditorCommand(EditorCommandId.ResetLayout);
     public EditorCommand? ToggleDesignFramesEditorCommand => GetEditorCommand(EditorCommandId.ToggleDesignFrames);
     public EditorCommand? RefreshGeneratedCodeEditorCommand => GetEditorCommand(EditorCommandId.RefreshGeneratedCode);
+    public EditorCommand? CopyCurrentGeneratedFileEditorCommand => GetEditorCommand(EditorCommandId.CopyCurrentGeneratedFile);
+    public EditorCommand? ValidateExportBuildEditorCommand => GetEditorCommand(EditorCommandId.ValidateExportBuild);
+    public EditorCommand? ExportToProjectEditorCommand => GetEditorCommand(EditorCommandId.ExportToProject);
+    public EditorCommand? ExportAsZipEditorCommand => GetEditorCommand(EditorCommandId.ExportAsZip);
     public EditorCommand? CopyXamlEditorCommand => GetEditorCommand(EditorCommandId.CopyXaml);
     public EditorCommand? CopyCSharpEditorCommand => GetEditorCommand(EditorCommandId.CopyCSharp);
     public EditorCommand? OpenExportDiagnosticsEditorCommand => GetEditorCommand(EditorCommandId.OpenExportDiagnostics);
@@ -1642,6 +1672,10 @@ public partial class MainWindowViewModel : ObservableObject
         RegisterEditorCommand(EditorCommandId.OpenPluginDiagnostics, "Open Plugin Diagnostics", "Switch to plugin diagnostics.", "", "", EditorCommandCategory.Tools, () => WorkspaceMode = WorkspaceModePlugins);
 
         RegisterEditorCommand(EditorCommandId.RefreshGeneratedCode, "Refresh Generated Code", "Regenerate XAML/C# export.", "", "", EditorCommandCategory.Export, GenerateXaml);
+        RegisterEditorCommand(EditorCommandId.CopyCurrentGeneratedFile, "Copy Current Generated File", "Copy selected generated file content.", "", "", EditorCommandCategory.Export, () => RequestExternalEditorCommand(EditorCommandId.CopyCurrentGeneratedFile), () => StateWhen(SelectedGeneratedFile is not null, "Select a generated file."));
+        RegisterEditorCommand(EditorCommandId.ValidateExportBuild, "Validate Export Build", "Build generated files in a temporary Avalonia project.", "", "", EditorCommandCategory.Export, () => RequestExternalEditorCommand(EditorCommandId.ValidateExportBuild), () => StateWhen(!HasExportNamespaceError(), "Fix export namespace first."));
+        RegisterEditorCommand(EditorCommandId.ExportToProject, "Export to Avalonia Project", "Write generated files and export metadata into a project folder.", "", "", EditorCommandCategory.Export, () => RequestExternalEditorCommand(EditorCommandId.ExportToProject), () => StateWhen(!HasExportNamespaceError(), "Fix export namespace first."));
+        RegisterEditorCommand(EditorCommandId.ExportAsZip, "Export as ZIP", "Save generated files, packages and diagnostics as a ZIP archive.", "", "", EditorCommandCategory.Export, () => RequestExternalEditorCommand(EditorCommandId.ExportAsZip), () => StateWhen(!HasExportNamespaceError(), "Fix export namespace first."));
         RegisterEditorCommand(EditorCommandId.CopyXaml, "Copy XAML", "Generate and copy XAML.", "", "", EditorCommandCategory.Export, () => RequestExternalEditorCommand(EditorCommandId.CopyXaml));
         RegisterEditorCommand(EditorCommandId.CopyCSharp, "Copy C#", "Generate and copy C#.", "", "", EditorCommandCategory.Export, () => RequestExternalEditorCommand(EditorCommandId.CopyCSharp));
         RegisterEditorCommand(EditorCommandId.RunSmokeTests, "Run Smoke Tests", "Run export smoke tests from the repository.", "", "", EditorCommandCategory.Export, () => RequestExternalEditorCommand(EditorCommandId.RunSmokeTests));
@@ -1866,6 +1900,10 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(ResetLayoutEditorCommand));
         OnPropertyChanged(nameof(ToggleDesignFramesEditorCommand));
         OnPropertyChanged(nameof(RefreshGeneratedCodeEditorCommand));
+        OnPropertyChanged(nameof(CopyCurrentGeneratedFileEditorCommand));
+        OnPropertyChanged(nameof(ValidateExportBuildEditorCommand));
+        OnPropertyChanged(nameof(ExportToProjectEditorCommand));
+        OnPropertyChanged(nameof(ExportAsZipEditorCommand));
         OnPropertyChanged(nameof(CopyXamlEditorCommand));
         OnPropertyChanged(nameof(CopyCSharpEditorCommand));
         OnPropertyChanged(nameof(OpenExportDiagnosticsEditorCommand));
@@ -6432,6 +6470,7 @@ public partial class MainWindowViewModel : ObservableObject
         GeneratedXaml = sb.ToString();
         GeneratedCSharp = BuildGeneratedCSharp();
         GeneratedBindingGuide = BuildGeneratedBindingGuide();
+        CurrentExportBuildValidation = new ExportBuildValidationResult();
         _exportCacheDocumentSnapshotHash = GetSnapshotHash(_currentSnapshot);
         _exportCacheSettingsSignature = BuildExportSettingsSignature();
         _exportCacheGeneratedUtc = DateTime.UtcNow;
@@ -6453,6 +6492,266 @@ public partial class MainWindowViewModel : ObservableObject
     {
         ScheduleExportChecklistRefresh();
         RaiseExportCacheProperties();
+    }
+
+    private ExportResult CurrentExportResult { get; set; } = new();
+    private bool _isSyncingGeneratedFileSelection;
+
+    public async Task<ExportBuildValidationResult> ValidateCurrentExportBuildAsync(string artifactsRoot, Func<string, Task>? logAsync = null)
+    {
+        EnsureExportPipelineResultFresh();
+        CurrentExportBuildValidation = new ExportBuildValidationResult { Status = ExportBuildValidationStatus.Building };
+        var result = await _exportPipelineService.ValidateBuildAsync(CurrentExportResult, artifactsRoot, logAsync);
+        CurrentExportBuildValidation = result;
+        CurrentExportResult = _exportPipelineService.CreateResult(
+            CurrentExportResult.Profile,
+            CurrentExportResult.GeneratedFiles,
+            CurrentExportResult.RequiredPackages,
+            CurrentExportResult.Diagnostics,
+            result);
+        return result;
+    }
+
+    public async Task ExportCurrentResultToProjectAsync(string targetFolder, Func<string, Task>? logAsync = null)
+    {
+        EnsureExportPipelineResultFresh();
+        await _exportPipelineService.ExportToProjectAsync(CurrentExportResult, targetFolder, logAsync);
+    }
+
+    public async Task ExportCurrentResultAsZipAsync(string zipPath)
+    {
+        EnsureExportPipelineResultFresh();
+        await _exportPipelineService.ExportZipAsync(CurrentExportResult, zipPath);
+    }
+
+    private void EnsureExportPipelineResultFresh()
+    {
+        if (GeneratedFiles.Count == 0 || IsExportCacheStale)
+            GenerateXaml();
+    }
+
+    private void RefreshExportPipelineResult()
+    {
+        var selectedPath = SelectedGeneratedFile?.Path;
+        var profile = BuildExportProfile();
+        var files = BuildGeneratedFiles().ToList();
+        var packages = BuildRequiredPackageModels().ToList();
+        var diagnostics = BuildExportDiagnosticModels().ToList();
+
+        CurrentExportResult = _exportPipelineService.CreateResult(profile, files, packages, diagnostics, CurrentExportBuildValidation);
+
+        GeneratedFiles.Clear();
+        foreach (var file in files)
+            GeneratedFiles.Add(file);
+
+        GeneratedFileTreeNodes.Clear();
+        foreach (var node in BuildGeneratedFileTreeNodes(files))
+            GeneratedFileTreeNodes.Add(node);
+
+        RequiredPackages.Clear();
+        foreach (var package in packages)
+            RequiredPackages.Add(package);
+
+        ExportDiagnostics.Clear();
+        foreach (var diagnostic in diagnostics)
+            ExportDiagnostics.Add(diagnostic);
+
+        SelectedGeneratedFile = GeneratedFiles.FirstOrDefault(file => string.Equals(file.Path, selectedPath, StringComparison.OrdinalIgnoreCase))
+            ?? GeneratedFiles.FirstOrDefault();
+        SelectedGeneratedFileNode = FindGeneratedFileNode(GeneratedFileTreeNodes, SelectedGeneratedFile?.Path);
+
+        RaiseExportPipelineProperties();
+    }
+
+    private ExportProfile BuildExportProfile()
+    {
+        return new ExportProfile
+        {
+            Name = IsCleanUiGenerationMode ? "Clean UI" : "Demo Data",
+            TargetMode = ExportTarget,
+            ProjectNamespace = ResolveExportNamespace(),
+            DataGridExportMode = NormalizeDataGridExportMode(DataGridExportMode),
+            LayoutExportMode = NormalizeLayoutExportMode(LayoutExportMode),
+            XamlVerbosity = XamlVerbosity,
+            IncludeComments = IncludeExportComments,
+            IncludeDemoData = IncludeSampleData,
+            IncludePluginRuntime = IncludePluginRuntimeReferences
+        };
+    }
+
+    private IEnumerable<GeneratedFileModel> BuildGeneratedFiles()
+    {
+        var className = IsMainWindowExportTarget ? "MainWindow" : "Form1Window";
+        yield return new GeneratedFileModel
+        {
+            Path = $"{className}.axaml",
+            Content = GeneratedXaml,
+            Severity = string.IsNullOrWhiteSpace(GeneratedXaml) || HasExportNamespaceError() ? ExportChecklistSeverity.Error : ExportChecklistSeverity.Ok
+        };
+        yield return new GeneratedFileModel
+        {
+            Path = $"{className}.axaml.cs",
+            Content = GeneratedCSharp,
+            Severity = string.IsNullOrWhiteSpace(GeneratedCSharp) || HasExportNamespaceError() ? ExportChecklistSeverity.Error : ExportChecklistSeverity.Ok
+        };
+
+        if (!string.IsNullOrWhiteSpace(GeneratedBindingGuide))
+        {
+            yield return new GeneratedFileModel
+            {
+                Path = "README.generated.md",
+                Content = GeneratedBindingGuide,
+                Severity = ExportChecklistSeverity.Ok
+            };
+        }
+    }
+
+    private static IReadOnlyList<GeneratedFileTreeNodeModel> BuildGeneratedFileTreeNodes(IEnumerable<GeneratedFileModel> files)
+    {
+        var roots = new List<GeneratedFileTreeNodeModel>();
+        foreach (var file in files)
+        {
+            var parts = file.Path.Replace('\\', '/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length == 0)
+                continue;
+
+            IList<GeneratedFileTreeNodeModel> current = roots;
+            var path = "";
+            for (var i = 0; i < parts.Length; i++)
+            {
+                var isFile = i == parts.Length - 1;
+                path = string.IsNullOrEmpty(path) ? parts[i] : $"{path}/{parts[i]}";
+                if (isFile)
+                {
+                    current.Add(new GeneratedFileTreeNodeModel
+                    {
+                        Name = parts[i],
+                        Path = file.Path,
+                        File = file,
+                        IsFolder = false
+                    });
+                    continue;
+                }
+
+                var folder = current.FirstOrDefault(node => node.IsFolder && string.Equals(node.Path, path, StringComparison.OrdinalIgnoreCase));
+                if (folder is null)
+                {
+                    folder = new GeneratedFileTreeNodeModel
+                    {
+                        Name = parts[i],
+                        Path = path,
+                        IsFolder = true
+                    };
+                    current.Add(folder);
+                }
+
+                current = folder.Children;
+            }
+        }
+
+        return roots;
+    }
+
+    private static GeneratedFileTreeNodeModel? FindGeneratedFileNode(IEnumerable<GeneratedFileTreeNodeModel> nodes, string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return null;
+
+        foreach (var node in nodes)
+        {
+            if (node.File is not null && string.Equals(node.File.Path, path, StringComparison.OrdinalIgnoreCase))
+                return node;
+
+            var child = FindGeneratedFileNode(node.Children, path);
+            if (child is not null)
+                return child;
+        }
+
+        return null;
+    }
+
+    private static GeneratedFileModel? FindFirstGeneratedFile(IEnumerable<GeneratedFileTreeNodeModel>? nodes)
+    {
+        if (nodes is null)
+            return null;
+
+        foreach (var node in nodes)
+        {
+            if (node.File is not null)
+                return node.File;
+
+            var child = FindFirstGeneratedFile(node.Children);
+            if (child is not null)
+                return child;
+        }
+
+        return null;
+    }
+
+    private IEnumerable<RequiredPackageModel> BuildRequiredPackageModels()
+    {
+        foreach (var packageId in GetRequiredExportNuGetPackages().Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            yield return new RequiredPackageModel
+            {
+                Id = packageId,
+                Version = GetRecommendedPackageVersion(packageId),
+                Reason = GetRequiredPackageReason(packageId),
+                Severity = ExportChecklistSeverity.Warning
+            };
+        }
+    }
+
+    private IEnumerable<ExportDiagnosticModel> BuildExportDiagnosticModels()
+    {
+        foreach (var item in ExportChecklistItems.Where(item => item.Severity != ExportChecklistSeverity.Ok))
+        {
+            yield return new ExportDiagnosticModel
+            {
+                Severity = item.Severity,
+                Source = item.Title,
+                Message = item.Value,
+                Details = item.Details
+            };
+        }
+
+        foreach (var diagnostic in Diagnostics.Where(diagnostic => string.Equals(diagnostic.Category, "Export", StringComparison.OrdinalIgnoreCase)
+                     || string.Equals(diagnostic.Source, "Export", StringComparison.OrdinalIgnoreCase)))
+        {
+            yield return new ExportDiagnosticModel
+            {
+                Severity = diagnostic.Severity == DocumentDiagnosticSeverity.Error
+                    ? ExportChecklistSeverity.Error
+                    : diagnostic.Severity == DocumentDiagnosticSeverity.Warning
+                        ? ExportChecklistSeverity.Warning
+                        : ExportChecklistSeverity.Ok,
+                Source = diagnostic.Source,
+                Message = diagnostic.Message,
+                Details = diagnostic.Recommendation
+            };
+        }
+    }
+
+    private static string GetRecommendedPackageVersion(string packageId)
+    {
+        return packageId switch
+        {
+            "Avalonia.Controls.DataGrid" => "11.3.12",
+            "CommunityToolkit.Mvvm" => "8.2.1",
+            "Microsoft.Data.SqlClient" => "5.2.2",
+            _ => ""
+        };
+    }
+
+    private string GetRequiredPackageReason(string packageId)
+    {
+        return packageId switch
+        {
+            "Avalonia.Controls.DataGrid" => "Real Avalonia DataGrid export",
+            "CommunityToolkit.Mvvm" => IncludeCommunityToolkitAttributes ? "CommunityToolkit attributes requested" : "Demo runtime ViewModel generation",
+            "Microsoft.Data.SqlClient" => "SQL BindingSource demo runtime",
+            _ => "Export dependency"
+        };
     }
 
     private void ScheduleExportChecklistRefresh()
@@ -6479,6 +6778,7 @@ public partial class MainWindowViewModel : ObservableObject
         stopwatch.Stop();
         _lastExportChecklistRefreshMs = stopwatch.Elapsed.TotalMilliseconds;
         ReportPerformanceMetric("Export checklist refresh", _lastExportChecklistRefreshMs);
+        RefreshExportPipelineResult();
         RaiseExportChecklistProperties();
         OnPropertyChanged(nameof(PerformanceDiagnosticsSummary));
     }
@@ -12778,6 +13078,42 @@ public partial class MainWindowViewModel : ObservableObject
         FilterOutputEntries();
     }
 
+    partial void OnSelectedGeneratedFileChanged(GeneratedFileModel? value)
+    {
+        OnPropertyChanged(nameof(SelectedGeneratedFileContent));
+        OnPropertyChanged(nameof(SelectedGeneratedFileSummary));
+        if (!_isSyncingGeneratedFileSelection)
+        {
+            _isSyncingGeneratedFileSelection = true;
+            SelectedGeneratedFileNode = FindGeneratedFileNode(GeneratedFileTreeNodes, value?.Path);
+            _isSyncingGeneratedFileSelection = false;
+        }
+
+        RefreshEditorCommands();
+    }
+
+    partial void OnSelectedGeneratedFileNodeChanged(GeneratedFileTreeNodeModel? value)
+    {
+        if (_isSyncingGeneratedFileSelection)
+            return;
+
+        var file = value?.File ?? FindFirstGeneratedFile(value?.Children);
+        if (file is null)
+            return;
+
+        _isSyncingGeneratedFileSelection = true;
+        SelectedGeneratedFile = file;
+        _isSyncingGeneratedFileSelection = false;
+    }
+
+    partial void OnCurrentExportBuildValidationChanged(ExportBuildValidationResult value)
+    {
+        OnPropertyChanged(nameof(ExportValidationStatusText));
+        OnPropertyChanged(nameof(ExportValidationStatusForeground));
+        OnPropertyChanged(nameof(ExportPipelineSummary));
+        RaiseWorkspaceStatusProperties();
+    }
+
     partial void OnIsDiagnosticsPaneExpandedChanged(bool value)
     {
         RaiseDiagnosticsProperties();
@@ -13113,6 +13449,21 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(ExportCompactSummary));
         OnPropertyChanged(nameof(ExportSummaryText));
         OnPropertyChanged(nameof(ExportDependenciesSummary));
+        RaiseExportPipelineProperties();
+    }
+
+    private void RaiseExportPipelineProperties()
+    {
+        OnPropertyChanged(nameof(HasGeneratedFiles));
+        OnPropertyChanged(nameof(HasRequiredPackages));
+        OnPropertyChanged(nameof(HasNoRequiredPackages));
+        OnPropertyChanged(nameof(HasExportPipelineDiagnostics));
+        OnPropertyChanged(nameof(HasNoExportPipelineDiagnostics));
+        OnPropertyChanged(nameof(SelectedGeneratedFileContent));
+        OnPropertyChanged(nameof(SelectedGeneratedFileSummary));
+        OnPropertyChanged(nameof(ExportPipelineSummary));
+        OnPropertyChanged(nameof(ExportValidationStatusText));
+        OnPropertyChanged(nameof(ExportValidationStatusForeground));
     }
 
     private void RaiseWorkspaceModeProperties()
