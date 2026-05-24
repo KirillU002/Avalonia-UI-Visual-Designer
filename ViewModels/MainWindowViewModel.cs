@@ -15,6 +15,7 @@ using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Data;
 using System.Data.Common;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -131,6 +132,11 @@ public partial class MainWindowViewModel : ObservableObject
     private bool _isUpdatingStructureSelection;
     private bool _isStructureTreeRefreshSuspended;
     private bool _isRebuildingPropertyGrid;
+    private bool _isUpdatingDiagnosticsCollection;
+    private bool _isDiagnosticsRefreshScheduled;
+    private bool _isExportChecklistRefreshScheduled;
+    private bool _isStructureTreeSearchRefreshScheduled;
+    private bool _isEditorCommandRefreshScheduled;
     private double _previewScreenWidth = 1920;
     private double _previewScreenHeight = 1080;
     private double _previewWorkingAreaWidth = 1920;
@@ -140,11 +146,27 @@ public partial class MainWindowViewModel : ObservableObject
     private readonly EditorCommandService _editorCommandService = new();
     private readonly PropertyGridUserSettings _propertyGridUserSettings = new();
     private readonly DispatcherTimer _propertyGridLiveRefreshTimer;
+    private readonly DispatcherTimer _diagnosticsRefreshTimer;
+    private readonly DispatcherTimer _exportChecklistRefreshTimer;
+    private readonly DispatcherTimer _structureTreeSearchRefreshTimer;
+    private readonly DispatcherTimer _editorCommandRefreshTimer;
     private static readonly TimeSpan PropertyGridLiveRefreshInterval = TimeSpan.FromMilliseconds(66);
+    private static readonly TimeSpan DiagnosticsRefreshDelay = TimeSpan.FromMilliseconds(350);
+    private static readonly TimeSpan ExportChecklistRefreshDelay = TimeSpan.FromMilliseconds(180);
+    private static readonly TimeSpan StructureTreeSearchRefreshDelay = TimeSpan.FromMilliseconds(180);
+    private static readonly TimeSpan EditorCommandRefreshDelay = TimeSpan.FromMilliseconds(80);
     private DateTime _lastPropertyGridLiveRefreshUtc = DateTime.MinValue;
     private bool _isPropertyGridLiveGesture;
     private bool _hasPendingPropertyGridLiveRefresh;
     private int _propertyGridSettingsVersion;
+    private readonly Dictionary<string, StructureTreeItemModel> _structureTreeItemsByControlId = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, List<PropertyGridRowViewModel>> _propertyGridRowsByKey = new(StringComparer.OrdinalIgnoreCase);
+    private IReadOnlyList<ExportChecklistItem> _exportChecklistItemsCache = Array.Empty<ExportChecklistItem>();
+    private double _lastPropertyGridRebuildMs;
+    private double _lastStructureTreeRebuildMs;
+    private double _lastDiagnosticsRefreshMs;
+    private double _lastExportChecklistRefreshMs;
+    private double _lastExportGenerationMs;
 
     // Toolbox теперь строится из registry дескрипторов, а не из зашитого списка.
     public ObservableCollection<ToolboxItem> ToolboxItems { get; } = new();
@@ -672,9 +694,9 @@ public partial class MainWindowViewModel : ObservableObject
         ? $"Чистый UI: BindingSource используется только как схема колонок. Demo-код, тестовые модели, fake data и CRUD не генерируются. Цель: {ExportTarget}, XAML: {XamlVerbosity}, DataGrid: {DataGridExportMode}."
         : $"С демонстрационными данными: будет сгенерирован sample ViewModel, коллекции, фильтры и CRUD-заготовки. Цель: {ExportTarget}, XAML: {XamlVerbosity}, DataGrid: {DataGridExportMode}.";
     public bool HasExportWarnings => HasExportChecklistIssues;
-    public IReadOnlyList<ExportChecklistItem> ExportChecklistItems => BuildExportChecklist();
-    public int ExportChecklistErrorCount => ExportChecklistItems.Count(item => item.Severity == ExportChecklistSeverity.Error);
-    public int ExportChecklistWarningCount => ExportChecklistItems.Count(item => item.Severity == ExportChecklistSeverity.Warning);
+    public IReadOnlyList<ExportChecklistItem> ExportChecklistItems => _exportChecklistItemsCache;
+    public int ExportChecklistErrorCount => _exportChecklistItemsCache.Count(item => item.Severity == ExportChecklistSeverity.Error);
+    public int ExportChecklistWarningCount => _exportChecklistItemsCache.Count(item => item.Severity == ExportChecklistSeverity.Warning);
     public bool HasExportChecklistIssues => ExportChecklistErrorCount > 0 || ExportChecklistWarningCount > 0;
     public string ExportStatusText => ExportChecklistErrorCount > 0
         ? "Export has errors"
@@ -702,6 +724,8 @@ public partial class MainWindowViewModel : ObservableObject
     public string ExportCompactSummary => BuildExportCompactSummary();
     public string ExportSummaryText => BuildExportSummaryText();
     public string ExportDependenciesSummary => BuildExportDependenciesSummary();
+    public string PerformanceDiagnosticsSummary =>
+        $"Controls: {Controls.Count}; PropertyGrid: {_lastPropertyGridRebuildMs:0.0} ms; Structure: {_lastStructureTreeRebuildMs:0.0} ms; Diagnostics: {_lastDiagnosticsRefreshMs:0.0} ms; Export checklist: {_lastExportChecklistRefreshMs:0.0} ms; Export: {_lastExportGenerationMs:0.0} ms";
 
     public bool HasSelectedControl => SelectedControlIds.Count > 0;
     public bool HasSelectedBindingSource => SelectedBindingSource is not null;
@@ -1432,6 +1456,26 @@ public partial class MainWindowViewModel : ObservableObject
             Interval = PropertyGridLiveRefreshInterval
         };
         _propertyGridLiveRefreshTimer.Tick += PropertyGridLiveRefreshTimer_Tick;
+        _diagnosticsRefreshTimer = new DispatcherTimer
+        {
+            Interval = DiagnosticsRefreshDelay
+        };
+        _diagnosticsRefreshTimer.Tick += DiagnosticsRefreshTimer_Tick;
+        _exportChecklistRefreshTimer = new DispatcherTimer
+        {
+            Interval = ExportChecklistRefreshDelay
+        };
+        _exportChecklistRefreshTimer.Tick += ExportChecklistRefreshTimer_Tick;
+        _structureTreeSearchRefreshTimer = new DispatcherTimer
+        {
+            Interval = StructureTreeSearchRefreshDelay
+        };
+        _structureTreeSearchRefreshTimer.Tick += StructureTreeSearchRefreshTimer_Tick;
+        _editorCommandRefreshTimer = new DispatcherTimer
+        {
+            Interval = EditorCommandRefreshDelay
+        };
+        _editorCommandRefreshTimer.Tick += EditorCommandRefreshTimer_Tick;
         Controls.CollectionChanged += Controls_CollectionChanged;
         BindingSources.CollectionChanged += BindingSources_CollectionChanged;
         Interactions.CollectionChanged += Interactions_CollectionChanged;
@@ -1573,6 +1617,23 @@ public partial class MainWindowViewModel : ObservableObject
         _editorCommandService.Refresh();
         if (IsCommandPaletteOpen)
             RefreshCommandPaletteCommands();
+    }
+
+    private void ScheduleEditorCommandRefresh()
+    {
+        _isEditorCommandRefreshScheduled = true;
+        _editorCommandRefreshTimer.Stop();
+        _editorCommandRefreshTimer.Start();
+    }
+
+    private void EditorCommandRefreshTimer_Tick(object? sender, EventArgs e)
+    {
+        _editorCommandRefreshTimer.Stop();
+        if (!_isEditorCommandRefreshScheduled)
+            return;
+
+        _isEditorCommandRefreshScheduled = false;
+        RefreshEditorCommands();
     }
 
     private void RaiseEditorCommandProperties()
@@ -2772,6 +2833,7 @@ public partial class MainWindowViewModel : ObservableObject
         if (_isStructureTreeRefreshSuspended)
             return;
 
+        var stopwatch = Stopwatch.StartNew();
         var previousExpandedIds = EnumerateStructureTreeItems()
             .Where(item => item.IsExpanded)
             .Select(item => item.Id)
@@ -2790,6 +2852,7 @@ public partial class MainWindowViewModel : ObservableObject
                 return validIds.Contains(parentId) ? parentId : "";
             }, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(group => group.Key, group => group.ToList(), StringComparer.OrdinalIgnoreCase);
+        _structureTreeItemsByControlId.Clear();
 
         var root = new StructureTreeItemModel(
             control: null,
@@ -2828,7 +2891,11 @@ public partial class MainWindowViewModel : ObservableObject
                 }
             }
 
-            return !hasSearch || node.IsSearchMatch || node.Children.Count > 0 ? node : null;
+            var shouldInclude = !hasSearch || node.IsSearchMatch || node.Children.Count > 0;
+            if (shouldInclude)
+                _structureTreeItemsByControlId[control.Id] = node;
+
+            return shouldInclude ? node : null;
         }
 
         void AddChildren(StructureTreeItemModel parentNode, string parentId)
@@ -2858,6 +2925,10 @@ public partial class MainWindowViewModel : ObservableObject
         ApplyStructureDiagnosticsBadges();
         RefreshStructureSelection();
         RaiseStructureTreeProperties();
+        stopwatch.Stop();
+        _lastStructureTreeRebuildMs = stopwatch.Elapsed.TotalMilliseconds;
+        ReportPerformanceMetric("StructureTree rebuild", _lastStructureTreeRebuildMs);
+        OnPropertyChanged(nameof(PerformanceDiagnosticsSummary));
     }
 
     private StructureTreeItemModel CreateStructureNode(DesignControlModel control)
@@ -2947,6 +3018,23 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(StructureTreeSummary));
     }
 
+    private void ScheduleStructureTreeSearchRefresh()
+    {
+        _isStructureTreeSearchRefreshScheduled = true;
+        _structureTreeSearchRefreshTimer.Stop();
+        _structureTreeSearchRefreshTimer.Start();
+    }
+
+    private void StructureTreeSearchRefreshTimer_Tick(object? sender, EventArgs e)
+    {
+        _structureTreeSearchRefreshTimer.Stop();
+        if (!_isStructureTreeSearchRefreshScheduled)
+            return;
+
+        _isStructureTreeSearchRefreshScheduled = false;
+        RebuildStructureTree();
+    }
+
     private void ApplyStructureDiagnosticsBadges()
     {
         var diagnosticsByControlId = Diagnostics
@@ -2977,11 +3065,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void RefreshStructureNode(DesignControlModel control)
     {
-        var item = EnumerateStructureTreeItems()
-            .FirstOrDefault(node => node.Control is not null
-                && string.Equals(node.Control.Id, control.Id, StringComparison.OrdinalIgnoreCase));
-
-        if (item is null)
+        if (!_structureTreeItemsByControlId.TryGetValue(control.Id, out var item))
         {
             RebuildStructureTree();
             return;
@@ -3013,6 +3097,29 @@ public partial class MainWindowViewModel : ObservableObject
     [RelayCommand]
     public void RefreshDiagnostics()
     {
+        RefreshDiagnosticsNow();
+    }
+
+    private void ScheduleDiagnosticsRefresh()
+    {
+        _isDiagnosticsRefreshScheduled = true;
+        _diagnosticsRefreshTimer.Stop();
+        _diagnosticsRefreshTimer.Start();
+    }
+
+    private void DiagnosticsRefreshTimer_Tick(object? sender, EventArgs e)
+    {
+        _diagnosticsRefreshTimer.Stop();
+        if (!_isDiagnosticsRefreshScheduled)
+            return;
+
+        _isDiagnosticsRefreshScheduled = false;
+        RefreshDiagnosticsNow();
+    }
+
+    private void RefreshDiagnosticsNow()
+    {
+        var stopwatch = Stopwatch.StartNew();
         var diagnostics = _diagnosticsService
             .Validate(Controls, BindingSources, Interactions, CurrentDocumentPath, DesignWidth, DesignHeight)
             .ToList();
@@ -3020,12 +3127,61 @@ public partial class MainWindowViewModel : ObservableObject
         AppendExportDiagnostics(diagnostics);
         AppendPreviewRuntimeDiagnostics(diagnostics);
 
-        Diagnostics.Clear();
-        foreach (var diagnostic in diagnostics)
-            Diagnostics.Add(diagnostic);
+        if (DiagnosticsMatch(Diagnostics, diagnostics))
+        {
+            RaiseDiagnosticsProperties();
+            ScheduleExportChecklistRefresh();
+            stopwatch.Stop();
+            _lastDiagnosticsRefreshMs = stopwatch.Elapsed.TotalMilliseconds;
+            OnPropertyChanged(nameof(PerformanceDiagnosticsSummary));
+            return;
+        }
+
+        _isUpdatingDiagnosticsCollection = true;
+        try
+        {
+            Diagnostics.Clear();
+            foreach (var diagnostic in diagnostics)
+                Diagnostics.Add(diagnostic);
+        }
+        finally
+        {
+            _isUpdatingDiagnosticsCollection = false;
+        }
 
         RaiseDiagnosticsProperties();
-        RaiseExportChecklistProperties();
+        ScheduleExportChecklistRefresh();
+        stopwatch.Stop();
+        _lastDiagnosticsRefreshMs = stopwatch.Elapsed.TotalMilliseconds;
+        ReportPerformanceMetric("Diagnostics refresh", _lastDiagnosticsRefreshMs);
+        OnPropertyChanged(nameof(PerformanceDiagnosticsSummary));
+    }
+
+    private static bool DiagnosticsMatch(IReadOnlyCollection<DocumentDiagnosticModel> current, IReadOnlyList<DocumentDiagnosticModel> next)
+    {
+        if (current.Count != next.Count)
+            return false;
+
+        return current.Zip(next).All(pair => DiagnosticSignature(pair.First) == DiagnosticSignature(pair.Second));
+    }
+
+    private static string DiagnosticSignature(DocumentDiagnosticModel diagnostic)
+    {
+        return string.Join("|",
+            diagnostic.Severity,
+            diagnostic.Source ?? "",
+            diagnostic.Category ?? "",
+            diagnostic.RelatedControlId ?? "",
+            diagnostic.Message ?? "",
+            diagnostic.Recommendation ?? "");
+    }
+
+    private static void ReportPerformanceMetric(string name, double elapsedMs)
+    {
+        if (elapsedMs < 16)
+            return;
+
+        Debug.WriteLine($"[FormDesigner:Perf] {name}: {elapsedMs:0.0} ms");
     }
 
     private void AppendPluginLoaderDiagnostics(ICollection<DocumentDiagnosticModel> diagnostics)
@@ -4207,17 +4363,15 @@ public partial class MainWindowViewModel : ObservableObject
 
     private bool TryRefreshPropertyGridRow(string key, string value, bool boolValue = false)
     {
-        foreach (var category in PropertyGridCategories)
-        {
-            var row = category.Rows.FirstOrDefault(item => string.Equals(item.Key, key, StringComparison.OrdinalIgnoreCase));
-            if (row is null)
-                continue;
+        if (!_propertyGridRowsByKey.TryGetValue(key, out var rows))
+            return false;
 
+        foreach (var row in rows)
+        {
             row.Refresh(value, boolValue, row.IsFavorite);
-            return true;
         }
 
-        return false;
+        return true;
     }
 
     private void RebuildPropertyGrid()
@@ -4225,6 +4379,7 @@ public partial class MainWindowViewModel : ObservableObject
         if (_isApplyingDocument)
             return;
 
+        var stopwatch = Stopwatch.StartNew();
         _isRebuildingPropertyGrid = true;
         try
         {
@@ -4242,6 +4397,7 @@ public partial class MainWindowViewModel : ObservableObject
             }
 
             PropertyGridCategories.Clear();
+            _propertyGridRowsByKey.Clear();
 
             var favorites = rows.Where(row => row.IsFavorite).ToList();
             if (favorites.Count > 0)
@@ -4259,7 +4415,11 @@ public partial class MainWindowViewModel : ObservableObject
             _isRebuildingPropertyGrid = false;
         }
 
+        stopwatch.Stop();
+        _lastPropertyGridRebuildMs = stopwatch.Elapsed.TotalMilliseconds;
+        ReportPerformanceMetric("PropertyGrid rebuild", _lastPropertyGridRebuildMs);
         RaisePropertyGridProperties();
+        OnPropertyChanged(nameof(PerformanceDiagnosticsSummary));
     }
 
     private void RaisePropertyGridProperties()
@@ -4286,7 +4446,17 @@ public partial class MainWindowViewModel : ObservableObject
             SetPropertyGridCategoryExpanded);
 
         foreach (var row in rows)
+        {
             category.Rows.Add(row);
+            if (!_propertyGridRowsByKey.TryGetValue(row.Key, out var keyedRows))
+            {
+                keyedRows = new List<PropertyGridRowViewModel>();
+                _propertyGridRowsByKey[row.Key] = keyedRows;
+            }
+
+            if (!keyedRows.Contains(row))
+                keyedRows.Add(row);
+        }
 
         category.NotifyRowsChanged();
         PropertyGridCategories.Add(category);
@@ -5819,6 +5989,7 @@ public partial class MainWindowViewModel : ObservableObject
     [RelayCommand]
     public void GenerateXaml()
     {
+        var stopwatch = Stopwatch.StartNew();
         // Итоговый XAML строится прямо из текущего состояния документа,
         // поэтому предпросмотр и экспорт всегда используют одну и ту же модель.
         var usesManagedWindowLayout = IsFormSizeManagedByMonitor;
@@ -5946,14 +6117,46 @@ public partial class MainWindowViewModel : ObservableObject
         _exportCacheSettingsSignature = BuildExportSettingsSignature();
         _exportCacheGeneratedUtc = DateTime.UtcNow;
         _activeLayoutExportPlan = null;
-        RaiseExportChecklistProperties();
+        RefreshExportChecklistNow();
         RaiseExportCacheProperties();
+        stopwatch.Stop();
+        _lastExportGenerationMs = stopwatch.Elapsed.TotalMilliseconds;
+        ReportPerformanceMetric("Export generation", _lastExportGenerationMs);
+        OnPropertyChanged(nameof(PerformanceDiagnosticsSummary));
     }
 
     private void MarkExportCacheStale()
     {
-        RaiseExportChecklistProperties();
+        ScheduleExportChecklistRefresh();
         RaiseExportCacheProperties();
+    }
+
+    private void ScheduleExportChecklistRefresh()
+    {
+        _isExportChecklistRefreshScheduled = true;
+        _exportChecklistRefreshTimer.Stop();
+        _exportChecklistRefreshTimer.Start();
+    }
+
+    private void ExportChecklistRefreshTimer_Tick(object? sender, EventArgs e)
+    {
+        _exportChecklistRefreshTimer.Stop();
+        if (!_isExportChecklistRefreshScheduled)
+            return;
+
+        _isExportChecklistRefreshScheduled = false;
+        RefreshExportChecklistNow();
+    }
+
+    private void RefreshExportChecklistNow()
+    {
+        var stopwatch = Stopwatch.StartNew();
+        _exportChecklistItemsCache = BuildExportChecklist();
+        stopwatch.Stop();
+        _lastExportChecklistRefreshMs = stopwatch.Elapsed.TotalMilliseconds;
+        ReportPerformanceMetric("Export checklist refresh", _lastExportChecklistRefreshMs);
+        RaiseExportChecklistProperties();
+        OnPropertyChanged(nameof(PerformanceDiagnosticsSummary));
     }
 
     private void RaiseExportCacheProperties()
@@ -11200,6 +11403,9 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void Diagnostics_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
+        if (_isUpdatingDiagnosticsCollection)
+            return;
+
         RaiseDiagnosticsProperties();
     }
 
@@ -12250,7 +12456,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     partial void OnStructureSearchTextChanged(string value)
     {
-        RebuildStructureTree();
+        ScheduleStructureTreeSearchRefresh();
         RaiseStructureTreeProperties();
     }
 
@@ -12491,7 +12697,7 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(LayoutExportModeHint));
         OnPropertyChanged(nameof(ExportLayoutBadgeText));
         OnPropertyChanged(nameof(GenerationOptionsSummary));
-        RaiseExportChecklistProperties();
+        ScheduleExportChecklistRefresh();
     }
 
     private void RaiseExportChecklistProperties()
@@ -12863,8 +13069,8 @@ public partial class MainWindowViewModel : ObservableObject
             RegisterHistorySnapshot();
 
         MarkExportCacheStale();
-        RefreshDiagnostics();
-        RefreshEditorCommands();
+        ScheduleDiagnosticsRefresh();
+        ScheduleEditorCommandRefresh();
         DesignerChanged?.Invoke(this, EventArgs.Empty);
     }
 }

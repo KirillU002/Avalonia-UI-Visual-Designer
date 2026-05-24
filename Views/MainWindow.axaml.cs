@@ -22,6 +22,7 @@ using FormDesigner.ViewModels;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -128,6 +129,8 @@ public partial class MainWindow : Window
     private AppSettingsModel _appSettings = new();
     private readonly DispatcherTimer _autosaveTimer = new();
     private readonly DispatcherTimer _previewFilterRefreshTimer = new();
+    private readonly DispatcherTimer _designerRenderTimer = new();
+    private bool _isDesignerRenderScheduled;
     private bool _isAutosaveRunning;
     private bool _hasCheckedRecoveryOnStartup;
     private bool _isApplyingAppSettings;
@@ -175,6 +178,8 @@ public partial class MainWindow : Window
         _autosaveTimer.Tick += AutosaveTimer_Tick;
         _previewFilterRefreshTimer.Interval = TimeSpan.FromMilliseconds(350);
         _previewFilterRefreshTimer.Tick += PreviewFilterRefreshTimer_Tick;
+        _designerRenderTimer.Interval = TimeSpan.FromMilliseconds(33);
+        _designerRenderTimer.Tick += DesignerRenderTimer_Tick;
         _settingsSaveTimer.Interval = TimeSpan.FromSeconds(1);
         _settingsSaveTimer.Tick += SettingsSaveTimer_Tick;
         _appSettings = _appSettingsService.Load();
@@ -763,7 +768,28 @@ public partial class MainWindow : Window
         if (_isDragging || _isMarqueeSelecting || _isResizing || _isResizingGridColumn || _isResizingDesignSurface)
             return;
 
+        ScheduleDesignerRender();
+    }
+
+    private void ScheduleDesignerRender()
+    {
+        _isDesignerRenderScheduled = true;
+        if (!_designerRenderTimer.IsEnabled)
+            _designerRenderTimer.Start();
+    }
+
+    private void DesignerRenderTimer_Tick(object? sender, EventArgs e)
+    {
+        _designerRenderTimer.Stop();
+        if (!_isDesignerRenderScheduled)
+            return;
+
+        _isDesignerRenderScheduled = false;
+        var stopwatch = Stopwatch.StartNew();
         RenderDesigner();
+        stopwatch.Stop();
+        if (stopwatch.Elapsed.TotalMilliseconds >= 16)
+            Debug.WriteLine($"[FormDesigner:Perf] Designer render: {stopwatch.Elapsed.TotalMilliseconds:0.0} ms");
     }
 
     private void RefreshPreviewMetricsAndSurface()

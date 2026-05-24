@@ -21,6 +21,7 @@ using FormDesigner.ViewModels;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -49,6 +50,8 @@ public partial class PreviewWindow : Window
     private RuntimeDataGridHeaderDragState? _runtimeDataGridHeaderDrag;
     private bool _isRenderingDocument;
     private bool _renderDocumentAgainRequested;
+    private bool _isRenderDocumentScheduled;
+    private readonly DispatcherTimer _renderDocumentTimer = new();
     private int _lastSyncedPreviewDiagnosticsVersion = -1;
 
     private Dictionary<string, Dictionary<string, string>> _dataGridFilterValuesByControlId => EnsurePreviewRuntimeContext().DataGridFilterValuesByControlId;
@@ -77,7 +80,9 @@ public partial class PreviewWindow : Window
         ApplyWindowSettings();
         Opened += PreviewWindow_Opened;
         KeyDown += PreviewWindow_KeyDown;
-        SizeChanged += (_, _) => RenderDocument();
+        SizeChanged += (_, _) => ScheduleRenderDocument();
+        _renderDocumentTimer.Interval = TimeSpan.FromMilliseconds(33);
+        _renderDocumentTimer.Tick += RenderDocumentTimer_Tick;
         AddHandler(InputElement.PointerMovedEvent, PreviewWindow_PointerMoved, RoutingStrategies.Tunnel, true);
         AddHandler(InputElement.PointerReleasedEvent, PreviewWindow_PointerReleased, RoutingStrategies.Tunnel, true);
     }
@@ -400,8 +405,29 @@ public partial class PreviewWindow : Window
         if (_renderDocumentAgainRequested)
         {
             _renderDocumentAgainRequested = false;
-            Dispatcher.UIThread.Post(RenderDocument, DispatcherPriority.Background);
+            Dispatcher.UIThread.Post(ScheduleRenderDocument, DispatcherPriority.Background);
         }
+    }
+
+    private void ScheduleRenderDocument()
+    {
+        _isRenderDocumentScheduled = true;
+        if (!_renderDocumentTimer.IsEnabled)
+            _renderDocumentTimer.Start();
+    }
+
+    private void RenderDocumentTimer_Tick(object? sender, EventArgs e)
+    {
+        _renderDocumentTimer.Stop();
+        if (!_isRenderDocumentScheduled)
+            return;
+
+        _isRenderDocumentScheduled = false;
+        var stopwatch = Stopwatch.StartNew();
+        RenderDocument();
+        stopwatch.Stop();
+        if (stopwatch.Elapsed.TotalMilliseconds >= 16)
+            Debug.WriteLine($"[FormDesigner:Perf] Preview render: {stopwatch.Elapsed.TotalMilliseconds:0.0} ms");
     }
 
     private void AddControlsToCanvas(
@@ -1004,7 +1030,7 @@ public partial class PreviewWindow : Window
         button.Click += (_, _) =>
         {
             if (ApplyRuntimeInteractions(control, InteractionModel.EventButtonClick, BuildRuntimeSourceValues(control, text)))
-                Dispatcher.UIThread.Post(RenderDocument, DispatcherPriority.Background);
+                Dispatcher.UIThread.Post(ScheduleRenderDocument, DispatcherPriority.Background);
         };
 
         return button;
@@ -1039,7 +1065,7 @@ public partial class PreviewWindow : Window
         {
             _runtimeTextBoxValuesByControlId[control.Id] = textBox.Text ?? string.Empty;
             if (ApplyRuntimeInteractions(control, InteractionModel.EventTextBoxTextChanged, BuildRuntimeSourceValues(control, textBox.Text ?? string.Empty)))
-                Dispatcher.UIThread.Post(RenderDocument, DispatcherPriority.Background);
+                Dispatcher.UIThread.Post(ScheduleRenderDocument, DispatcherPriority.Background);
         };
 
         return textBox;
@@ -1092,7 +1118,7 @@ public partial class PreviewWindow : Window
                 ? InteractionModel.EventCheckBoxChecked
                 : InteractionModel.EventCheckBoxUnchecked;
             if (ApplyRuntimeInteractions(control, eventName, BuildRuntimeSourceValues(control, checkBox.IsChecked == true ? "true" : "false")))
-                Dispatcher.UIThread.Post(RenderDocument, DispatcherPriority.Background);
+                Dispatcher.UIThread.Post(ScheduleRenderDocument, DispatcherPriority.Background);
         };
 
         return checkBox;
@@ -1758,7 +1784,7 @@ public partial class PreviewWindow : Window
 
             if (ApplyRuntimeInteractions(control, InteractionModel.EventDataGridSelectionChanged, rowValues))
             {
-                Dispatcher.UIThread.Post(RenderDocument, DispatcherPriority.Background);
+                Dispatcher.UIThread.Post(ScheduleRenderDocument, DispatcherPriority.Background);
             }
         };
 
@@ -2184,7 +2210,7 @@ public partial class PreviewWindow : Window
 
         NormalizePreviewWindowGroupOrders(fields);
         control.ShowGroupPanel = true;
-        RenderDocument();
+        ScheduleRenderDocument();
     }
 
     private void RemovePreviewWindowDataGridGroup(DesignerControlFileModel control, BindingFieldFileModel targetField)
@@ -2196,7 +2222,7 @@ public partial class PreviewWindow : Window
 
         field.GroupOrder = -1;
         NormalizePreviewWindowGroupOrders(fields);
-        RenderDocument();
+        ScheduleRenderDocument();
     }
 
     private void ClearPreviewWindowDataGridGrouping(DesignerControlFileModel control)
@@ -2208,7 +2234,7 @@ public partial class PreviewWindow : Window
         foreach (var field in fields.Where(field => field.GroupOrder >= 0))
             field.GroupOrder = -1;
 
-        RenderDocument();
+        ScheduleRenderDocument();
     }
 
     private static void NormalizePreviewWindowGroupOrders(IReadOnlyList<BindingFieldFileModel> fields)
@@ -2747,7 +2773,7 @@ public partial class PreviewWindow : Window
 
         targetField.SortDirection = nextDirection;
         targetField.SortOrder = string.Equals(nextDirection, BindingFieldModel.SortDirectionNone, StringComparison.OrdinalIgnoreCase) ? -1 : 0;
-        RenderDocument();
+        ScheduleRenderDocument();
     }
 
     private Border CreatePreviewDataGridHeaderCell(
@@ -2879,7 +2905,7 @@ public partial class PreviewWindow : Window
             textBox.TextChanged += (_, _) =>
             {
                 filterValues[field.Path] = textBox.Text ?? string.Empty;
-                Dispatcher.UIThread.Post(RenderDocument, DispatcherPriority.Background);
+                Dispatcher.UIThread.Post(ScheduleRenderDocument, DispatcherPriority.Background);
             };
 
             content = textBox;
