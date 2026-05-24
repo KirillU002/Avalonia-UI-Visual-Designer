@@ -1372,7 +1372,7 @@
                   BorderThickness="1"
                   CornerRadius="12"
                   Padding="12"
-                  IsVisible="{Binding IsDesignerSurfaceToolbarVisible}">
+                  IsVisible="{Binding IsDesignerCanvasWorkspaceVisible}">
             <Grid RowDefinitions="Auto,Auto"
                   ColumnDefinitions="*,Auto"
                   RowSpacing="10"
@@ -1472,7 +1472,8 @@
                   BorderBrush="#CBD8E8"
                   BorderThickness="1"
                   CornerRadius="14"
-                  Padding="16">
+                  Padding="16"
+                  IsVisible="{Binding IsDesignerCanvasWorkspaceVisible}">
             <Grid>
               <ScrollViewer x:Name="DesignerViewportScrollViewer"
                             HorizontalScrollBarVisibility="Auto"
@@ -1682,6 +1683,336 @@
               </Border>
             </Grid>
           </Border>
+
+          <Grid Grid.RowSpan="2"
+                RowDefinitions="Auto,*"
+                RowSpacing="12"
+                IsVisible="{Binding IsExportPipelineWorkspaceVisible}">
+            <Border Background="#FFFFFF"
+                    BorderBrush="#D7E2EE"
+                    BorderThickness="1"
+                    CornerRadius="12"
+                    Padding="14">
+              <Grid ColumnDefinitions="*,Auto"
+                    ColumnSpacing="16">
+                <StackPanel Spacing="4">
+                  <TextBlock Text="Export Pipeline"
+                             FontSize="22"
+                             FontWeight="Bold"/>
+                  <TextBlock Text="{Binding ExportPipelineSummary}"
+                             Foreground="#475569"
+                             TextTrimming="CharacterEllipsis"/>
+                  <WrapPanel>
+                    <Border Classes="export-badge">
+                      <TextBlock Text="{Binding ExportDataGridBadgeText}"
+                                 Foreground="#1D4ED8"
+                                 FontSize="12"
+                                 FontWeight="SemiBold"/>
+                    </Border>
+                    <Border Classes="export-badge">
+                      <TextBlock Text="{Binding ExportLayoutBadgeText}"
+                                 Foreground="#1D4ED8"
+                                 FontSize="12"
+                                 FontWeight="SemiBold"/>
+                    </Border>
+                    <Border Classes="export-badge">
+                      <TextBlock Text="{Binding ExportCacheStatusText}"
+                                 Foreground="{Binding ExportCacheStatusForeground}"
+                                 FontSize="12"
+                                 FontWeight="SemiBold"/>
+                    </Border>
+                    <Border Classes="export-badge">
+                      <TextBlock Text="{Binding ExportValidationStatusText}"
+                                 Foreground="{Binding ExportValidationStatusForeground}"
+                                 FontSize="12"
+                                 FontWeight="SemiBold"/>
+                    </Border>
+                  </WrapPanel>
+                </StackPanel>
+
+                <WrapPanel Grid.Column="1"
+                           VerticalAlignment="Center">
+                  <Button Content="Refresh"
+                          Classes="export-secondary"
+                          Command="{Binding RefreshGeneratedCodeEditorCommand}"
+                          ToolTip.Tip="{Binding RefreshGeneratedCodeEditorCommand.Hint}"
+                          Margin="0,0,8,8"/>
+                  <Button Content="Validate build"
+                          Classes="export-secondary"
+                          Command="{Binding ValidateExportBuildEditorCommand}"
+                          ToolTip.Tip="{Binding ValidateExportBuildEditorCommand.Hint}"
+                          Margin="0,0,8,8"/>
+                  <Button Content="Export to project..."
+                          Classes="export-primary"
+                          Command="{Binding ExportToProjectEditorCommand}"
+                          ToolTip.Tip="{Binding ExportToProjectEditorCommand.Hint}"
+                          Margin="0,0,8,8"/>
+                  <Button Content="Export ZIP"
+                          Classes="export-secondary"
+                          Command="{Binding ExportAsZipEditorCommand}"
+                          ToolTip.Tip="{Binding ExportAsZipEditorCommand.Hint}"
+                          Margin="0,0,8,8"/>
+                </WrapPanel>
+              </Grid>
+            </Border>
+
+            <Grid Grid.Row="1"
+                  ColumnDefinitions="270,*,320"
+                  ColumnSpacing="12">
+              <Border Background="#FFFFFF"
+                      BorderBrush="#D7E2EE"
+                      BorderThickness="1"
+                      CornerRadius="12"
+                      Padding="12">
+                <Grid RowDefinitions="Auto,*"
+                      RowSpacing="8">
+                  <TextBlock Text="Generated files"
+                             FontSize="14"
+                             FontWeight="Bold"/>
+                  <TreeView Grid.Row="1"
+                            ItemsSource="{Binding GeneratedFileTreeNodes}"
+                            SelectedItem="{Binding SelectedGeneratedFileNode, Mode=TwoWay}"
+                            BorderThickness="0"
+                            Background="Transparent">
+                    <TreeView.Styles>
+                      <Style Selector="TreeViewItem"
+                             x:DataType="models:GeneratedFileTreeNodeModel">
+                        <Setter Property="MinHeight" Value="30"/>
+                        <Setter Property="Padding" Value="0"/>
+                      </Style>
+                    </TreeView.Styles>
+                    <TreeView.DataTemplates>
+                      <TreeDataTemplate x:DataType="models:GeneratedFileTreeNodeModel"
+                                        ItemsSource="{Binding Children}">
+                        <Grid ColumnDefinitions="Auto,*,Auto"
+                              ColumnSpacing="8"
+                              Margin="0,3">
+                          <Border Width="22"
+                                  Height="22"
+                                  CornerRadius="6"
+                                  Background="#E0F2FE"
+                                  VerticalAlignment="Center">
+                            <TextBlock Text="{Binding Icon}"
+                                       Foreground="#0369A1"
+                                       FontSize="8"
+                                       FontWeight="Bold"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"/>
+                          </Border>
+                          <StackPanel Grid.Column="1"
+                                      Spacing="0">
+                            <TextBlock Text="{Binding Name}"
+                                       FontWeight="SemiBold"
+                                       TextTrimming="CharacterEllipsis"/>
+                            <TextBlock Text="{Binding Summary}"
+                                       Foreground="#64748B"
+                                       FontSize="11"
+                                       TextTrimming="CharacterEllipsis"/>
+                          </StackPanel>
+                          <TextBlock Grid.Column="2"
+                                     Text="{Binding StatusText}"
+                                     Foreground="{Binding SeverityForeground}"
+                                     FontSize="10"
+                                     FontWeight="Bold"
+                                     VerticalAlignment="Center"/>
+                        </Grid>
+                      </TreeDataTemplate>
+                    </TreeView.DataTemplates>
+                  </TreeView>
+                </Grid>
+              </Border>
+
+              <Grid Grid.Column="1"
+                    RowDefinitions="Auto,*"
+                    RowSpacing="8">
+                <Border Background="#FFFFFF"
+                        BorderBrush="#D7E2EE"
+                        BorderThickness="1"
+                        CornerRadius="12"
+                        Padding="10">
+                  <Grid ColumnDefinitions="*,Auto"
+                        ColumnSpacing="12">
+                    <StackPanel Spacing="2">
+                      <TextBlock Text="{Binding SelectedGeneratedFile.Path}"
+                                 FontWeight="Bold"
+                                 TextTrimming="CharacterEllipsis"/>
+                      <TextBlock Text="{Binding SelectedGeneratedFileSummary}"
+                                 Foreground="#64748B"
+                                 FontSize="12"
+                                 TextTrimming="CharacterEllipsis"/>
+                    </StackPanel>
+                    <Button Grid.Column="1"
+                            Content="Copy file"
+                            Classes="export-secondary"
+                            Command="{Binding CopyCurrentGeneratedFileEditorCommand}"
+                            ToolTip.Tip="{Binding CopyCurrentGeneratedFileEditorCommand.Hint}"
+                            VerticalAlignment="Center"/>
+                  </Grid>
+                </Border>
+
+                <Border Grid.Row="1"
+                        Classes="code-viewer"
+                        MinHeight="420">
+                  <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                                VerticalScrollBarVisibility="Auto">
+                    <TextBlock Text="{Binding SelectedGeneratedFileContent}"
+                               Classes="code-viewer-text"/>
+                  </ScrollViewer>
+                </Border>
+              </Grid>
+
+              <ScrollViewer Grid.Column="2"
+                            HorizontalScrollBarVisibility="Disabled"
+                            VerticalScrollBarVisibility="Auto">
+                <StackPanel Spacing="12">
+                  <Border Background="#FFFFFF"
+                          BorderBrush="#D7E2EE"
+                          BorderThickness="1"
+                          CornerRadius="12"
+                          Padding="12">
+                    <StackPanel Spacing="8">
+                      <TextBlock Text="Build validation"
+                                 FontSize="14"
+                                 FontWeight="Bold"/>
+                      <Border Background="#F8FAFC"
+                              BorderBrush="#D7E2EE"
+                              BorderThickness="1"
+                              CornerRadius="10"
+                              Padding="9">
+                        <StackPanel Spacing="4">
+                          <TextBlock Text="{Binding ExportValidationStatusText}"
+                                     Foreground="{Binding ExportValidationStatusForeground}"
+                                     FontWeight="Bold"/>
+                          <TextBlock Text="{Binding ExportValidationProjectPath}"
+                                     Foreground="#64748B"
+                                     FontSize="12"
+                                     TextWrapping="Wrap"/>
+                          <Button Content="Open validation folder"
+                                  Classes="export-secondary"
+                                  Command="{Binding OpenValidationFolderEditorCommand}"
+                                  ToolTip.Tip="{Binding OpenValidationFolderEditorCommand.Hint}"
+                                  HorizontalAlignment="Left"
+                                  Margin="0,4,0,0"/>
+                        </StackPanel>
+                      </Border>
+                      <Button Content="Open full output"
+                              Classes="export-secondary"
+                              Command="{Binding OpenFullOutputPanelCommand}"
+                              HorizontalAlignment="Left"/>
+                    </StackPanel>
+                  </Border>
+
+                  <Border Background="#FFFFFF"
+                          BorderBrush="#D7E2EE"
+                          BorderThickness="1"
+                          CornerRadius="12"
+                          Padding="12">
+                    <StackPanel Spacing="8">
+                      <TextBlock Text="Required packages"
+                                 FontSize="14"
+                                 FontWeight="Bold"/>
+                      <Border Background="#F0FDF4"
+                              BorderBrush="#BBF7D0"
+                              BorderThickness="1"
+                              CornerRadius="10"
+                              Padding="9"
+                              IsVisible="{Binding HasNoRequiredPackages}">
+                        <TextBlock Text="No additional packages required."
+                                   Foreground="#166534"
+                                   FontWeight="SemiBold"/>
+                      </Border>
+                      <ItemsControl ItemsSource="{Binding RequiredPackages}"
+                                    IsVisible="{Binding HasRequiredPackages}">
+                        <ItemsControl.ItemTemplate>
+                          <DataTemplate x:DataType="models:RequiredPackageModel">
+                            <Border Background="#FFFBEB"
+                                    BorderBrush="#FDE68A"
+                                    BorderThickness="1"
+                                    CornerRadius="10"
+                                    Padding="9"
+                                    Margin="0,0,0,6">
+                              <StackPanel Spacing="4">
+                                <TextBlock Text="{Binding Summary}"
+                                           FontWeight="Bold"
+                                           Foreground="#92400E"
+                                           TextTrimming="CharacterEllipsis"/>
+                                <TextBlock Text="{Binding Reason}"
+                                           Foreground="#78350F"
+                                           FontSize="12"
+                                           TextWrapping="Wrap"/>
+                                <TextBlock Text="{Binding InstallCommand}"
+                                           FontFamily="Consolas"
+                                           FontSize="11"
+                                           Foreground="#0F172A"
+                                           TextTrimming="CharacterEllipsis"/>
+                              </StackPanel>
+                            </Border>
+                          </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                      </ItemsControl>
+                    </StackPanel>
+                  </Border>
+
+                  <Border Background="#FFFFFF"
+                          BorderBrush="#D7E2EE"
+                          BorderThickness="1"
+                          CornerRadius="12"
+                          Padding="12">
+                    <StackPanel Spacing="8">
+                      <TextBlock Text="Export diagnostics"
+                                 FontSize="14"
+                                 FontWeight="Bold"/>
+                      <Border Background="#F0FDF4"
+                              BorderBrush="#BBF7D0"
+                              BorderThickness="1"
+                              CornerRadius="10"
+                              Padding="9"
+                              IsVisible="{Binding HasNoExportPipelineDiagnostics}">
+                        <TextBlock Text="No export warnings or errors."
+                                   Foreground="#166534"
+                                   FontWeight="SemiBold"/>
+                      </Border>
+                      <ItemsControl ItemsSource="{Binding ExportDiagnostics}"
+                                    IsVisible="{Binding HasExportPipelineDiagnostics}">
+                        <ItemsControl.ItemTemplate>
+                          <DataTemplate x:DataType="models:ExportDiagnosticModel">
+                            <Border Background="#FFF7ED"
+                                    BorderBrush="#FDBA74"
+                                    BorderThickness="1"
+                                    CornerRadius="10"
+                                    Padding="9"
+                                    Margin="0,0,0,6">
+                              <StackPanel Spacing="3">
+                                <DockPanel LastChildFill="True">
+                                  <TextBlock Text="{Binding SeverityText}"
+                                             Foreground="{Binding SeverityForeground}"
+                                             FontSize="11"
+                                             FontWeight="Bold"
+                                             Margin="0,0,8,0"/>
+                                  <TextBlock Text="{Binding Source}"
+                                             Foreground="#64748B"
+                                             FontSize="11"
+                                             HorizontalAlignment="Right"/>
+                                </DockPanel>
+                                <TextBlock Text="{Binding Message}"
+                                           FontWeight="SemiBold"
+                                           TextWrapping="Wrap"/>
+                                <TextBlock Text="{Binding Details}"
+                                           IsVisible="{Binding HasDetails}"
+                                           Foreground="#64748B"
+                                           FontSize="12"
+                                           TextWrapping="Wrap"/>
+                              </StackPanel>
+                            </Border>
+                          </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                      </ItemsControl>
+                    </StackPanel>
+                  </Border>
+                </StackPanel>
+              </ScrollViewer>
+            </Grid>
+          </Grid>
         </Grid>
       </Border>
 
@@ -1725,11 +2056,11 @@
                   ColumnSpacing="4">
               <StackPanel Spacing="1"
                           VerticalAlignment="Center">
-                <TextBlock Text="{Binding PropertyGridSelectionTitle}"
+                <TextBlock Text="{Binding RightInspectorHeaderTitle}"
                            FontWeight="Bold"
                            FontSize="13"
                            TextTrimming="CharacterEllipsis"/>
-                <TextBlock Text="{Binding PropertyGridSelectionMetrics}"
+                <TextBlock Text="{Binding RightInspectorHeaderSubtitle}"
                            Foreground="#64748B"
                            FontSize="11"
                            TextTrimming="CharacterEllipsis"/>
@@ -4976,8 +5307,163 @@
             </ScrollViewer>
           </TabItem>
 
-          <TabItem Header="Export Pipeline"
+          <TabItem Header="Export"
                    IsVisible="{Binding IsCodeModePanelVisible}">
+            <ScrollViewer Margin="0,10,0,0"
+                          HorizontalScrollBarVisibility="Disabled"
+                          VerticalScrollBarVisibility="Auto">
+              <StackPanel Spacing="10">
+                <Border Classes="export-card">
+                  <StackPanel Spacing="8">
+                    <TextBlock Text="Export summary"
+                               FontSize="16"
+                               FontWeight="Bold"/>
+                    <TextBlock Text="{Binding ExportPipelineCompactSummary}"
+                               Foreground="#475569"
+                               TextWrapping="Wrap"/>
+                    <WrapPanel>
+                      <Border Classes="export-badge">
+                        <TextBlock Text="{Binding ExportDataGridBadgeText}"
+                                   Foreground="#1D4ED8"
+                                   FontSize="11"
+                                   FontWeight="SemiBold"/>
+                      </Border>
+                      <Border Classes="export-badge">
+                        <TextBlock Text="{Binding ExportLayoutBadgeText}"
+                                   Foreground="#1D4ED8"
+                                   FontSize="11"
+                                   FontWeight="SemiBold"/>
+                      </Border>
+                      <Border Classes="export-badge">
+                        <TextBlock Text="{Binding ExportValidationStatusText}"
+                                   Foreground="{Binding ExportValidationStatusForeground}"
+                                   FontSize="11"
+                                   FontWeight="SemiBold"/>
+                      </Border>
+                    </WrapPanel>
+                    <Button Content="Open Export Pipeline"
+                            Classes="export-primary"
+                            Command="{Binding OpenExportPipelineEditorCommand}"
+                            ToolTip.Tip="{Binding OpenExportPipelineEditorCommand.Hint}"
+                            HorizontalAlignment="Stretch"/>
+                  </StackPanel>
+                </Border>
+
+                <Border Classes="export-card">
+                  <StackPanel Spacing="8">
+                    <TextBlock Text="Quick actions"
+                               FontWeight="Bold"
+                               FontSize="14"/>
+                    <WrapPanel>
+                      <Button Content="Refresh"
+                              Classes="export-secondary"
+                              Command="{Binding RefreshGeneratedCodeEditorCommand}"
+                              ToolTip.Tip="{Binding RefreshGeneratedCodeEditorCommand.Hint}"
+                              MinWidth="84"
+                              Padding="10,6"
+                              Margin="0,0,6,6"/>
+                      <Button Content="Validate"
+                              Classes="export-secondary"
+                              Command="{Binding ValidateExportBuildEditorCommand}"
+                              ToolTip.Tip="{Binding ValidateExportBuildEditorCommand.Hint}"
+                              MinWidth="86"
+                              Padding="10,6"
+                              Margin="0,0,6,6"/>
+                      <Button Content="ZIP"
+                              Classes="export-secondary"
+                              Command="{Binding ExportAsZipEditorCommand}"
+                              ToolTip.Tip="{Binding ExportAsZipEditorCommand.Hint}"
+                              MinWidth="56"
+                              Padding="10,6"
+                              Margin="0,0,6,6"/>
+                    </WrapPanel>
+                  </StackPanel>
+                </Border>
+
+                <Expander Header="Export profile"
+                          IsExpanded="True">
+                  <Border Classes="export-card"
+                          Margin="0,8,0,0">
+                    <StackPanel Spacing="8">
+                      <Grid ColumnDefinitions="96,*"
+                            ColumnSpacing="8">
+                        <TextBlock Text="Target"
+                                   FontWeight="SemiBold"
+                                   VerticalAlignment="Center"/>
+                        <ComboBox Grid.Column="1"
+                                  ItemsSource="{Binding AvailableExportTargets}"
+                                  SelectedItem="{Binding ExportTarget, Mode=TwoWay}"
+                                  MinWidth="0"
+                                  HorizontalAlignment="Stretch"/>
+                      </Grid>
+                      <Grid ColumnDefinitions="96,*"
+                            ColumnSpacing="8">
+                        <TextBlock Text="Namespace"
+                                   FontWeight="SemiBold"
+                                   VerticalAlignment="Center"/>
+                        <TextBox Grid.Column="1"
+                                 Watermark="AvaloniaApplication1"
+                                 Text="{Binding ExportProjectNamespace, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                      </Grid>
+                      <Grid ColumnDefinitions="96,*"
+                            ColumnSpacing="8">
+                        <TextBlock Text="Layout"
+                                   FontWeight="SemiBold"
+                                   VerticalAlignment="Center"/>
+                        <ComboBox Grid.Column="1"
+                                  ItemsSource="{Binding AvailableLayoutExportModes}"
+                                  SelectedItem="{Binding LayoutExportMode, Mode=TwoWay}"
+                                  MinWidth="0"
+                                  HorizontalAlignment="Stretch"/>
+                      </Grid>
+                      <Grid ColumnDefinitions="96,*"
+                            ColumnSpacing="8">
+                        <TextBlock Text="DataGrid"
+                                   FontWeight="SemiBold"
+                                   VerticalAlignment="Center"/>
+                        <ComboBox Grid.Column="1"
+                                  ItemsSource="{Binding AvailableDataGridExportModes}"
+                                  SelectedItem="{Binding DataGridExportMode, Mode=TwoWay}"
+                                  MinWidth="0"
+                                  HorizontalAlignment="Stretch"/>
+                      </Grid>
+                      <WrapPanel>
+                        <CheckBox Content="Comments"
+                                  Margin="0,0,12,6"
+                                  IsChecked="{Binding IncludeExportComments, Mode=TwoWay}"/>
+                        <CheckBox Content="Demo data"
+                                  Margin="0,0,12,6"
+                                  IsChecked="{Binding IncludeSampleData, Mode=TwoWay}"/>
+                      </WrapPanel>
+                    </StackPanel>
+                  </Border>
+                </Expander>
+
+                <Border Classes="export-card">
+                  <StackPanel Spacing="8">
+                    <TextBlock Text="Build status"
+                               FontWeight="Bold"
+                               FontSize="14"/>
+                    <TextBlock Text="{Binding ExportValidationStatusText}"
+                               Foreground="{Binding ExportValidationStatusForeground}"
+                               FontWeight="Bold"/>
+                    <TextBlock Text="{Binding ExportValidationProjectPath}"
+                               Foreground="#64748B"
+                               FontSize="12"
+                               TextWrapping="Wrap"/>
+                    <Button Content="Open validation folder"
+                            Classes="export-secondary"
+                            Command="{Binding OpenValidationFolderEditorCommand}"
+                            ToolTip.Tip="{Binding OpenValidationFolderEditorCommand.Hint}"
+                            HorizontalAlignment="Left"/>
+                  </StackPanel>
+                </Border>
+              </StackPanel>
+            </ScrollViewer>
+          </TabItem>
+
+          <TabItem Header="Export Pipeline"
+                   IsVisible="False">
             <ScrollViewer Margin="0,10,0,0"
                           HorizontalScrollBarVisibility="Disabled"
                           VerticalScrollBarVisibility="Auto">
@@ -5246,7 +5732,7 @@
           </TabItem>
 
           <TabItem Header="Export XAML"
-                   IsVisible="{Binding IsCodeModePanelVisible}">
+                   IsVisible="False">
             <Grid Margin="0,12,0,0"
                   RowDefinitions="Auto,*">
               <Border Classes="export-card">
@@ -5546,7 +6032,7 @@
           </TabItem>
 
           <TabItem Header="Export C#"
-                   IsVisible="{Binding IsCodeModePanelVisible}">
+                   IsVisible="False">
             <Grid Margin="0,12,0,0"
                   RowDefinitions="Auto,*">
               <Border Classes="export-card">

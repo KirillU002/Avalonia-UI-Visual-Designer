@@ -51,7 +51,7 @@ public partial class MainWindowViewModel : ObservableObject
     public const string XamlVerbosityFullStyled = "Полный со стилями";
     public const string WorkspaceModeDesign = "Дизайн";
     public const string WorkspaceModeData = "Данные";
-    public const string WorkspaceModeCode = "Код";
+    public const string WorkspaceModeCode = "Code / Export";
     public const string WorkspaceModePlugins = "Плагины";
     public const string WorkspaceModeLogic = "Логика";
     public const string WorkspaceModeDiagnostics = "Диагностика";
@@ -724,6 +724,8 @@ public partial class MainWindowViewModel : ObservableObject
     public bool IsCodeModePanelVisible => IsCodeMode && IsDesignerSidePanelsVisible;
     public bool IsPluginsModePanelVisible => IsPluginsMode && IsDesignerSidePanelsVisible;
     public bool IsLogicModePanelVisible => IsLogicMode && IsDesignerSidePanelsVisible;
+    public bool IsDesignerCanvasWorkspaceVisible => !IsCodeMode;
+    public bool IsExportPipelineWorkspaceVisible => IsCodeMode;
     public bool IsContextualToolbarVisible => HasSelectedControl && IsDesignMode && !IsUserPreviewMode;
     public bool IsCompactDiagnosticsBarVisible => IsBottomDockRailVisible;
     public string LeftDockToggleText => IsLeftDockOpen ? "Скрыть левую" : "Показать левую";
@@ -807,6 +809,12 @@ public partial class MainWindowViewModel : ObservableObject
     public string ExportPipelineSummary => $"{ExportStatusText} · {GeneratedFiles.Count} files · {RequiredPackages.Count} NuGet · {CurrentExportBuildValidation.StatusText}";
     public string ExportValidationStatusText => CurrentExportBuildValidation.StatusText;
     public string ExportValidationStatusForeground => CurrentExportBuildValidation.StatusForeground;
+    public string ExportValidationProjectPath => string.IsNullOrWhiteSpace(CurrentExportBuildValidation.ProjectPath)
+        ? "No validation project yet."
+        : CurrentExportBuildValidation.ProjectPath;
+    public bool HasExportValidationProjectPath => !string.IsNullOrWhiteSpace(CurrentExportBuildValidation.ProjectPath);
+    public string ExportPipelineCompactSummary =>
+        $"{ExportStatusText} · warnings {ExportChecklistWarningCount} · errors {ExportChecklistErrorCount} · packages {RequiredPackages.Count}";
     public string PerformanceDiagnosticsSummary =>
         $"Controls: {Controls.Count}; PropertyGrid: {_lastPropertyGridRebuildMs:0.0} ms; Structure: {_lastStructureTreeRebuildMs:0.0} ms; Diagnostics: {_lastDiagnosticsRefreshMs:0.0} ms; Export checklist: {_lastExportChecklistRefreshMs:0.0} ms; Export: {_lastExportGenerationMs:0.0} ms";
 
@@ -1073,6 +1081,8 @@ public partial class MainWindowViewModel : ObservableObject
     public string PropertyGridSelectionMetrics => SelectedControl is null
         ? $"{DesignWidth:0} x {DesignHeight:0}"
         : $"X:{SelectedControl.X:0} Y:{SelectedControl.Y:0}  {SelectedControl.Width:0} x {SelectedControl.Height:0}";
+    public string RightInspectorHeaderTitle => IsCodeMode ? "Export" : PropertyGridSelectionTitle;
+    public string RightInspectorHeaderSubtitle => IsCodeMode ? ExportPipelineCompactSummary : PropertyGridSelectionMetrics;
     public int PropertyGridSettingsVersion => _propertyGridSettingsVersion;
     public EditorCommand? NewEditorCommand => GetEditorCommand(EditorCommandId.New);
     public EditorCommand? OpenEditorCommand => GetEditorCommand(EditorCommandId.Open);
@@ -1100,11 +1110,13 @@ public partial class MainWindowViewModel : ObservableObject
     public EditorCommand? ClearOutputEditorCommand => GetEditorCommand(EditorCommandId.ClearOutput);
     public EditorCommand? ResetLayoutEditorCommand => GetEditorCommand(EditorCommandId.ResetLayout);
     public EditorCommand? ToggleDesignFramesEditorCommand => GetEditorCommand(EditorCommandId.ToggleDesignFrames);
+    public EditorCommand? OpenExportPipelineEditorCommand => GetEditorCommand(EditorCommandId.OpenExportPipeline);
     public EditorCommand? RefreshGeneratedCodeEditorCommand => GetEditorCommand(EditorCommandId.RefreshGeneratedCode);
     public EditorCommand? CopyCurrentGeneratedFileEditorCommand => GetEditorCommand(EditorCommandId.CopyCurrentGeneratedFile);
     public EditorCommand? ValidateExportBuildEditorCommand => GetEditorCommand(EditorCommandId.ValidateExportBuild);
     public EditorCommand? ExportToProjectEditorCommand => GetEditorCommand(EditorCommandId.ExportToProject);
     public EditorCommand? ExportAsZipEditorCommand => GetEditorCommand(EditorCommandId.ExportAsZip);
+    public EditorCommand? OpenValidationFolderEditorCommand => GetEditorCommand(EditorCommandId.OpenValidationFolder);
     public EditorCommand? CopyXamlEditorCommand => GetEditorCommand(EditorCommandId.CopyXaml);
     public EditorCommand? CopyCSharpEditorCommand => GetEditorCommand(EditorCommandId.CopyCSharp);
     public EditorCommand? OpenExportDiagnosticsEditorCommand => GetEditorCommand(EditorCommandId.OpenExportDiagnostics);
@@ -1671,11 +1683,13 @@ public partial class MainWindowViewModel : ObservableObject
         RegisterEditorCommand(EditorCommandId.OpenInteractionDesigner, "Open Interaction Designer", "Switch to Logic tools.", "", "", EditorCommandCategory.Tools, () => WorkspaceMode = WorkspaceModeLogic);
         RegisterEditorCommand(EditorCommandId.OpenPluginDiagnostics, "Open Plugin Diagnostics", "Switch to plugin diagnostics.", "", "", EditorCommandCategory.Tools, () => WorkspaceMode = WorkspaceModePlugins);
 
+        RegisterEditorCommand(EditorCommandId.OpenExportPipeline, "Open Export Pipeline", "Open the central Code / Export workspace.", "", "", EditorCommandCategory.Export, () => WorkspaceMode = WorkspaceModeCode);
         RegisterEditorCommand(EditorCommandId.RefreshGeneratedCode, "Refresh Generated Code", "Regenerate XAML/C# export.", "", "", EditorCommandCategory.Export, GenerateXaml);
         RegisterEditorCommand(EditorCommandId.CopyCurrentGeneratedFile, "Copy Current Generated File", "Copy selected generated file content.", "", "", EditorCommandCategory.Export, () => RequestExternalEditorCommand(EditorCommandId.CopyCurrentGeneratedFile), () => StateWhen(SelectedGeneratedFile is not null, "Select a generated file."));
         RegisterEditorCommand(EditorCommandId.ValidateExportBuild, "Validate Export Build", "Build generated files in a temporary Avalonia project.", "", "", EditorCommandCategory.Export, () => RequestExternalEditorCommand(EditorCommandId.ValidateExportBuild), () => StateWhen(!HasExportNamespaceError(), "Fix export namespace first."));
         RegisterEditorCommand(EditorCommandId.ExportToProject, "Export to Avalonia Project", "Write generated files and export metadata into a project folder.", "", "", EditorCommandCategory.Export, () => RequestExternalEditorCommand(EditorCommandId.ExportToProject), () => StateWhen(!HasExportNamespaceError(), "Fix export namespace first."));
         RegisterEditorCommand(EditorCommandId.ExportAsZip, "Export as ZIP", "Save generated files, packages and diagnostics as a ZIP archive.", "", "", EditorCommandCategory.Export, () => RequestExternalEditorCommand(EditorCommandId.ExportAsZip), () => StateWhen(!HasExportNamespaceError(), "Fix export namespace first."));
+        RegisterEditorCommand(EditorCommandId.OpenValidationFolder, "Open Validation Folder", "Open the temporary project used for the last build validation.", "", "", EditorCommandCategory.Export, () => RequestExternalEditorCommand(EditorCommandId.OpenValidationFolder), () => StateWhen(HasExportValidationProjectPath, "Run Validate Build first."));
         RegisterEditorCommand(EditorCommandId.CopyXaml, "Copy XAML", "Generate and copy XAML.", "", "", EditorCommandCategory.Export, () => RequestExternalEditorCommand(EditorCommandId.CopyXaml));
         RegisterEditorCommand(EditorCommandId.CopyCSharp, "Copy C#", "Generate and copy C#.", "", "", EditorCommandCategory.Export, () => RequestExternalEditorCommand(EditorCommandId.CopyCSharp));
         RegisterEditorCommand(EditorCommandId.RunSmokeTests, "Run Smoke Tests", "Run export smoke tests from the repository.", "", "", EditorCommandCategory.Export, () => RequestExternalEditorCommand(EditorCommandId.RunSmokeTests));
@@ -1899,11 +1913,13 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(ClearOutputEditorCommand));
         OnPropertyChanged(nameof(ResetLayoutEditorCommand));
         OnPropertyChanged(nameof(ToggleDesignFramesEditorCommand));
+        OnPropertyChanged(nameof(OpenExportPipelineEditorCommand));
         OnPropertyChanged(nameof(RefreshGeneratedCodeEditorCommand));
         OnPropertyChanged(nameof(CopyCurrentGeneratedFileEditorCommand));
         OnPropertyChanged(nameof(ValidateExportBuildEditorCommand));
         OnPropertyChanged(nameof(ExportToProjectEditorCommand));
         OnPropertyChanged(nameof(ExportAsZipEditorCommand));
+        OnPropertyChanged(nameof(OpenValidationFolderEditorCommand));
         OnPropertyChanged(nameof(CopyXamlEditorCommand));
         OnPropertyChanged(nameof(CopyCSharpEditorCommand));
         OnPropertyChanged(nameof(OpenExportDiagnosticsEditorCommand));
@@ -3725,6 +3741,17 @@ public partial class MainWindowViewModel : ObservableObject
         ActiveBottomDockTab = BottomDockTabOutput;
         IsBottomDockOpen = true;
         IsDiagnosticsPaneExpanded = true;
+        if (OutputEntries.Count <= 8)
+            DiagnosticsPaneHeight = Math.Min(DiagnosticsPaneHeight, 170);
+    }
+
+    [RelayCommand]
+    private void OpenFullOutputPanel()
+    {
+        ActiveBottomDockTab = BottomDockTabOutput;
+        IsBottomDockOpen = true;
+        IsDiagnosticsPaneExpanded = true;
+        DiagnosticsPaneHeight = Math.Max(DiagnosticsPaneHeight, 320);
     }
 
     [RelayCommand]
@@ -4775,6 +4802,8 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(PropertyGridSelectionTitle));
         OnPropertyChanged(nameof(PropertyGridSelectionSubtitle));
         OnPropertyChanged(nameof(PropertyGridSelectionMetrics));
+        OnPropertyChanged(nameof(RightInspectorHeaderTitle));
+        OnPropertyChanged(nameof(RightInspectorHeaderSubtitle));
         OnPropertyChanged(nameof(PropertyGridEmptyText));
     }
 
@@ -6509,6 +6538,7 @@ public partial class MainWindowViewModel : ObservableObject
             CurrentExportResult.RequiredPackages,
             CurrentExportResult.Diagnostics,
             result);
+        RefreshEditorCommands();
         return result;
     }
 
@@ -13110,8 +13140,12 @@ public partial class MainWindowViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(ExportValidationStatusText));
         OnPropertyChanged(nameof(ExportValidationStatusForeground));
+        OnPropertyChanged(nameof(ExportValidationProjectPath));
+        OnPropertyChanged(nameof(HasExportValidationProjectPath));
         OnPropertyChanged(nameof(ExportPipelineSummary));
+        OnPropertyChanged(nameof(ExportPipelineCompactSummary));
         RaiseWorkspaceStatusProperties();
+        RefreshEditorCommands();
     }
 
     partial void OnIsDiagnosticsPaneExpandedChanged(bool value)
@@ -13278,6 +13312,12 @@ public partial class MainWindowViewModel : ObservableObject
 
     partial void OnWorkspaceModeChanged(string value)
     {
+        if (string.Equals(value, "Код", StringComparison.Ordinal))
+        {
+            WorkspaceMode = WorkspaceModeCode;
+            return;
+        }
+
         if (string.Equals(value, WorkspaceModeDiagnostics, StringComparison.Ordinal))
         {
             IsBottomDockOpen = true;
@@ -13462,8 +13502,13 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(SelectedGeneratedFileContent));
         OnPropertyChanged(nameof(SelectedGeneratedFileSummary));
         OnPropertyChanged(nameof(ExportPipelineSummary));
+        OnPropertyChanged(nameof(ExportPipelineCompactSummary));
+        OnPropertyChanged(nameof(RightInspectorHeaderSubtitle));
         OnPropertyChanged(nameof(ExportValidationStatusText));
         OnPropertyChanged(nameof(ExportValidationStatusForeground));
+        OnPropertyChanged(nameof(ExportValidationProjectPath));
+        OnPropertyChanged(nameof(HasExportValidationProjectPath));
+        RefreshEditorCommands();
     }
 
     private void RaiseWorkspaceModeProperties()
@@ -13495,6 +13540,10 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(IsCodeModePanelVisible));
         OnPropertyChanged(nameof(IsPluginsModePanelVisible));
         OnPropertyChanged(nameof(IsLogicModePanelVisible));
+        OnPropertyChanged(nameof(IsDesignerCanvasWorkspaceVisible));
+        OnPropertyChanged(nameof(IsExportPipelineWorkspaceVisible));
+        OnPropertyChanged(nameof(RightInspectorHeaderTitle));
+        OnPropertyChanged(nameof(RightInspectorHeaderSubtitle));
         OnPropertyChanged(nameof(IsContextualToolbarVisible));
         OnPropertyChanged(nameof(IsCompactDiagnosticsBarVisible));
         OnPropertyChanged(nameof(LeftRailSelectedIndex));

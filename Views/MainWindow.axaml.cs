@@ -434,6 +434,9 @@ public partial class MainWindow : Window
             case EditorCommandId.ExportAsZip:
                 await ExportAsZipAsync();
                 break;
+            case EditorCommandId.OpenValidationFolder:
+                OpenValidationFolder();
+                break;
             case EditorCommandId.CopyXaml:
                 await CopyGeneratedXamlAsync();
                 break;
@@ -632,6 +635,12 @@ public partial class MainWindow : Window
         if (string.IsNullOrWhiteSpace(targetPath))
             return;
 
+        if (!await ConfirmExportToProjectAsync(targetPath))
+        {
+            VM.StatusText = "Export to project cancelled.";
+            return;
+        }
+
         VM.OpenOutputPanelCommand.Execute(null);
         var task = VM.StartWorkspaceTask("Export to project", targetPath, 0);
         try
@@ -684,7 +693,7 @@ public partial class MainWindow : Window
             VM.CompleteWorkspaceTask(task, "ZIP exported");
             VM.StatusText = $"ZIP exported: {zipPath}";
             VM.ShowWorkspaceToast(WorkspaceToastLevel.Success, "ZIP exported", zipPath);
-            VM.LogWorkspace(WorkspaceLogLevel.Success, MainWindowViewModel.OutputCategoryExport, "ZIP export completed.", zipPath);
+            VM.LogWorkspace(WorkspaceLogLevel.Success, MainWindowViewModel.OutputCategoryExport, "ZIP export completed.", $"{zipPath}\nIncluded generated files, README.generated.md, required-packages.txt and export-diagnostics.txt.");
         }
         catch (Exception ex)
         {
@@ -693,6 +702,154 @@ public partial class MainWindow : Window
             VM.ShowWorkspaceToast(WorkspaceToastLevel.Error, "ZIP export failed", ex.Message, isPersistent: true);
             VM.LogWorkspace(WorkspaceLogLevel.Error, MainWindowViewModel.OutputCategoryExport, "ZIP export failed.", ex.Message);
         }
+    }
+
+    private void OpenValidationFolder()
+    {
+        var folder = VM.CurrentExportBuildValidation.ProjectPath;
+        if (string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder))
+        {
+            VM.StatusText = "Run Validate build first.";
+            VM.ShowWorkspaceToast(WorkspaceToastLevel.Warning, "Validation folder is unavailable", VM.StatusText);
+            return;
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = "explorer.exe",
+                Arguments = $"\"{folder}\"",
+                UseShellExecute = true
+            });
+            VM.LogWorkspace(WorkspaceLogLevel.Info, MainWindowViewModel.OutputCategoryExport, "Opened validation folder.", folder);
+        }
+        catch (Exception ex)
+        {
+            VM.StatusText = $"Could not open validation folder: {ex.Message}";
+            VM.ShowWorkspaceToast(WorkspaceToastLevel.Error, "Could not open validation folder", ex.Message, isPersistent: true);
+        }
+    }
+
+    private async Task<bool> ConfirmExportToProjectAsync(string targetPath)
+    {
+        var existingFiles = VM.GeneratedFiles
+            .Select(file => System.IO.Path.Combine(targetPath, file.Path.Replace('/', System.IO.Path.DirectorySeparatorChar)))
+            .Where(File.Exists)
+            .Select(System.IO.Path.GetFileName)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var filesText = VM.GeneratedFiles.Count == 0
+            ? "No generated files yet. The export will refresh first."
+            : $"{VM.GeneratedFiles.Count} generated files will be written.";
+        var packagesText = VM.RequiredPackages.Count == 0
+            ? "No additional packages required."
+            : $"{VM.RequiredPackages.Count} package(s) required. Commands will be written to required-packages.txt.";
+        var overwriteText = existingFiles.Count == 0
+            ? "No generated files with the same names were found in the selected folder."
+            : $"Overwrite warning: {string.Join(", ", existingFiles.Take(5))}{(existingFiles.Count > 5 ? "..." : "")}";
+
+        var dialog = new Window
+        {
+            Title = "Export to Avalonia project",
+            Width = 520,
+            Height = 340,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            CanResize = false
+        };
+
+        var exportButton = new Button
+        {
+            Content = "Export",
+            MinWidth = 110,
+            Classes = { "export-primary" }
+        };
+        var cancelButton = new Button
+        {
+            Content = "Cancel",
+            MinWidth = 100,
+            Classes = { "export-secondary" }
+        };
+
+        exportButton.Click += (_, _) => dialog.Close(true);
+        cancelButton.Click += (_, _) => dialog.Close(false);
+
+        dialog.Content = new Border
+        {
+            Padding = new Thickness(18),
+            Background = Brushes.White,
+            Child = new Grid
+            {
+                RowDefinitions = new RowDefinitions("Auto,*,Auto"),
+                Children =
+                {
+                    new StackPanel
+                    {
+                        Spacing = 6,
+                        Children =
+                        {
+                            new TextBlock
+                            {
+                                Text = "Export generated files?",
+                                FontSize = 18,
+                                FontWeight = FontWeight.Bold
+                            },
+                            new TextBlock
+                            {
+                                Text = targetPath,
+                                Foreground = Brushes.SlateGray,
+                                TextWrapping = TextWrapping.Wrap
+                            }
+                        }
+                    },
+                    new Border
+                    {
+                        [Grid.RowProperty] = 1,
+                        Margin = new Thickness(0, 16, 0, 16),
+                        Padding = new Thickness(12),
+                        Background = new SolidColorBrush(Color.Parse("#F8FAFC")),
+                        BorderBrush = new SolidColorBrush(Color.Parse("#D7E2EE")),
+                        BorderThickness = new Thickness(1),
+                        CornerRadius = new CornerRadius(12),
+                        Child = new StackPanel
+                        {
+                            Spacing = 8,
+                            Children =
+                            {
+                                new TextBlock { Text = filesText, TextWrapping = TextWrapping.Wrap },
+                                new TextBlock { Text = packagesText, TextWrapping = TextWrapping.Wrap },
+                                new TextBlock
+                                {
+                                    Text = overwriteText,
+                                    TextWrapping = TextWrapping.Wrap,
+                                    Foreground = existingFiles.Count == 0
+                                        ? Brushes.SlateGray
+                                        : new SolidColorBrush(Color.Parse("#B45309")),
+                                    FontWeight = existingFiles.Count == 0 ? FontWeight.Normal : FontWeight.SemiBold
+                                },
+                                new TextBlock
+                                {
+                                    Text = "Files are written directly to the selected folder. Build validation can be run after export.",
+                                    Foreground = Brushes.SlateGray,
+                                    TextWrapping = TextWrapping.Wrap
+                                }
+                            }
+                        }
+                    },
+                    new StackPanel
+                    {
+                        [Grid.RowProperty] = 2,
+                        Orientation = Orientation.Horizontal,
+                        HorizontalAlignment = HorizontalAlignment.Right,
+                        Spacing = 8,
+                        Children = { cancelButton, exportButton }
+                    }
+                }
+            }
+        };
+
+        return await dialog.ShowDialog<bool>(this);
     }
 
     private void FitSurfaceToViewport()
