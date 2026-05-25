@@ -30,6 +30,7 @@ internal static class Program
             new("SimpleFormExport", ConfigureSimpleFormExport, AssertSimpleFormExport),
             new("RealDataGridExport", ConfigureRealDataGridExport, AssertRealDataGridExport, RequiresRealDataGrid: true),
             new("InteractionsExport", ConfigureInteractionsExport, AssertInteractionsExport, RequiresRealDataGrid: true),
+            new("MultiFormOpenFormExport", ConfigureMultiFormOpenFormExport, AssertMultiFormOpenFormExport),
             new("PluginFallbackExport", ConfigurePluginFallbackExport, AssertPluginFallbackExport),
             new("ResponsiveLayoutExport_StackPanel", ConfigureResponsiveStackPanelExport, AssertResponsiveStackPanelExport),
             new("ResponsiveLayoutExport_CanvasFallback", ConfigureResponsiveCanvasFallbackExport, AssertResponsiveCanvasFallbackExport)
@@ -74,6 +75,7 @@ internal static class Program
             ProjectPath: projectPath,
             Xaml: viewModel.GeneratedXaml,
             CSharp: viewModel.GeneratedCSharp,
+            GeneratedFiles: viewModel.GeneratedFiles.ToList(),
             ChecklistText: string.Join(Environment.NewLine, viewModel.ExportChecklistItems.Select(item => $"{item.Title}: {item.Value} {item.Details}")),
             DiagnosticsText: string.Join(Environment.NewLine, viewModel.Diagnostics.Select(item => $"{item.Category}: {item.Message} {item.Recommendation}")));
 
@@ -211,6 +213,47 @@ internal static class Program
         RequireContains(context.CSharp, "private void ProductsGrid_SelectionChanged", "SelectionChanged handler missing.");
         RequireContains(context.CSharp, "ShowMessageAsync", "ShowMessage helper missing.");
         RequireNotContains(context.CSharp, "ObservableCollection", "Interactions clean export should not generate demo classes.");
+    }
+
+    private static void ConfigureMultiFormOpenFormExport(MainWindowViewModel vm)
+    {
+        vm.ExportTarget = MainWindowViewModel.ExportTargetMainWindow;
+        vm.DataGridExportMode = MainWindowViewModel.DataGridExportModeVisual;
+        vm.Controls.Add(Control(DesignerControlTypes.TextBlock, "Form1Title", 36, 34, 340, 30, text: "Form1"));
+        vm.Controls.Add(Control(DesignerControlTypes.Button, "OpenForm2Button", 36, 92, 180, 42, text: "Open Form2", background: "#2563EB", foreground: "#FFFFFF", border: "#1D4ED8", radius: 10));
+
+        var form1 = vm.ActiveFormDocument ?? throw new InvalidOperationException("Active Form1 document missing.");
+        vm.NewFormEditorCommand?.Execute(null);
+        var form2 = vm.ActiveFormDocument ?? throw new InvalidOperationException("Active Form2 document missing.");
+        form2.Name = "Form2";
+        form2.Document.FormTitle = "Form2";
+        vm.FormTitle = "Form2";
+        vm.Controls.Add(Control(DesignerControlTypes.TextBlock, "Form2Title", 36, 34, 340, 30, text: "Form2 window"));
+
+        var form1Tab = vm.DocumentTabs.First(tab => tab.DocumentId == form1.Id);
+        vm.SelectedDocumentTab = form1Tab;
+        vm.Interactions.Add(new InteractionModel
+        {
+            SourceControlName = "OpenForm2Button",
+            EventName = InteractionModel.EventButtonClick,
+            ActionType = InteractionModel.ActionOpenForm,
+            TargetFormId = form2.Id,
+            TargetFormName = form2.DisplayName,
+            OpenMode = InteractionModel.OpenModeShow
+        });
+    }
+
+    private static void AssertMultiFormOpenFormExport(SmokeContext context)
+    {
+        RequireGeneratedFile(context, "MainWindow.axaml");
+        RequireGeneratedFile(context, "MainWindow.axaml.cs");
+        RequireGeneratedFile(context, "Form2.axaml");
+        RequireGeneratedFile(context, "Form2.axaml.cs");
+        RequireContains(context.Xaml, "Click=\"OpenForm2ButtonClick\"", "OpenForm Button.Click handler missing in Form1 XAML.");
+        RequireContains(context.CSharp, "var windowForm2 = new Form2();", "OpenForm handler should create Form2.");
+        RequireContains(context.CSharp, "windowForm2.Show();", "OpenForm handler should show Form2.");
+        RequireContains(context.ChecklistText, "Forms exported: 2/2", "Export checklist should report both forms.");
+        RequireContains(context.ChecklistText, "OpenForm interactions: 1", "Export checklist should report OpenForm interaction.");
     }
 
     private static void ConfigurePluginFallbackExport(MainWindowViewModel vm)
@@ -356,8 +399,21 @@ internal static class Program
         Directory.CreateDirectory(context.ProjectPath);
         File.WriteAllText(Path.Combine(context.ProjectPath, $"{context.Scenario.Name}.xaml.txt"), context.Xaml, Encoding.UTF8);
         File.WriteAllText(Path.Combine(context.ProjectPath, $"{context.Scenario.Name}.cs.txt"), context.CSharp, Encoding.UTF8);
-        File.WriteAllText(Path.Combine(context.ProjectPath, "MainWindow.axaml"), context.Xaml, Encoding.UTF8);
-        File.WriteAllText(Path.Combine(context.ProjectPath, "MainWindow.axaml.cs"), context.CSharp, Encoding.UTF8);
+        foreach (var generatedFile in context.GeneratedFiles.Where(file =>
+                     file.Path.EndsWith(".axaml", StringComparison.OrdinalIgnoreCase)
+                     || file.Path.EndsWith(".cs", StringComparison.OrdinalIgnoreCase)))
+        {
+            var targetPath = Path.Combine(context.ProjectPath, generatedFile.Path.Replace('/', Path.DirectorySeparatorChar));
+            var directory = Path.GetDirectoryName(targetPath);
+            if (!string.IsNullOrWhiteSpace(directory))
+                Directory.CreateDirectory(directory);
+            File.WriteAllText(targetPath, generatedFile.Content, Encoding.UTF8);
+        }
+
+        if (!File.Exists(Path.Combine(context.ProjectPath, "MainWindow.axaml")))
+            File.WriteAllText(Path.Combine(context.ProjectPath, "MainWindow.axaml"), context.Xaml, Encoding.UTF8);
+        if (!File.Exists(Path.Combine(context.ProjectPath, "MainWindow.axaml.cs")))
+            File.WriteAllText(Path.Combine(context.ProjectPath, "MainWindow.axaml.cs"), context.CSharp, Encoding.UTF8);
         File.WriteAllText(Path.Combine(context.ProjectPath, "App.axaml"), BuildAppXaml(context.ViewModel.ExportProjectNamespace), Encoding.UTF8);
         File.WriteAllText(Path.Combine(context.ProjectPath, "App.axaml.cs"), BuildAppCode(context.ViewModel.ExportProjectNamespace), Encoding.UTF8);
         File.WriteAllText(Path.Combine(context.ProjectPath, "Program.cs"), BuildProgramCode(context.ViewModel.ExportProjectNamespace), Encoding.UTF8);
@@ -529,6 +585,12 @@ Diagnostics:
             throw new InvalidOperationException(message);
     }
 
+    private static void RequireGeneratedFile(SmokeContext context, string path)
+    {
+        if (!context.GeneratedFiles.Any(file => string.Equals(file.Path, path, StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidOperationException($"Generated file missing: {path}");
+    }
+
     private static void SafeCleanDirectory(string path)
     {
         var fullPath = Path.GetFullPath(path);
@@ -581,6 +643,7 @@ Diagnostics:
         string ProjectPath,
         string Xaml,
         string CSharp,
+        IReadOnlyList<GeneratedFileModel> GeneratedFiles,
         string ChecklistText,
         string DiagnosticsText);
 

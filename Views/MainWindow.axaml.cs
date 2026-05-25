@@ -6961,6 +6961,7 @@ public partial class MainWindow : Window
             await Task.Delay(160);
 
             var snapshot = VM.CreatePreviewDocumentSnapshot();
+            var projectForms = VM.CreatePreviewProjectFormsSnapshot();
 
             if (_launchPreviewWindow is not null)
             {
@@ -6968,7 +6969,7 @@ public partial class MainWindow : Window
                 _launchPreviewWindow = null;
             }
 
-            var previewWindow = new PreviewWindow(snapshot, VM.Registry);
+            var previewWindow = new PreviewWindow(snapshot, VM.Registry, projectForms, VM.ActiveFormDocument?.Id ?? string.Empty);
             previewWindow.Closed += LaunchPreviewWindow_Closed;
             _launchPreviewWindow = previewWindow;
             previewWindow.Show();

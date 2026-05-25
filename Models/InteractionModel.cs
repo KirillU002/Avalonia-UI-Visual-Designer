@@ -19,6 +19,10 @@ public partial class InteractionModel : ObservableObject
     public const string ActionToggleVisibility = "ToggleVisibility";
     public const string ActionEnableDisable = "EnableDisable";
     public const string ActionShowMessage = "ShowMessage";
+    public const string ActionOpenForm = "OpenForm";
+
+    public const string OpenModeShow = "Show";
+    public const string OpenModeShowDialog = "ShowDialog";
 
     public const string TargetPropertyText = "Text";
     public const string TargetPropertyContent = "Content";
@@ -53,6 +57,18 @@ public partial class InteractionModel : ObservableObject
     [ObservableProperty]
     private string messageTitle = "";
 
+    [ObservableProperty]
+    private string targetFormId = "";
+
+    [ObservableProperty]
+    private string targetFormName = "";
+
+    [ObservableProperty]
+    private string openMode = OpenModeShow;
+
+    [ObservableProperty]
+    private bool closeCurrentAfterOpen;
+
     public string NormalizedEventName => NormalizeEventName(EventName);
 
     public string Summary
@@ -75,6 +91,7 @@ public partial class InteractionModel : ObservableObject
                 ActionToggleVisibility => $"{source}: {eventName} -> показать/скрыть {target}",
                 ActionEnableDisable => $"{source}: {eventName} -> доступность {target} = {value}",
                 ActionShowMessage => $"{source}: {eventName} -> сообщение: {value}",
+                ActionOpenForm => $"{source}: {eventName} -> открыть форму {TargetFormDisplayName}",
                 _ => $"{source}: {eventName} -> {target}.{propertyName} = {value}"
             };
         }
@@ -85,6 +102,10 @@ public partial class InteractionModel : ObservableObject
     public string ActionDisplayName => GetActionDisplayName(ActionType);
 
     public string TargetPropertyDisplayName => GetTargetPropertyDisplayName(TargetProperty);
+
+    public string TargetFormDisplayName => string.IsNullOrWhiteSpace(TargetFormName)
+        ? string.IsNullOrWhiteSpace(TargetFormId) ? "форма не выбрана" : TargetFormId
+        : TargetFormName;
 
     public InteractionModel Clone()
     {
@@ -98,7 +119,11 @@ public partial class InteractionModel : ObservableObject
             TargetProperty = TargetProperty,
             SourcePath = SourcePath,
             TextTemplate = TextTemplate,
-            MessageTitle = MessageTitle
+            MessageTitle = MessageTitle,
+            TargetFormId = TargetFormId,
+            TargetFormName = TargetFormName,
+            OpenMode = NormalizeOpenMode(OpenMode),
+            CloseCurrentAfterOpen = CloseCurrentAfterOpen
         };
     }
 
@@ -135,8 +160,16 @@ public partial class InteractionModel : ObservableObject
             ActionToggleVisibility => "Показать / скрыть",
             ActionEnableDisable => "Включить / отключить",
             ActionShowMessage => "Показать сообщение",
+            ActionOpenForm => "Открыть форму",
             _ => string.IsNullOrWhiteSpace(actionType) ? "Действие" : actionType!
         };
+    }
+
+    public static string NormalizeOpenMode(string? openMode)
+    {
+        return string.Equals(openMode, OpenModeShowDialog, StringComparison.OrdinalIgnoreCase)
+            ? OpenModeShowDialog
+            : OpenModeShow;
     }
 
     public static string GetTargetPropertyDisplayName(string? targetProperty)
@@ -175,4 +208,16 @@ public partial class InteractionModel : ObservableObject
     partial void OnSourcePathChanged(string value) => OnPropertyChanged(nameof(Summary));
     partial void OnTextTemplateChanged(string value) => OnPropertyChanged(nameof(Summary));
     partial void OnMessageTitleChanged(string value) => OnPropertyChanged(nameof(Summary));
+    partial void OnTargetFormIdChanged(string value)
+    {
+        OnPropertyChanged(nameof(TargetFormDisplayName));
+        OnPropertyChanged(nameof(Summary));
+    }
+    partial void OnTargetFormNameChanged(string value)
+    {
+        OnPropertyChanged(nameof(TargetFormDisplayName));
+        OnPropertyChanged(nameof(Summary));
+    }
+    partial void OnOpenModeChanged(string value) => OnPropertyChanged(nameof(Summary));
+    partial void OnCloseCurrentAfterOpenChanged(bool value) => OnPropertyChanged(nameof(Summary));
 }

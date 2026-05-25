@@ -147,6 +147,10 @@ public class InteractionFileModel
     public string SourcePath { get; set; } = "";
     public string TextTemplate { get; set; } = "";
     public string MessageTitle { get; set; } = "";
+    public string TargetFormId { get; set; } = "";
+    public string TargetFormName { get; set; } = "";
+    public string OpenMode { get; set; } = InteractionModel.OpenModeShow;
+    public bool CloseCurrentAfterOpen { get; set; }
 }
 
 public class BindingSourceFileModel

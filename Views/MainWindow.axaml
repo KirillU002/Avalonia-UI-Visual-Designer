@@ -6698,6 +6698,7 @@
                       </StackPanel>
                       <StackPanel Grid.Row="1"
                                   Grid.Column="1"
+                                  IsVisible="{Binding IsSelectedInteractionControlTargetVisible}"
                                   Spacing="4">
                         <TextBlock Text="Цель"
                                    FontWeight="SemiBold"/>
@@ -6710,6 +6711,7 @@
                       </StackPanel>
 
                       <StackPanel Grid.Row="2"
+                                  IsVisible="{Binding IsSelectedInteractionControlTargetVisible}"
                                   Spacing="4">
                         <TextBlock Text="Свойство цели"
                                    FontWeight="SemiBold"/>
@@ -6729,6 +6731,7 @@
                       </StackPanel>
                       <StackPanel Grid.Row="2"
                                   Grid.Column="1"
+                                  IsVisible="{Binding IsSelectedInteractionControlTargetVisible}"
                                   Spacing="4">
                         <TextBlock Text="Значение / поле"
                                    FontWeight="SemiBold"/>
@@ -6752,6 +6755,38 @@
                         <TextBlock Text="Если шаблон заполнен, он используется вместо одиночного поля. Пример: Клиент: {Name}, Email: {Email}."
                                    Foreground="#64748B"
                                    FontSize="12"
+                                   TextWrapping="Wrap"/>
+                      </StackPanel>
+
+                      <StackPanel Grid.Row="4"
+                                  Grid.ColumnSpan="2"
+                                  IsVisible="{Binding IsSelectedInteractionOpenForm}"
+                                  Spacing="8">
+                        <TextBlock Text="OpenForm"
+                                   FontWeight="SemiBold"/>
+                        <Grid ColumnDefinitions="*,Auto,Auto"
+                              ColumnSpacing="10">
+                          <ComboBox ItemsSource="{Binding OpenFormTargetForms}"
+                                    SelectedValue="{Binding SelectedInteraction.TargetFormId, Mode=TwoWay}"
+                                    SelectedValueBinding="{Binding Id}">
+                            <ComboBox.ItemTemplate>
+                              <DataTemplate x:DataType="models:DesignerFormDocument">
+                                <TextBlock Text="{Binding DisplayName}"/>
+                              </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                          </ComboBox>
+                          <ComboBox Grid.Column="1"
+                                    MinWidth="120"
+                                    ItemsSource="{Binding AvailableOpenFormModes}"
+                                    SelectedItem="{Binding SelectedInteraction.OpenMode, Mode=TwoWay}"/>
+                          <CheckBox Grid.Column="2"
+                                    Content="Close current"
+                                    IsChecked="{Binding SelectedInteraction.CloseCurrentAfterOpen, Mode=TwoWay}"
+                                    VerticalAlignment="Center"/>
+                        </Grid>
+                        <TextBlock Text="{Binding OpenFormTargetHint}"
+                                   Foreground="#64748B"
+                                   FontSize="11"
                                    TextWrapping="Wrap"/>
                       </StackPanel>
                     </Grid>

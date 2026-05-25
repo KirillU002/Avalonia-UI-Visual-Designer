@@ -220,6 +220,7 @@ public sealed class PreviewRuntimeContext
             }
 
             if (!string.Equals(interaction.ActionType, InteractionModel.ActionShowMessage, StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(interaction.ActionType, InteractionModel.ActionOpenForm, StringComparison.OrdinalIgnoreCase)
                 && FindControlByName(interaction.TargetControlName) is null)
             {
                 AddError(
@@ -310,7 +311,11 @@ public sealed class PreviewRuntimeContext
             TargetProperty = interaction.TargetProperty,
             SourcePath = interaction.SourcePath,
             TextTemplate = interaction.TextTemplate,
-            MessageTitle = interaction.MessageTitle
+            MessageTitle = interaction.MessageTitle,
+            TargetFormId = interaction.TargetFormId,
+            TargetFormName = interaction.TargetFormName,
+            OpenMode = InteractionModel.NormalizeOpenMode(interaction.OpenMode),
+            CloseCurrentAfterOpen = interaction.CloseCurrentAfterOpen
         };
     }
 
@@ -401,6 +406,26 @@ public sealed class PreviewInteractionExecutor
             }
 
             result.Messages.Add(new PreviewMessageRequest(value, interaction.MessageTitle));
+            return false;
+        }
+
+        if (string.Equals(interaction.ActionType, InteractionModel.ActionOpenForm, StringComparison.OrdinalIgnoreCase))
+        {
+            if (string.IsNullOrWhiteSpace(interaction.TargetFormId))
+            {
+                context.AddError(
+                    FormatInteractionSource(interaction),
+                    "Preview errors",
+                    $"OpenForm target form is not selected: {FormatInteraction(interaction)}.",
+                    "Choose a target form in the interaction editor.");
+                return false;
+            }
+
+            result.OpenFormRequests.Add(new PreviewOpenFormRequest(
+                interaction.TargetFormId,
+                interaction.TargetFormName,
+                InteractionModel.NormalizeOpenMode(interaction.OpenMode),
+                interaction.CloseCurrentAfterOpen));
             return false;
         }
 
@@ -649,6 +674,8 @@ public sealed class PreviewInteractionExecutionResult
     public bool HasVisualChanges { get; set; }
 
     public List<PreviewMessageRequest> Messages { get; } = new();
+
+    public List<PreviewOpenFormRequest> OpenFormRequests { get; } = new();
 }
 
 public sealed class PreviewMessageRequest
@@ -662,6 +689,25 @@ public sealed class PreviewMessageRequest
     public string Message { get; }
 
     public string Title { get; }
+}
+
+public sealed class PreviewOpenFormRequest
+{
+    public PreviewOpenFormRequest(string targetFormId, string targetFormName, string openMode, bool closeCurrentAfterOpen)
+    {
+        TargetFormId = targetFormId;
+        TargetFormName = targetFormName;
+        OpenMode = InteractionModel.NormalizeOpenMode(openMode);
+        CloseCurrentAfterOpen = closeCurrentAfterOpen;
+    }
+
+    public string TargetFormId { get; }
+
+    public string TargetFormName { get; }
+
+    public string OpenMode { get; }
+
+    public bool CloseCurrentAfterOpen { get; }
 }
 
 public sealed class PreviewRuntimeDataGridSortState

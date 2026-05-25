@@ -123,6 +123,11 @@ public partial class MainWindowViewModel : ObservableObject
     private Dictionary<string, IDesignControlNode>? _activeXamlControlNodes;
     private IReadOnlyDictionary<string, string>? _activeXamlControlNameMap;
     private LayoutExportPlan? _activeLayoutExportPlan;
+    private bool _isGeneratingSecondaryFormExport;
+    private string? _exportNamespaceOverride;
+    private string? _exportWindowClassNameOverride;
+    private string? _exportViewModelClassNameOverride;
+    private string? _exportActiveFormIdOverride;
 
     private bool _isHistorySuspended;
     private int _undoBatchDepth;
@@ -398,7 +403,14 @@ public partial class MainWindowViewModel : ObservableObject
         InteractionModel.ActionClearProperty,
         InteractionModel.ActionToggleVisibility,
         InteractionModel.ActionEnableDisable,
-        InteractionModel.ActionShowMessage
+        InteractionModel.ActionShowMessage,
+        InteractionModel.ActionOpenForm
+    };
+
+    public ObservableCollection<string> AvailableOpenFormModes { get; } = new()
+    {
+        InteractionModel.OpenModeShow,
+        InteractionModel.OpenModeShowDialog
     };
 
     public ObservableCollection<string> AvailableInteractionTargetProperties { get; } = new()
@@ -425,7 +437,8 @@ public partial class MainWindowViewModel : ObservableObject
         new(InteractionModel.ActionClearProperty, "Очистить значение", "Очищает текст, содержимое или сбрасывает состояние цели."),
         new(InteractionModel.ActionToggleVisibility, "Показать / скрыть", "Переключает видимость выбранного элемента."),
         new(InteractionModel.ActionEnableDisable, "Включить / отключить", "Меняет доступность элемента по значению true/false, 1/0, да/нет."),
-        new(InteractionModel.ActionShowMessage, "Показать сообщение", "Показывает текст в preview/status; удобно для проверки сценария.")
+        new(InteractionModel.ActionShowMessage, "Показать сообщение", "Показывает текст в preview/status; удобно для проверки сценария."),
+        new(InteractionModel.ActionOpenForm, "Открыть форму", "Открывает другую форму этого designer-project в preview и exported Avalonia app.")
     };
 
     public ObservableCollection<InteractionOptionModel> AvailableInteractionTargetPropertyOptions { get; } = new()
@@ -1403,6 +1416,17 @@ public partial class MainWindowViewModel : ObservableObject
     public bool HasInteractions => Interactions.Count > 0;
     public bool HasNoInteractions => !HasInteractions;
     public bool CanEditSelectedInteraction => SelectedInteraction is not null;
+    public bool IsSelectedInteractionOpenForm => SelectedInteraction is not null
+        && string.Equals(SelectedInteraction.ActionType, InteractionModel.ActionOpenForm, StringComparison.OrdinalIgnoreCase);
+    public bool IsSelectedInteractionControlTargetVisible => SelectedInteraction is not null && !IsSelectedInteractionOpenForm
+        && !string.Equals(SelectedInteraction.ActionType, InteractionModel.ActionShowMessage, StringComparison.OrdinalIgnoreCase);
+    public bool HasOpenFormTargets => CurrentProject.Forms.Count > 1;
+    public IReadOnlyList<DesignerFormDocument> OpenFormTargetForms => CurrentProject.Forms
+        .OrderBy(form => form.DisplayName, StringComparer.OrdinalIgnoreCase)
+        .ToList();
+    public string OpenFormTargetHint => HasOpenFormTargets
+        ? "Выберите форму проекта, которую нужно открыть по клику."
+        : "Добавьте вторую форму, чтобы настроить OpenForm.";
 
     public string LogicDesignerSummary
     {
@@ -3474,6 +3498,7 @@ public partial class MainWindowViewModel : ObservableObject
             .Validate(Controls, BindingSources, Interactions, CurrentDocumentPath, DesignWidth, DesignHeight)
             .ToList();
         AppendPluginLoaderDiagnostics(diagnostics);
+        AppendProjectInteractionDiagnostics(diagnostics);
         AppendExportDiagnostics(diagnostics);
         AppendPreviewRuntimeDiagnostics(diagnostics);
 
@@ -3582,6 +3607,58 @@ public partial class MainWindowViewModel : ObservableObject
     {
         foreach (var diagnostic in _previewRuntimeDiagnostics)
             diagnostics.Add(diagnostic);
+    }
+
+    private void AppendProjectInteractionDiagnostics(ICollection<DocumentDiagnosticModel> diagnostics)
+    {
+        foreach (var interaction in Interactions.Where(interaction =>
+            string.Equals(interaction.ActionType, InteractionModel.ActionOpenForm, StringComparison.OrdinalIgnoreCase)))
+        {
+            var source = FindControlByName(interaction.SourceControlName);
+            var targetForm = CurrentProject.Forms.FirstOrDefault(form =>
+                string.Equals(form.Id, interaction.TargetFormId, StringComparison.OrdinalIgnoreCase));
+
+            if (targetForm is null)
+            {
+                diagnostics.Add(new DocumentDiagnosticModel
+                {
+                    Severity = DocumentDiagnosticSeverity.Error,
+                    Source = source?.NameOrFallback() ?? interaction.SourceControlName,
+                    Category = "Logic",
+                    Message = $"OpenForm target form not found: '{interaction.TargetFormName}'.",
+                    Recommendation = "Choose an existing target form or remove the stale OpenForm interaction.",
+                    RelatedControlId = source?.Id ?? string.Empty,
+                    RelatedControlName = source?.Name ?? string.Empty
+                });
+                continue;
+            }
+
+            if (string.Equals(targetForm.Id, ActiveFormDocument?.Id, StringComparison.OrdinalIgnoreCase))
+            {
+                diagnostics.Add(new DocumentDiagnosticModel
+                {
+                    Severity = DocumentDiagnosticSeverity.Warning,
+                    Source = source?.NameOrFallback() ?? interaction.SourceControlName,
+                    Category = "Logic",
+                    Message = $"OpenForm points to the current form '{targetForm.DisplayName}'.",
+                    Recommendation = "Usually OpenForm should target another form.",
+                    RelatedControlId = source?.Id ?? string.Empty,
+                    RelatedControlName = source?.Name ?? string.Empty
+                });
+            }
+        }
+
+        foreach (var conflict in GetSanitizedFormClassConflicts())
+        {
+            diagnostics.Add(new DocumentDiagnosticModel
+            {
+                Severity = DocumentDiagnosticSeverity.Warning,
+                Source = "Export",
+                Category = "Export",
+                Message = $"Form class name conflict after sanitize: {conflict}.",
+                Recommendation = "Rename forms to unique C# class names. Export will append a suffix until then."
+            });
+        }
     }
 
     private void AppendExportDiagnostics(ICollection<DocumentDiagnosticModel> diagnostics)
@@ -4861,6 +4938,7 @@ public partial class MainWindowViewModel : ObservableObject
         {
             form.Document.FormTitle = form.DisplayName;
             form.RelativePath = $"Forms/{form.DisplayName}.formdesigner.json";
+            UpdateOpenFormTargetNames(form.Id, form.DisplayName);
             if (string.Equals(form.Id, ActiveFormDocument?.Id, StringComparison.OrdinalIgnoreCase))
                 FormTitle = form.DisplayName;
         }
@@ -4932,7 +5010,20 @@ public partial class MainWindowViewModel : ObservableObject
 
     public DesignerDocumentFileModel CreatePreviewDocumentSnapshot()
     {
+        PersistActiveFormDocumentState(refreshProjectViews: false);
         return CreateDocumentFileModel();
+    }
+
+    public IReadOnlyList<DesignerFormDocument> CreatePreviewProjectFormsSnapshot()
+    {
+        PersistActiveFormDocumentState(refreshProjectViews: false);
+        return CurrentProject.Forms.Select(CloneFormDocumentForPreview).ToList();
+    }
+
+    private static DesignerFormDocument CloneFormDocumentForPreview(DesignerFormDocument form)
+    {
+        var json = JsonSerializer.Serialize(form, JsonOptions);
+        return JsonSerializer.Deserialize<DesignerFormDocument>(json, JsonOptions) ?? new DesignerFormDocument();
     }
 
     public string GetRecoveryDisplayName()
@@ -6090,11 +6181,42 @@ public partial class MainWindowViewModel : ObservableObject
             TargetProperty = GetDefaultInteractionTargetProperty(target),
             SourcePath = GetDefaultInteractionSourcePath(source)
         };
+        EnsureOpenFormInteractionDefaults(interaction);
 
         Interactions.Add(interaction);
         SelectedInteraction = interaction;
         WorkspaceMode = WorkspaceModeLogic;
         StatusText = "Добавлено правило логики формы.";
+    }
+
+    private void EnsureOpenFormInteractionDefaults(InteractionModel interaction)
+    {
+        if (!string.Equals(interaction.ActionType, InteractionModel.ActionOpenForm, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        interaction.EventName = InteractionModel.EventButtonClick;
+        interaction.OpenMode = InteractionModel.NormalizeOpenMode(interaction.OpenMode);
+
+        var target = CurrentProject.Forms.FirstOrDefault(form =>
+                !string.Equals(form.Id, ActiveFormDocument?.Id, StringComparison.OrdinalIgnoreCase))
+            ?? CurrentProject.Forms.FirstOrDefault();
+
+        if (string.IsNullOrWhiteSpace(interaction.TargetFormId) && target is not null)
+            interaction.TargetFormId = target.Id;
+
+        var selectedTarget = CurrentProject.Forms.FirstOrDefault(form =>
+            string.Equals(form.Id, interaction.TargetFormId, StringComparison.OrdinalIgnoreCase));
+        interaction.TargetFormName = selectedTarget?.DisplayName ?? interaction.TargetFormName;
+    }
+
+    private void UpdateOpenFormTargetNames(string formId, string formName)
+    {
+        foreach (var interaction in Interactions.Where(interaction =>
+            string.Equals(interaction.ActionType, InteractionModel.ActionOpenForm, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(interaction.TargetFormId, formId, StringComparison.OrdinalIgnoreCase)))
+        {
+            interaction.TargetFormName = formName;
+        }
     }
 
     [RelayCommand]
@@ -7212,6 +7334,12 @@ public partial class MainWindowViewModel : ObservableObject
         GeneratedXaml = sb.ToString();
         GeneratedCSharp = BuildGeneratedCSharp();
         GeneratedBindingGuide = BuildGeneratedBindingGuide();
+        if (_isGeneratingSecondaryFormExport)
+        {
+            _activeLayoutExportPlan = null;
+            return;
+        }
+
         CurrentExportBuildValidation = new ExportBuildValidationResult();
         _exportCacheDocumentSnapshotHash = GetSnapshotHash(_currentSnapshot);
         _exportCacheSettingsSignature = BuildExportSettingsSignature();
@@ -7324,7 +7452,11 @@ public partial class MainWindowViewModel : ObservableObject
 
     private IEnumerable<GeneratedFileModel> BuildGeneratedFiles()
     {
-        var className = IsMainWindowExportTarget ? "MainWindow" : "Form1Window";
+        var formClassNames = BuildProjectFormClassNameMap();
+        var activeFormId = _exportActiveFormIdOverride ?? ActiveFormDocument?.Id ?? "";
+        var className = !string.IsNullOrWhiteSpace(activeFormId) && formClassNames.TryGetValue(activeFormId, out var mappedActiveClass)
+            ? mappedActiveClass
+            : IsMainWindowExportTarget ? "MainWindow" : "Form1Window";
         yield return new GeneratedFileModel
         {
             Path = $"{className}.axaml",
@@ -7350,11 +7482,21 @@ public partial class MainWindowViewModel : ObservableObject
 
         foreach (var form in CurrentProject.Forms.Where(form => !string.Equals(form.Id, ActiveFormDocument?.Id, StringComparison.OrdinalIgnoreCase)))
         {
+            var secondaryClassName = formClassNames.TryGetValue(form.Id, out var mappedClassName)
+                ? mappedClassName
+                : SanitizeIdentifier(form.DisplayName, "Form");
+            var secondaryFiles = BuildSecondaryFormGeneratedFiles(form, secondaryClassName);
             yield return new GeneratedFileModel
             {
-                Path = $"Generated/{SanitizeGeneratedFileName(form.DisplayName)}.axaml",
-                Content = $"<!-- {form.DisplayName} is part of the workspace project model. Open this form tab and refresh export to generate exact Avalonia XAML. -->",
-                Severity = ExportChecklistSeverity.Warning
+                Path = $"{secondaryClassName}.axaml",
+                Content = secondaryFiles.Xaml,
+                Severity = string.IsNullOrWhiteSpace(secondaryFiles.Xaml) ? ExportChecklistSeverity.Error : ExportChecklistSeverity.Ok
+            };
+            yield return new GeneratedFileModel
+            {
+                Path = $"{secondaryClassName}.axaml.cs",
+                Content = secondaryFiles.CSharp,
+                Severity = string.IsNullOrWhiteSpace(secondaryFiles.CSharp) ? ExportChecklistSeverity.Error : ExportChecklistSeverity.Ok
             };
         }
 
@@ -7368,6 +7510,108 @@ public partial class MainWindowViewModel : ObservableObject
         var chars = source.Select(ch => char.IsLetterOrDigit(ch) || ch == '_' ? ch : '_').ToArray();
         var sanitized = new string(chars);
         return string.IsNullOrWhiteSpace(sanitized) ? "Form" : sanitized;
+    }
+
+    private Dictionary<string, string> BuildProjectFormClassNameMap()
+    {
+        var activeFormId = _exportActiveFormIdOverride ?? ActiveFormDocument?.Id ?? "";
+        var used = new HashSet<string>(UnsafeGeneratedIdentifiers, StringComparer.OrdinalIgnoreCase);
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var activeClassName = ResolveExportWindowClassName();
+
+        if (!string.IsNullOrWhiteSpace(activeFormId))
+        {
+            result[activeFormId] = activeClassName;
+            used.Add(activeClassName);
+        }
+
+        foreach (var form in CurrentProject.Forms)
+        {
+            if (result.ContainsKey(form.Id))
+                continue;
+
+            var baseName = SanitizeIdentifier(form.DisplayName, "Form");
+            var candidate = baseName;
+            var index = 2;
+            while (used.Contains(candidate) || UnsafeGeneratedIdentifiers.Contains(candidate))
+                candidate = $"{baseName}{index++}";
+
+            result[form.Id] = candidate;
+            used.Add(candidate);
+        }
+
+        return result;
+    }
+
+    private IReadOnlyList<string> GetSanitizedFormClassConflicts()
+    {
+        return CurrentProject.Forms
+            .GroupBy(form => SanitizeIdentifier(form.DisplayName, "Form"), StringComparer.OrdinalIgnoreCase)
+            .Where(group => group.Count() > 1)
+            .Select(group => $"{group.Key} ({string.Join(", ", group.Select(form => form.DisplayName))})")
+            .ToList();
+    }
+
+    private (string Xaml, string CSharp) BuildSecondaryFormGeneratedFiles(DesignerFormDocument form, string className)
+    {
+        var savedDocument = CreateDocumentFileModel();
+        var savedGeneratedXaml = GeneratedXaml;
+        var savedGeneratedCSharp = GeneratedCSharp;
+        var savedGeneratedBindingGuide = GeneratedBindingGuide;
+        var savedCurrentPath = CurrentDocumentPath;
+        var savedCurrentSnapshot = _currentSnapshot;
+        var savedSavedSnapshot = _savedSnapshot;
+        var undoSnapshots = _undoStack.Reverse().ToList();
+        var redoSnapshots = _redoStack.Reverse().ToList();
+        var selectedControlIds = SelectedControlIds.ToList();
+        var primaryControlId = SelectedControl?.Id ?? "";
+        var selectedBindingSourceId = SelectedBindingSource?.Id ?? "";
+        var selectedInteractionId = SelectedInteraction?.Id ?? "";
+        var previousGeneratingSecondary = _isGeneratingSecondaryFormExport;
+        var previousNamespaceOverride = _exportNamespaceOverride;
+        var previousWindowClassNameOverride = _exportWindowClassNameOverride;
+        var previousViewModelClassNameOverride = _exportViewModelClassNameOverride;
+        var previousActiveFormIdOverride = _exportActiveFormIdOverride;
+
+        try
+        {
+            _isGeneratingSecondaryFormExport = true;
+            _exportNamespaceOverride = ResolveExportNamespace();
+            _exportWindowClassNameOverride = className;
+            _exportViewModelClassNameOverride = $"{className}ViewModel";
+            _exportActiveFormIdOverride = form.Id;
+            ApplyDocument(CloneDocumentFileModel(form.Document), CurrentProjectPath, markAsSaved: true, resetDocumentSession: false, resetHistory: false);
+            GenerateXaml();
+            return (GeneratedXaml, GeneratedCSharp);
+        }
+        finally
+        {
+            _isGeneratingSecondaryFormExport = previousGeneratingSecondary;
+            _exportNamespaceOverride = previousNamespaceOverride;
+            _exportWindowClassNameOverride = previousWindowClassNameOverride;
+            _exportViewModelClassNameOverride = previousViewModelClassNameOverride;
+            _exportActiveFormIdOverride = previousActiveFormIdOverride;
+
+            ApplyDocument(savedDocument, savedCurrentPath, markAsSaved: false, resetDocumentSession: false, resetHistory: false);
+            GeneratedXaml = savedGeneratedXaml;
+            GeneratedCSharp = savedGeneratedCSharp;
+            GeneratedBindingGuide = savedGeneratedBindingGuide;
+            _currentSnapshot = savedCurrentSnapshot;
+            _savedSnapshot = savedSavedSnapshot;
+            _undoStack.Clear();
+            foreach (var snapshot in undoSnapshots)
+                _undoStack.Push(snapshot);
+            _redoStack.Clear();
+            foreach (var snapshot in redoSnapshots)
+                _redoStack.Push(snapshot);
+            RestoreSelectionContextAfterSnapshot(selectedControlIds, primaryControlId, selectedBindingSourceId, selectedInteractionId);
+        }
+    }
+
+    private static DesignerDocumentFileModel CloneDocumentFileModel(DesignerDocumentFileModel document)
+    {
+        var json = JsonSerializer.Serialize(document, JsonOptions);
+        return JsonSerializer.Deserialize<DesignerDocumentFileModel>(json, JsonOptions) ?? new DesignerDocumentFileModel();
     }
 
     private static IReadOnlyList<GeneratedFileTreeNodeModel> BuildGeneratedFileTreeNodes(IEnumerable<GeneratedFileModel> files)
@@ -7480,7 +7724,9 @@ public partial class MainWindowViewModel : ObservableObject
         }
 
         foreach (var diagnostic in Diagnostics.Where(diagnostic => string.Equals(diagnostic.Category, "Export", StringComparison.OrdinalIgnoreCase)
-                     || string.Equals(diagnostic.Source, "Export", StringComparison.OrdinalIgnoreCase)))
+                     || string.Equals(diagnostic.Source, "Export", StringComparison.OrdinalIgnoreCase)
+                     || (!string.IsNullOrWhiteSpace(diagnostic.Message)
+                         && diagnostic.Message.Contains("OpenForm", StringComparison.OrdinalIgnoreCase))))
         {
             yield return new ExportDiagnosticModel
             {
@@ -7622,6 +7868,9 @@ public partial class MainWindowViewModel : ObservableObject
 
     private string ResolveExportNamespace()
     {
+        if (!string.IsNullOrWhiteSpace(_exportNamespaceOverride))
+            return _exportNamespaceOverride;
+
         return IsMainWindowExportTarget
             ? SanitizeNamespace(ExportProjectNamespace, "AvaloniaApplication1")
             : "GeneratedForms";
@@ -7667,6 +7916,9 @@ public partial class MainWindowViewModel : ObservableObject
 
     private string ResolveExportWindowClassName()
     {
+        if (!string.IsNullOrWhiteSpace(_exportWindowClassNameOverride))
+            return _exportWindowClassNameOverride;
+
         return IsMainWindowExportTarget
             ? "MainWindow"
             : "Form1Window";
@@ -7674,6 +7926,9 @@ public partial class MainWindowViewModel : ObservableObject
 
     private string ResolveExportViewModelClassName()
     {
+        if (!string.IsNullOrWhiteSpace(_exportViewModelClassNameOverride))
+            return _exportViewModelClassNameOverride;
+
         return IsMainWindowExportTarget
             ? "MainWindowViewModel"
             : "Form1ViewModel";
@@ -7879,6 +8134,8 @@ public partial class MainWindowViewModel : ObservableObject
         var dataGridStatus = BuildDataGridBindingChecklistStatus();
         var layoutStatus = BuildLayoutExportPlan();
         var exportableInteractionCount = GetExportableInteractions().Count;
+        var openFormInteractionCount = Interactions.Count(interaction =>
+            string.Equals(interaction.ActionType, InteractionModel.ActionOpenForm, StringComparison.OrdinalIgnoreCase));
         var unsupportedInteractionCount = Math.Max(0, Interactions.Count - exportableInteractionCount);
 
         return new List<ExportChecklistItem>
@@ -7913,6 +8170,15 @@ public partial class MainWindowViewModel : ObservableObject
                 Details = namespaceError
                     ? "Исправьте namespace проекта в дополнительных настройках."
                     : ResolveExportNamespace()
+            },
+            new()
+            {
+                Title = "Forms exported",
+                Value = $"{CurrentProject.Forms.Count}/{CurrentProject.Forms.Count}",
+                Severity = GetSanitizedFormClassConflicts().Count > 0 ? ExportChecklistSeverity.Warning : ExportChecklistSeverity.Ok,
+                Details = CurrentProject.Forms.Count <= 1
+                    ? "Single-form export."
+                    : $"Project export will generate {CurrentProject.Forms.Count} Avalonia windows."
             },
             new()
             {
@@ -7975,6 +8241,15 @@ public partial class MainWindowViewModel : ObservableObject
                         : unsupportedInteractionCount > 0
                             ? $"Будет экспортировано правил: {exportableInteractionCount}. Preview-only/unsupported: {unsupportedInteractionCount}. Проверьте diagnostics."
                             : "Будут экспортированы все реально настроенные обработчики без demo-кода."
+            },
+            new()
+            {
+                Title = "OpenForm interactions",
+                Value = openFormInteractionCount == 0 ? "none" : openFormInteractionCount.ToString(CultureInfo.InvariantCulture),
+                Severity = openFormInteractionCount == 0 ? ExportChecklistSeverity.Ok : ExportChecklistSeverity.Ok,
+                Details = openFormInteractionCount == 0
+                    ? "OpenForm transitions are not configured."
+                    : "Button.Click -> OpenForm handlers will create and show the target window."
             },
             new()
             {
@@ -8226,10 +8501,15 @@ public partial class MainWindowViewModel : ObservableObject
         var windowClassName = ResolveExportWindowClassName();
         var viewModelClassName = ResolveExportViewModelClassName();
         var exportControlNames = BuildExportControlNameMap(Controls, windowClassName, viewModelClassName);
+        var formClassNames = BuildProjectFormClassNameMap();
+        var currentFormId = _exportActiveFormIdOverride ?? ActiveFormDocument?.Id ?? "";
         var exportableInteractions = GetExportableInteractions();
         var hasInteractionHandlers = exportableInteractions.Count > 0;
         var hasShowMessageInteractions = exportableInteractions.Any(item =>
             string.Equals(item.Interaction.ActionType, InteractionModel.ActionShowMessage, StringComparison.OrdinalIgnoreCase));
+        var hasOpenFormDialogInteractions = exportableInteractions.Any(item =>
+            string.Equals(item.Interaction.ActionType, InteractionModel.ActionOpenForm, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(item.Interaction.OpenMode, InteractionModel.OpenModeShowDialog, StringComparison.OrdinalIgnoreCase));
         var hasRoutedInteractionHandlers = exportableInteractions.Any(item =>
             string.Equals(item.EventName, InteractionModel.EventButtonClick, StringComparison.OrdinalIgnoreCase)
             || string.Equals(item.EventName, InteractionModel.EventCheckBoxChecked, StringComparison.OrdinalIgnoreCase)
@@ -8293,8 +8573,7 @@ public partial class MainWindowViewModel : ObservableObject
                     .Where(item => item.Source.Id == button.Id
                         && string.Equals(item.EventName, InteractionModel.EventButtonClick, StringComparison.OrdinalIgnoreCase))
                     .ToList();
-                var needsAsyncButtonHandler = buttonInteractions.Any(item =>
-                    string.Equals(item.Interaction.ActionType, InteractionModel.ActionShowMessage, StringComparison.OrdinalIgnoreCase));
+                var needsAsyncButtonHandler = buttonInteractions.Any(NeedsAsyncInteractionHandler);
                 sb.AppendLine($"    private {(needsAsyncButtonHandler ? "async " : "")}void {handlerName}(object? sender, RoutedEventArgs e)");
                 sb.AppendLine("    {");
                 sb.AppendLine($"        // TODO: добавьте runtime-логику для кнопки {button.Name}.");
@@ -8330,7 +8609,7 @@ public partial class MainWindowViewModel : ObservableObject
         }
 
         if (hasInteractionHandlers)
-            AppendGeneratedInteractionHandlers(sb, exportableInteractions, exportControlNames, skipButtonClickHandlers: false);
+            AppendGeneratedInteractionHandlers(sb, exportableInteractions, exportControlNames, formClassNames, currentFormId, skipButtonClickHandlers: false);
 
         sb.AppendLine("}");
 
@@ -8343,6 +8622,8 @@ public partial class MainWindowViewModel : ObservableObject
         var windowClassName = ResolveExportWindowClassName();
         var viewModelClassName = ResolveExportViewModelClassName();
         var exportControlNames = BuildExportControlNameMap(Controls, windowClassName, viewModelClassName);
+        var formClassNames = BuildProjectFormClassNameMap();
+        var currentFormId = _exportActiveFormIdOverride ?? ActiveFormDocument?.Id ?? "";
         var exportableInteractions = GetExportableInteractions();
         var hasShowMessageInteractions = exportableInteractions.Any(item =>
             string.Equals(item.Interaction.ActionType, InteractionModel.ActionShowMessage, StringComparison.OrdinalIgnoreCase));
@@ -8567,8 +8848,7 @@ public partial class MainWindowViewModel : ObservableObject
                     .Where(item => item.Source.Id == button.Id
                         && string.Equals(item.EventName, InteractionModel.EventButtonClick, StringComparison.OrdinalIgnoreCase))
                     .ToList();
-                var needsAsyncButtonHandler = buttonInteractions.Any(item =>
-                    string.Equals(item.Interaction.ActionType, InteractionModel.ActionShowMessage, StringComparison.OrdinalIgnoreCase));
+                var needsAsyncButtonHandler = buttonInteractions.Any(NeedsAsyncInteractionHandler);
                 sb.AppendLine($"    private {(needsAsyncButtonHandler ? "async " : "")}void {handlerName}(object? sender, RoutedEventArgs e)");
                 sb.AppendLine("    {");
 
@@ -8584,7 +8864,7 @@ public partial class MainWindowViewModel : ObservableObject
 
                 foreach (var interaction in buttonInteractions)
                 {
-                    AppendGeneratedInteractionAction(sb, interaction, exportControlNames, exportControlNames[button.Id], 2, needsAsyncButtonHandler);
+                    AppendGeneratedInteractionAction(sb, interaction, exportControlNames, formClassNames, currentFormId, exportControlNames[button.Id], 2, needsAsyncButtonHandler);
                 }
 
                 sb.AppendLine("    }");
@@ -8622,7 +8902,7 @@ public partial class MainWindowViewModel : ObservableObject
             .Where(item => !string.Equals(item.EventName, InteractionModel.EventButtonClick, StringComparison.OrdinalIgnoreCase))
             .ToList();
         if (extraInteractionHandlers.Count > 0)
-            AppendGeneratedInteractionHandlers(sb, extraInteractionHandlers, exportControlNames, skipButtonClickHandlers: false);
+            AppendGeneratedInteractionHandlers(sb, extraInteractionHandlers, exportControlNames, formClassNames, currentFormId, skipButtonClickHandlers: false);
 
         sb.AppendLine("}");
 
@@ -10454,7 +10734,13 @@ public partial class MainWindowViewModel : ObservableObject
             if (IsDataGridSelectionChangedEvent(eventName) && !ShouldExportRealDataGrid)
                 continue;
 
-            if (!string.Equals(interaction.ActionType, InteractionModel.ActionShowMessage, StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(interaction.ActionType, InteractionModel.ActionOpenForm, StringComparison.OrdinalIgnoreCase))
+            {
+                if (string.IsNullOrWhiteSpace(interaction.TargetFormId)
+                    || !CurrentProject.Forms.Any(form => string.Equals(form.Id, interaction.TargetFormId, StringComparison.OrdinalIgnoreCase)))
+                    continue;
+            }
+            else if (!string.Equals(interaction.ActionType, InteractionModel.ActionShowMessage, StringComparison.OrdinalIgnoreCase))
             {
                 if (target is null || !IsSupportedInteractionTargetAction(target, interaction))
                     continue;
@@ -10617,6 +10903,8 @@ public partial class MainWindowViewModel : ObservableObject
         StringBuilder sb,
         IReadOnlyList<ExportableInteraction> interactions,
         IReadOnlyDictionary<string, string> exportControlNames,
+        IReadOnlyDictionary<string, string> formClassNames,
+        string currentFormId,
         bool skipButtonClickHandlers)
     {
         if (interactions.Count == 0)
@@ -10632,7 +10920,7 @@ public partial class MainWindowViewModel : ObservableObject
             var eventName = group.First().EventName;
             var sourceExportName = exportControlNames[source.Id];
             var handlerName = GetGeneratedInteractionHandlerName(sourceExportName, eventName);
-            var needsAsync = group.Any(item => string.Equals(item.Interaction.ActionType, InteractionModel.ActionShowMessage, StringComparison.OrdinalIgnoreCase));
+            var needsAsync = group.Any(NeedsAsyncInteractionHandler);
             var signature = GetGeneratedInteractionHandlerSignature(handlerName, eventName, needsAsync);
             if (string.IsNullOrWhiteSpace(signature))
                 continue;
@@ -10646,27 +10934,32 @@ public partial class MainWindowViewModel : ObservableObject
                 sb.AppendLine("        if (selectedItem is null)");
                 sb.AppendLine("        {");
                 foreach (var item in group)
-                    AppendGeneratedInteractionAction(sb, item, exportControlNames, "null", 3, needsAsync);
+                    AppendGeneratedInteractionAction(sb, item, exportControlNames, formClassNames, currentFormId, "null", 3, needsAsync);
                 sb.AppendLine("            return;");
                 sb.AppendLine("        }");
                 sb.AppendLine();
                 foreach (var item in group)
-                    AppendGeneratedInteractionAction(sb, item, exportControlNames, "selectedItem", 2, needsAsync);
+                    AppendGeneratedInteractionAction(sb, item, exportControlNames, formClassNames, currentFormId, "selectedItem", 2, needsAsync);
             }
             else
             {
                 foreach (var item in group)
-                    AppendGeneratedInteractionAction(sb, item, exportControlNames, sourceExportName, 2, needsAsync);
+                    AppendGeneratedInteractionAction(sb, item, exportControlNames, formClassNames, currentFormId, sourceExportName, 2, needsAsync);
             }
 
             sb.AppendLine("    }");
             sb.AppendLine();
         }
 
-        AppendGeneratedInteractionHelpers(
-            sb,
-            includeShowMessageHelper: interactions.Any(item =>
-                string.Equals(item.Interaction.ActionType, InteractionModel.ActionShowMessage, StringComparison.OrdinalIgnoreCase)));
+        var needsValueHelpers = interactions.Any(item =>
+            !string.Equals(item.Interaction.ActionType, InteractionModel.ActionOpenForm, StringComparison.OrdinalIgnoreCase));
+        if (needsValueHelpers)
+        {
+            AppendGeneratedInteractionHelpers(
+                sb,
+                includeShowMessageHelper: interactions.Any(item =>
+                    string.Equals(item.Interaction.ActionType, InteractionModel.ActionShowMessage, StringComparison.OrdinalIgnoreCase)));
+        }
     }
 
     private static string GetGeneratedInteractionHandlerName(string sourceExportName, string eventName)
@@ -10707,10 +11000,19 @@ public partial class MainWindowViewModel : ObservableObject
         return string.Empty;
     }
 
+    private static bool NeedsAsyncInteractionHandler(ExportableInteraction item)
+    {
+        return string.Equals(item.Interaction.ActionType, InteractionModel.ActionShowMessage, StringComparison.OrdinalIgnoreCase)
+            || (string.Equals(item.Interaction.ActionType, InteractionModel.ActionOpenForm, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(InteractionModel.NormalizeOpenMode(item.Interaction.OpenMode), InteractionModel.OpenModeShowDialog, StringComparison.OrdinalIgnoreCase));
+    }
+
     private static void AppendGeneratedInteractionAction(
         StringBuilder sb,
         ExportableInteraction item,
         IReadOnlyDictionary<string, string> exportControlNames,
+        IReadOnlyDictionary<string, string> formClassNames,
+        string currentFormId,
         string sourceExpression,
         int indentLevel,
         bool awaitAsyncActions)
@@ -10724,6 +11026,25 @@ public partial class MainWindowViewModel : ObservableObject
             var titleLiteral = ToVerbatimCSharpString(string.IsNullOrWhiteSpace(interaction.MessageTitle) ? "Сообщение" : interaction.MessageTitle);
             var awaitPrefix = awaitAsyncActions ? "await " : "_ = ";
             sb.AppendLine($"{indent}{awaitPrefix}ShowMessageAsync({valueExpression}, {titleLiteral});");
+            return;
+        }
+
+        if (string.Equals(interaction.ActionType, InteractionModel.ActionOpenForm, StringComparison.OrdinalIgnoreCase))
+        {
+            if (!formClassNames.TryGetValue(interaction.TargetFormId, out var targetClassName) || string.IsNullOrWhiteSpace(targetClassName))
+            {
+                sb.AppendLine($"{indent}// OpenForm target is missing: {EscapeCSharp(interaction.TargetFormName)}");
+                return;
+            }
+
+            var windowVariable = $"window{targetClassName}";
+            sb.AppendLine($"{indent}var {windowVariable} = new {targetClassName}();");
+            if (string.Equals(InteractionModel.NormalizeOpenMode(interaction.OpenMode), InteractionModel.OpenModeShowDialog, StringComparison.OrdinalIgnoreCase))
+                sb.AppendLine($"{indent}await {windowVariable}.ShowDialog(this);");
+            else
+                sb.AppendLine($"{indent}{windowVariable}.Show();");
+            if (interaction.CloseCurrentAfterOpen)
+                sb.AppendLine($"{indent}Close();");
             return;
         }
 
@@ -11893,7 +12214,11 @@ public partial class MainWindowViewModel : ObservableObject
             TargetProperty = string.IsNullOrWhiteSpace(interaction.TargetProperty) ? InteractionModel.TargetPropertyText : interaction.TargetProperty,
             SourcePath = interaction.SourcePath,
             TextTemplate = interaction.TextTemplate,
-            MessageTitle = interaction.MessageTitle
+            MessageTitle = interaction.MessageTitle,
+            TargetFormId = interaction.TargetFormId,
+            TargetFormName = interaction.TargetFormName,
+            OpenMode = InteractionModel.NormalizeOpenMode(interaction.OpenMode),
+            CloseCurrentAfterOpen = interaction.CloseCurrentAfterOpen
         };
     }
 
@@ -11909,7 +12234,11 @@ public partial class MainWindowViewModel : ObservableObject
             TargetProperty = string.IsNullOrWhiteSpace(interactionFile.TargetProperty) ? InteractionModel.TargetPropertyText : interactionFile.TargetProperty,
             SourcePath = interactionFile.SourcePath,
             TextTemplate = interactionFile.TextTemplate,
-            MessageTitle = interactionFile.MessageTitle
+            MessageTitle = interactionFile.MessageTitle,
+            TargetFormId = interactionFile.TargetFormId,
+            TargetFormName = interactionFile.TargetFormName,
+            OpenMode = InteractionModel.NormalizeOpenMode(interactionFile.OpenMode),
+            CloseCurrentAfterOpen = interactionFile.CloseCurrentAfterOpen
         };
     }
 
@@ -12986,6 +13315,11 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(HasInteractions));
         OnPropertyChanged(nameof(HasNoInteractions));
         OnPropertyChanged(nameof(CanEditSelectedInteraction));
+        OnPropertyChanged(nameof(IsSelectedInteractionOpenForm));
+        OnPropertyChanged(nameof(IsSelectedInteractionControlTargetVisible));
+        OnPropertyChanged(nameof(HasOpenFormTargets));
+        OnPropertyChanged(nameof(OpenFormTargetForms));
+        OnPropertyChanged(nameof(OpenFormTargetHint));
         OnPropertyChanged(nameof(LogicDesignerSummary));
         OnPropertyChanged(nameof(SelectedInteractionEventHint));
         OnPropertyChanged(nameof(SelectedInteractionActionHint));
@@ -13496,6 +13830,12 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void Interaction_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (sender is InteractionModel interaction
+            && e.PropertyName is nameof(InteractionModel.ActionType) or nameof(InteractionModel.TargetFormId))
+        {
+            EnsureOpenFormInteractionDefaults(interaction);
+        }
+
         RaiseInteractionDesignerProperties();
         RebuildPropertyGrid();
         NotifyDesignerStateChanged();
@@ -13503,6 +13843,8 @@ public partial class MainWindowViewModel : ObservableObject
 
     partial void OnSelectedInteractionChanged(InteractionModel? value)
     {
+        if (value is not null)
+            EnsureOpenFormInteractionDefaults(value);
         RaiseInteractionDesignerProperties();
     }
 

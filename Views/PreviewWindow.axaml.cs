@@ -43,6 +43,8 @@ public partial class PreviewWindow : Window
         DataFormat.CreateStringApplicationFormat("formdesigner-preview-datagrid-ungroup-field");
 
     private DesignerDocumentFileModel _document = new();
+    private readonly Dictionary<string, DesignerFormDocument> _projectFormsById = new(StringComparer.OrdinalIgnoreCase);
+    private string _currentFormId = "";
     private readonly Dictionary<string, Bitmap?> _imageCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, (string Signature, IReadOnlyList<Dictionary<string, string>> Rows)> _sqlPreviewRowsBySourceId = new(StringComparer.OrdinalIgnoreCase);
     private readonly PreviewRuntimeService _previewRuntimeService = new();
@@ -92,6 +94,21 @@ public partial class PreviewWindow : Window
     {
         _document = document ?? throw new ArgumentNullException(nameof(document));
         ApplyWindowSettings();
+    }
+
+    public PreviewWindow(
+        DesignerDocumentFileModel document,
+        IDesignerRegistry registry,
+        IEnumerable<DesignerFormDocument> projectForms,
+        string currentFormId)
+        : this(document, registry)
+    {
+        _currentFormId = currentFormId ?? string.Empty;
+        foreach (var form in projectForms)
+        {
+            if (!string.IsNullOrWhiteSpace(form.Id))
+                _projectFormsById[form.Id] = form;
+        }
     }
 
     private PreviewRuntimeContext EnsurePreviewRuntimeContext()
@@ -152,7 +169,11 @@ public partial class PreviewWindow : Window
             TargetProperty = interaction.TargetProperty,
             SourcePath = interaction.SourcePath,
             TextTemplate = interaction.TextTemplate,
-            MessageTitle = interaction.MessageTitle
+            MessageTitle = interaction.MessageTitle,
+            TargetFormId = interaction.TargetFormId,
+            TargetFormName = interaction.TargetFormName,
+            OpenMode = InteractionModel.NormalizeOpenMode(interaction.OpenMode),
+            CloseCurrentAfterOpen = interaction.CloseCurrentAfterOpen
         });
     }
 
@@ -1235,8 +1256,62 @@ public partial class PreviewWindow : Window
             _ = ShowRuntimeMessageAsync(message.Message, message.Title);
         }
 
+        foreach (var request in result.OpenFormRequests)
+        {
+            _ = OpenRuntimeFormAsync(request);
+        }
+
         SyncPreviewRuntimeDiagnostics();
         return result.HasVisualChanges;
+    }
+
+    private async Task OpenRuntimeFormAsync(PreviewOpenFormRequest request)
+    {
+        try
+        {
+            if (!_projectFormsById.TryGetValue(request.TargetFormId, out var targetForm))
+            {
+                EnsurePreviewRuntimeContext().AddError(
+                    "Preview interaction failed",
+                    "Preview errors",
+                    $"OpenForm target form not found in preview project: '{request.TargetFormName}'.",
+                    "Check that the target form still exists in Project Explorer.");
+                SyncPreviewRuntimeDiagnostics();
+                return;
+            }
+
+            var previewWindow = new PreviewWindow(
+                ClonePreviewFormDocument(targetForm.Document),
+                _registry,
+                _projectFormsById.Values,
+                targetForm.Id)
+            {
+                Title = targetForm.DisplayName
+            };
+
+            if (string.Equals(request.OpenMode, InteractionModel.OpenModeShowDialog, StringComparison.OrdinalIgnoreCase))
+                await previewWindow.ShowDialog(this);
+            else
+                previewWindow.Show(this);
+
+            if (request.CloseCurrentAfterOpen)
+                Close();
+        }
+        catch (Exception ex)
+        {
+            EnsurePreviewRuntimeContext().AddError(
+                "Preview interaction failed",
+                "Preview errors",
+                $"OpenForm failed in preview runtime. {ex.Message}",
+                "Check OpenForm interaction settings and reload preview.");
+            SyncPreviewRuntimeDiagnostics();
+        }
+    }
+
+    private static DesignerDocumentFileModel ClonePreviewFormDocument(DesignerDocumentFileModel document)
+    {
+        var json = System.Text.Json.JsonSerializer.Serialize(document);
+        return System.Text.Json.JsonSerializer.Deserialize<DesignerDocumentFileModel>(json) ?? new DesignerDocumentFileModel();
     }
 
     private async Task ShowRuntimeMessageAsync(string message, string? title)

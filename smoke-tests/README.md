@@ -13,7 +13,7 @@ Runner:
 1. Создаёт документ через текущий `MainWindowViewModel`.
 2. Вызывает `GenerateXaml()`.
 3. Создаёт временный Avalonia project.
-4. Копирует generated `MainWindow.axaml` и `MainWindow.axaml.cs`.
+4. Копирует generated files (`MainWindow.axaml`, `MainWindow.axaml.cs`, дополнительные form windows).
 5. Добавляет нужные NuGet-пакеты.
 6. Запускает `dotnet build`.
 7. Печатает `PASS/FAIL` по каждому сценарию.
@@ -41,6 +41,9 @@ artifacts/smoke-tests/latest-run.txt
 - `InteractionsExport`  
   `Button.Click -> ShowMessage`, `CheckBox.Checked/Unchecked -> Show/Hide`, `DataGrid.SelectionChanged -> TextBox.Text`.
 
+- `MultiFormOpenFormExport`
+  Designer project with `Form1` and `Form2`; `Button.Click -> OpenForm -> Form2`; generated app includes both windows and builds.
+
 - `PluginFallbackExport`  
   Plugin control при выключенных runtime references экспортируется как безопасный placeholder без plugin DLL.
 
@@ -66,4 +69,3 @@ DataGrid scenarios additionally use:
 ## Notes
 
 Smoke tests intentionally live outside the main solution build. `FormDesigner.csproj` excludes `smoke-tests/**`, so the runner does not add extra entry points or generated files to the editor application.
-

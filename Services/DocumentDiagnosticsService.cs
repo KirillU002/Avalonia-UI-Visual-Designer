@@ -118,7 +118,8 @@ public sealed class DocumentDiagnosticsService
             }
 
             var isShowMessage = string.Equals(interaction.ActionType, InteractionModel.ActionShowMessage, StringComparison.OrdinalIgnoreCase);
-            if (!isShowMessage)
+            var isOpenForm = string.Equals(interaction.ActionType, InteractionModel.ActionOpenForm, StringComparison.OrdinalIgnoreCase);
+            if (!isShowMessage && !isOpenForm)
             {
                 if (target is null)
                 {
@@ -150,6 +151,39 @@ public sealed class DocumentDiagnosticsService
                 }
 
                 ValidateInteractionLoop(interaction, source, target, diagnostics);
+            }
+
+            if (isOpenForm)
+            {
+                if (!string.Equals(eventName, InteractionModel.EventButtonClick, StringComparison.OrdinalIgnoreCase))
+                {
+                    diagnostics.Add(new DocumentDiagnosticModel
+                    {
+                        Severity = DocumentDiagnosticSeverity.Error,
+                        Source = source.NameOrFallback(),
+                        Category = "Логика",
+                        Message = "OpenForm сейчас поддерживается для Button.Click.",
+                        Recommendation = "Выберите кнопку как source control и событие Button.Click.",
+                        RelatedControlId = source.Id,
+                        RelatedControlName = source.Name
+                    });
+                }
+
+                if (string.IsNullOrWhiteSpace(interaction.TargetFormId))
+                {
+                    diagnostics.Add(new DocumentDiagnosticModel
+                    {
+                        Severity = DocumentDiagnosticSeverity.Error,
+                        Source = source.NameOrFallback(),
+                        Category = "Логика",
+                        Message = "OpenForm target form не выбран.",
+                        Recommendation = "Добавьте вторую форму и выберите ее в Target form.",
+                        RelatedControlId = source.Id,
+                        RelatedControlName = source.Name
+                    });
+                }
+
+                continue;
             }
 
             if (IsDataGridSelectionChangedEvent(eventName))
