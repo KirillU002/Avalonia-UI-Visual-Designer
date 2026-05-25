@@ -944,6 +944,9 @@ public partial class MainWindowViewModel : ObservableObject
     public bool HasOpenDocuments => DocumentTabs.Count > 0;
     public string ActiveDocumentTitle => ActiveFormDocument?.TabTitle ?? CurrentDocumentDisplayName;
     public string ProjectExplorerSummary => $"{CurrentProjectDisplayName} · {CurrentProjectSummary}";
+    public string ProjectExplorerHeaderTitle => $"Project: {CurrentProjectDisplayName}";
+    public string ProjectExplorerScopeText => "Designer project structure";
+    public string ProjectExplorerScopeHint => "Internal designer project model. These nodes are not real .sln folders until you export to an Avalonia project.";
     public bool HasProjectAssets => CurrentProject.Assets.Count > 0;
     public bool HasProjectResources => CurrentProject.Resources.Count > 0;
     public string WorkspaceAutosaveStatusText => AutosaveStatusText;
@@ -1154,6 +1157,11 @@ public partial class MainWindowViewModel : ObservableObject
     public EditorCommand? ReopenClosedDocumentEditorCommand => GetEditorCommand(EditorCommandId.ReopenClosedDocument);
     public EditorCommand? OpenProjectSettingsEditorCommand => GetEditorCommand(EditorCommandId.OpenProjectSettings);
     public EditorCommand? OpenExplorerEditorCommand => GetEditorCommand(EditorCommandId.OpenExplorer);
+    public EditorCommand? NewFormEditorCommand => GetEditorCommand(EditorCommandId.NewForm);
+    public EditorCommand? OpenFormEditorCommand => GetEditorCommand(EditorCommandId.OpenForm);
+    public EditorCommand? RenameFormEditorCommand => GetEditorCommand(EditorCommandId.RenameForm);
+    public EditorCommand? DuplicateFormEditorCommand => GetEditorCommand(EditorCommandId.DuplicateForm);
+    public EditorCommand? DeleteFormEditorCommand => GetEditorCommand(EditorCommandId.DeleteForm);
     public EditorCommand? OpenExportPipelineEditorCommand => GetEditorCommand(EditorCommandId.OpenExportPipeline);
     public EditorCommand? RefreshGeneratedCodeEditorCommand => GetEditorCommand(EditorCommandId.RefreshGeneratedCode);
     public EditorCommand? CopyCurrentGeneratedFileEditorCommand => GetEditorCommand(EditorCommandId.CopyCurrentGeneratedFile);
@@ -1733,6 +1741,11 @@ public partial class MainWindowViewModel : ObservableObject
         RegisterEditorCommand(EditorCommandId.AddForm, "Add Form", "Add a new form document to the project.", "", "", EditorCommandCategory.Tools, AddForm);
         RegisterEditorCommand(EditorCommandId.AddAsset, "Add Asset", "Import/register an asset in the project.", "", "", EditorCommandCategory.Tools, () => RequestExternalEditorCommand(EditorCommandId.AddAsset));
         RegisterEditorCommand(EditorCommandId.AddResource, "Add Resource", "Add a project ResourceDictionary.", "", "", EditorCommandCategory.Tools, AddResource);
+        RegisterEditorCommand(EditorCommandId.NewForm, "New Form", "Create and open a new form in the designer project.", "", "", EditorCommandCategory.Tools, AddForm);
+        RegisterEditorCommand(EditorCommandId.OpenForm, "Open Form", "Open the selected form document.", "", "", EditorCommandCategory.Tools, OpenSelectedProjectForm, () => StateWhen(SelectedProjectExplorerItem?.Source is DesignerFormDocument, "Select a form in Project Explorer."));
+        RegisterEditorCommand(EditorCommandId.RenameForm, "Rename Form", "Rename the selected form in Project Explorer.", "", "", EditorCommandCategory.Tools, RenameSelectedProjectForm, () => StateWhen(SelectedProjectExplorerItem?.Source is DesignerFormDocument, "Select a form in Project Explorer."));
+        RegisterEditorCommand(EditorCommandId.DuplicateForm, "Duplicate Form", "Duplicate the selected form document.", "", "", EditorCommandCategory.Tools, DuplicateSelectedProjectForm, () => StateWhen(SelectedProjectExplorerItem?.Source is DesignerFormDocument, "Select a form in Project Explorer."));
+        RegisterEditorCommand(EditorCommandId.DeleteForm, "Delete Form", "Delete the selected form document.", "", "", EditorCommandCategory.Tools, DeleteSelectedProjectForm, () => StateWhen(SelectedProjectExplorerItem?.Source is DesignerFormDocument && CurrentProject.Forms.Count > 1, "Select a form; projects must keep at least one form."), isDangerous: true);
         RegisterEditorCommand(EditorCommandId.CloseDocument, "Close Document", "Close the active document tab.", "", "Ctrl+F4", EditorCommandCategory.File, CloseActiveDocument, () => StateWhen(HasOpenDocuments, "No open document."));
         RegisterEditorCommand(EditorCommandId.SwitchDocument, "Switch Document", "Switch to a document tab.", "", "", EditorCommandCategory.File, () => { });
         RegisterEditorCommand(EditorCommandId.ReopenClosedDocument, "Reopen Closed Document", "Reopen the most recently closed document.", "", "", EditorCommandCategory.File, ReopenClosedDocument, () => StateWhen(Workspace.Session.RecentlyClosedDocumentIds.Count > 0, "No recently closed document."));
@@ -1979,6 +1992,11 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(ReopenClosedDocumentEditorCommand));
         OnPropertyChanged(nameof(OpenProjectSettingsEditorCommand));
         OnPropertyChanged(nameof(OpenExplorerEditorCommand));
+        OnPropertyChanged(nameof(NewFormEditorCommand));
+        OnPropertyChanged(nameof(OpenFormEditorCommand));
+        OnPropertyChanged(nameof(RenameFormEditorCommand));
+        OnPropertyChanged(nameof(DuplicateFormEditorCommand));
+        OnPropertyChanged(nameof(DeleteFormEditorCommand));
         OnPropertyChanged(nameof(OpenExportPipelineEditorCommand));
         OnPropertyChanged(nameof(RefreshGeneratedCodeEditorCommand));
         OnPropertyChanged(nameof(CopyCurrentGeneratedFileEditorCommand));
@@ -4489,9 +4507,9 @@ public partial class MainWindowViewModel : ObservableObject
         var root = new ProjectExplorerItemModel
         {
             Id = CurrentProject.Id,
-            TargetId = CurrentProject.Id,
+            TargetId = "Project",
             ItemType = "Project",
-            Icon = "Project",
+            Icon = "P",
             Name = CurrentProjectDisplayName,
             Source = CurrentProject,
             IsExpanded = true
@@ -4505,14 +4523,14 @@ public partial class MainWindowViewModel : ObservableObject
                 Id = form.Id,
                 TargetId = form.Id,
                 ItemType = "Form",
-                Icon = "Form",
+                Icon = "F",
                 Name = form.DisplayName,
                 Source = form,
                 IsActive = string.Equals(form.Id, ActiveFormDocument?.Id, StringComparison.OrdinalIgnoreCase)
             });
         }
 
-        var viewModels = CreateProjectFolder("ViewModels", "ViewModels", CurrentProject.ViewModels.Count);
+        var viewModels = CreateProjectFolder("ViewModels", "VM", CurrentProject.ViewModels.Count);
         foreach (var document in CurrentProject.ViewModels)
         {
             viewModels.Children.Add(new ProjectExplorerItemModel
@@ -4520,13 +4538,13 @@ public partial class MainWindowViewModel : ObservableObject
                 Id = document.Id,
                 TargetId = document.Id,
                 ItemType = "ViewModel",
-                Icon = "Code",
+                Icon = "VM",
                 Name = document.Name,
                 Source = document
             });
         }
 
-        var assets = CreateProjectFolder("Assets", "Assets", CurrentProject.Assets.Count);
+        var assets = CreateProjectFolder("Assets", "A", CurrentProject.Assets.Count);
         foreach (var asset in CurrentProject.Assets)
         {
             assets.Children.Add(new ProjectExplorerItemModel
@@ -4534,13 +4552,13 @@ public partial class MainWindowViewModel : ObservableObject
                 Id = asset.Id,
                 TargetId = asset.Id,
                 ItemType = "Asset",
-                Icon = asset.Kind,
+                Icon = "A",
                 Name = asset.Name,
                 Source = asset
             });
         }
 
-        var resources = CreateProjectFolder("Resources", "Resources", CurrentProject.Resources.Count);
+        var resources = CreateProjectFolder("Resources", "R", CurrentProject.Resources.Count);
         foreach (var resource in CurrentProject.Resources)
         {
             resources.Children.Add(new ProjectExplorerItemModel
@@ -4548,13 +4566,13 @@ public partial class MainWindowViewModel : ObservableObject
                 Id = resource.Id,
                 TargetId = resource.Id,
                 ItemType = "Resource",
-                Icon = "Resource",
+                Icon = "R",
                 Name = resource.Name,
                 Source = resource
             });
         }
 
-        var profiles = CreateProjectFolder("Export Profiles", "ExportProfile", CurrentProject.ExportProfiles.Count);
+        var profiles = CreateProjectFolder("Export Profiles", "EP", CurrentProject.ExportProfiles.Count);
         foreach (var profile in CurrentProject.ExportProfiles)
         {
             profiles.Children.Add(new ProjectExplorerItemModel
@@ -4562,11 +4580,15 @@ public partial class MainWindowViewModel : ObservableObject
                 Id = profile.Id,
                 TargetId = profile.Id,
                 ItemType = "ExportProfile",
-                Icon = "Export",
+                Icon = "EP",
                 Name = profile.Name,
                 Source = profile
             });
         }
+
+        AddEmptyPlaceholderIfNeeded(viewModels, "No ViewModels yet.");
+        AddEmptyPlaceholderIfNeeded(assets, "No assets yet. Use Asset to register an image.");
+        AddEmptyPlaceholderIfNeeded(resources, "No resources yet. Use Res to create a ResourceDictionary.");
 
         root.Children.Add(forms);
         root.Children.Add(viewModels);
@@ -4590,6 +4612,22 @@ public partial class MainWindowViewModel : ObservableObject
             Name = count > 0 ? $"{name} ({count})" : name,
             IsExpanded = true
         };
+    }
+
+    private static void AddEmptyPlaceholderIfNeeded(ProjectExplorerItemModel folder, string text)
+    {
+        if (folder.Children.Count > 0)
+            return;
+
+        folder.Children.Add(new ProjectExplorerItemModel
+        {
+            Id = $"{folder.Id}:empty",
+            TargetId = folder.TargetId,
+            ItemType = "Empty",
+            Icon = "",
+            Name = text,
+            IsExpanded = false
+        });
     }
 
     private void NewProject()
@@ -4729,9 +4767,42 @@ public partial class MainWindowViewModel : ObservableObject
     {
         if (item?.Source is DesignerFormDocument form)
         {
-            if (!Workspace.Session.OpenDocumentIds.Contains(form.Id))
-                Workspace.Session.OpenDocumentIds.Add(form.Id);
-            ApplyFormDocument(form);
+            OpenFormDocument(form);
+            return;
+        }
+
+        if (item is { IsFolder: true })
+        {
+            item.IsExpanded = !item.IsExpanded;
+            StatusText = item.Children.Count == 0
+                ? "This virtual project folder is empty."
+                : $"{item.DisplayName}: {(item.IsExpanded ? "expanded" : "collapsed")}.";
+            return;
+        }
+
+        if (item?.Source is DesignerAssetModel asset)
+        {
+            StatusText = $"Asset selected: {asset.DisplayPath}";
+            return;
+        }
+
+        if (item?.Source is DesignerResourceModel resource)
+        {
+            WorkspaceMode = WorkspaceModeCode;
+            GenerateXaml();
+            SelectedGeneratedFile = GeneratedFiles.FirstOrDefault(file => string.Equals(file.Path, resource.RelativePath, StringComparison.OrdinalIgnoreCase))
+                ?? SelectedGeneratedFile;
+            StatusText = $"Resource selected: {resource.RelativePath}";
+            return;
+        }
+
+        if (item?.Source is DesignerExportProfileModel profile)
+        {
+            ExportProjectNamespace = string.IsNullOrWhiteSpace(profile.Namespace) ? ExportProjectNamespace : profile.Namespace;
+            LayoutExportMode = NormalizeLayoutExportMode(profile.LayoutExportMode);
+            DataGridExportMode = NormalizeDataGridExportMode(profile.DataGridExportMode);
+            WorkspaceMode = WorkspaceModeCode;
+            StatusText = $"Export profile selected: {profile.Name}";
         }
     }
 
@@ -4773,6 +4844,69 @@ public partial class MainWindowViewModel : ObservableObject
 
         MarkWorkspaceStructureChanged();
         StatusText = $"Form deleted: {form.DisplayName}";
+    }
+
+    [RelayCommand]
+    private void BeginRenameProjectExplorerItem(ProjectExplorerItemModel? item)
+    {
+        if (item is null || !item.CanRename)
+            return;
+
+        item.IsRenaming = true;
+        SelectedProjectExplorerItem = item;
+        StatusText = $"Renaming: {item.DisplayName}";
+    }
+
+    [RelayCommand]
+    private void CommitProjectExplorerRename(ProjectExplorerItemModel? item)
+    {
+        if (item is null)
+            return;
+
+        item.IsRenaming = false;
+        if (item.Source is DesignerFormDocument form)
+        {
+            form.Document.FormTitle = form.DisplayName;
+            form.RelativePath = $"Forms/{form.DisplayName}.formdesigner.json";
+            if (string.Equals(form.Id, ActiveFormDocument?.Id, StringComparison.OrdinalIgnoreCase))
+                FormTitle = form.DisplayName;
+        }
+
+        MarkWorkspaceStructureChanged();
+        StatusText = $"Renamed: {item.DisplayName}";
+    }
+
+    private void OpenSelectedProjectForm()
+    {
+        if (SelectedProjectExplorerItem?.Source is DesignerFormDocument form)
+            OpenFormDocument(form);
+    }
+
+    private void RenameSelectedProjectForm()
+    {
+        if (SelectedProjectExplorerItem?.Source is DesignerFormDocument)
+            BeginRenameProjectExplorerItem(SelectedProjectExplorerItem);
+    }
+
+    private void DuplicateSelectedProjectForm()
+    {
+        DuplicateProjectExplorerItem(SelectedProjectExplorerItem);
+    }
+
+    private void DeleteSelectedProjectForm()
+    {
+        DeleteProjectExplorerItem(SelectedProjectExplorerItem);
+    }
+
+    private void OpenFormDocument(DesignerFormDocument form)
+    {
+        if (!Workspace.Session.OpenDocumentIds.Contains(form.Id))
+            Workspace.Session.OpenDocumentIds.Add(form.Id);
+
+        if (!string.Equals(form.Id, ActiveFormDocument?.Id, StringComparison.OrdinalIgnoreCase))
+            ApplyFormDocument(form);
+
+        StatusText = $"Opened form: {form.DisplayName}";
     }
 
     private void MarkWorkspaceStructureChanged()
@@ -12723,6 +12857,9 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(CurrentProjectDisplayName));
         OnPropertyChanged(nameof(CurrentProjectSummary));
         OnPropertyChanged(nameof(ProjectExplorerSummary));
+        OnPropertyChanged(nameof(ProjectExplorerHeaderTitle));
+        OnPropertyChanged(nameof(ProjectExplorerScopeText));
+        OnPropertyChanged(nameof(ProjectExplorerScopeHint));
         OnPropertyChanged(nameof(HasProjectAssets));
         OnPropertyChanged(nameof(HasProjectResources));
         OnPropertyChanged(nameof(HasMultipleDocuments));
@@ -13714,6 +13851,12 @@ public partial class MainWindowViewModel : ObservableObject
             return;
 
         Workspace.Session.SelectedProjectItemId = value.TargetId;
+        if (value.Source is DesignerFormDocument form)
+            OpenFormDocument(form);
+        else if (value.IsEmptyPlaceholder)
+            StatusText = "This virtual project folder is empty.";
+
+        RefreshEditorCommands();
     }
 
     partial void OnStatusTextChanged(string value)

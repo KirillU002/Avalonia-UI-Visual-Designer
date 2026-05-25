@@ -6363,6 +6363,19 @@ public partial class MainWindow : Window
         await SaveAppSettingsNowAsync();
     }
 
+    private void ProjectExplorerItem_DoubleTapped(object? sender, TappedEventArgs e)
+    {
+        if (sender is not Control { DataContext: ProjectExplorerItemModel item })
+            return;
+
+        if (item.CanOpen)
+            VM.OpenProjectExplorerItemCommand.Execute(item);
+        else if (item.IsFolder)
+            item.IsExpanded = !item.IsExpanded;
+
+        e.Handled = true;
+    }
+
     private void Control_PointerPressed(object? sender, PointerPressedEventArgs e)
     {
         if (VM.IsUserPreviewMode || _isPanningViewport)

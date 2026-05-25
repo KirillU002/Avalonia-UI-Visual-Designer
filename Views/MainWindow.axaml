@@ -774,18 +774,33 @@
               <Grid ColumnDefinitions="*,Auto,Auto,Auto"
                     ColumnSpacing="6">
                 <StackPanel Spacing="3">
-                  <TextBlock Text="{Binding CurrentProjectDisplayName}"
+                  <TextBlock Text="{Binding ProjectExplorerHeaderTitle}"
                              FontSize="16"
                              FontWeight="Bold"
                              TextTrimming="CharacterEllipsis"/>
-                  <TextBlock Text="{Binding CurrentProjectSummary}"
-                             Foreground="#64748B"
-                             FontSize="12"
-                             TextTrimming="CharacterEllipsis"/>
+                  <StackPanel Orientation="Horizontal"
+                              Spacing="6">
+                    <Border Background="#E0F2FE"
+                            BorderBrush="#7DD3FC"
+                            BorderThickness="1"
+                            CornerRadius="999"
+                            Padding="7,2"
+                            ToolTip.Tip="{Binding ProjectExplorerScopeHint}">
+                      <TextBlock Text="{Binding ProjectExplorerScopeText}"
+                                 Foreground="#075985"
+                                 FontSize="11"
+                                 FontWeight="SemiBold"/>
+                    </Border>
+                    <TextBlock Text="{Binding CurrentProjectSummary}"
+                               Foreground="#64748B"
+                               FontSize="12"
+                               VerticalAlignment="Center"
+                               TextTrimming="CharacterEllipsis"/>
+                  </StackPanel>
                 </StackPanel>
                 <Button Grid.Column="1"
                         Content="+Form"
-                        Command="{Binding AddFormEditorCommand}"
+                        Command="{Binding NewFormEditorCommand}"
                         Classes="data-action-button"
                         Padding="8,5"
                         MinHeight="28"/>
@@ -832,7 +847,8 @@
                       <Border Background="{Binding RowBackground}"
                               CornerRadius="6"
                               Padding="6,4"
-                              Margin="0,1">
+                              Margin="0,1"
+                              DoubleTapped="ProjectExplorerItem_DoubleTapped">
                         <Grid ColumnDefinitions="Auto,*,Auto"
                               ColumnSpacing="7">
                           <Border Width="20"
@@ -853,36 +869,65 @@
                             <TextBlock Text="{Binding DisplayName}"
                                        FontWeight="SemiBold"
                                        FontSize="13"
+                                       IsVisible="{Binding IsDisplayNameVisible}"
                                        TextTrimming="CharacterEllipsis"/>
+                            <TextBox Text="{Binding Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                     IsVisible="{Binding IsRenameEditorVisible}"
+                                     MinHeight="26"
+                                     Padding="6,3"
+                                     FontSize="12"/>
                             <TextBlock Text="{Binding SecondaryText}"
                                        Foreground="#64748B"
                                        FontSize="11"
                                        TextTrimming="CharacterEllipsis"/>
                           </StackPanel>
-                          <Button Grid.Column="2"
-                                  Content="Open"
-                                  Command="{Binding #RootWindow.DataContext.OpenProjectExplorerItemCommand}"
-                                  CommandParameter="{Binding}"
-                                  Classes="data-action-button"
-                                  Padding="7,3"
-                                  MinHeight="24"/>
+                          <StackPanel Grid.Column="2"
+                                      Orientation="Horizontal"
+                                      Spacing="4">
+                            <Button Content="Open"
+                                    Command="{Binding #RootWindow.DataContext.OpenProjectExplorerItemCommand}"
+                                    CommandParameter="{Binding}"
+                                    Classes="data-action-button"
+                                    Padding="7,3"
+                                    MinHeight="24"
+                                    IsVisible="{Binding CanOpen}"/>
+                            <Button Content="Done"
+                                    Command="{Binding #RootWindow.DataContext.CommitProjectExplorerRenameCommand}"
+                                    CommandParameter="{Binding}"
+                                    Classes="data-action-button"
+                                    Padding="7,3"
+                                    MinHeight="24"
+                                    IsVisible="{Binding IsRenameEditorVisible}"/>
+                          </StackPanel>
                         </Grid>
                         <Border.ContextMenu>
                           <ContextMenu>
                             <MenuItem Header="Open"
                                       Command="{Binding #RootWindow.DataContext.OpenProjectExplorerItemCommand}"
-                                      CommandParameter="{Binding}"/>
-                            <MenuItem Header="Duplicate"
+                                      CommandParameter="{Binding}"
+                                      IsVisible="{Binding CanOpen}"/>
+                            <MenuItem Header="Rename"
+                                      Command="{Binding #RootWindow.DataContext.BeginRenameProjectExplorerItemCommand}"
+                                      CommandParameter="{Binding}"
+                                      IsVisible="{Binding CanRename}"/>
+                            <MenuItem Header="Duplicate Form"
                                       Command="{Binding #RootWindow.DataContext.DuplicateProjectExplorerItemCommand}"
-                                      CommandParameter="{Binding}"/>
-                            <MenuItem Header="Delete"
+                                      CommandParameter="{Binding}"
+                                      IsVisible="{Binding CanDuplicate}"/>
+                            <MenuItem Header="Delete Form"
                                       Command="{Binding #RootWindow.DataContext.DeleteProjectExplorerItemCommand}"
-                                      CommandParameter="{Binding}"/>
+                                      CommandParameter="{Binding}"
+                                      IsVisible="{Binding CanDelete}"/>
                             <Separator/>
                             <MenuItem Header="New Form"
-                                      Command="{Binding #RootWindow.DataContext.AddFormEditorCommand}"/>
+                                      Command="{Binding #RootWindow.DataContext.NewFormEditorCommand}"
+                                      IsVisible="{Binding CanAddForm}"/>
+                            <MenuItem Header="Add Asset"
+                                      Command="{Binding #RootWindow.DataContext.AddAssetEditorCommand}"
+                                      IsVisible="{Binding CanAddAsset}"/>
                             <MenuItem Header="Add Resource"
-                                      Command="{Binding #RootWindow.DataContext.AddResourceEditorCommand}"/>
+                                      Command="{Binding #RootWindow.DataContext.AddResourceEditorCommand}"
+                                      IsVisible="{Binding CanAddResource}"/>
                           </ContextMenu>
                         </Border.ContextMenu>
                       </Border>

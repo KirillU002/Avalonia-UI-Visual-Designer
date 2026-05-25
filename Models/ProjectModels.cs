@@ -218,6 +218,7 @@ public sealed class ProjectExplorerItemModel : INotifyPropertyChanged
 {
     private bool _isActive;
     private bool _isExpanded = true;
+    private bool _isRenaming;
     private string _name = "";
 
     public string Id { get; set; } = Guid.NewGuid().ToString("N");
@@ -239,7 +240,18 @@ public sealed class ProjectExplorerItemModel : INotifyPropertyChanged
                 return;
             _name = value;
             if (Source is DesignerFormDocument form)
+            {
                 form.Name = value;
+                form.Document.FormTitle = value;
+            }
+            else if (Source is DesignerResourceModel resource)
+            {
+                resource.Name = value;
+            }
+            else if (Source is DesignerExportProfileModel profile)
+            {
+                profile.Name = value;
+            }
             OnPropertyChanged();
             OnPropertyChanged(nameof(DisplayName));
         }
@@ -272,11 +284,47 @@ public sealed class ProjectExplorerItemModel : INotifyPropertyChanged
         }
     }
 
+    public bool IsRenaming
+    {
+        get => _isRenaming;
+        set
+        {
+            if (_isRenaming == value)
+                return;
+            _isRenaming = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(IsDisplayNameVisible));
+            OnPropertyChanged(nameof(IsRenameEditorVisible));
+        }
+    }
+
     public ObservableCollection<ProjectExplorerItemModel> Children { get; } = new();
 
     public bool HasChildren => Children.Count > 0;
 
-    public string RowBackground => IsActive ? "#DBEAFE" : "Transparent";
+    public bool IsFolder => ItemType == "Folder" || ItemType == "Project";
+
+    public bool IsEmptyPlaceholder => ItemType == "Empty";
+
+    public bool CanOpen => Source is DesignerFormDocument or DesignerResourceModel or DesignerExportProfileModel;
+
+    public bool CanRename => Source is DesignerFormDocument or DesignerResourceModel or DesignerExportProfileModel;
+
+    public bool CanDuplicate => Source is DesignerFormDocument;
+
+    public bool CanDelete => Source is DesignerFormDocument;
+
+    public bool CanAddForm => (ItemType is "Project" or "Folder") && (TargetId == "Forms" || TargetId == "Project");
+
+    public bool CanAddAsset => (ItemType is "Project" or "Folder") && (TargetId == "Assets" || TargetId == "Project");
+
+    public bool CanAddResource => (ItemType is "Project" or "Folder") && (TargetId == "Resources" || TargetId == "Project");
+
+    public bool IsDisplayNameVisible => !IsRenaming;
+
+    public bool IsRenameEditorVisible => IsRenaming;
+
+    public string RowBackground => IsActive ? "#DBEAFE" : IsEmptyPlaceholder ? "#00000000" : "Transparent";
 
     public string SecondaryText => ItemType switch
     {
@@ -284,6 +332,8 @@ public sealed class ProjectExplorerItemModel : INotifyPropertyChanged
         "Asset" when Source is DesignerAssetModel asset => asset.DisplayPath,
         "Resource" => "ResourceDictionary",
         "ExportProfile" => "Export profile",
+        "Project" => "Designer project model",
+        "Empty" => "Empty",
         _ => ItemType
     };
 
