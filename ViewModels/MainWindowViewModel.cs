@@ -947,6 +947,8 @@ public partial class MainWindowViewModel : ObservableObject
     public string ProjectExplorerHeaderTitle => $"Project: {CurrentProjectDisplayName}";
     public string ProjectExplorerScopeText => "Designer project structure";
     public string ProjectExplorerScopeHint => "Internal designer project model. These nodes are not real .sln folders until you export to an Avalonia project.";
+    public string ProjectExplorerCompactSummary =>
+        $"{CurrentProject.Forms.Count} form{(CurrentProject.Forms.Count == 1 ? "" : "s")} · {CurrentProject.Assets.Count} asset{(CurrentProject.Assets.Count == 1 ? "" : "s")}";
     public bool HasProjectAssets => CurrentProject.Assets.Count > 0;
     public bool HasProjectResources => CurrentProject.Resources.Count > 0;
     public string WorkspaceAutosaveStatusText => AutosaveStatusText;
@@ -4504,18 +4506,7 @@ public partial class MainWindowViewModel : ObservableObject
     private void RebuildProjectExplorer()
     {
         ProjectExplorerItems.Clear();
-        var root = new ProjectExplorerItemModel
-        {
-            Id = CurrentProject.Id,
-            TargetId = "Project",
-            ItemType = "Project",
-            Icon = "P",
-            Name = CurrentProjectDisplayName,
-            Source = CurrentProject,
-            IsExpanded = true
-        };
-
-        var forms = CreateProjectFolder("Forms", "Forms", CurrentProject.Forms.Count);
+        var forms = CreateProjectFolder("Forms", "F", CurrentProject.Forms.Count);
         foreach (var form in CurrentProject.Forms)
         {
             forms.Children.Add(new ProjectExplorerItemModel
@@ -4527,20 +4518,6 @@ public partial class MainWindowViewModel : ObservableObject
                 Name = form.DisplayName,
                 Source = form,
                 IsActive = string.Equals(form.Id, ActiveFormDocument?.Id, StringComparison.OrdinalIgnoreCase)
-            });
-        }
-
-        var viewModels = CreateProjectFolder("ViewModels", "VM", CurrentProject.ViewModels.Count);
-        foreach (var document in CurrentProject.ViewModels)
-        {
-            viewModels.Children.Add(new ProjectExplorerItemModel
-            {
-                Id = document.Id,
-                TargetId = document.Id,
-                ItemType = "ViewModel",
-                Icon = "VM",
-                Name = document.Name,
-                Source = document
             });
         }
 
@@ -4558,44 +4535,24 @@ public partial class MainWindowViewModel : ObservableObject
             });
         }
 
-        var resources = CreateProjectFolder("Resources", "R", CurrentProject.Resources.Count);
-        foreach (var resource in CurrentProject.Resources)
+        var export = new ProjectExplorerItemModel
         {
-            resources.Children.Add(new ProjectExplorerItemModel
-            {
-                Id = resource.Id,
-                TargetId = resource.Id,
-                ItemType = "Resource",
-                Icon = "R",
-                Name = resource.Name,
-                Source = resource
-            });
-        }
+            Id = "project-export",
+            TargetId = "Export",
+            ItemType = "Export",
+            Icon = "EX",
+            Name = "Export",
+            Description = ExportPipelineCompactSummary,
+            IsExpanded = false
+        };
 
-        var profiles = CreateProjectFolder("Export Profiles", "EP", CurrentProject.ExportProfiles.Count);
-        foreach (var profile in CurrentProject.ExportProfiles)
-        {
-            profiles.Children.Add(new ProjectExplorerItemModel
-            {
-                Id = profile.Id,
-                TargetId = profile.Id,
-                ItemType = "ExportProfile",
-                Icon = "EP",
-                Name = profile.Name,
-                Source = profile
-            });
-        }
+        AddEmptyPlaceholderIfNeeded(forms, "No forms yet.");
+        AddEmptyPlaceholderIfNeeded(assets, "No assets yet.");
 
-        AddEmptyPlaceholderIfNeeded(viewModels, "No ViewModels yet.");
-        AddEmptyPlaceholderIfNeeded(assets, "No assets yet. Use Asset to register an image.");
-        AddEmptyPlaceholderIfNeeded(resources, "No resources yet. Use Res to create a ResourceDictionary.");
-
-        root.Children.Add(forms);
-        root.Children.Add(viewModels);
-        root.Children.Add(assets);
-        root.Children.Add(resources);
-        root.Children.Add(profiles);
-        ProjectExplorerItems.Add(root);
+        ProjectExplorerItems.Add(forms);
+        ProjectExplorerItems.Add(assets);
+        ProjectExplorerItems.Add(export);
+        SetProjectExplorerSelectionState(SelectedProjectExplorerItem);
         OnPropertyChanged(nameof(ProjectExplorerSummary));
         OnPropertyChanged(nameof(HasProjectAssets));
         OnPropertyChanged(nameof(HasProjectResources));
@@ -4609,7 +4566,8 @@ public partial class MainWindowViewModel : ObservableObject
             TargetId = name,
             ItemType = "Folder",
             Icon = icon,
-            Name = count > 0 ? $"{name} ({count})" : name,
+            Name = name,
+            Count = count,
             IsExpanded = true
         };
     }
@@ -4626,8 +4584,27 @@ public partial class MainWindowViewModel : ObservableObject
             ItemType = "Empty",
             Icon = "",
             Name = text,
+            Count = -1,
             IsExpanded = false
         });
+    }
+
+    private void SetProjectExplorerSelectionState(ProjectExplorerItemModel? selectedItem)
+    {
+        foreach (var item in FlattenProjectExplorerItems(ProjectExplorerItems))
+            item.IsSelected = ReferenceEquals(item, selectedItem)
+                || (!string.IsNullOrWhiteSpace(selectedItem?.Id)
+                    && string.Equals(item.Id, selectedItem.Id, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static IEnumerable<ProjectExplorerItemModel> FlattenProjectExplorerItems(IEnumerable<ProjectExplorerItemModel> items)
+    {
+        foreach (var item in items)
+        {
+            yield return item;
+            foreach (var child in FlattenProjectExplorerItems(item.Children))
+                yield return child;
+        }
     }
 
     private void NewProject()
@@ -4782,7 +4759,15 @@ public partial class MainWindowViewModel : ObservableObject
 
         if (item?.Source is DesignerAssetModel asset)
         {
-            StatusText = $"Asset selected: {asset.DisplayPath}";
+            PreviewProjectAsset(item);
+            return;
+        }
+
+        if (item?.ItemType == "Export")
+        {
+            WorkspaceMode = WorkspaceModeCode;
+            GenerateXaml();
+            StatusText = "Export Pipeline opened.";
             return;
         }
 
@@ -4793,16 +4778,6 @@ public partial class MainWindowViewModel : ObservableObject
             SelectedGeneratedFile = GeneratedFiles.FirstOrDefault(file => string.Equals(file.Path, resource.RelativePath, StringComparison.OrdinalIgnoreCase))
                 ?? SelectedGeneratedFile;
             StatusText = $"Resource selected: {resource.RelativePath}";
-            return;
-        }
-
-        if (item?.Source is DesignerExportProfileModel profile)
-        {
-            ExportProjectNamespace = string.IsNullOrWhiteSpace(profile.Namespace) ? ExportProjectNamespace : profile.Namespace;
-            LayoutExportMode = NormalizeLayoutExportMode(profile.LayoutExportMode);
-            DataGridExportMode = NormalizeDataGridExportMode(profile.DataGridExportMode);
-            WorkspaceMode = WorkspaceModeCode;
-            StatusText = $"Export profile selected: {profile.Name}";
         }
     }
 
@@ -4823,6 +4798,14 @@ public partial class MainWindowViewModel : ObservableObject
     [RelayCommand]
     private void DeleteProjectExplorerItem(ProjectExplorerItemModel? item)
     {
+        if (item?.Source is DesignerAssetModel asset)
+        {
+            CurrentProject.Assets.Remove(asset);
+            MarkWorkspaceStructureChanged();
+            StatusText = $"Asset removed: {asset.DisplayPath}";
+            return;
+        }
+
         if (item?.Source is not DesignerFormDocument form)
             return;
 
@@ -4844,6 +4827,16 @@ public partial class MainWindowViewModel : ObservableObject
 
         MarkWorkspaceStructureChanged();
         StatusText = $"Form deleted: {form.DisplayName}";
+    }
+
+    [RelayCommand]
+    private void PreviewProjectAsset(ProjectExplorerItemModel? item)
+    {
+        if (item?.Source is not DesignerAssetModel asset)
+            return;
+
+        StatusText = $"Asset selected: {asset.DisplayPath}";
+        LogWorkspace(WorkspaceLogLevel.Info, OutputCategoryGeneral, StatusText, asset.SourcePath);
     }
 
     [RelayCommand]
@@ -12860,6 +12853,7 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(ProjectExplorerHeaderTitle));
         OnPropertyChanged(nameof(ProjectExplorerScopeText));
         OnPropertyChanged(nameof(ProjectExplorerScopeHint));
+        OnPropertyChanged(nameof(ProjectExplorerCompactSummary));
         OnPropertyChanged(nameof(HasProjectAssets));
         OnPropertyChanged(nameof(HasProjectResources));
         OnPropertyChanged(nameof(HasMultipleDocuments));
@@ -13851,6 +13845,7 @@ public partial class MainWindowViewModel : ObservableObject
             return;
 
         Workspace.Session.SelectedProjectItemId = value.TargetId;
+        SetProjectExplorerSelectionState(value);
         if (value.Source is DesignerFormDocument form)
             OpenFormDocument(form);
         else if (value.IsEmptyPlaceholder)

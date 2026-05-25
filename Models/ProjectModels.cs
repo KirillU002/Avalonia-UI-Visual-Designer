@@ -217,6 +217,7 @@ public sealed class DesignerDocumentTabModel : INotifyPropertyChanged
 public sealed class ProjectExplorerItemModel : INotifyPropertyChanged
 {
     private bool _isActive;
+    private bool _isSelected;
     private bool _isExpanded = true;
     private bool _isRenaming;
     private string _name = "";
@@ -230,6 +231,10 @@ public sealed class ProjectExplorerItemModel : INotifyPropertyChanged
     public string Icon { get; set; } = "Folder";
 
     public object? Source { get; set; }
+
+    public string Description { get; set; } = "";
+
+    public int Count { get; set; } = -1;
 
     public string Name
     {
@@ -248,16 +253,33 @@ public sealed class ProjectExplorerItemModel : INotifyPropertyChanged
             {
                 resource.Name = value;
             }
+            else if (Source is DesignerAssetModel asset)
+            {
+                asset.Name = value;
+            }
             else if (Source is DesignerExportProfileModel profile)
             {
                 profile.Name = value;
             }
             OnPropertyChanged();
             OnPropertyChanged(nameof(DisplayName));
+            OnPropertyChanged(nameof(DisplayText));
         }
     }
 
     public string DisplayName => Name;
+
+    public string DisplayText
+    {
+        get
+        {
+            if (Source is DesignerFormDocument form)
+                return form.IsDirty ? $"{DisplayName} *" : DisplayName;
+            if (Count >= 0)
+                return $"{DisplayName} ({Count})";
+            return DisplayName;
+        }
+    }
 
     public bool IsActive
     {
@@ -267,6 +289,20 @@ public sealed class ProjectExplorerItemModel : INotifyPropertyChanged
             if (_isActive == value)
                 return;
             _isActive = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(RowBackground));
+            OnPropertyChanged(nameof(DisplayText));
+        }
+    }
+
+    public bool IsSelected
+    {
+        get => _isSelected;
+        set
+        {
+            if (_isSelected == value)
+                return;
+            _isSelected = value;
             OnPropertyChanged();
             OnPropertyChanged(nameof(RowBackground));
         }
@@ -306,13 +342,15 @@ public sealed class ProjectExplorerItemModel : INotifyPropertyChanged
 
     public bool IsEmptyPlaceholder => ItemType == "Empty";
 
-    public bool CanOpen => Source is DesignerFormDocument or DesignerResourceModel or DesignerExportProfileModel;
+    public bool CanOpen => Source is DesignerFormDocument || ItemType == "Export";
 
-    public bool CanRename => Source is DesignerFormDocument or DesignerResourceModel or DesignerExportProfileModel;
+    public bool CanOpenForm => Source is DesignerFormDocument;
+
+    public bool CanRename => Source is DesignerFormDocument or DesignerAssetModel;
 
     public bool CanDuplicate => Source is DesignerFormDocument;
 
-    public bool CanDelete => Source is DesignerFormDocument;
+    public bool CanDelete => Source is DesignerFormDocument or DesignerAssetModel;
 
     public bool CanAddForm => (ItemType is "Project" or "Folder") && (TargetId == "Forms" || TargetId == "Project");
 
@@ -320,19 +358,34 @@ public sealed class ProjectExplorerItemModel : INotifyPropertyChanged
 
     public bool CanAddResource => (ItemType is "Project" or "Folder") && (TargetId == "Resources" || TargetId == "Project");
 
+    public bool CanOpenProjectSettings => ItemType == "Project";
+
+    public bool CanPreviewAsset => Source is DesignerAssetModel;
+
+    public bool CanOpenExportPipeline => ItemType == "Export";
+
     public bool IsDisplayNameVisible => !IsRenaming;
 
     public bool IsRenameEditorVisible => IsRenaming;
 
-    public string RowBackground => IsActive ? "#DBEAFE" : IsEmptyPlaceholder ? "#00000000" : "Transparent";
+    public string RowBackground => IsActive
+        ? "#DBEAFE"
+        : IsSelected
+            ? "#E0F2FE"
+            : IsEmptyPlaceholder
+                ? "#00000000"
+                : "Transparent";
 
-    public string SecondaryText => ItemType switch
+    public string SecondaryText => !string.IsNullOrWhiteSpace(Description)
+        ? Description
+        : ItemType switch
     {
         "Form" when Source is DesignerFormDocument form => form.IsDirty ? "Modified form" : "Form",
         "Asset" when Source is DesignerAssetModel asset => asset.DisplayPath,
         "Resource" => "ResourceDictionary",
         "ExportProfile" => "Export profile",
         "Project" => "Designer project model",
+        "Export" => "Export pipeline",
         "Empty" => "Empty",
         _ => ItemType
     };

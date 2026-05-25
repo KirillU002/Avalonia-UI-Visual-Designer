@@ -6376,6 +6376,15 @@ public partial class MainWindow : Window
         e.Handled = true;
     }
 
+    private void ProjectExplorerTree_KeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter || VM.SelectedProjectExplorerItem is null)
+            return;
+
+        VM.OpenProjectExplorerItemCommand.Execute(VM.SelectedProjectExplorerItem);
+        e.Handled = true;
+    }
+
     private void Control_PointerPressed(object? sender, PointerPressedEventArgs e)
     {
         if (VM.IsUserPreviewMode || _isPanningViewport)

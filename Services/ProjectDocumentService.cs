@@ -9,9 +9,10 @@ public sealed class ProjectDocumentService
 {
     public DesignerFormDocument AddForm(DesignerProjectModel project, string baseName = "Form")
     {
+        var name = GetUniqueName(project, baseName);
         var form = new DesignerFormDocument
         {
-            Name = GetUniqueName(project, baseName),
+            Name = name,
             Document = new DesignerDocumentFileModel()
         };
         form.Document.FormTitle = form.Name;
@@ -47,6 +48,9 @@ public sealed class ProjectDocumentService
     public string GetUniqueName(DesignerProjectModel project, string baseName)
     {
         var normalized = string.IsNullOrWhiteSpace(baseName) ? "Form" : baseName.Trim();
+        if (string.Equals(normalized, "Form", StringComparison.OrdinalIgnoreCase))
+            return GetNextNumberedFormName(project);
+
         if (project.Forms.All(form => !string.Equals(form.DisplayName, normalized, StringComparison.OrdinalIgnoreCase)))
             return normalized;
 
@@ -58,6 +62,18 @@ public sealed class ProjectDocumentService
         }
 
         return $"{normalized}{Guid.NewGuid():N}";
+    }
+
+    private static string GetNextNumberedFormName(DesignerProjectModel project)
+    {
+        for (var index = 1; index < 1000; index++)
+        {
+            var candidate = $"Form{index}";
+            if (project.Forms.All(form => !string.Equals(form.DisplayName, candidate, StringComparison.OrdinalIgnoreCase)))
+                return candidate;
+        }
+
+        return $"Form{Guid.NewGuid():N}";
     }
 
     private static readonly JsonSerializerOptions JsonOptions = new()

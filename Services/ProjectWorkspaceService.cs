@@ -19,7 +19,7 @@ public sealed class ProjectWorkspaceService
             }
         };
 
-        workspace.Project.Forms.Add(CreateForm("MainWindow"));
+        workspace.Project.Forms.Add(CreateForm("Form1"));
         workspace.Project.ExportProfiles.Add(new DesignerExportProfileModel
         {
             Name = "Debug",
