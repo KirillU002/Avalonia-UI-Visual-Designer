@@ -399,11 +399,20 @@ public partial class MainWindow : Window
             case EditorCommandId.Open:
                 OpenDocumentButton_Click(this, new RoutedEventArgs());
                 break;
+            case EditorCommandId.OpenProject:
+                OpenDocumentButton_Click(this, new RoutedEventArgs());
+                break;
             case EditorCommandId.Save:
+                SaveDocumentButton_Click(this, new RoutedEventArgs());
+                break;
+            case EditorCommandId.SaveProject:
                 SaveDocumentButton_Click(this, new RoutedEventArgs());
                 break;
             case EditorCommandId.SaveAs:
                 SaveDocumentAsButton_Click(this, new RoutedEventArgs());
+                break;
+            case EditorCommandId.AddAsset:
+                await ImportProjectAssetAsync();
                 break;
             case EditorCommandId.RecentFiles:
                 VM.StatusText = "Recent files are available from the toolbar flyout.";
@@ -976,6 +985,9 @@ public partial class MainWindow : Window
             ViewportOffsetY = DesignerViewportScrollViewer.Offset.Y,
             WorkspaceMode = VM.WorkspaceMode,
             SelectedControlId = VM.SelectedControl?.Id ?? "",
+            OpenDocumentIds = VM.Workspace.Session.OpenDocumentIds.ToList(),
+            ActiveDocumentId = VM.ActiveFormDocument?.Id ?? "",
+            LastProjectPath = string.IsNullOrWhiteSpace(VM.CurrentProjectPath) ? VM.CurrentDocumentPath : VM.CurrentProjectPath,
             ReopenLastWorkspaceOnStartup = VM.ReopenLastWorkspaceOnStartup,
             EditorShell = VM.CaptureEditorShellLayoutState()
         };
@@ -1136,7 +1148,9 @@ public partial class MainWindow : Window
             return;
         }
 
-        var lastPath = _appSettings.Session.LastDocumentPath;
+        var lastPath = string.IsNullOrWhiteSpace(_appSettings.Session.LastProjectPath)
+            ? _appSettings.Session.LastDocumentPath
+            : _appSettings.Session.LastProjectPath;
         if (string.IsNullOrWhiteSpace(lastPath))
             return;
 
@@ -6336,6 +6350,17 @@ public partial class MainWindow : Window
             VM.StatusText = $"Ошибка выбора изображения: {ex.Message}";
             return null;
         }
+    }
+
+    private async Task ImportProjectAssetAsync()
+    {
+        var path = await PickImagePathAsync();
+        if (string.IsNullOrWhiteSpace(path))
+            return;
+
+        VM.RegisterProjectAsset(path);
+        VM.ShowWorkspaceToast(WorkspaceToastLevel.Success, "Asset imported", System.IO.Path.GetFileName(path));
+        await SaveAppSettingsNowAsync();
     }
 
     private void Control_PointerPressed(object? sender, PointerPressedEventArgs e)

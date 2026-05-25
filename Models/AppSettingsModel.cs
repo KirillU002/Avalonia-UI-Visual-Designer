@@ -83,6 +83,12 @@ public class SessionStateModel
 
     public string SelectedControlId { get; set; } = "";
 
+    public List<string> OpenDocumentIds { get; set; } = new();
+
+    public string ActiveDocumentId { get; set; } = "";
+
+    public string LastProjectPath { get; set; } = "";
+
     public EditorShellLayoutState EditorShell { get; set; } = new();
 }
 

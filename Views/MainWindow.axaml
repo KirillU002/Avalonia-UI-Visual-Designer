@@ -767,6 +767,131 @@
                     Margin="12,0,12,12"
                     TabStripPlacement="Top"
                     SelectedIndex="{Binding LeftRailSelectedIndex, Mode=OneWay}">
+          <TabItem Header="Explorer"
+                   IsVisible="{Binding IsDesignMode}">
+            <Grid RowDefinitions="Auto,Auto,*"
+                  Margin="0,12,0,0">
+              <Grid ColumnDefinitions="*,Auto,Auto,Auto"
+                    ColumnSpacing="6">
+                <StackPanel Spacing="3">
+                  <TextBlock Text="{Binding CurrentProjectDisplayName}"
+                             FontSize="16"
+                             FontWeight="Bold"
+                             TextTrimming="CharacterEllipsis"/>
+                  <TextBlock Text="{Binding CurrentProjectSummary}"
+                             Foreground="#64748B"
+                             FontSize="12"
+                             TextTrimming="CharacterEllipsis"/>
+                </StackPanel>
+                <Button Grid.Column="1"
+                        Content="+Form"
+                        Command="{Binding AddFormEditorCommand}"
+                        Classes="data-action-button"
+                        Padding="8,5"
+                        MinHeight="28"/>
+                <Button Grid.Column="2"
+                        Content="Asset"
+                        Command="{Binding AddAssetEditorCommand}"
+                        Classes="data-action-button"
+                        Padding="8,5"
+                        MinHeight="28"/>
+                <Button Grid.Column="3"
+                        Content="Res"
+                        Command="{Binding AddResourceEditorCommand}"
+                        Classes="data-action-button"
+                        Padding="8,5"
+                        MinHeight="28"/>
+              </Grid>
+
+              <TextBlock Grid.Row="1"
+                         Margin="0,8,0,6"
+                         Text="{Binding ProjectExplorerSummary}"
+                         Foreground="#475569"
+                         FontSize="12"
+                         TextTrimming="CharacterEllipsis"/>
+
+              <Border Grid.Row="2"
+                      Background="#F8FAFC"
+                      BorderBrush="#D7E2EE"
+                      BorderThickness="1"
+                      CornerRadius="10"
+                      Padding="4"
+                      ClipToBounds="True">
+                <TreeView ItemsSource="{Binding ProjectExplorerItems}"
+                          SelectedItem="{Binding SelectedProjectExplorerItem, Mode=TwoWay}">
+                  <TreeView.Styles>
+                    <Style Selector="TreeViewItem"
+                           x:DataType="models:ProjectExplorerItemModel">
+                      <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
+                      <Setter Property="MinHeight" Value="28"/>
+                    </Style>
+                  </TreeView.Styles>
+                  <TreeView.ItemTemplate>
+                    <TreeDataTemplate x:DataType="models:ProjectExplorerItemModel"
+                                      ItemsSource="{Binding Children}">
+                      <Border Background="{Binding RowBackground}"
+                              CornerRadius="6"
+                              Padding="6,4"
+                              Margin="0,1">
+                        <Grid ColumnDefinitions="Auto,*,Auto"
+                              ColumnSpacing="7">
+                          <Border Width="20"
+                                  Height="20"
+                                  CornerRadius="5"
+                                  Background="#DBEAFE"
+                                  VerticalAlignment="Center">
+                            <TextBlock Text="{Binding Icon}"
+                                       Foreground="#1D4ED8"
+                                       FontSize="10"
+                                       FontWeight="Bold"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"
+                                       TextTrimming="CharacterEllipsis"/>
+                          </Border>
+                          <StackPanel Grid.Column="1"
+                                      Spacing="0">
+                            <TextBlock Text="{Binding DisplayName}"
+                                       FontWeight="SemiBold"
+                                       FontSize="13"
+                                       TextTrimming="CharacterEllipsis"/>
+                            <TextBlock Text="{Binding SecondaryText}"
+                                       Foreground="#64748B"
+                                       FontSize="11"
+                                       TextTrimming="CharacterEllipsis"/>
+                          </StackPanel>
+                          <Button Grid.Column="2"
+                                  Content="Open"
+                                  Command="{Binding #RootWindow.DataContext.OpenProjectExplorerItemCommand}"
+                                  CommandParameter="{Binding}"
+                                  Classes="data-action-button"
+                                  Padding="7,3"
+                                  MinHeight="24"/>
+                        </Grid>
+                        <Border.ContextMenu>
+                          <ContextMenu>
+                            <MenuItem Header="Open"
+                                      Command="{Binding #RootWindow.DataContext.OpenProjectExplorerItemCommand}"
+                                      CommandParameter="{Binding}"/>
+                            <MenuItem Header="Duplicate"
+                                      Command="{Binding #RootWindow.DataContext.DuplicateProjectExplorerItemCommand}"
+                                      CommandParameter="{Binding}"/>
+                            <MenuItem Header="Delete"
+                                      Command="{Binding #RootWindow.DataContext.DeleteProjectExplorerItemCommand}"
+                                      CommandParameter="{Binding}"/>
+                            <Separator/>
+                            <MenuItem Header="New Form"
+                                      Command="{Binding #RootWindow.DataContext.AddFormEditorCommand}"/>
+                            <MenuItem Header="Add Resource"
+                                      Command="{Binding #RootWindow.DataContext.AddResourceEditorCommand}"/>
+                          </ContextMenu>
+                        </Border.ContextMenu>
+                      </Border>
+                    </TreeDataTemplate>
+                  </TreeView.ItemTemplate>
+                </TreeView>
+              </Border>
+            </Grid>
+          </TabItem>
           <TabItem Header="Компоненты"
                    IsVisible="{Binding IsDesignMode}">
             <ScrollViewer Margin="0,12,0,0"
@@ -1364,10 +1489,60 @@
               BorderThickness="1"
               CornerRadius="14"
               Padding="12">
-        <Grid RowDefinitions="Auto,*">
+        <Grid RowDefinitions="Auto,Auto,*">
+          <Border Background="#FFFFFF"
+                  BorderBrush="#D7E2EE"
+                  BorderThickness="1"
+                  CornerRadius="10"
+                  Padding="6"
+                  IsVisible="{Binding IsDesignerCanvasWorkspaceVisible}">
+            <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                          VerticalScrollBarVisibility="Disabled">
+              <ItemsControl ItemsSource="{Binding DocumentTabs}">
+                <ItemsControl.ItemsPanel>
+                  <ItemsPanelTemplate>
+                    <StackPanel Orientation="Horizontal"/>
+                  </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="models:DesignerDocumentTabModel">
+                    <Border Margin="0,0,6,0"
+                            Padding="8,5"
+                            MinWidth="120"
+                            Background="{Binding Background}"
+                            BorderBrush="{Binding BorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="8">
+                      <Grid ColumnDefinitions="*,Auto"
+                            ColumnSpacing="6">
+                        <Button Content="{Binding Title}"
+                                Command="{Binding #RootWindow.DataContext.SwitchDocumentCommand}"
+                                CommandParameter="{Binding}"
+                                Classes="ghost-button"
+                                HorizontalAlignment="Stretch"
+                                HorizontalContentAlignment="Left"
+                                Padding="0"
+                                MinHeight="24"/>
+                        <Button Grid.Column="1"
+                                Content="×"
+                                Command="{Binding #RootWindow.DataContext.CloseDocumentTabCommand}"
+                                CommandParameter="{Binding}"
+                                Classes="ghost-button"
+                                Padding="6,0"
+                                MinHeight="24"
+                                ToolTip.Tip="Close document tab"/>
+                      </Grid>
+                    </Border>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </ScrollViewer>
+          </Border>
           <!-- Верхняя панель над формой показывает текущий режим,
                размеры предпросмотра и переключатели режимов редактора. -->
-          <Border Background="#EFF6FF"
+          <Border Grid.Row="1"
+                  Margin="0,8,0,0"
+                  Background="#EFF6FF"
                   BorderBrush="#D7E2EE"
                   BorderThickness="1"
                   CornerRadius="12"
@@ -1466,7 +1641,7 @@
             </Grid>
           </Border>
 
-          <Border Grid.Row="1"
+          <Border Grid.Row="2"
                   Margin="0,10,0,0"
                   Background="#E4EDF7"
                   BorderBrush="#CBD8E8"
@@ -1684,7 +1859,7 @@
             </Grid>
           </Border>
 
-          <Grid Grid.RowSpan="2"
+          <Grid Grid.RowSpan="3"
                 RowDefinitions="Auto,*"
                 RowSpacing="12"
                 IsVisible="{Binding IsExportPipelineWorkspaceVisible}">

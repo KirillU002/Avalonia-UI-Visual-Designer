@@ -147,6 +147,7 @@ public partial class MainWindowViewModel : ObservableObject
     private bool _isExportChecklistRefreshScheduled;
     private bool _isStructureTreeSearchRefreshScheduled;
     private bool _isEditorCommandRefreshScheduled;
+    private bool _isSwitchingDocumentTabs;
     private double _previewScreenWidth = 1920;
     private double _previewScreenHeight = 1080;
     private double _previewWorkingAreaWidth = 1920;
@@ -158,6 +159,11 @@ public partial class MainWindowViewModel : ObservableObject
     private readonly WorkspaceTaskService _workspaceTaskService = new();
     private readonly WorkspaceNotificationService _workspaceNotificationService = new();
     private readonly ExportPipelineService _exportPipelineService = new();
+    private readonly ProjectWorkspaceService _projectWorkspaceService = new();
+    private readonly ProjectDocumentService _projectDocumentService = new();
+    private readonly ProjectAssetService _projectAssetService = new();
+    private readonly ProjectResourceService _projectResourceService = new();
+    private readonly ExportWorkspaceService _exportWorkspaceService = new();
     private readonly PropertyGridUserSettings _propertyGridUserSettings = new();
     private readonly DispatcherTimer _propertyGridLiveRefreshTimer;
     private readonly DispatcherTimer _diagnosticsRefreshTimer;
@@ -201,6 +207,8 @@ public partial class MainWindowViewModel : ObservableObject
     public ObservableCollection<WorkspaceLogEntryModel> FilteredOutputEntries { get; } = new();
     public ObservableCollection<WorkspaceTaskModel> WorkspaceTasks => _workspaceTaskService.Tasks;
     public ObservableCollection<WorkspaceToastModel> WorkspaceToasts => _workspaceNotificationService.Toasts;
+    public ObservableCollection<DesignerDocumentTabModel> DocumentTabs { get; } = new();
+    public ObservableCollection<ProjectExplorerItemModel> ProjectExplorerItems { get; } = new();
     public ObservableCollection<GeneratedFileModel> GeneratedFiles { get; } = new();
     public ObservableCollection<GeneratedFileTreeNodeModel> GeneratedFileTreeNodes { get; } = new();
     public ObservableCollection<RequiredPackageModel> RequiredPackages { get; } = new();
@@ -216,6 +224,10 @@ public partial class MainWindowViewModel : ObservableObject
         OutputCategorySmokeTests,
         OutputCategoryBackgroundTasks
     };
+
+    public WorkspaceModel Workspace { get; private set; } = new();
+
+    public DesignerProjectModel CurrentProject => Workspace.Project;
 
     // Плоский список всех контролов документа. Иерархия восстанавливается через ParentId.
     public ObservableCollection<DesignControlModel> Controls { get; } = new();
@@ -658,6 +670,18 @@ public partial class MainWindowViewModel : ObservableObject
     private bool isStartScreenVisible;
 
     [ObservableProperty]
+    private DesignerFormDocument? activeFormDocument;
+
+    [ObservableProperty]
+    private DesignerDocumentTabModel? selectedDocumentTab;
+
+    [ObservableProperty]
+    private ProjectExplorerItemModel? selectedProjectExplorerItem;
+
+    [ObservableProperty]
+    private string currentProjectPath = "";
+
+    [ObservableProperty]
     private GeneratedFileModel? selectedGeneratedFile;
 
     [ObservableProperty]
@@ -751,7 +775,7 @@ public partial class MainWindowViewModel : ObservableObject
         : "No problems";
     public string EditorShellLayoutSummary =>
         $"Левая {LeftDockPanelWidth:0}px · Правая {RightDockPanelWidth:0}px · Problems {DiagnosticsPaneHeight:0}px";
-    public int LeftRailSelectedIndex => IsDataMode ? 4 : IsHistoryMode ? 3 : 0;
+    public int LeftRailSelectedIndex => IsDataMode ? 5 : IsHistoryMode ? 4 : 0;
     public int RightInspectorSelectedIndex => IsDataMode ? 1 : IsPluginsMode ? 2 : IsCodeMode ? 3 : IsLogicMode ? 5 : 0;
     public string WorkspaceModeDescription => WorkspaceMode switch
     {
@@ -912,6 +936,16 @@ public partial class MainWindowViewModel : ObservableObject
     public string WorkspaceDocumentStatusText => string.IsNullOrWhiteSpace(CurrentDocumentPath)
         ? "Untitled"
         : Path.GetFileName(CurrentDocumentPath);
+    public string CurrentProjectDisplayName => string.IsNullOrWhiteSpace(CurrentProject.Name)
+        ? "Avalonia UI Project"
+        : CurrentProject.Name;
+    public string CurrentProjectSummary => $"{CurrentProject.Forms.Count} forms · {CurrentProject.Assets.Count} assets · {CurrentProject.Resources.Count} resources";
+    public bool HasMultipleDocuments => DocumentTabs.Count > 1;
+    public bool HasOpenDocuments => DocumentTabs.Count > 0;
+    public string ActiveDocumentTitle => ActiveFormDocument?.TabTitle ?? CurrentDocumentDisplayName;
+    public string ProjectExplorerSummary => $"{CurrentProjectDisplayName} · {CurrentProjectSummary}";
+    public bool HasProjectAssets => CurrentProject.Assets.Count > 0;
+    public bool HasProjectResources => CurrentProject.Resources.Count > 0;
     public string WorkspaceAutosaveStatusText => AutosaveStatusText;
     public string WorkspaceZoomStatusText => $"Zoom {EditorZoom * 100:0}%";
     public string WorkspaceControlsStatusText => $"Controls {Controls.Count}";
@@ -1085,8 +1119,11 @@ public partial class MainWindowViewModel : ObservableObject
     public string RightInspectorHeaderSubtitle => IsCodeMode ? ExportPipelineCompactSummary : PropertyGridSelectionMetrics;
     public int PropertyGridSettingsVersion => _propertyGridSettingsVersion;
     public EditorCommand? NewEditorCommand => GetEditorCommand(EditorCommandId.New);
+    public EditorCommand? NewProjectEditorCommand => GetEditorCommand(EditorCommandId.NewProject);
     public EditorCommand? OpenEditorCommand => GetEditorCommand(EditorCommandId.Open);
+    public EditorCommand? OpenProjectEditorCommand => GetEditorCommand(EditorCommandId.OpenProject);
     public EditorCommand? SaveEditorCommand => GetEditorCommand(EditorCommandId.Save);
+    public EditorCommand? SaveProjectEditorCommand => GetEditorCommand(EditorCommandId.SaveProject);
     public EditorCommand? SaveAsEditorCommand => GetEditorCommand(EditorCommandId.SaveAs);
     public EditorCommand? UndoEditorCommand => GetEditorCommand(EditorCommandId.Undo);
     public EditorCommand? RedoEditorCommand => GetEditorCommand(EditorCommandId.Redo);
@@ -1110,6 +1147,13 @@ public partial class MainWindowViewModel : ObservableObject
     public EditorCommand? ClearOutputEditorCommand => GetEditorCommand(EditorCommandId.ClearOutput);
     public EditorCommand? ResetLayoutEditorCommand => GetEditorCommand(EditorCommandId.ResetLayout);
     public EditorCommand? ToggleDesignFramesEditorCommand => GetEditorCommand(EditorCommandId.ToggleDesignFrames);
+    public EditorCommand? AddFormEditorCommand => GetEditorCommand(EditorCommandId.AddForm);
+    public EditorCommand? AddAssetEditorCommand => GetEditorCommand(EditorCommandId.AddAsset);
+    public EditorCommand? AddResourceEditorCommand => GetEditorCommand(EditorCommandId.AddResource);
+    public EditorCommand? CloseDocumentEditorCommand => GetEditorCommand(EditorCommandId.CloseDocument);
+    public EditorCommand? ReopenClosedDocumentEditorCommand => GetEditorCommand(EditorCommandId.ReopenClosedDocument);
+    public EditorCommand? OpenProjectSettingsEditorCommand => GetEditorCommand(EditorCommandId.OpenProjectSettings);
+    public EditorCommand? OpenExplorerEditorCommand => GetEditorCommand(EditorCommandId.OpenExplorer);
     public EditorCommand? OpenExportPipelineEditorCommand => GetEditorCommand(EditorCommandId.OpenExportPipeline);
     public EditorCommand? RefreshGeneratedCodeEditorCommand => GetEditorCommand(EditorCommandId.RefreshGeneratedCode);
     public EditorCommand? CopyCurrentGeneratedFileEditorCommand => GetEditorCommand(EditorCommandId.CopyCurrentGeneratedFile);
@@ -1613,6 +1657,7 @@ public partial class MainWindowViewModel : ObservableObject
         LoadReusableTemplates();
 
         CreateNewDocumentCore(markAsSaved: true);
+        InitializeWorkspaceFromActiveDocument(markAsSaved: true);
         RebuildStructureTree();
         RebuildImportedDllCatalog();
         RefreshDiagnostics();
@@ -1633,8 +1678,11 @@ public partial class MainWindowViewModel : ObservableObject
     private void RegisterEditorCommands()
     {
         RegisterEditorCommand(EditorCommandId.New, "New Document", "Create a new form document.", "\uE710", "Ctrl+N", EditorCommandCategory.File, () => RequestExternalEditorCommand(EditorCommandId.New));
+        RegisterEditorCommand(EditorCommandId.NewProject, "New Project", "Create a new workspace project with one form.", "", "", EditorCommandCategory.File, NewProject);
         RegisterEditorCommand(EditorCommandId.Open, "Open...", "Open an existing .formdesigner.json document.", "\uE8E5", "Ctrl+O", EditorCommandCategory.File, () => RequestExternalEditorCommand(EditorCommandId.Open));
+        RegisterEditorCommand(EditorCommandId.OpenProject, "Open Project", "Open a designer project/workspace file.", "", "", EditorCommandCategory.File, () => RequestExternalEditorCommand(EditorCommandId.OpenProject));
         RegisterEditorCommand(EditorCommandId.Save, "Save", "Save the current document.", "\uE74E", "Ctrl+S", EditorCommandCategory.File, () => RequestExternalEditorCommand(EditorCommandId.Save));
+        RegisterEditorCommand(EditorCommandId.SaveProject, "Save Project", "Save the current project workspace.", "", "", EditorCommandCategory.File, () => RequestExternalEditorCommand(EditorCommandId.SaveProject));
         RegisterEditorCommand(EditorCommandId.SaveAs, "Save As...", "Save the current document to a new file.", "\uE792", "Ctrl+Shift+S", EditorCommandCategory.File, () => RequestExternalEditorCommand(EditorCommandId.SaveAs));
         RegisterEditorCommand(EditorCommandId.RecentFiles, "Recent Files", "Open the recent files flyout.", "", "", EditorCommandCategory.File, () => RequestExternalEditorCommand(EditorCommandId.RecentFiles), () => StateWhen(HasRecentFiles, "No recent files."));
         RegisterEditorCommand(EditorCommandId.RestoreAutosave, "Restore Autosave", "Open autosave recovery if a draft exists.", "", "", EditorCommandCategory.File, () => RequestExternalEditorCommand(EditorCommandId.RestoreAutosave));
@@ -1682,6 +1730,14 @@ public partial class MainWindowViewModel : ObservableObject
         RegisterEditorCommand(EditorCommandId.OpenBindingSourceEditor, "Open BindingSource Editor", "Switch to Data tools.", "", "", EditorCommandCategory.Tools, () => WorkspaceMode = WorkspaceModeData);
         RegisterEditorCommand(EditorCommandId.OpenInteractionDesigner, "Open Interaction Designer", "Switch to Logic tools.", "", "", EditorCommandCategory.Tools, () => WorkspaceMode = WorkspaceModeLogic);
         RegisterEditorCommand(EditorCommandId.OpenPluginDiagnostics, "Open Plugin Diagnostics", "Switch to plugin diagnostics.", "", "", EditorCommandCategory.Tools, () => WorkspaceMode = WorkspaceModePlugins);
+        RegisterEditorCommand(EditorCommandId.AddForm, "Add Form", "Add a new form document to the project.", "", "", EditorCommandCategory.Tools, AddForm);
+        RegisterEditorCommand(EditorCommandId.AddAsset, "Add Asset", "Import/register an asset in the project.", "", "", EditorCommandCategory.Tools, () => RequestExternalEditorCommand(EditorCommandId.AddAsset));
+        RegisterEditorCommand(EditorCommandId.AddResource, "Add Resource", "Add a project ResourceDictionary.", "", "", EditorCommandCategory.Tools, AddResource);
+        RegisterEditorCommand(EditorCommandId.CloseDocument, "Close Document", "Close the active document tab.", "", "Ctrl+F4", EditorCommandCategory.File, CloseActiveDocument, () => StateWhen(HasOpenDocuments, "No open document."));
+        RegisterEditorCommand(EditorCommandId.SwitchDocument, "Switch Document", "Switch to a document tab.", "", "", EditorCommandCategory.File, () => { });
+        RegisterEditorCommand(EditorCommandId.ReopenClosedDocument, "Reopen Closed Document", "Reopen the most recently closed document.", "", "", EditorCommandCategory.File, ReopenClosedDocument, () => StateWhen(Workspace.Session.RecentlyClosedDocumentIds.Count > 0, "No recently closed document."));
+        RegisterEditorCommand(EditorCommandId.OpenProjectSettings, "Open Project Settings", "Show project settings in the explorer.", "", "", EditorCommandCategory.Tools, OpenProjectSettings);
+        RegisterEditorCommand(EditorCommandId.OpenExplorer, "Open Explorer", "Show the project explorer.", "", "", EditorCommandCategory.View, OpenExplorer);
 
         RegisterEditorCommand(EditorCommandId.OpenExportPipeline, "Open Export Pipeline", "Open the central Code / Export workspace.", "", "", EditorCommandCategory.Export, () => WorkspaceMode = WorkspaceModeCode);
         RegisterEditorCommand(EditorCommandId.RefreshGeneratedCode, "Refresh Generated Code", "Regenerate XAML/C# export.", "", "", EditorCommandCategory.Export, GenerateXaml);
@@ -1888,8 +1944,11 @@ public partial class MainWindowViewModel : ObservableObject
     private void RaiseEditorCommandProperties()
     {
         OnPropertyChanged(nameof(NewEditorCommand));
+        OnPropertyChanged(nameof(NewProjectEditorCommand));
         OnPropertyChanged(nameof(OpenEditorCommand));
+        OnPropertyChanged(nameof(OpenProjectEditorCommand));
         OnPropertyChanged(nameof(SaveEditorCommand));
+        OnPropertyChanged(nameof(SaveProjectEditorCommand));
         OnPropertyChanged(nameof(SaveAsEditorCommand));
         OnPropertyChanged(nameof(UndoEditorCommand));
         OnPropertyChanged(nameof(RedoEditorCommand));
@@ -1913,6 +1972,13 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(ClearOutputEditorCommand));
         OnPropertyChanged(nameof(ResetLayoutEditorCommand));
         OnPropertyChanged(nameof(ToggleDesignFramesEditorCommand));
+        OnPropertyChanged(nameof(AddFormEditorCommand));
+        OnPropertyChanged(nameof(AddAssetEditorCommand));
+        OnPropertyChanged(nameof(AddResourceEditorCommand));
+        OnPropertyChanged(nameof(CloseDocumentEditorCommand));
+        OnPropertyChanged(nameof(ReopenClosedDocumentEditorCommand));
+        OnPropertyChanged(nameof(OpenProjectSettingsEditorCommand));
+        OnPropertyChanged(nameof(OpenExplorerEditorCommand));
         OnPropertyChanged(nameof(OpenExportPipelineEditorCommand));
         OnPropertyChanged(nameof(RefreshGeneratedCodeEditorCommand));
         OnPropertyChanged(nameof(CopyCurrentGeneratedFileEditorCommand));
@@ -4245,9 +4311,496 @@ public partial class MainWindowViewModel : ObservableObject
         SelectedControl.ImageSource = "avares://FormDesigner/Assets/avalonia-logo.ico";
     }
 
+    private void InitializeWorkspaceFromActiveDocument(bool markAsSaved)
+    {
+        var workspace = _projectWorkspaceService.CreateWorkspace("Avalonia UI Project");
+        var form = workspace.Project.Forms[0];
+        form.Name = string.IsNullOrWhiteSpace(FormTitle) ? "MainWindow" : FormTitle;
+        form.RelativePath = $"Forms/{form.DisplayName}.formdesigner.json";
+        form.Document = CreateDocumentFileModel();
+        var snapshot = JsonSerializer.Serialize(form.Document, JsonOptions);
+        form.CurrentSnapshot = snapshot;
+        form.SavedSnapshot = markAsSaved ? snapshot : "";
+        form.IsDirty = !markAsSaved;
+
+        Workspace = workspace;
+        ActiveFormDocument = form;
+        CurrentProjectPath = "";
+        CurrentProject.DefaultNamespace = ResolveExportNamespace();
+        CurrentProject.Settings.ReopenDocumentsOnStartup = ReopenLastWorkspaceOnStartup;
+        CurrentProject.ExportProfiles[0].Namespace = ResolveExportNamespace();
+        RefreshDocumentTabs();
+        RebuildProjectExplorer();
+        RaiseProjectWorkspaceProperties();
+    }
+
+    private void ApplyWorkspace(WorkspaceModel workspace, string? sourcePath, bool markAsSaved)
+    {
+        PersistActiveFormDocumentState(refreshProjectViews: false);
+        _projectWorkspaceService.EnsureWorkspaceDefaults(workspace);
+
+        foreach (var form in workspace.Project.Forms)
+        {
+            form.Document ??= new DesignerDocumentFileModel { FormTitle = form.DisplayName };
+            if (string.IsNullOrWhiteSpace(form.Name))
+                form.Name = string.IsNullOrWhiteSpace(form.Document.FormTitle) ? "Form" : form.Document.FormTitle;
+            if (string.IsNullOrWhiteSpace(form.RelativePath))
+                form.RelativePath = $"Forms/{form.DisplayName}.formdesigner.json";
+
+            var snapshot = string.IsNullOrWhiteSpace(form.CurrentSnapshot)
+                ? JsonSerializer.Serialize(form.Document, JsonOptions)
+                : form.CurrentSnapshot;
+            form.CurrentSnapshot = snapshot;
+            if (markAsSaved || string.IsNullOrWhiteSpace(form.SavedSnapshot))
+                form.SavedSnapshot = markAsSaved ? snapshot : form.SavedSnapshot;
+            form.IsDirty = string.IsNullOrWhiteSpace(form.SavedSnapshot)
+                ? !markAsSaved
+                : !string.Equals(form.CurrentSnapshot, form.SavedSnapshot, StringComparison.Ordinal);
+        }
+
+        Workspace = workspace;
+        CurrentProjectPath = sourcePath ?? "";
+        var activeForm = CurrentProject.Forms.FirstOrDefault(form => string.Equals(form.Id, Workspace.Session.ActiveDocumentId, StringComparison.OrdinalIgnoreCase))
+            ?? CurrentProject.Forms[0];
+        if (!Workspace.Session.OpenDocumentIds.Contains(activeForm.Id))
+            Workspace.Session.OpenDocumentIds.Insert(0, activeForm.Id);
+
+        ApplyFormDocument(activeForm, persistCurrent: false, restoreSessionSelection: true);
+        RefreshDocumentTabs();
+        RebuildProjectExplorer();
+        RaiseProjectWorkspaceProperties();
+        StatusText = $"Workspace loaded: {CurrentProjectDisplayName}";
+        LogWorkspace(WorkspaceLogLevel.Info, OutputCategoryGeneral, StatusText, sourcePath ?? "");
+    }
+
+    private void ApplyFormDocument(DesignerFormDocument form, bool persistCurrent = true, bool restoreSessionSelection = true)
+    {
+        if (persistCurrent)
+            PersistActiveFormDocumentState(refreshProjectViews: false);
+
+        ActiveFormDocument = form;
+        Workspace.Session.ActiveDocumentId = form.Id;
+        if (!Workspace.Session.OpenDocumentIds.Contains(form.Id))
+            Workspace.Session.OpenDocumentIds.Add(form.Id);
+
+        var document = form.Document ?? new DesignerDocumentFileModel { FormTitle = form.DisplayName };
+        ApplyDocument(document, CurrentProjectPath, markAsSaved: !form.IsDirty, resetDocumentSession: true, resetHistory: false);
+
+        _undoStack.Clear();
+        foreach (var snapshot in form.UndoSnapshots)
+            _undoStack.Push(snapshot);
+
+        _redoStack.Clear();
+        foreach (var snapshot in form.RedoSnapshots)
+            _redoStack.Push(snapshot);
+
+        _currentSnapshot = string.IsNullOrWhiteSpace(form.CurrentSnapshot)
+            ? JsonSerializer.Serialize(CreateDocumentFileModel(), JsonOptions)
+            : form.CurrentSnapshot;
+        _savedSnapshot = string.IsNullOrWhiteSpace(form.SavedSnapshot) && !form.IsDirty
+            ? _currentSnapshot
+            : form.SavedSnapshot;
+        _lastHistoryMutationUtc = DateTime.UtcNow;
+
+        if (restoreSessionSelection && !string.IsNullOrWhiteSpace(form.SelectedControlId))
+            TrySelectControlById(form.SelectedControlId);
+
+        RefreshDocumentTabs();
+        RebuildProjectExplorer();
+        RaiseProjectWorkspaceProperties();
+        RaiseDocumentStateProperties();
+        RefreshDiagnostics();
+        GenerateXaml();
+        DesignerChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void PersistActiveFormDocumentState(bool refreshProjectViews = true)
+    {
+        if (_isApplyingDocument || ActiveFormDocument is null)
+            return;
+
+        var form = ActiveFormDocument;
+        form.Document = CreateDocumentFileModel();
+        form.Name = string.IsNullOrWhiteSpace(form.Document.FormTitle) ? form.DisplayName : form.Document.FormTitle;
+        form.CurrentSnapshot = string.IsNullOrWhiteSpace(_currentSnapshot)
+            ? JsonSerializer.Serialize(form.Document, JsonOptions)
+            : _currentSnapshot;
+        form.SavedSnapshot = _savedSnapshot;
+        form.IsDirty = !string.Equals(form.CurrentSnapshot, form.SavedSnapshot, StringComparison.Ordinal);
+        form.UndoSnapshots = _undoStack.Reverse().ToList();
+        form.RedoSnapshots = _redoStack.Reverse().ToList();
+        form.Zoom = EditorZoom;
+        form.SelectedControlId = SelectedControl?.Id ?? "";
+        form.UpdatedUtc = DateTime.UtcNow;
+
+        if (refreshProjectViews)
+        {
+            RefreshDocumentTabs();
+            RebuildProjectExplorer();
+            RaiseProjectWorkspaceProperties();
+        }
+    }
+
+    private void RefreshDocumentTabs()
+    {
+        _isSwitchingDocumentTabs = true;
+        try
+        {
+            var openIds = Workspace.Session.OpenDocumentIds
+                .Where(id => CurrentProject.Forms.Any(form => string.Equals(form.Id, id, StringComparison.OrdinalIgnoreCase)))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            if (ActiveFormDocument is not null && !openIds.Contains(ActiveFormDocument.Id))
+                openIds.Insert(0, ActiveFormDocument.Id);
+            if (openIds.Count == 0 && CurrentProject.Forms.Count > 0)
+                openIds.Add(CurrentProject.Forms[0].Id);
+
+            Workspace.Session.OpenDocumentIds = openIds;
+            DocumentTabs.Clear();
+            foreach (var id in openIds)
+            {
+                var form = CurrentProject.Forms.FirstOrDefault(item => string.Equals(item.Id, id, StringComparison.OrdinalIgnoreCase));
+                if (form is null)
+                    continue;
+
+                var tab = new DesignerDocumentTabModel(form)
+                {
+                    IsActive = string.Equals(form.Id, ActiveFormDocument?.Id, StringComparison.OrdinalIgnoreCase)
+                };
+                DocumentTabs.Add(tab);
+            }
+
+            SelectedDocumentTab = DocumentTabs.FirstOrDefault(tab => tab.IsActive);
+        }
+        finally
+        {
+            _isSwitchingDocumentTabs = false;
+        }
+
+        OnPropertyChanged(nameof(HasMultipleDocuments));
+        OnPropertyChanged(nameof(HasOpenDocuments));
+        OnPropertyChanged(nameof(ActiveDocumentTitle));
+        ScheduleEditorCommandRefresh();
+    }
+
+    private void RebuildProjectExplorer()
+    {
+        ProjectExplorerItems.Clear();
+        var root = new ProjectExplorerItemModel
+        {
+            Id = CurrentProject.Id,
+            TargetId = CurrentProject.Id,
+            ItemType = "Project",
+            Icon = "Project",
+            Name = CurrentProjectDisplayName,
+            Source = CurrentProject,
+            IsExpanded = true
+        };
+
+        var forms = CreateProjectFolder("Forms", "Forms", CurrentProject.Forms.Count);
+        foreach (var form in CurrentProject.Forms)
+        {
+            forms.Children.Add(new ProjectExplorerItemModel
+            {
+                Id = form.Id,
+                TargetId = form.Id,
+                ItemType = "Form",
+                Icon = "Form",
+                Name = form.DisplayName,
+                Source = form,
+                IsActive = string.Equals(form.Id, ActiveFormDocument?.Id, StringComparison.OrdinalIgnoreCase)
+            });
+        }
+
+        var viewModels = CreateProjectFolder("ViewModels", "ViewModels", CurrentProject.ViewModels.Count);
+        foreach (var document in CurrentProject.ViewModels)
+        {
+            viewModels.Children.Add(new ProjectExplorerItemModel
+            {
+                Id = document.Id,
+                TargetId = document.Id,
+                ItemType = "ViewModel",
+                Icon = "Code",
+                Name = document.Name,
+                Source = document
+            });
+        }
+
+        var assets = CreateProjectFolder("Assets", "Assets", CurrentProject.Assets.Count);
+        foreach (var asset in CurrentProject.Assets)
+        {
+            assets.Children.Add(new ProjectExplorerItemModel
+            {
+                Id = asset.Id,
+                TargetId = asset.Id,
+                ItemType = "Asset",
+                Icon = asset.Kind,
+                Name = asset.Name,
+                Source = asset
+            });
+        }
+
+        var resources = CreateProjectFolder("Resources", "Resources", CurrentProject.Resources.Count);
+        foreach (var resource in CurrentProject.Resources)
+        {
+            resources.Children.Add(new ProjectExplorerItemModel
+            {
+                Id = resource.Id,
+                TargetId = resource.Id,
+                ItemType = "Resource",
+                Icon = "Resource",
+                Name = resource.Name,
+                Source = resource
+            });
+        }
+
+        var profiles = CreateProjectFolder("Export Profiles", "ExportProfile", CurrentProject.ExportProfiles.Count);
+        foreach (var profile in CurrentProject.ExportProfiles)
+        {
+            profiles.Children.Add(new ProjectExplorerItemModel
+            {
+                Id = profile.Id,
+                TargetId = profile.Id,
+                ItemType = "ExportProfile",
+                Icon = "Export",
+                Name = profile.Name,
+                Source = profile
+            });
+        }
+
+        root.Children.Add(forms);
+        root.Children.Add(viewModels);
+        root.Children.Add(assets);
+        root.Children.Add(resources);
+        root.Children.Add(profiles);
+        ProjectExplorerItems.Add(root);
+        OnPropertyChanged(nameof(ProjectExplorerSummary));
+        OnPropertyChanged(nameof(HasProjectAssets));
+        OnPropertyChanged(nameof(HasProjectResources));
+    }
+
+    private static ProjectExplorerItemModel CreateProjectFolder(string name, string icon, int count)
+    {
+        return new ProjectExplorerItemModel
+        {
+            Id = $"folder:{name}",
+            TargetId = name,
+            ItemType = "Folder",
+            Icon = icon,
+            Name = count > 0 ? $"{name} ({count})" : name,
+            IsExpanded = true
+        };
+    }
+
+    private void NewProject()
+    {
+        Workspace = _projectWorkspaceService.CreateWorkspace("Avalonia UI Project");
+        CurrentProjectPath = "";
+        var activeForm = CurrentProject.Forms[0];
+        ApplyFormDocument(activeForm, persistCurrent: false, restoreSessionSelection: false);
+        StatusText = "New project created.";
+        LogWorkspace(WorkspaceLogLevel.Info, OutputCategoryGeneral, StatusText);
+    }
+
+    private void AddForm()
+    {
+        PersistActiveFormDocumentState(refreshProjectViews: false);
+        var form = _projectDocumentService.AddForm(CurrentProject, "Form");
+        Workspace.Session.OpenDocumentIds.Add(form.Id);
+        ApplyFormDocument(form, persistCurrent: false, restoreSessionSelection: false);
+        MarkWorkspaceStructureChanged();
+        StatusText = $"Form added: {form.DisplayName}";
+        LogWorkspace(WorkspaceLogLevel.Info, OutputCategoryGeneral, StatusText);
+    }
+
+    private void AddResource()
+    {
+        var resource = _projectResourceService.AddResourceDictionary(CurrentProject);
+        MarkWorkspaceStructureChanged();
+        RebuildProjectExplorer();
+        RaiseProjectWorkspaceProperties();
+        StatusText = $"Resource added: {resource.RelativePath}";
+        LogWorkspace(WorkspaceLogLevel.Info, OutputCategoryGeneral, StatusText);
+    }
+
+    public DesignerAssetModel? RegisterProjectAsset(string? sourcePath)
+    {
+        if (string.IsNullOrWhiteSpace(sourcePath))
+            return null;
+
+        var asset = _projectAssetService.RegisterAsset(CurrentProject, sourcePath);
+        MarkWorkspaceStructureChanged();
+        RebuildProjectExplorer();
+        RaiseProjectWorkspaceProperties();
+        StatusText = $"Asset imported: {asset.RelativePath}";
+        LogWorkspace(WorkspaceLogLevel.Info, OutputCategoryGeneral, StatusText, sourcePath);
+        return asset;
+    }
+
+    private void CloseActiveDocument()
+    {
+        if (ActiveFormDocument is null || Workspace.Session.OpenDocumentIds.Count <= 1)
+            return;
+
+        PersistActiveFormDocumentState(refreshProjectViews: false);
+        var closingId = ActiveFormDocument.Id;
+        Workspace.Session.OpenDocumentIds.RemoveAll(id => string.Equals(id, closingId, StringComparison.OrdinalIgnoreCase));
+        Workspace.Session.RecentlyClosedDocumentIds.RemoveAll(id => string.Equals(id, closingId, StringComparison.OrdinalIgnoreCase));
+        Workspace.Session.RecentlyClosedDocumentIds.Insert(0, closingId);
+
+        var nextId = Workspace.Session.OpenDocumentIds.FirstOrDefault();
+        var next = CurrentProject.Forms.FirstOrDefault(form => string.Equals(form.Id, nextId, StringComparison.OrdinalIgnoreCase))
+            ?? CurrentProject.Forms.FirstOrDefault(form => !string.Equals(form.Id, closingId, StringComparison.OrdinalIgnoreCase));
+        if (next is not null)
+            ApplyFormDocument(next, persistCurrent: false);
+
+        StatusText = "Document tab closed.";
+    }
+
+    private void ReopenClosedDocument()
+    {
+        var id = Workspace.Session.RecentlyClosedDocumentIds.FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(id))
+            return;
+
+        var form = CurrentProject.Forms.FirstOrDefault(item => string.Equals(item.Id, id, StringComparison.OrdinalIgnoreCase));
+        if (form is null)
+        {
+            Workspace.Session.RecentlyClosedDocumentIds.RemoveAt(0);
+            return;
+        }
+
+        Workspace.Session.RecentlyClosedDocumentIds.RemoveAt(0);
+        if (!Workspace.Session.OpenDocumentIds.Contains(form.Id))
+            Workspace.Session.OpenDocumentIds.Add(form.Id);
+        ApplyFormDocument(form);
+        StatusText = $"Reopened: {form.DisplayName}";
+    }
+
+    private void OpenProjectSettings()
+    {
+        IsLeftDockOpen = true;
+        WorkspaceMode = WorkspaceModeData;
+        SelectedProjectExplorerItem = ProjectExplorerItems.FirstOrDefault();
+        StatusText = $"Project settings: {CurrentProjectDisplayName}, namespace {CurrentProject.DefaultNamespace}.";
+    }
+
+    private void OpenExplorer()
+    {
+        IsLeftDockOpen = true;
+        WorkspaceMode = WorkspaceModeDesign;
+        StatusText = "Project Explorer opened.";
+    }
+
+    [RelayCommand]
+    private void SwitchDocument(DesignerDocumentTabModel? tab)
+    {
+        if (tab is null)
+            return;
+
+        var form = CurrentProject.Forms.FirstOrDefault(item => string.Equals(item.Id, tab.DocumentId, StringComparison.OrdinalIgnoreCase));
+        if (form is null || string.Equals(form.Id, ActiveFormDocument?.Id, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        ApplyFormDocument(form);
+    }
+
+    [RelayCommand]
+    private void CloseDocumentTab(DesignerDocumentTabModel? tab)
+    {
+        if (tab is null)
+            return;
+
+        if (string.Equals(tab.DocumentId, ActiveFormDocument?.Id, StringComparison.OrdinalIgnoreCase))
+        {
+            CloseActiveDocument();
+            return;
+        }
+
+        Workspace.Session.OpenDocumentIds.RemoveAll(id => string.Equals(id, tab.DocumentId, StringComparison.OrdinalIgnoreCase));
+        Workspace.Session.RecentlyClosedDocumentIds.RemoveAll(id => string.Equals(id, tab.DocumentId, StringComparison.OrdinalIgnoreCase));
+        Workspace.Session.RecentlyClosedDocumentIds.Insert(0, tab.DocumentId);
+        RefreshDocumentTabs();
+        StatusText = "Document tab closed.";
+    }
+
+    [RelayCommand]
+    private void OpenProjectExplorerItem(ProjectExplorerItemModel? item)
+    {
+        if (item?.Source is DesignerFormDocument form)
+        {
+            if (!Workspace.Session.OpenDocumentIds.Contains(form.Id))
+                Workspace.Session.OpenDocumentIds.Add(form.Id);
+            ApplyFormDocument(form);
+        }
+    }
+
+    [RelayCommand]
+    private void DuplicateProjectExplorerItem(ProjectExplorerItemModel? item)
+    {
+        if (item?.Source is not DesignerFormDocument form)
+            return;
+
+        PersistActiveFormDocumentState(refreshProjectViews: false);
+        var duplicate = _projectDocumentService.DuplicateForm(CurrentProject, form);
+        Workspace.Session.OpenDocumentIds.Add(duplicate.Id);
+        ApplyFormDocument(duplicate, persistCurrent: false);
+        MarkWorkspaceStructureChanged();
+        StatusText = $"Form duplicated: {duplicate.DisplayName}";
+    }
+
+    [RelayCommand]
+    private void DeleteProjectExplorerItem(ProjectExplorerItemModel? item)
+    {
+        if (item?.Source is not DesignerFormDocument form)
+            return;
+
+        if (!_projectDocumentService.DeleteForm(CurrentProject, form.Id))
+        {
+            StatusText = "Project must contain at least one form.";
+            return;
+        }
+
+        Workspace.Session.OpenDocumentIds.RemoveAll(id => string.Equals(id, form.Id, StringComparison.OrdinalIgnoreCase));
+        Workspace.Session.RecentlyClosedDocumentIds.RemoveAll(id => string.Equals(id, form.Id, StringComparison.OrdinalIgnoreCase));
+        var next = CurrentProject.Forms.FirstOrDefault();
+        if (next is not null)
+        {
+            if (!Workspace.Session.OpenDocumentIds.Contains(next.Id))
+                Workspace.Session.OpenDocumentIds.Add(next.Id);
+            ApplyFormDocument(next, persistCurrent: false);
+        }
+
+        MarkWorkspaceStructureChanged();
+        StatusText = $"Form deleted: {form.DisplayName}";
+    }
+
+    private void MarkWorkspaceStructureChanged()
+    {
+        _savedSnapshot = "";
+        if (ActiveFormDocument is not null)
+        {
+            ActiveFormDocument.SavedSnapshot = "";
+            ActiveFormDocument.IsDirty = true;
+        }
+
+        MarkExportCacheStale();
+        RefreshDocumentTabs();
+        RebuildProjectExplorer();
+        RaiseDocumentStateProperties();
+        RaiseProjectWorkspaceProperties();
+    }
+
     public string ExportDocumentJson()
     {
-        return JsonSerializer.Serialize(CreateDocumentFileModel(), JsonOptions);
+        PersistActiveFormDocumentState();
+        return _projectWorkspaceService.SerializeWorkspace(Workspace);
+    }
+
+    public string ExportWorkspaceJson()
+    {
+        PersistActiveFormDocumentState();
+        return _projectWorkspaceService.SerializeWorkspace(Workspace);
     }
 
     public DesignerDocumentFileModel CreatePreviewDocumentSnapshot()
@@ -4264,18 +4817,45 @@ public partial class MainWindowViewModel : ObservableObject
 
     public void LoadDocumentJson(string json, string? sourcePath = null, bool markAsSaved = true)
     {
+        if (_projectWorkspaceService.TryDeserializeWorkspace(json, out var workspace))
+        {
+            ApplyWorkspace(workspace, sourcePath, markAsSaved);
+            return;
+        }
+
         var document = JsonSerializer.Deserialize<DesignerDocumentFileModel>(json, JsonOptions)
             ?? throw new InvalidOperationException("Не удалось прочитать документ конструктора.");
 
-        ApplyDocument(document, sourcePath, markAsSaved, resetDocumentSession: true);
+        ApplyWorkspace(_projectWorkspaceService.WrapSingleDocument(document, sourcePath), sourcePath, markAsSaved);
     }
 
     public void MarkDocumentSaved(string path)
     {
         CurrentDocumentPath = path;
+        CurrentProjectPath = path;
         _savedSnapshot = _currentSnapshot;
+        PersistActiveFormDocumentState(refreshProjectViews: false);
+        foreach (var form in CurrentProject.Forms)
+        {
+            if (string.Equals(form.Id, ActiveFormDocument?.Id, StringComparison.OrdinalIgnoreCase))
+            {
+                form.SavedSnapshot = _savedSnapshot;
+                form.CurrentSnapshot = _currentSnapshot;
+            }
+            else if (string.IsNullOrWhiteSpace(form.SavedSnapshot))
+            {
+                form.SavedSnapshot = form.CurrentSnapshot;
+            }
+
+            form.IsDirty = !string.Equals(form.CurrentSnapshot, form.SavedSnapshot, StringComparison.Ordinal);
+        }
+
+        RefreshDocumentTabs();
+        RebuildProjectExplorer();
         StatusText = $"Сохранен документ: {Path.GetFileName(path)}";
+        LogWorkspace(WorkspaceLogLevel.Success, OutputCategoryGeneral, $"Saved workspace: {Path.GetFileName(path)}", path);
         RaiseDocumentStateProperties();
+        RaiseProjectWorkspaceProperties();
     }
 
     public void ApplyAppSettings(AppSettingsModel settings)
@@ -4296,6 +4876,12 @@ public partial class MainWindowViewModel : ObservableObject
         }
 
         ReopenLastWorkspaceOnStartup = settings.Session.ReopenLastWorkspaceOnStartup;
+        if (!string.IsNullOrWhiteSpace(settings.Session.LastProjectPath))
+            CurrentProjectPath = settings.Session.LastProjectPath;
+        if (settings.Session.OpenDocumentIds.Count > 0)
+            Workspace.Session.OpenDocumentIds = settings.Session.OpenDocumentIds.ToList();
+        if (!string.IsNullOrWhiteSpace(settings.Session.ActiveDocumentId))
+            Workspace.Session.ActiveDocumentId = settings.Session.ActiveDocumentId;
 
         if (AvailableWorkspaceModes.Contains(settings.Session.WorkspaceMode))
             WorkspaceMode = settings.Session.WorkspaceMode;
@@ -6634,6 +7220,27 @@ public partial class MainWindowViewModel : ObservableObject
                 Severity = ExportChecklistSeverity.Ok
             };
         }
+
+        foreach (var form in CurrentProject.Forms.Where(form => !string.Equals(form.Id, ActiveFormDocument?.Id, StringComparison.OrdinalIgnoreCase)))
+        {
+            yield return new GeneratedFileModel
+            {
+                Path = $"Generated/{SanitizeGeneratedFileName(form.DisplayName)}.axaml",
+                Content = $"<!-- {form.DisplayName} is part of the workspace project model. Open this form tab and refresh export to generate exact Avalonia XAML. -->",
+                Severity = ExportChecklistSeverity.Warning
+            };
+        }
+
+        foreach (var file in _exportWorkspaceService.BuildProjectMetadataFiles(CurrentProject))
+            yield return file;
+    }
+
+    private static string SanitizeGeneratedFileName(string value)
+    {
+        var source = string.IsNullOrWhiteSpace(value) ? "Form" : value.Trim();
+        var chars = source.Select(ch => char.IsLetterOrDigit(ch) || ch == '_' ? ch : '_').ToArray();
+        var sanitized = new string(chars);
+        return string.IsNullOrWhiteSpace(sanitized) ? "Form" : sanitized;
     }
 
     private static IReadOnlyList<GeneratedFileTreeNodeModel> BuildGeneratedFileTreeNodes(IEnumerable<GeneratedFileModel> files)
@@ -11643,6 +12250,7 @@ public partial class MainWindowViewModel : ObservableObject
             resetHistory: false);
         _currentSnapshot = snapshot;
         _lastHistoryMutationUtc = DateTime.UtcNow;
+        PersistActiveFormDocumentState(refreshProjectViews: false);
 
         RestoreSelectionContextAfterSnapshot(
             selectedControlIds,
@@ -12085,6 +12693,7 @@ public partial class MainWindowViewModel : ObservableObject
         _redoStack.Clear();
         _currentSnapshot = snapshot;
         _lastHistoryMutationUtc = now;
+        PersistActiveFormDocumentState(refreshProjectViews: false);
         RaiseDocumentStateProperties();
     }
 
@@ -12103,6 +12712,24 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(FormWindowDecorationsSummary));
         RaiseExportCacheProperties();
         RaiseWorkspaceStatusProperties();
+        RaiseProjectWorkspaceProperties();
+    }
+
+    private void RaiseProjectWorkspaceProperties()
+    {
+        OnPropertyChanged(nameof(Workspace));
+        OnPropertyChanged(nameof(CurrentProject));
+        OnPropertyChanged(nameof(CurrentProjectPath));
+        OnPropertyChanged(nameof(CurrentProjectDisplayName));
+        OnPropertyChanged(nameof(CurrentProjectSummary));
+        OnPropertyChanged(nameof(ProjectExplorerSummary));
+        OnPropertyChanged(nameof(HasProjectAssets));
+        OnPropertyChanged(nameof(HasProjectResources));
+        OnPropertyChanged(nameof(HasMultipleDocuments));
+        OnPropertyChanged(nameof(HasOpenDocuments));
+        OnPropertyChanged(nameof(ActiveDocumentTitle));
+        RaiseWorkspaceStatusProperties();
+        ScheduleEditorCommandRefresh();
     }
 
     private void RaiseDiagnosticsProperties()
@@ -13059,6 +13686,34 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(CurrentDocumentDisplayName));
         RaiseWorkspaceStatusProperties();
         RefreshDiagnostics();
+    }
+
+    partial void OnCurrentProjectPathChanged(string value)
+    {
+        OnPropertyChanged(nameof(WorkspaceDocumentStatusText));
+        RaiseProjectWorkspaceProperties();
+    }
+
+    partial void OnActiveFormDocumentChanged(DesignerFormDocument? value)
+    {
+        OnPropertyChanged(nameof(ActiveDocumentTitle));
+        RaiseWorkspaceStatusProperties();
+    }
+
+    partial void OnSelectedDocumentTabChanged(DesignerDocumentTabModel? value)
+    {
+        if (_isSwitchingDocumentTabs || value is null)
+            return;
+
+        SwitchDocument(value);
+    }
+
+    partial void OnSelectedProjectExplorerItemChanged(ProjectExplorerItemModel? value)
+    {
+        if (value is null)
+            return;
+
+        Workspace.Session.SelectedProjectItemId = value.TargetId;
     }
 
     partial void OnStatusTextChanged(string value)
