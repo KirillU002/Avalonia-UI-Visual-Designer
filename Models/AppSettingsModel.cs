@@ -16,11 +16,28 @@ public class AppSettingsModel
 
     public PropertyGridUserSettings PropertyGrid { get; set; } = new();
 
+    public CanvasEditorSettingsModel CanvasEditor { get; set; } = new();
+
     public SessionStateModel Session { get; set; } = new();
 
     public ExportCacheModel ExportCache { get; set; } = new();
 
     public AutosaveMetadataModel Autosave { get; set; } = new();
+}
+
+public sealed class CanvasEditorSettingsModel
+{
+    public bool IsCanvasSnappingEnabled { get; set; } = true;
+
+    public bool IsDesignerGridVisible { get; set; } = true;
+
+    public bool IsSmartGuidesEnabled { get; set; } = true;
+
+    public bool IsDistanceHintsEnabled { get; set; } = true;
+
+    public bool IgnoreLockedDuringSelection { get; set; } = true;
+
+    public bool IsSelectionToolbarEnabled { get; set; } = true;
 }
 
 public sealed class PropertyGridUserSettings

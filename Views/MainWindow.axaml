@@ -1765,6 +1765,12 @@
                             DragDrop.DragOver="DesignerCanvas_DragOver"
                             DragDrop.Drop="DesignerCanvas_Drop"/>
 
+                    <Canvas x:Name="SelectionOverlayCanvas"
+                            Width="{Binding PreviewFormWidth}"
+                            Height="{Binding PreviewFormHeight}"
+                            Canvas.Top="36"
+                            IsHitTestVisible="True"/>
+
                     <!-- Ручка изменения размера самой формы в режиме обычного окна. -->
                     <Border x:Name="DesignResizeHandle"
                             Width="20"
@@ -2754,11 +2760,38 @@
 
                     <Grid ColumnDefinitions="*,*"
                           ColumnSpacing="10">
-                      <CheckBox Content="Привязка к сетке"
+                      <CheckBox Content="Enable snapping"
+                                IsChecked="{Binding IsCanvasSnappingEnabled, Mode=TwoWay}"/>
+                      <CheckBox Grid.Column="1"
+                                Content="Show grid"
+                                IsChecked="{Binding IsDesignerGridVisible, Mode=TwoWay}"/>
+                    </Grid>
+
+                    <Grid ColumnDefinitions="*,*"
+                          ColumnSpacing="10">
+                      <CheckBox Content="Snap to grid"
                                 IsChecked="{Binding IsGridSnapEnabled, Mode=TwoWay}"/>
                       <CheckBox Grid.Column="1"
                                 Content="Привязка к элементам и контейнеру"
                                 IsChecked="{Binding IsControlSnapEnabled, Mode=TwoWay}"/>
+                    </Grid>
+
+                    <Grid ColumnDefinitions="*,*"
+                          ColumnSpacing="10">
+                      <CheckBox Content="Smart guides"
+                                IsChecked="{Binding IsSmartGuidesEnabled, Mode=TwoWay}"/>
+                      <CheckBox Grid.Column="1"
+                                Content="Distance hints"
+                                IsChecked="{Binding IsDistanceHintsEnabled, Mode=TwoWay}"/>
+                    </Grid>
+
+                    <Grid ColumnDefinitions="*,*"
+                          ColumnSpacing="10">
+                      <CheckBox Content="Ignore locked in marquee"
+                                IsChecked="{Binding IgnoreLockedDuringSelection, Mode=TwoWay}"/>
+                      <CheckBox Grid.Column="1"
+                                Content="Selection toolbar"
+                                IsChecked="{Binding IsSelectionToolbarEnabled, Mode=TwoWay}"/>
                     </Grid>
 
                     <Grid ColumnDefinitions="*,*"

@@ -63,6 +63,8 @@ public partial class MainWindow : Window
     private readonly Dictionary<string, (string Signature, IReadOnlyList<Dictionary<string, string>> Rows)> _sqlPreviewRowsBySourceId = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _sqlPreviewRowsLoading = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<DesignControlModel> _dragSelectionRoots = new();
+    private readonly List<DesignControlModel> _marqueeBaseSelection = new();
+    private readonly List<CanvasSnapCandidate> _snapCandidates = new();
 
     // Текущее состояние активной операции мышью на дизайнерской поверхности.
     private Border? _draggedBorder;
@@ -73,6 +75,7 @@ public partial class MainWindow : Window
     private bool _isDragging;
     private bool _isMarqueeSelecting;
     private bool _isMarqueeAdditive;
+    private bool _isMarqueeToggle;
     private bool _isPanningViewport;
     private bool _isMiniMapDraggingViewport;
     private bool _isResizing;
@@ -106,6 +109,8 @@ public partial class MainWindow : Window
     private const double SmartMeasurementMaxDistance = 240;
     private const double SmartMeasurementTickSize = 6;
     private const int MaxPreviewDataGridRows = 120;
+
+    private sealed record CanvasSnapCandidate(string Id, string ParentId, Rect Bounds);
 
     private bool _isResizingDesignSurface;
     private Point _designResizeStart;
@@ -899,6 +904,7 @@ public partial class MainWindow : Window
         _isDragging = false;
         _isMarqueeSelecting = false;
         _isMarqueeAdditive = false;
+        _isMarqueeToggle = false;
         _isResizing = false;
         _isResizingGridColumn = false;
         _isResizingDesignSurface = false;
@@ -907,10 +913,13 @@ public partial class MainWindow : Window
         _resizingModel = null;
         _highlightedContainerId = string.Empty;
         _dragSelectionRoots.Clear();
+        _marqueeBaseSelection.Clear();
         _dragRootStartPositions.Clear();
+        ClearSnapCandidateSnapshot();
         _wrapperByControlId.Clear();
 
         GuideOverlayCanvas.Children.Clear();
+        SelectionOverlayCanvas.Children.Clear();
         DesignerCanvas.Children.Clear();
         MiniMapCanvas.Children.Clear();
         ResetInteractiveRuntimePreviewState();
@@ -997,6 +1006,7 @@ public partial class MainWindow : Window
         _appSettings.PropertyGrid = VM.CapturePropertyGridSettings();
         _appSettings.PropertyGridFavorites = VM.CapturePropertyGridFavorites();
         _appSettings.PropertyGridCollapsedCategories = VM.CapturePropertyGridCollapsedCategories();
+        _appSettings.CanvasEditor = VM.CaptureCanvasEditorSettings();
         _appSettings.ExportCache = VM.CaptureExportCache();
         _appSettings.Session = CaptureSessionState();
         await _appSettingsService.SaveAsync(_appSettings);
@@ -1039,6 +1049,12 @@ public partial class MainWindow : Window
             or nameof(MainWindowViewModel.RightDockPanelWidth)
             or nameof(MainWindowViewModel.DiagnosticsPaneHeight)
             or nameof(MainWindowViewModel.IsDiagnosticsPaneExpanded)
+            or nameof(MainWindowViewModel.IsCanvasSnappingEnabled)
+            or nameof(MainWindowViewModel.IsDesignerGridVisible)
+            or nameof(MainWindowViewModel.IsSmartGuidesEnabled)
+            or nameof(MainWindowViewModel.IsDistanceHintsEnabled)
+            or nameof(MainWindowViewModel.IgnoreLockedDuringSelection)
+            or nameof(MainWindowViewModel.IsSelectionToolbarEnabled)
             or nameof(MainWindowViewModel.PropertyGridSettingsVersion);
     }
 
@@ -1875,6 +1891,16 @@ public partial class MainWindow : Window
         if (e.Source is TextBox or ComboBox)
             return;
 
+        if (e.Key == Key.Escape && VM.HasSelectedControl)
+        {
+            VM.TryExecuteEditorCommand(EditorCommandId.ClearSelection);
+            ClearGuideOverlay();
+            ClearSelectionOverlay();
+            RenderDesigner();
+            e.Handled = true;
+            return;
+        }
+
         if (e.Key == Key.F2 && VM.SelectedControl is not null && VM.SupportsText(VM.SelectedControl))
         {
             BeginInlineCanvasInteraction(VM.SelectedControl);
@@ -2019,30 +2045,44 @@ public partial class MainWindow : Window
         if (VM.SelectedControl is null)
             return;
 
-        var step = e.KeyModifiers.HasFlag(KeyModifiers.Control) ? 1 : Math.Max(1, VM.SnapStep);
+        if (TryHandleCanvasNudge(e))
+            return;
+    }
 
-        switch (e.Key)
+    private bool TryHandleCanvasNudge(KeyEventArgs e)
+    {
+        var isArrow = e.Key is Key.Left or Key.Right or Key.Up or Key.Down;
+        if (!isArrow)
+            return false;
+
+        if (e.KeyModifiers.HasFlag(KeyModifiers.Control))
         {
-            case Key.Left:
-                VM.MoveSelectedControl(-step, 0);
-                e.Handled = true;
-                break;
-
-            case Key.Right:
-                VM.MoveSelectedControl(step, 0);
-                e.Handled = true;
-                break;
-
-            case Key.Up:
-                VM.MoveSelectedControl(0, -step);
-                e.Handled = true;
-                break;
-
-            case Key.Down:
-                VM.MoveSelectedControl(0, step);
-                e.Handled = true;
-                break;
+            var step = Math.Max(1, VM.SnapStep);
+            var dx = e.Key == Key.Left ? -step : e.Key == Key.Right ? step : 0;
+            var dy = e.Key == Key.Up ? -step : e.Key == Key.Down ? step : 0;
+            VM.MoveSelectedControl(dx, dy);
+            e.Handled = true;
+            return true;
         }
+
+        var large = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
+        var commandId = e.Key switch
+        {
+            Key.Left => large ? EditorCommandId.NudgeLargeLeft : EditorCommandId.NudgeLeft,
+            Key.Right => large ? EditorCommandId.NudgeLargeRight : EditorCommandId.NudgeRight,
+            Key.Up => large ? EditorCommandId.NudgeLargeUp : EditorCommandId.NudgeUp,
+            Key.Down => large ? EditorCommandId.NudgeLargeDown : EditorCommandId.NudgeDown,
+            _ => (EditorCommandId?)null
+        };
+
+        if (commandId.HasValue)
+        {
+            VM.TryExecuteEditorCommand(commandId.Value);
+            e.Handled = true;
+            return true;
+        }
+
+        return false;
     }
 
     private void MainWindow_KeyUp(object? sender, KeyEventArgs e)
@@ -2116,10 +2156,14 @@ public partial class MainWindow : Window
 
         _pendingContextMenuControlId = string.Empty;
         _isMarqueeSelecting = true;
-        _isMarqueeAdditive = e.KeyModifiers.HasFlag(KeyModifiers.Control);
+        _isMarqueeToggle = e.KeyModifiers.HasFlag(KeyModifiers.Control);
+        _isMarqueeAdditive = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
+        _marqueeBaseSelection.Clear();
+        _marqueeBaseSelection.AddRange(VM.GetSelectedControls());
         _marqueeStart = GetDesignCanvasPosition(e);
         _marqueeCurrent = _marqueeStart;
         ClearGuideOverlay();
+        ClearSelectionOverlay();
 
         if (sender is InputElement element)
             e.Pointer.Capture(element);
@@ -2155,6 +2199,7 @@ public partial class MainWindow : Window
             return;
 
         _isMarqueeSelecting = false;
+        _isMarqueeToggle = false;
         e.Pointer.Capture(null);
 
         var selectionRect = CreateSelectionRect(_marqueeStart, _marqueeCurrent);
@@ -2162,10 +2207,11 @@ public partial class MainWindow : Window
 
         if (!hasSelectionArea)
         {
-            if (!_isMarqueeAdditive)
+            if (!_isMarqueeAdditive && !_isMarqueeToggle)
                 VM.ClearSelection();
 
             ClearGuideOverlay();
+            _marqueeBaseSelection.Clear();
             RenderDesigner();
             e.Handled = true;
             return;
@@ -2173,9 +2219,22 @@ public partial class MainWindow : Window
 
         var hitControls = GetControlsInSelection(selectionRect);
 
-        if (_isMarqueeAdditive)
+        if (_isMarqueeToggle)
         {
-            var merged = VM.GetSelectedControls().ToList();
+            var toggled = _marqueeBaseSelection.ToList();
+            foreach (var control in hitControls)
+            {
+                if (toggled.Any(selected => selected.Id == control.Id))
+                    toggled.RemoveAll(selected => selected.Id == control.Id);
+                else
+                    toggled.Add(control);
+            }
+
+            VM.SelectControls(toggled, hitControls.LastOrDefault() ?? toggled.LastOrDefault());
+        }
+        else if (_isMarqueeAdditive)
+        {
+            var merged = _marqueeBaseSelection.ToList();
             foreach (var control in hitControls.Where(control => merged.All(selected => selected.Id != control.Id)))
                 merged.Add(control);
 
@@ -2187,6 +2246,8 @@ public partial class MainWindow : Window
         }
 
         ClearGuideOverlay();
+        ClearSelectionOverlay();
+        _marqueeBaseSelection.Clear();
         RenderDesigner();
         e.Handled = true;
     }
@@ -2270,6 +2331,7 @@ public partial class MainWindow : Window
             Canvas.SetTop(GridOverlayCanvas, chromeHeight);
             Canvas.SetTop(GuideOverlayCanvas, chromeHeight);
             Canvas.SetTop(DesignerCanvas, chromeHeight);
+            Canvas.SetTop(SelectionOverlayCanvas, chromeHeight);
 
             Canvas.SetLeft(DesignResizeHandle, Math.Max(0, surfaceWidth - 10));
             Canvas.SetTop(DesignResizeHandle, Math.Max(0, surfaceHeight + chromeHeight - 10));
@@ -2277,6 +2339,7 @@ public partial class MainWindow : Window
 
             RenderGridOverlay();
             GuideOverlayCanvas.Children.Clear();
+            SelectionOverlayCanvas.Children.Clear();
             DesignerCanvas.Children.Clear();
             _wrapperByControlId.Clear();
 
@@ -2294,6 +2357,7 @@ public partial class MainWindow : Window
                 VM.PreviewFormHeight,
                 VM.IsUserPreviewMode);
 
+            RenderIdleSelectionOverlay();
             RenderMiniMap();
         }
         finally
@@ -2446,7 +2510,7 @@ public partial class MainWindow : Window
         // Сами контролы живут на отдельном Canvas поверх нее.
         GridOverlayCanvas.Children.Clear();
 
-        if (_attachedViewModel is null || VM.IsUserPreviewMode)
+        if (_attachedViewModel is null || VM.IsUserPreviewMode || !VM.IsDesignerGridVisible)
             return;
 
         var step = Math.Max(10, VM.SnapStep);
@@ -2488,6 +2552,25 @@ public partial class MainWindow : Window
         GuideOverlayCanvas.Children.Clear();
     }
 
+    private void ClearSelectionOverlay()
+    {
+        SelectionOverlayCanvas.Children.Clear();
+    }
+
+    private void RenderIdleSelectionOverlay()
+    {
+        ClearSelectionOverlay();
+
+        if (_attachedViewModel is null || VM.IsUserPreviewMode || !VM.HasMultipleSelection)
+            return;
+
+        var selectedRoots = VM.GetVisibleEditableSelectedRootControls();
+        if (selectedRoots.Count <= 1)
+            return;
+
+        RenderSelectionBounds(selectedRoots, SelectionOverlayCanvas, includeToolbar: VM.IsSelectionToolbarEnabled);
+    }
+
     private void RenderContainerHighlight(DesignControlModel? container)
     {
         _highlightedContainerId = container?.Id ?? "";
@@ -2513,6 +2596,27 @@ public partial class MainWindow : Window
             Canvas.SetLeft(highlight, position.X);
             Canvas.SetTop(highlight, position.Y);
         }
+
+        var label = new Border
+        {
+            Background = new SolidColorBrush(Color.Parse("#FFFBEB")),
+            BorderBrush = new SolidColorBrush(Color.Parse("#F59E0B")),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(999),
+            Padding = new Thickness(8, 3),
+            Child = new TextBlock
+            {
+                Text = $"Drop into {container.Name}",
+                FontSize = 11,
+                FontWeight = FontWeight.SemiBold,
+                Foreground = new SolidColorBrush(Color.Parse("#92400E"))
+            },
+            IsHitTestVisible = false
+        };
+
+        Canvas.SetLeft(label, Math.Max(0, position.X + 8));
+        Canvas.SetTop(label, Math.Max(0, position.Y - 24));
+        GuideOverlayCanvas.Children.Add(label);
     }
 
     private void RenderContainerPaddingHighlight(DesignControlModel? container)
@@ -2587,8 +2691,12 @@ public partial class MainWindow : Window
         GuideOverlayCanvas.Children.Add(marquee);
     }
 
-    private void RenderSelectionBounds(IEnumerable<DesignControlModel> controls)
+    private void RenderSelectionBounds(
+        IEnumerable<DesignControlModel> controls,
+        Canvas? host = null,
+        bool includeToolbar = false)
     {
+        host ??= GuideOverlayCanvas;
         var bounds = controls
             .Select(GetAbsoluteBounds)
             .ToList();
@@ -2614,14 +2722,96 @@ public partial class MainWindow : Window
 
         Canvas.SetLeft(outline, left);
         Canvas.SetTop(outline, top);
-        GuideOverlayCanvas.Children.Add(outline);
+        host.Children.Add(outline);
+
+        if (includeToolbar)
+            RenderSelectionToolbar(host, new Rect(left, top, right - left, bottom - top));
+    }
+
+    private void RenderSelectionToolbar(Canvas host, Rect bounds)
+    {
+        if (bounds.Width <= 0 || bounds.Height <= 0)
+            return;
+
+        var toolbar = new Border
+        {
+            Background = new SolidColorBrush(Color.Parse("#0F172A")),
+            BorderBrush = new SolidColorBrush(Color.Parse("#1E3A8A")),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(6),
+            BoxShadow = new BoxShadows(new BoxShadow
+            {
+                Blur = 18,
+                OffsetY = 6,
+                Color = Color.FromArgb(34, 15, 23, 42)
+            }),
+            Child = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 4,
+                Children =
+                {
+                    CreateSelectionToolbarButton("L", VM.AlignSelectionLeftCommand, "Align left"),
+                    CreateSelectionToolbarButton("T", VM.AlignSelectionTopCommand, "Align top"),
+                    CreateSelectionToolbarButton("R", VM.AlignSelectionRightCommand, "Align right"),
+                    CreateSelectionToolbarButton("B", VM.AlignSelectionBottomCommand, "Align bottom"),
+                    CreateSelectionToolbarButton("CX", VM.AlignSelectionCenterCommand, "Align center"),
+                    CreateSelectionToolbarButton("CY", VM.AlignSelectionMiddleCommand, "Align middle"),
+                    CreateSelectionToolbarButton("DH", VM.DistributeSelectionHorizontalCommand, "Distribute horizontal"),
+                    CreateSelectionToolbarButton("DV", VM.DistributeSelectionVerticalCommand, "Distribute vertical"),
+                    CreateSelectionToolbarButton("W", VM.MatchSelectionWidthCommand, "Same width"),
+                    CreateSelectionToolbarButton("H", VM.MatchSelectionHeightCommand, "Same height")
+                }
+            }
+        };
+
+        toolbar.PointerPressed += (_, e) => e.Handled = true;
+        toolbar.PointerMoved += (_, e) => e.Handled = true;
+        toolbar.PointerReleased += (_, e) => e.Handled = true;
+
+        Canvas.SetLeft(toolbar, Math.Clamp(bounds.X, 0, Math.Max(0, VM.PreviewFormWidth - 300)));
+        Canvas.SetTop(toolbar, Math.Max(0, bounds.Y - 44));
+        host.Children.Add(toolbar);
+    }
+
+    private static Button CreateSelectionToolbarButton(object content, System.Windows.Input.ICommand command, string tooltip)
+    {
+        var button = new Button
+        {
+            Content = content,
+            Command = command,
+            Width = 30,
+            Height = 28,
+            Padding = new Thickness(0),
+            FontSize = 11,
+            FontWeight = FontWeight.SemiBold,
+            Foreground = Brushes.White,
+            Background = new SolidColorBrush(Color.Parse("#1E293B")),
+            BorderBrush = new SolidColorBrush(Color.Parse("#334155")),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(6)
+        };
+
+        ToolTip.SetTip(button, tooltip);
+        return button;
+    }
+
+    private static Button CreateSelectionToolbarButton(string text, System.Windows.Input.ICommand command, string tooltip)
+    {
+        return CreateSelectionToolbarButton(new TextBlock
+        {
+            Text = text,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center
+        }, command, tooltip);
     }
 
     private IReadOnlyList<DesignControlModel> GetControlsInSelection(Rect selectionRect)
     {
         var hitControls = VM.Controls
-            .Where(control => !control.IsLocked)
             .Where(control => control.IsVisible)
+            .Where(control => !VM.IgnoreLockedDuringSelection || !control.IsLocked)
             .Where(control => RectanglesIntersect(selectionRect, GetAbsoluteBounds(control)))
             .OrderBy(control => GetAbsoluteBounds(control).Y)
             .ThenBy(control => GetAbsoluteBounds(control).X)
@@ -2664,6 +2854,30 @@ public partial class MainWindow : Window
         return false;
     }
 
+    private void BuildSnapCandidateSnapshot(IEnumerable<DesignControlModel> excludedControls)
+    {
+        var excludedIds = excludedControls
+            .Select(control => control.Id)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        _snapCandidates.Clear();
+        foreach (var control in VM.Controls)
+        {
+            if (excludedIds.Contains(control.Id) || !control.IsVisible)
+                continue;
+
+            _snapCandidates.Add(new CanvasSnapCandidate(
+                control.Id,
+                control.ParentId ?? string.Empty,
+                GetAbsoluteBounds(control)));
+        }
+    }
+
+    private void ClearSnapCandidateSnapshot()
+    {
+        _snapCandidates.Clear();
+    }
+
     private static bool RectanglesIntersect(Rect first, Rect second)
     {
         return first.X < second.Right
@@ -2681,12 +2895,12 @@ public partial class MainWindow : Window
 
     private double ApplyGridSnap(double value, KeyModifiers keyModifiers)
     {
-        return IsSnapBypassed(keyModifiers) ? value : VM.Snap(value);
+        return !VM.IsCanvasSnappingEnabled || IsSnapBypassed(keyModifiers) ? value : VM.Snap(value);
     }
 
     private bool ShouldUseControlSnap(KeyModifiers keyModifiers)
     {
-        return VM.IsControlSnapEnabled && !IsSnapBypassed(keyModifiers);
+        return VM.IsCanvasSnappingEnabled && VM.IsControlSnapEnabled && !IsSnapBypassed(keyModifiers);
     }
 
     private void UpdateDragGuides(DesignControlModel active)
@@ -2705,10 +2919,12 @@ public partial class MainWindow : Window
         RenderContainerPaddingHighlight(alignmentContainer);
 
         var alignmentParentId = alignmentContainer?.Id ?? string.Empty;
-        var candidates = VM.Controls
-            .Where(control => control.Id != active.Id)
-            .Where(control => control.IsVisible)
-            .Where(control => string.Equals(control.ParentId ?? string.Empty, alignmentParentId, StringComparison.OrdinalIgnoreCase))
+        if (_snapCandidates.Count == 0)
+            BuildSnapCandidateSnapshot(new[] { active });
+
+        var candidates = _snapCandidates
+            .Where(candidate => candidate.Id != active.Id)
+            .Where(candidate => string.Equals(candidate.ParentId, alignmentParentId, StringComparison.OrdinalIgnoreCase))
             .ToList();
 
         var activeLeft = activeAbsolute.X;
@@ -2728,21 +2944,23 @@ public partial class MainWindow : Window
         if (bestVertical.HasValue)
         {
             active.X += bestVertical.Value.Offset;
-            DrawGuideLine(true, bestVertical.Value.TargetCoordinate);
+            if (VM.IsSmartGuidesEnabled)
+                DrawGuideLine(true, bestVertical.Value.TargetCoordinate);
         }
 
         if (bestHorizontal.HasValue)
         {
             active.Y += bestHorizontal.Value.Offset;
-            DrawGuideLine(false, bestHorizontal.Value.TargetCoordinate);
+            if (VM.IsSmartGuidesEnabled)
+                DrawGuideLine(false, bestHorizontal.Value.TargetCoordinate);
         }
 
         VM.ClampControlToSurface(active);
 
         var adjustedAbsolute = VM.GetAbsolutePosition(active);
         var activeBounds = new Rect(adjustedAbsolute.X, adjustedAbsolute.Y, Math.Max(0, active.Width), Math.Max(0, active.Height));
-        var candidateBounds = candidates.Select(GetAbsoluteBounds).ToList();
-        RenderSpacingGuides(activeBounds, alignmentContainer, candidateBounds);
+        if (VM.IsDistanceHintsEnabled)
+            RenderSpacingGuides(activeBounds, alignmentContainer, candidates.Select(candidate => candidate.Bounds).ToList());
     }
 
     private void UpdateResizeGuides(DesignControlModel active)
@@ -2753,10 +2971,12 @@ public partial class MainWindow : Window
         var right = activeAbsolute.X + active.Width;
         var bottom = activeAbsolute.Y + active.Height;
         var container = VM.GetControl(active.ParentId);
-        var candidates = VM.Controls
-            .Where(control => control.Id != active.Id)
-            .Where(control => control.IsVisible)
-            .Where(control => control.ParentId == active.ParentId)
+        if (_snapCandidates.Count == 0)
+            BuildSnapCandidateSnapshot(new[] { active });
+
+        var candidates = _snapCandidates
+            .Where(candidate => candidate.Id != active.Id)
+            .Where(candidate => string.Equals(candidate.ParentId, active.ParentId ?? string.Empty, StringComparison.OrdinalIgnoreCase))
             .ToList();
 
         RenderContainerHighlight(container);
@@ -2772,32 +2992,35 @@ public partial class MainWindow : Window
         if (bestVertical.HasValue)
         {
             active.Width += bestVertical.Value.Offset;
-            DrawGuideLine(true, bestVertical.Value.TargetCoordinate);
+            if (VM.IsSmartGuidesEnabled)
+                DrawGuideLine(true, bestVertical.Value.TargetCoordinate);
         }
 
         if (bestHorizontal.HasValue)
         {
             active.Height += bestHorizontal.Value.Offset;
-            DrawGuideLine(false, bestHorizontal.Value.TargetCoordinate);
+            if (VM.IsSmartGuidesEnabled)
+                DrawGuideLine(false, bestHorizontal.Value.TargetCoordinate);
         }
 
         VM.ClampControlToSurface(active);
+        if (VM.IsDistanceHintsEnabled)
+            RenderResizeSizeHint(active);
     }
 
     private (double Offset, double TargetCoordinate)? FindBestAlignment(
         double start,
         double center,
         double end,
-        List<DesignControlModel> candidates,
+        IReadOnlyList<CanvasSnapCandidate> candidates,
         bool vertical)
     {
         (double Offset, double TargetCoordinate)? best = null;
 
         foreach (var candidate in candidates)
         {
-            var absolute = VM.GetAbsolutePosition(candidate);
-            var startCandidate = vertical ? absolute.X : absolute.Y;
-            var sizeCandidate = vertical ? candidate.Width : candidate.Height;
+            var startCandidate = vertical ? candidate.Bounds.X : candidate.Bounds.Y;
+            var sizeCandidate = vertical ? candidate.Bounds.Width : candidate.Bounds.Height;
             var centerCandidate = startCandidate + sizeCandidate / 2;
             var endCandidate = startCandidate + sizeCandidate;
 
@@ -2821,16 +3044,15 @@ public partial class MainWindow : Window
 
     private (double Offset, double TargetCoordinate)? FindBestResizeAlignment(
         double edgeCoordinate,
-        List<DesignControlModel> candidates,
+        IReadOnlyList<CanvasSnapCandidate> candidates,
         bool vertical)
     {
         (double Offset, double TargetCoordinate)? best = null;
 
         foreach (var candidate in candidates)
         {
-            var absolute = VM.GetAbsolutePosition(candidate);
-            var startCandidate = vertical ? absolute.X : absolute.Y;
-            var sizeCandidate = vertical ? candidate.Width : candidate.Height;
+            var startCandidate = vertical ? candidate.Bounds.X : candidate.Bounds.Y;
+            var sizeCandidate = vertical ? candidate.Bounds.Width : candidate.Bounds.Height;
             var centerCandidate = startCandidate + sizeCandidate / 2;
             var endCandidate = startCandidate + sizeCandidate;
 
@@ -3178,6 +3400,15 @@ public partial class MainWindow : Window
         Canvas.SetLeft(label, Math.Max(0, x));
         Canvas.SetTop(label, Math.Max(0, y));
         GuideOverlayCanvas.Children.Add(label);
+    }
+
+    private void RenderResizeSizeHint(DesignControlModel active)
+    {
+        var bounds = GetAbsoluteBounds(active);
+        var background = new SolidColorBrush(Color.Parse("#0F172A"));
+        var foreground = Brushes.White;
+        var text = $"{Math.Round(active.Width).ToString(CultureInfo.InvariantCulture)} x {Math.Round(active.Height).ToString(CultureInfo.InvariantCulture)}";
+        AddDistanceLabel(text, background, foreground, bounds.Right + 8, bounds.Bottom + 8);
     }
 
     private Border CreateDesignerWrapper(DesignControlModel model, double renderedWidth, double renderedHeight)
@@ -6467,11 +6698,13 @@ public partial class MainWindow : Window
         }
 
         ClearGuideOverlay();
+        ClearSelectionOverlay();
 
         if (e.KeyModifiers.HasFlag(KeyModifiers.Control))
         {
             // Ctrl+клик не начинает drag сразу, а меняет состав мультивыделения.
             VM.ToggleControlSelection(model);
+            RenderDesigner();
             e.Handled = true;
             return;
         }
@@ -6498,6 +6731,7 @@ public partial class MainWindow : Window
         foreach (var root in _dragSelectionRoots)
             _dragRootStartPositions[root.Id] = new Point(root.X, root.Y);
 
+        BuildSnapCandidateSnapshot(_dragSelectionRoots);
         _draggedBorder = border;
         _draggedModel = model;
         _dragStartPointerPosition = GetDesignCanvasPosition(e);
@@ -6591,6 +6825,7 @@ public partial class MainWindow : Window
             _draggedModel = null;
             _dragSelectionRoots.Clear();
             _dragRootStartPositions.Clear();
+            ClearSnapCandidateSnapshot();
             VM.EndPropertyGridLiveGesture();
 
             Dispatcher.UIThread.Post(() =>
@@ -6621,6 +6856,7 @@ public partial class MainWindow : Window
             _draggedModel = null;
             _dragSelectionRoots.Clear();
             _dragRootStartPositions.Clear();
+            ClearSnapCandidateSnapshot();
             ClearGuideOverlay();
             e.Handled = true;
             return;
@@ -6647,6 +6883,7 @@ public partial class MainWindow : Window
         _draggedModel = null;
         _dragSelectionRoots.Clear();
         _dragRootStartPositions.Clear();
+        ClearSnapCandidateSnapshot();
         VM.EndPropertyGridLiveGesture();
         VM.CommitUndoBatch();
         RenderDesigner();
@@ -6665,11 +6902,13 @@ public partial class MainWindow : Window
 
         // При старте ресайза запоминаем исходный размер, а дальше считаем дельту мыши.
         _isResizing = true;
+        ClearSelectionOverlay();
         _resizeGestureSessionId = VM.DocumentSessionId;
         _resizingModel = model;
         _resizeStart = GetDesignCanvasPosition(e);
         _startWidth = model.Width;
         _startHeight = model.Height;
+        BuildSnapCandidateSnapshot(new[] { model });
         VM.BeginUndoBatch();
         VM.BeginPropertyGridLiveGesture();
 
@@ -6689,6 +6928,7 @@ public partial class MainWindow : Window
             _isResizing = false;
             _resizeGestureSessionId = string.Empty;
             _resizingModel = null;
+            ClearSnapCandidateSnapshot();
             ClearGuideOverlay();
             return;
         }
@@ -6712,7 +6952,11 @@ public partial class MainWindow : Window
         if (ShouldUseControlSnap(keyModifiers))
             UpdateResizeGuides(_resizingModel);
         else
+        {
             ClearGuideOverlay();
+            if (VM.IsDistanceHintsEnabled)
+                RenderResizeSizeHint(_resizingModel);
+        }
     }
 
     private void ResizeHandle_PointerReleased(object? sender, PointerReleasedEventArgs e)
@@ -6726,6 +6970,7 @@ public partial class MainWindow : Window
             _resizeGestureSessionId = string.Empty;
             _resizingModel = null;
             e.Pointer.Capture(null);
+            ClearSnapCandidateSnapshot();
             ClearGuideOverlay();
             e.Handled = true;
             return;
@@ -6743,6 +6988,7 @@ public partial class MainWindow : Window
         _isResizing = false;
         _resizeGestureSessionId = string.Empty;
         _resizingModel = null;
+        ClearSnapCandidateSnapshot();
         e.Pointer.Capture(null);
         ClearGuideOverlay();
         VM.EndPropertyGridLiveGesture();

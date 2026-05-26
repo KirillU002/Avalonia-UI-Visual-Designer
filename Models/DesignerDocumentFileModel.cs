@@ -18,6 +18,18 @@ public class DesignerDocumentFileModel
 
     public int SnapThreshold { get; set; } = 6;
 
+    public bool IsCanvasSnappingEnabled { get; set; } = true;
+
+    public bool IsDesignerGridVisible { get; set; } = true;
+
+    public bool IsSmartGuidesEnabled { get; set; } = true;
+
+    public bool IsDistanceHintsEnabled { get; set; } = true;
+
+    public bool IgnoreLockedDuringSelection { get; set; } = true;
+
+    public bool IsSelectionToolbarEnabled { get; set; } = true;
+
     public string SurfaceBackground { get; set; } = "#FFFFFF";
 
     public string SurfaceGridMinorColor { get; set; } = "#DCE4EE";

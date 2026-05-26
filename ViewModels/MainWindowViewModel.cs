@@ -574,6 +574,24 @@ public partial class MainWindowViewModel : ObservableObject
     private int snapThreshold = 6;
 
     [ObservableProperty]
+    private bool isCanvasSnappingEnabled = true;
+
+    [ObservableProperty]
+    private bool isDesignerGridVisible = true;
+
+    [ObservableProperty]
+    private bool isSmartGuidesEnabled = true;
+
+    [ObservableProperty]
+    private bool isDistanceHintsEnabled = true;
+
+    [ObservableProperty]
+    private bool ignoreLockedDuringSelection = true;
+
+    [ObservableProperty]
+    private bool isSelectionToolbarEnabled = true;
+
+    [ObservableProperty]
     private string surfaceBackground = "#FFFFFF";
 
     [ObservableProperty]
@@ -1760,6 +1778,19 @@ public partial class MainWindowViewModel : ObservableObject
         RegisterEditorCommand(EditorCommandId.ZoomOut, "Zoom Out", "Decrease canvas zoom.", "", "Ctrl+-", EditorCommandCategory.View, () => RequestExternalEditorCommand(EditorCommandId.ZoomOut));
         RegisterEditorCommand(EditorCommandId.Zoom100, "Zoom 100%", "Reset canvas zoom to 100%.", "", "Ctrl+0", EditorCommandCategory.View, () => RequestExternalEditorCommand(EditorCommandId.Zoom100));
         RegisterEditorCommand(EditorCommandId.FitToScreen, "Fit to Screen", "Fit canvas in the viewport.", "", "", EditorCommandCategory.View, () => RequestExternalEditorCommand(EditorCommandId.FitToScreen));
+        RegisterEditorCommand(EditorCommandId.ToggleSnapping, "Toggle Snapping", "Enable or disable canvas snapping while editing.", "", "", EditorCommandCategory.View, ToggleCanvasSnapping, () => new EditorCommandState { IsChecked = IsCanvasSnappingEnabled });
+        RegisterEditorCommand(EditorCommandId.ToggleGrid, "Toggle Grid", "Show or hide the design grid.", "", "", EditorCommandCategory.View, ToggleDesignerGrid, () => new EditorCommandState { IsChecked = IsDesignerGridVisible });
+        RegisterEditorCommand(EditorCommandId.ToggleSmartGuides, "Toggle Smart Guides", "Show or hide smart alignment guides.", "", "", EditorCommandCategory.View, ToggleSmartGuides, () => new EditorCommandState { IsChecked = IsSmartGuidesEnabled });
+        RegisterEditorCommand(EditorCommandId.ToggleDistanceHints, "Toggle Distance Hints", "Show or hide distance and size hints during drag/resize.", "", "", EditorCommandCategory.View, ToggleDistanceHints, () => new EditorCommandState { IsChecked = IsDistanceHintsEnabled });
+        RegisterEditorCommand(EditorCommandId.NudgeLeft, "Nudge Left", "Move selected elements left by 1 px.", "", "Left", EditorCommandCategory.Arrange, () => NudgeSelection(-1, 0), () => StateWhen(CanChangeZOrder, "Select an editable element."));
+        RegisterEditorCommand(EditorCommandId.NudgeRight, "Nudge Right", "Move selected elements right by 1 px.", "", "Right", EditorCommandCategory.Arrange, () => NudgeSelection(1, 0), () => StateWhen(CanChangeZOrder, "Select an editable element."));
+        RegisterEditorCommand(EditorCommandId.NudgeUp, "Nudge Up", "Move selected elements up by 1 px.", "", "Up", EditorCommandCategory.Arrange, () => NudgeSelection(0, -1), () => StateWhen(CanChangeZOrder, "Select an editable element."));
+        RegisterEditorCommand(EditorCommandId.NudgeDown, "Nudge Down", "Move selected elements down by 1 px.", "", "Down", EditorCommandCategory.Arrange, () => NudgeSelection(0, 1), () => StateWhen(CanChangeZOrder, "Select an editable element."));
+        RegisterEditorCommand(EditorCommandId.NudgeLargeLeft, "Nudge Large Left", "Move selected elements left by 10 px.", "", "Shift+Left", EditorCommandCategory.Arrange, () => NudgeSelection(-10, 0), () => StateWhen(CanChangeZOrder, "Select an editable element."));
+        RegisterEditorCommand(EditorCommandId.NudgeLargeRight, "Nudge Large Right", "Move selected elements right by 10 px.", "", "Shift+Right", EditorCommandCategory.Arrange, () => NudgeSelection(10, 0), () => StateWhen(CanChangeZOrder, "Select an editable element."));
+        RegisterEditorCommand(EditorCommandId.NudgeLargeUp, "Nudge Large Up", "Move selected elements up by 10 px.", "", "Shift+Up", EditorCommandCategory.Arrange, () => NudgeSelection(0, -10), () => StateWhen(CanChangeZOrder, "Select an editable element."));
+        RegisterEditorCommand(EditorCommandId.NudgeLargeDown, "Nudge Large Down", "Move selected elements down by 10 px.", "", "Shift+Down", EditorCommandCategory.Arrange, () => NudgeSelection(0, 10), () => StateWhen(CanChangeZOrder, "Select an editable element."));
+        RegisterEditorCommand(EditorCommandId.ClearSelection, "Clear Selection", "Clear the active canvas selection.", "", "Esc", EditorCommandCategory.Edit, ClearSelection, () => StateWhen(SelectedControlIds.Count > 0, "Selection is empty."));
         RegisterEditorCommand(EditorCommandId.ToggleDesignFrames, "Toggle Design Frames", "Hide or show designer frames.", "", "F12", EditorCommandCategory.View, ToggleUserPreviewMode);
         RegisterEditorCommand(EditorCommandId.TogglePreviewMode, "Launch Preview", "Open runtime preview window.", "", "F5", EditorCommandCategory.View, () => RequestExternalEditorCommand(EditorCommandId.TogglePreviewMode));
 
@@ -4271,6 +4302,36 @@ public partial class MainWindowViewModel : ObservableObject
         }
     }
 
+    private void NudgeSelection(double dx, double dy)
+    {
+        MoveSelectedControl(dx, dy);
+        StatusText = $"Nudged selection: {dx:0;-0;0}, {dy:0;-0;0}px";
+    }
+
+    private void ToggleCanvasSnapping()
+    {
+        IsCanvasSnappingEnabled = !IsCanvasSnappingEnabled;
+        StatusText = IsCanvasSnappingEnabled ? "Canvas snapping enabled" : "Canvas snapping disabled";
+    }
+
+    private void ToggleDesignerGrid()
+    {
+        IsDesignerGridVisible = !IsDesignerGridVisible;
+        StatusText = IsDesignerGridVisible ? "Design grid visible" : "Design grid hidden";
+    }
+
+    private void ToggleSmartGuides()
+    {
+        IsSmartGuidesEnabled = !IsSmartGuidesEnabled;
+        StatusText = IsSmartGuidesEnabled ? "Smart guides enabled" : "Smart guides hidden";
+    }
+
+    private void ToggleDistanceHints()
+    {
+        IsDistanceHintsEnabled = !IsDistanceHintsEnabled;
+        StatusText = IsDistanceHintsEnabled ? "Distance hints enabled" : "Distance hints hidden";
+    }
+
     public DesignControlModel CreateControl(string type, double x, double y, string? parentId = null, bool bypassGridSnap = false)
     {
         // Контрол всегда создается из стартового шаблона,
@@ -5213,6 +5274,7 @@ public partial class MainWindowViewModel : ObservableObject
     {
         ApplyExportCache(settings.ExportCache);
         ApplyPropertyGridSettings(settings.PropertyGrid, settings.PropertyGridFavorites, settings.PropertyGridCollapsedCategories);
+        ApplyCanvasEditorSettings(settings.CanvasEditor);
 
         RecentFiles.Clear();
         foreach (var recentFile in settings.RecentFiles
@@ -5238,6 +5300,29 @@ public partial class MainWindowViewModel : ObservableObject
             WorkspaceMode = settings.Session.WorkspaceMode;
 
         ApplyEditorShellLayout(settings.Session.EditorShell);
+    }
+
+    private void ApplyCanvasEditorSettings(CanvasEditorSettingsModel settings)
+    {
+        IsCanvasSnappingEnabled = settings.IsCanvasSnappingEnabled;
+        IsDesignerGridVisible = settings.IsDesignerGridVisible;
+        IsSmartGuidesEnabled = settings.IsSmartGuidesEnabled;
+        IsDistanceHintsEnabled = settings.IsDistanceHintsEnabled;
+        IgnoreLockedDuringSelection = settings.IgnoreLockedDuringSelection;
+        IsSelectionToolbarEnabled = settings.IsSelectionToolbarEnabled;
+    }
+
+    public CanvasEditorSettingsModel CaptureCanvasEditorSettings()
+    {
+        return new CanvasEditorSettingsModel
+        {
+            IsCanvasSnappingEnabled = IsCanvasSnappingEnabled,
+            IsDesignerGridVisible = IsDesignerGridVisible,
+            IsSmartGuidesEnabled = IsSmartGuidesEnabled,
+            IsDistanceHintsEnabled = IsDistanceHintsEnabled,
+            IgnoreLockedDuringSelection = IgnoreLockedDuringSelection,
+            IsSelectionToolbarEnabled = IsSelectionToolbarEnabled
+        };
     }
 
     public PropertyGridUserSettings CapturePropertyGridSettings()
@@ -12344,6 +12429,12 @@ public partial class MainWindowViewModel : ObservableObject
             IsGridSnapEnabled = IsGridSnapEnabled,
             IsControlSnapEnabled = IsControlSnapEnabled,
             SnapThreshold = SnapThreshold,
+            IsCanvasSnappingEnabled = IsCanvasSnappingEnabled,
+            IsDesignerGridVisible = IsDesignerGridVisible,
+            IsSmartGuidesEnabled = IsSmartGuidesEnabled,
+            IsDistanceHintsEnabled = IsDistanceHintsEnabled,
+            IgnoreLockedDuringSelection = IgnoreLockedDuringSelection,
+            IsSelectionToolbarEnabled = IsSelectionToolbarEnabled,
             SurfaceBackground = SurfaceBackground,
             SurfaceGridMinorColor = SurfaceGridMinorColor,
             SurfaceGridMajorColor = SurfaceGridMajorColor,
@@ -12716,6 +12807,12 @@ public partial class MainWindowViewModel : ObservableObject
             IsGridSnapEnabled = true,
             IsControlSnapEnabled = true,
             SnapThreshold = 6,
+            IsCanvasSnappingEnabled = true,
+            IsDesignerGridVisible = true,
+            IsSmartGuidesEnabled = true,
+            IsDistanceHintsEnabled = true,
+            IgnoreLockedDuringSelection = true,
+            IsSelectionToolbarEnabled = true,
             SurfaceBackground = palette.SurfaceBackground,
             SurfaceGridMinorColor = palette.SurfaceGridMinorColor,
             SurfaceGridMajorColor = palette.SurfaceGridMajorColor,
@@ -12771,6 +12868,12 @@ public partial class MainWindowViewModel : ObservableObject
             IsGridSnapEnabled = document.IsGridSnapEnabled;
             IsControlSnapEnabled = document.IsControlSnapEnabled;
             SnapThreshold = Math.Clamp(document.SnapThreshold, 1, 40);
+            IsCanvasSnappingEnabled = document.IsCanvasSnappingEnabled;
+            IsDesignerGridVisible = document.IsDesignerGridVisible;
+            IsSmartGuidesEnabled = document.IsSmartGuidesEnabled;
+            IsDistanceHintsEnabled = document.IsDistanceHintsEnabled;
+            IgnoreLockedDuringSelection = document.IgnoreLockedDuringSelection;
+            IsSelectionToolbarEnabled = document.IsSelectionToolbarEnabled;
             SurfaceBackground = string.IsNullOrWhiteSpace(document.SurfaceBackground) ? palette.SurfaceBackground : document.SurfaceBackground;
             SurfaceGridMinorColor = string.IsNullOrWhiteSpace(document.SurfaceGridMinorColor) ? palette.SurfaceGridMinorColor : document.SurfaceGridMinorColor;
             SurfaceGridMajorColor = string.IsNullOrWhiteSpace(document.SurfaceGridMajorColor) ? palette.SurfaceGridMajorColor : document.SurfaceGridMajorColor;
@@ -14247,6 +14350,41 @@ public partial class MainWindowViewModel : ObservableObject
     partial void OnIsControlSnapEnabledChanged(bool value)
     {
         NotifyDesignerStateChanged();
+    }
+
+    partial void OnIsCanvasSnappingEnabledChanged(bool value)
+    {
+        NotifyDesignerStateChanged(trackHistory: false);
+        ScheduleEditorCommandRefresh();
+    }
+
+    partial void OnIsDesignerGridVisibleChanged(bool value)
+    {
+        NotifyDesignerStateChanged(trackHistory: false);
+        ScheduleEditorCommandRefresh();
+    }
+
+    partial void OnIsSmartGuidesEnabledChanged(bool value)
+    {
+        NotifyDesignerStateChanged(trackHistory: false);
+        ScheduleEditorCommandRefresh();
+    }
+
+    partial void OnIsDistanceHintsEnabledChanged(bool value)
+    {
+        NotifyDesignerStateChanged(trackHistory: false);
+        ScheduleEditorCommandRefresh();
+    }
+
+    partial void OnIgnoreLockedDuringSelectionChanged(bool value)
+    {
+        NotifyDesignerStateChanged(trackHistory: false);
+    }
+
+    partial void OnIsSelectionToolbarEnabledChanged(bool value)
+    {
+        NotifyDesignerStateChanged(trackHistory: false);
+        ScheduleEditorCommandRefresh();
     }
 
     partial void OnSnapThresholdChanged(int value)
