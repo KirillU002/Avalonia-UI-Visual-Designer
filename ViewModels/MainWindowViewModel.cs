@@ -789,7 +789,7 @@ public partial class MainWindowViewModel : ObservableObject
     public string EditorShellLayoutSummary =>
         $"Левая {LeftDockPanelWidth:0}px · Правая {RightDockPanelWidth:0}px · Problems {DiagnosticsPaneHeight:0}px";
     public int LeftRailSelectedIndex => IsDataMode ? 5 : IsHistoryMode ? 4 : 0;
-    public int RightInspectorSelectedIndex => IsDataMode ? 1 : IsPluginsMode ? 2 : IsCodeMode ? 3 : IsLogicMode ? 5 : 0;
+    public int RightInspectorSelectedIndex => IsDataMode ? 1 : IsPluginsMode ? 2 : IsCodeMode ? 3 : IsLogicMode ? 7 : 0;
     public string WorkspaceModeDescription => WorkspaceMode switch
     {
         WorkspaceModeData => "Данные: источники, BindingSource, SQL/DLL и привязки.",
@@ -1421,9 +1421,7 @@ public partial class MainWindowViewModel : ObservableObject
     public bool IsSelectedInteractionControlTargetVisible => SelectedInteraction is not null && !IsSelectedInteractionOpenForm
         && !string.Equals(SelectedInteraction.ActionType, InteractionModel.ActionShowMessage, StringComparison.OrdinalIgnoreCase);
     public bool HasOpenFormTargets => CurrentProject.Forms.Count > 1;
-    public IReadOnlyList<DesignerFormDocument> OpenFormTargetForms => CurrentProject.Forms
-        .OrderBy(form => form.DisplayName, StringComparer.OrdinalIgnoreCase)
-        .ToList();
+    public ObservableCollection<DesignerFormDocument> OpenFormTargetForms { get; } = new();
     public string OpenFormTargetHint => HasOpenFormTargets
         ? "Выберите форму проекта, которую нужно открыть по клику."
         : "Добавьте вторую форму, чтобы настроить OpenForm.";
@@ -4630,9 +4628,44 @@ public partial class MainWindowViewModel : ObservableObject
         ProjectExplorerItems.Add(assets);
         ProjectExplorerItems.Add(export);
         SetProjectExplorerSelectionState(SelectedProjectExplorerItem);
+        RefreshOpenFormTargetForms();
         OnPropertyChanged(nameof(ProjectExplorerSummary));
         OnPropertyChanged(nameof(HasProjectAssets));
         OnPropertyChanged(nameof(HasProjectResources));
+    }
+
+    private void RefreshOpenFormTargetForms()
+    {
+        var forms = CurrentProject.Forms
+            .OrderBy(form => form.DisplayName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (OpenFormTargetForms.Count == forms.Count)
+        {
+            var isSame = true;
+            for (var i = 0; i < forms.Count; i++)
+            {
+                if (ReferenceEquals(OpenFormTargetForms[i], forms[i]))
+                    continue;
+
+                isSame = false;
+                break;
+            }
+
+            if (isSame)
+            {
+                OnPropertyChanged(nameof(HasOpenFormTargets));
+                OnPropertyChanged(nameof(OpenFormTargetHint));
+                return;
+            }
+        }
+
+        OpenFormTargetForms.Clear();
+        foreach (var form in forms)
+            OpenFormTargetForms.Add(form);
+
+        OnPropertyChanged(nameof(HasOpenFormTargets));
+        OnPropertyChanged(nameof(OpenFormTargetHint));
     }
 
     private static ProjectExplorerItemModel CreateProjectFolder(string name, string icon, int count)
@@ -13318,7 +13351,6 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(IsSelectedInteractionOpenForm));
         OnPropertyChanged(nameof(IsSelectedInteractionControlTargetVisible));
         OnPropertyChanged(nameof(HasOpenFormTargets));
-        OnPropertyChanged(nameof(OpenFormTargetForms));
         OnPropertyChanged(nameof(OpenFormTargetHint));
         OnPropertyChanged(nameof(LogicDesignerSummary));
         OnPropertyChanged(nameof(SelectedInteractionEventHint));
