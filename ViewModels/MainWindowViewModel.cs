@@ -152,6 +152,11 @@ public partial class MainWindowViewModel : ObservableObject
     private bool _isExportChecklistRefreshScheduled;
     private bool _isStructureTreeSearchRefreshScheduled;
     private bool _isEditorCommandRefreshScheduled;
+    private string _scheduledDiagnosticsSessionId = "";
+    private string _scheduledExportChecklistSessionId = "";
+    private string _scheduledStructureSearchSessionId = "";
+    private string _propertyGridLiveGestureSessionId = "";
+    private string _openFormTargetFormsSignature = "";
     private bool _isSwitchingDocumentTabs;
     private double _previewScreenWidth = 1920;
     private double _previewScreenHeight = 1080;
@@ -3393,6 +3398,7 @@ public partial class MainWindowViewModel : ObservableObject
     private void ScheduleStructureTreeSearchRefresh()
     {
         _isStructureTreeSearchRefreshScheduled = true;
+        _scheduledStructureSearchSessionId = DocumentSessionId;
         _structureTreeSearchRefreshTimer.Stop();
         _structureTreeSearchRefreshTimer.Start();
     }
@@ -3404,6 +3410,9 @@ public partial class MainWindowViewModel : ObservableObject
             return;
 
         _isStructureTreeSearchRefreshScheduled = false;
+        if (!string.Equals(_scheduledStructureSearchSessionId, DocumentSessionId, StringComparison.Ordinal))
+            return;
+
         RebuildStructureTree();
     }
 
@@ -3475,6 +3484,7 @@ public partial class MainWindowViewModel : ObservableObject
     private void ScheduleDiagnosticsRefresh()
     {
         _isDiagnosticsRefreshScheduled = true;
+        _scheduledDiagnosticsSessionId = DocumentSessionId;
         _diagnosticsRefreshTimer.Stop();
         _diagnosticsRefreshTimer.Start();
     }
@@ -3486,6 +3496,9 @@ public partial class MainWindowViewModel : ObservableObject
             return;
 
         _isDiagnosticsRefreshScheduled = false;
+        if (!string.Equals(_scheduledDiagnosticsSessionId, DocumentSessionId, StringComparison.Ordinal))
+            return;
+
         RefreshDiagnosticsNow();
     }
 
@@ -3609,39 +3622,37 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void AppendProjectInteractionDiagnostics(ICollection<DocumentDiagnosticModel> diagnostics)
     {
-        foreach (var interaction in Interactions.Where(interaction =>
-            string.Equals(interaction.ActionType, InteractionModel.ActionOpenForm, StringComparison.OrdinalIgnoreCase)))
+        foreach (var context in EnumerateProjectOpenFormInteractions())
         {
-            var source = FindControlByName(interaction.SourceControlName);
             var targetForm = CurrentProject.Forms.FirstOrDefault(form =>
-                string.Equals(form.Id, interaction.TargetFormId, StringComparison.OrdinalIgnoreCase));
+                string.Equals(form.Id, context.TargetFormId, StringComparison.OrdinalIgnoreCase));
 
             if (targetForm is null)
             {
                 diagnostics.Add(new DocumentDiagnosticModel
                 {
                     Severity = DocumentDiagnosticSeverity.Error,
-                    Source = source?.NameOrFallback() ?? interaction.SourceControlName,
+                    Source = context.SourceDisplayName,
                     Category = "Logic",
-                    Message = $"OpenForm target form not found: '{interaction.TargetFormName}'.",
+                    Message = $"OpenForm target form not found in {context.FormDisplayName}: '{context.TargetFormName}'.",
                     Recommendation = "Choose an existing target form or remove the stale OpenForm interaction.",
-                    RelatedControlId = source?.Id ?? string.Empty,
-                    RelatedControlName = source?.Name ?? string.Empty
+                    RelatedControlId = context.SourceControlId,
+                    RelatedControlName = context.SourceControlName
                 });
                 continue;
             }
 
-            if (string.Equals(targetForm.Id, ActiveFormDocument?.Id, StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(targetForm.Id, context.FormId, StringComparison.OrdinalIgnoreCase))
             {
                 diagnostics.Add(new DocumentDiagnosticModel
                 {
                     Severity = DocumentDiagnosticSeverity.Warning,
-                    Source = source?.NameOrFallback() ?? interaction.SourceControlName,
+                    Source = context.SourceDisplayName,
                     Category = "Logic",
-                    Message = $"OpenForm points to the current form '{targetForm.DisplayName}'.",
+                    Message = $"OpenForm points to its own form '{targetForm.DisplayName}'.",
                     Recommendation = "Usually OpenForm should target another form.",
-                    RelatedControlId = source?.Id ?? string.Empty,
-                    RelatedControlName = source?.Name ?? string.Empty
+                    RelatedControlId = context.SourceControlId,
+                    RelatedControlName = context.SourceControlName
                 });
             }
         }
@@ -3650,13 +3661,95 @@ public partial class MainWindowViewModel : ObservableObject
         {
             diagnostics.Add(new DocumentDiagnosticModel
             {
-                Severity = DocumentDiagnosticSeverity.Warning,
+                Severity = DocumentDiagnosticSeverity.Error,
                 Source = "Export",
                 Category = "Export",
                 Message = $"Form class name conflict after sanitize: {conflict}.",
                 Recommendation = "Rename forms to unique C# class names. Export will append a suffix until then."
             });
         }
+
+        foreach (var form in CurrentProject.Forms)
+        {
+            var sanitized = SanitizeIdentifier(form.DisplayName, "Form");
+            if (string.Equals(form.DisplayName, sanitized, StringComparison.Ordinal))
+                continue;
+
+            diagnostics.Add(new DocumentDiagnosticModel
+            {
+                Severity = DocumentDiagnosticSeverity.Warning,
+                Source = form.DisplayName,
+                Category = "Export",
+                Message = $"Form name will be exported as class '{sanitized}'.",
+                Recommendation = "Use a C#-friendly form name to keep file and class names predictable."
+            });
+        }
+    }
+
+    private IEnumerable<ProjectOpenFormInteractionContext> EnumerateProjectOpenFormInteractions()
+    {
+        foreach (var form in CurrentProject.Forms)
+        {
+            var isActiveForm = string.Equals(form.Id, ActiveFormDocument?.Id, StringComparison.OrdinalIgnoreCase);
+            var controls = isActiveForm
+                ? Controls.Select(control => new ProjectControlReference(control.Id, control.Name, control.Type)).ToList()
+                : form.Document.Controls.Select(control => new ProjectControlReference(control.Id, control.Name, control.Type)).ToList();
+            var controlsByName = controls
+                .Where(control => !string.IsNullOrWhiteSpace(control.Name))
+                .GroupBy(control => control.Name, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
+
+            if (isActiveForm)
+            {
+                foreach (var interaction in Interactions.Where(IsOpenFormInteraction))
+                    yield return CreateProjectOpenFormContext(
+                        form,
+                        interaction.SourceControlName,
+                        interaction.TargetFormId,
+                        interaction.TargetFormName,
+                        controlsByName);
+
+                continue;
+            }
+
+            foreach (var interaction in form.Document.Interactions.Where(IsOpenFormInteraction))
+                yield return CreateProjectOpenFormContext(
+                    form,
+                    interaction.SourceControlName,
+                    interaction.TargetFormId,
+                    interaction.TargetFormName,
+                    controlsByName);
+        }
+    }
+
+    private static bool IsOpenFormInteraction(InteractionModel interaction)
+    {
+        return string.Equals(interaction.ActionType, InteractionModel.ActionOpenForm, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsOpenFormInteraction(InteractionFileModel interaction)
+    {
+        return string.Equals(interaction.ActionType, InteractionModel.ActionOpenForm, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static ProjectOpenFormInteractionContext CreateProjectOpenFormContext(
+        DesignerFormDocument form,
+        string sourceControlName,
+        string targetFormId,
+        string targetFormName,
+        IReadOnlyDictionary<string, ProjectControlReference> controlsByName)
+    {
+        controlsByName.TryGetValue(sourceControlName ?? string.Empty, out var source);
+        return new ProjectOpenFormInteractionContext(
+            FormId: form.Id,
+            FormDisplayName: form.DisplayName,
+            SourceControlId: source?.Id ?? string.Empty,
+            SourceControlName: source?.Name ?? sourceControlName ?? string.Empty,
+            SourceDisplayName: string.IsNullOrWhiteSpace(source?.Name)
+                ? string.IsNullOrWhiteSpace(sourceControlName) ? form.DisplayName : sourceControlName
+                : $"{form.DisplayName}.{source.Name}",
+            TargetFormId: targetFormId ?? string.Empty,
+            TargetFormName: targetFormName ?? string.Empty);
     }
 
     private void AppendExportDiagnostics(ICollection<DocumentDiagnosticModel> diagnostics)
@@ -4505,7 +4598,11 @@ public partial class MainWindowViewModel : ObservableObject
         RaiseProjectWorkspaceProperties();
         RaiseDocumentStateProperties();
         RefreshDiagnostics();
-        GenerateXaml();
+        if (IsCodeMode)
+            GenerateXaml();
+        else
+            MarkExportCacheStale();
+        StatusText = $"Active form: {form.DisplayName}";
         DesignerChanged?.Invoke(this, EventArgs.Empty);
     }
 
@@ -4639,8 +4736,10 @@ public partial class MainWindowViewModel : ObservableObject
         var forms = CurrentProject.Forms
             .OrderBy(form => form.DisplayName, StringComparer.OrdinalIgnoreCase)
             .ToList();
+        var signature = string.Join("|", forms.Select(form => $"{form.Id}:{form.DisplayName}"));
 
-        if (OpenFormTargetForms.Count == forms.Count)
+        if (string.Equals(_openFormTargetFormsSignature, signature, StringComparison.Ordinal)
+            && OpenFormTargetForms.Count == forms.Count)
         {
             var isSame = true;
             for (var i = 0; i < forms.Count; i++)
@@ -4664,6 +4763,7 @@ public partial class MainWindowViewModel : ObservableObject
         foreach (var form in forms)
             OpenFormTargetForms.Add(form);
 
+        _openFormTargetFormsSignature = signature;
         OnPropertyChanged(nameof(HasOpenFormTargets));
         OnPropertyChanged(nameof(OpenFormTargetHint));
     }
@@ -5499,6 +5599,7 @@ public partial class MainWindowViewModel : ObservableObject
     public void BeginPropertyGridLiveGesture()
     {
         _isPropertyGridLiveGesture = true;
+        _propertyGridLiveGestureSessionId = DocumentSessionId;
         _hasPendingPropertyGridLiveRefresh = false;
         _propertyGridLiveRefreshTimer.Stop();
         _lastPropertyGridLiveRefreshUtc = DateTime.MinValue;
@@ -5509,6 +5610,11 @@ public partial class MainWindowViewModel : ObservableObject
     {
         if (!_isPropertyGridLiveGesture)
             return;
+        if (!string.Equals(_propertyGridLiveGestureSessionId, DocumentSessionId, StringComparison.Ordinal))
+        {
+            EndPropertyGridLiveGesture();
+            return;
+        }
 
         var now = DateTime.UtcNow;
         if (now - _lastPropertyGridLiveRefreshUtc >= PropertyGridLiveRefreshInterval)
@@ -5530,11 +5636,14 @@ public partial class MainWindowViewModel : ObservableObject
 
     public void EndPropertyGridLiveGesture()
     {
+        var canRefresh = string.Equals(_propertyGridLiveGestureSessionId, DocumentSessionId, StringComparison.Ordinal);
         _isPropertyGridLiveGesture = false;
+        _propertyGridLiveGestureSessionId = "";
         _hasPendingPropertyGridLiveRefresh = false;
         _propertyGridLiveRefreshTimer.Stop();
         _propertyGridLiveRefreshTimer.Interval = PropertyGridLiveRefreshInterval;
-        RefreshLivePropertyGridLayoutRows(DateTime.UtcNow);
+        if (canRefresh)
+            RefreshLivePropertyGridLayoutRows(DateTime.UtcNow);
     }
 
     private void PropertyGridLiveRefreshTimer_Tick(object? sender, EventArgs e)
@@ -5545,6 +5654,9 @@ public partial class MainWindowViewModel : ObservableObject
             return;
 
         _hasPendingPropertyGridLiveRefresh = false;
+        if (!string.Equals(_propertyGridLiveGestureSessionId, DocumentSessionId, StringComparison.Ordinal))
+            return;
+
         RefreshLivePropertyGridLayoutRows(DateTime.UtcNow);
     }
 
@@ -6244,11 +6356,26 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void UpdateOpenFormTargetNames(string formId, string formName)
     {
+        PersistActiveFormDocumentState(refreshProjectViews: false);
+
         foreach (var interaction in Interactions.Where(interaction =>
             string.Equals(interaction.ActionType, InteractionModel.ActionOpenForm, StringComparison.OrdinalIgnoreCase)
             && string.Equals(interaction.TargetFormId, formId, StringComparison.OrdinalIgnoreCase)))
         {
             interaction.TargetFormName = formName;
+        }
+
+        foreach (var form in CurrentProject.Forms)
+        {
+            if (string.Equals(form.Id, ActiveFormDocument?.Id, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            foreach (var interaction in form.Document.Interactions.Where(interaction =>
+                         string.Equals(interaction.ActionType, InteractionModel.ActionOpenForm, StringComparison.OrdinalIgnoreCase)
+                         && string.Equals(interaction.TargetFormId, formId, StringComparison.OrdinalIgnoreCase)))
+            {
+                interaction.TargetFormName = formName;
+            }
         }
     }
 
@@ -7800,6 +7927,7 @@ public partial class MainWindowViewModel : ObservableObject
     private void ScheduleExportChecklistRefresh()
     {
         _isExportChecklistRefreshScheduled = true;
+        _scheduledExportChecklistSessionId = DocumentSessionId;
         _exportChecklistRefreshTimer.Stop();
         _exportChecklistRefreshTimer.Start();
     }
@@ -7811,6 +7939,9 @@ public partial class MainWindowViewModel : ObservableObject
             return;
 
         _isExportChecklistRefreshScheduled = false;
+        if (!string.Equals(_scheduledExportChecklistSessionId, DocumentSessionId, StringComparison.Ordinal))
+            return;
+
         RefreshExportChecklistNow();
     }
 
@@ -8208,7 +8339,7 @@ public partial class MainWindowViewModel : ObservableObject
             {
                 Title = "Forms exported",
                 Value = $"{CurrentProject.Forms.Count}/{CurrentProject.Forms.Count}",
-                Severity = GetSanitizedFormClassConflicts().Count > 0 ? ExportChecklistSeverity.Warning : ExportChecklistSeverity.Ok,
+                Severity = GetSanitizedFormClassConflicts().Count > 0 ? ExportChecklistSeverity.Error : ExportChecklistSeverity.Ok,
                 Details = CurrentProject.Forms.Count <= 1
                     ? "Single-form export."
                     : $"Project export will generate {CurrentProject.Forms.Count} Avalonia windows."
@@ -12615,10 +12746,13 @@ public partial class MainWindowViewModel : ObservableObject
     {
         _isHistorySuspended = true;
         _isApplyingDocument = true;
+        ResetDocumentScopedRefreshState();
 
         try
         {
-            SelectedControl = null;
+            SetSelection(Array.Empty<DesignControlModel>(), null);
+            SelectedInteraction = null;
+            SelectedBindingSource = null;
             Controls.Clear();
             BindingSources.Clear();
             Interactions.Clear();
@@ -12719,6 +12853,31 @@ public partial class MainWindowViewModel : ObservableObject
 
         ClearSelection();
         NotifyDesignerStateChanged(trackHistory: false);
+    }
+
+    private void ResetDocumentScopedRefreshState()
+    {
+        _undoBatchDepth = 0;
+        _undoBatchTrackHistory = false;
+
+        _isPropertyGridLiveGesture = false;
+        _hasPendingPropertyGridLiveRefresh = false;
+        _propertyGridLiveGestureSessionId = "";
+        _propertyGridLiveRefreshTimer.Stop();
+        _propertyGridLiveRefreshTimer.Interval = PropertyGridLiveRefreshInterval;
+        _lastPropertyGridLiveRefreshUtc = DateTime.MinValue;
+
+        _isDiagnosticsRefreshScheduled = false;
+        _scheduledDiagnosticsSessionId = "";
+        _diagnosticsRefreshTimer.Stop();
+
+        _isStructureTreeSearchRefreshScheduled = false;
+        _scheduledStructureSearchSessionId = "";
+        _structureTreeSearchRefreshTimer.Stop();
+
+        _isExportChecklistRefreshScheduled = false;
+        _scheduledExportChecklistSessionId = "";
+        _exportChecklistRefreshTimer.Stop();
     }
 
     private void RestoreFromSnapshot(string snapshot)
@@ -15018,6 +15177,17 @@ public partial class MainWindowViewModel : ObservableObject
             }
         }
     }
+
+    private sealed record ProjectControlReference(string Id, string Name, string Type);
+
+    private sealed record ProjectOpenFormInteractionContext(
+        string FormId,
+        string FormDisplayName,
+        string SourceControlId,
+        string SourceControlName,
+        string SourceDisplayName,
+        string TargetFormId,
+        string TargetFormName);
 
     private void NotifyDesignerStateChanged(bool trackHistory = true)
     {

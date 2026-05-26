@@ -25,6 +25,7 @@ public sealed class ProjectDocumentService
     {
         var json = JsonSerializer.Serialize(source.Document, JsonOptions);
         var document = JsonSerializer.Deserialize<DesignerDocumentFileModel>(json, JsonOptions) ?? new DesignerDocumentFileModel();
+        ReassignDocumentIds(document);
         var form = new DesignerFormDocument
         {
             Name = GetUniqueName(project, $"{source.DisplayName}Copy"),
@@ -74,6 +75,55 @@ public sealed class ProjectDocumentService
         }
 
         return $"Form{Guid.NewGuid():N}";
+    }
+
+    private static void ReassignDocumentIds(DesignerDocumentFileModel document)
+    {
+        var controlIdMap = document.Controls
+            .Where(control => !string.IsNullOrWhiteSpace(control.Id))
+            .GroupBy(control => control.Id, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.Key)
+            .ToDictionary(id => id, _ => Guid.NewGuid().ToString("N"), StringComparer.OrdinalIgnoreCase);
+
+        foreach (var control in document.Controls)
+        {
+            if (string.IsNullOrWhiteSpace(control.Id))
+                control.Id = Guid.NewGuid().ToString("N");
+            else if (controlIdMap.TryGetValue(control.Id, out var remappedId))
+                control.Id = remappedId;
+
+            if (!string.IsNullOrWhiteSpace(control.ParentId)
+                && controlIdMap.TryGetValue(control.ParentId, out var remappedParentId))
+            {
+                control.ParentId = remappedParentId;
+            }
+        }
+
+        var bindingSourceIdMap = document.BindingSources
+            .Where(source => !string.IsNullOrWhiteSpace(source.Id))
+            .GroupBy(source => source.Id, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.Key)
+            .ToDictionary(id => id, _ => Guid.NewGuid().ToString("N"), StringComparer.OrdinalIgnoreCase);
+
+        foreach (var source in document.BindingSources)
+        {
+            if (string.IsNullOrWhiteSpace(source.Id))
+                source.Id = Guid.NewGuid().ToString("N");
+            else if (bindingSourceIdMap.TryGetValue(source.Id, out var remappedId))
+                source.Id = remappedId;
+        }
+
+        foreach (var control in document.Controls)
+        {
+            if (!string.IsNullOrWhiteSpace(control.BindingSourceId)
+                && bindingSourceIdMap.TryGetValue(control.BindingSourceId, out var remappedBindingSourceId))
+            {
+                control.BindingSourceId = remappedBindingSourceId;
+            }
+        }
+
+        foreach (var interaction in document.Interactions)
+            interaction.Id = Guid.NewGuid().ToString("N");
     }
 
     private static readonly JsonSerializerOptions JsonOptions = new()

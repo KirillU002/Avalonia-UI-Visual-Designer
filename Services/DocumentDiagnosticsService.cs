@@ -33,6 +33,7 @@ public sealed class DocumentDiagnosticsService
         var interactionList = interactions.ToList();
         var diagnostics = new List<DocumentDiagnosticModel>();
 
+        ValidateDuplicateControlIds(controlList, diagnostics);
         ValidateDuplicateControlNames(controlList, diagnostics);
         ValidateBindingSources(sourceList, diagnostics);
         ValidateControls(controlList, sourceList, currentDocumentPath, designWidth, designHeight, diagnostics);
@@ -43,6 +44,31 @@ public sealed class DocumentDiagnosticsService
             .ThenBy(item => item.Source, StringComparer.OrdinalIgnoreCase)
             .ThenBy(item => item.Message, StringComparer.OrdinalIgnoreCase)
             .ToList();
+    }
+
+    private static void ValidateDuplicateControlIds(IReadOnlyList<DesignControlModel> controls, ICollection<DocumentDiagnosticModel> diagnostics)
+    {
+        var duplicates = controls
+            .Where(control => !string.IsNullOrWhiteSpace(control.Id))
+            .GroupBy(control => control.Id.Trim(), StringComparer.OrdinalIgnoreCase)
+            .Where(group => group.Count() > 1);
+
+        foreach (var group in duplicates)
+        {
+            foreach (var control in group)
+            {
+                diagnostics.Add(new DocumentDiagnosticModel
+                {
+                    Severity = DocumentDiagnosticSeverity.Error,
+                    Source = control.NameOrFallback(),
+                    Category = "Document consistency",
+                    Message = $"Duplicate control id '{control.Id}' in the active form.",
+                    Recommendation = "Duplicate ids can create phantom selection/rendering. Duplicate the control again or reload the document to regenerate ids.",
+                    RelatedControlId = control.Id,
+                    RelatedControlName = control.Name
+                });
+            }
+        }
     }
 
     private void ValidateDuplicateControlNames(IReadOnlyList<DesignControlModel> controls, ICollection<DocumentDiagnosticModel> diagnostics)

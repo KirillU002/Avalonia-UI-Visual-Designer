@@ -230,7 +230,26 @@ internal static class Program
         vm.FormTitle = "Form2";
         vm.Controls.Add(Control(DesignerControlTypes.TextBlock, "Form2Title", 36, 34, 340, 30, text: "Form2 window"));
 
+        vm.NewFormEditorCommand?.Execute(null);
+        var form3 = vm.ActiveFormDocument ?? throw new InvalidOperationException("Active Form3 document missing.");
+        form3.Name = "Form3";
+        form3.Document.FormTitle = "Form3";
+        vm.FormTitle = "Form3";
+        vm.Controls.Add(Control(DesignerControlTypes.TextBox, "Form3TextBox", 36, 84, 260, 40, placeholder: "Form3 text"));
+
         var form1Tab = vm.DocumentTabs.First(tab => tab.DocumentId == form1.Id);
+        vm.SelectedDocumentTab = form1Tab;
+        RequireActiveControls(vm, "Form1Title", "OpenForm2Button");
+        RequireNoActiveControls(vm, "Form2Title", "Form3TextBox");
+
+        vm.SelectedDocumentTab = vm.DocumentTabs.First(tab => tab.DocumentId == form2.Id);
+        RequireActiveControls(vm, "Form2Title");
+        RequireNoActiveControls(vm, "Form1Title", "OpenForm2Button", "Form3TextBox");
+
+        vm.SelectedDocumentTab = vm.DocumentTabs.First(tab => tab.DocumentId == form3.Id);
+        RequireActiveControls(vm, "Form3TextBox");
+        RequireNoActiveControls(vm, "Form1Title", "OpenForm2Button", "Form2Title");
+
         vm.SelectedDocumentTab = form1Tab;
         vm.Interactions.Add(new InteractionModel
         {
@@ -249,11 +268,31 @@ internal static class Program
         RequireGeneratedFile(context, "MainWindow.axaml.cs");
         RequireGeneratedFile(context, "Form2.axaml");
         RequireGeneratedFile(context, "Form2.axaml.cs");
+        RequireGeneratedFile(context, "Form3.axaml");
+        RequireGeneratedFile(context, "Form3.axaml.cs");
         RequireContains(context.Xaml, "Click=\"OpenForm2ButtonClick\"", "OpenForm Button.Click handler missing in Form1 XAML.");
         RequireContains(context.CSharp, "var windowForm2 = new Form2();", "OpenForm handler should create Form2.");
         RequireContains(context.CSharp, "windowForm2.Show();", "OpenForm handler should show Form2.");
-        RequireContains(context.ChecklistText, "Forms exported: 2/2", "Export checklist should report both forms.");
+        RequireContains(context.ChecklistText, "Forms exported: 3/3", "Export checklist should report all forms.");
         RequireContains(context.ChecklistText, "OpenForm interactions: 1", "Export checklist should report OpenForm interaction.");
+    }
+
+    private static void RequireActiveControls(MainWindowViewModel vm, params string[] names)
+    {
+        foreach (var name in names)
+        {
+            if (!vm.Controls.Any(control => string.Equals(control.Name, name, StringComparison.OrdinalIgnoreCase)))
+                throw new InvalidOperationException($"Expected active form to contain control '{name}'.");
+        }
+    }
+
+    private static void RequireNoActiveControls(MainWindowViewModel vm, params string[] names)
+    {
+        foreach (var name in names)
+        {
+            if (vm.Controls.Any(control => string.Equals(control.Name, name, StringComparison.OrdinalIgnoreCase)))
+                throw new InvalidOperationException($"Phantom control leaked into active form: '{name}'.");
+        }
     }
 
     private static void ConfigurePluginFallbackExport(MainWindowViewModel vm)

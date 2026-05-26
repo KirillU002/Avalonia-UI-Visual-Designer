@@ -131,6 +131,9 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer _previewFilterRefreshTimer = new();
     private readonly DispatcherTimer _designerRenderTimer = new();
     private bool _isDesignerRenderScheduled;
+    private string _scheduledDesignerRenderSessionId = string.Empty;
+    private string _dragGestureSessionId = string.Empty;
+    private string _resizeGestureSessionId = string.Empty;
     private bool _isAutosaveRunning;
     private bool _hasCheckedRecoveryOnStartup;
     private bool _isApplyingAppSettings;
@@ -377,7 +380,8 @@ public partial class MainWindow : Window
             return;
 
         _lastObservedDocumentSessionId = viewModel.DocumentSessionId;
-        ResetInteractiveRuntimePreviewState();
+        ResetDocumentVisualState(viewModel.DocumentSessionId);
+        RenderDesigner();
 
         if (!_hasCheckedRecoveryOnStartup || _suppressRecoverySessionChangeHandling)
             return;
@@ -884,6 +888,34 @@ public partial class MainWindow : Window
             viewModel.ClearPreviewRuntimeDiagnostics();
     }
 
+    private void ResetDocumentVisualState(string sessionId)
+    {
+        _designerRenderTimer.Stop();
+        _isDesignerRenderScheduled = false;
+        _scheduledDesignerRenderSessionId = sessionId;
+        _dragGestureSessionId = string.Empty;
+        _resizeGestureSessionId = string.Empty;
+
+        _isDragging = false;
+        _isMarqueeSelecting = false;
+        _isMarqueeAdditive = false;
+        _isResizing = false;
+        _isResizingGridColumn = false;
+        _isResizingDesignSurface = false;
+        _draggedBorder = null;
+        _draggedModel = null;
+        _resizingModel = null;
+        _highlightedContainerId = string.Empty;
+        _dragSelectionRoots.Clear();
+        _dragRootStartPositions.Clear();
+        _wrapperByControlId.Clear();
+
+        GuideOverlayCanvas.Children.Clear();
+        DesignerCanvas.Children.Clear();
+        MiniMapCanvas.Children.Clear();
+        ResetInteractiveRuntimePreviewState();
+    }
+
     private void UpdateWindowTitle()
     {
         if (DataContext is MainWindowViewModel viewModel)
@@ -1199,6 +1231,7 @@ public partial class MainWindow : Window
 
     private void ScheduleDesignerRender()
     {
+        _scheduledDesignerRenderSessionId = VM.DocumentSessionId;
         _isDesignerRenderScheduled = true;
         if (!_designerRenderTimer.IsEnabled)
             _designerRenderTimer.Start();
@@ -1211,6 +1244,9 @@ public partial class MainWindow : Window
             return;
 
         _isDesignerRenderScheduled = false;
+        if (!string.Equals(_scheduledDesignerRenderSessionId, VM.DocumentSessionId, StringComparison.Ordinal))
+            return;
+
         var stopwatch = Stopwatch.StartNew();
         RenderDesigner();
         stopwatch.Stop();
@@ -6448,6 +6484,7 @@ public partial class MainWindow : Window
         }
 
         _isDragging = true;
+        _dragGestureSessionId = VM.DocumentSessionId;
 
         if (VM.IsControlSelected(model) && VM.HasMultipleSelection)
             VM.SelectControls(VM.GetSelectedControls(), model);
@@ -6478,6 +6515,17 @@ public partial class MainWindow : Window
 
         if (!_isDragging || _draggedBorder is null || _draggedModel is null || _dragSelectionRoots.Count == 0)
             return;
+        if (!string.Equals(_dragGestureSessionId, VM.DocumentSessionId, StringComparison.Ordinal))
+        {
+            _isDragging = false;
+            _dragGestureSessionId = string.Empty;
+            _draggedBorder = null;
+            _draggedModel = null;
+            _dragSelectionRoots.Clear();
+            _dragRootStartPositions.Clear();
+            ClearGuideOverlay();
+            return;
+        }
 
         // Во время drag двигаем не все выделенные элементы подряд,
         // а только корневые, чтобы дочерние не смещались дважды через родителя.
@@ -6538,6 +6586,7 @@ public partial class MainWindow : Window
             e.Pointer.Capture(null);
             ClearGuideOverlay();
             _isDragging = false;
+            _dragGestureSessionId = string.Empty;
             _draggedBorder = null;
             _draggedModel = null;
             _dragSelectionRoots.Clear();
@@ -6564,6 +6613,19 @@ public partial class MainWindow : Window
         _pendingContextMenuControlId = string.Empty;
         e.Pointer.Capture(null);
 
+        if (!string.Equals(_dragGestureSessionId, VM.DocumentSessionId, StringComparison.Ordinal))
+        {
+            _isDragging = false;
+            _dragGestureSessionId = string.Empty;
+            _draggedBorder = null;
+            _draggedModel = null;
+            _dragSelectionRoots.Clear();
+            _dragRootStartPositions.Clear();
+            ClearGuideOverlay();
+            e.Handled = true;
+            return;
+        }
+
         if (_dragSelectionRoots.Count == 1)
         {
             var draggedRoot = _dragSelectionRoots[0];
@@ -6579,6 +6641,7 @@ public partial class MainWindow : Window
         }
 
         _isDragging = false;
+        _dragGestureSessionId = string.Empty;
         ClearGuideOverlay();
         _draggedBorder = null;
         _draggedModel = null;
@@ -6602,6 +6665,7 @@ public partial class MainWindow : Window
 
         // При старте ресайза запоминаем исходный размер, а дальше считаем дельту мыши.
         _isResizing = true;
+        _resizeGestureSessionId = VM.DocumentSessionId;
         _resizingModel = model;
         _resizeStart = GetDesignCanvasPosition(e);
         _startWidth = model.Width;
@@ -6620,6 +6684,14 @@ public partial class MainWindow : Window
 
         if (!_isResizing || _resizingModel is null)
             return;
+        if (!string.Equals(_resizeGestureSessionId, VM.DocumentSessionId, StringComparison.Ordinal))
+        {
+            _isResizing = false;
+            _resizeGestureSessionId = string.Empty;
+            _resizingModel = null;
+            ClearGuideOverlay();
+            return;
+        }
 
         // Ограничиваем размер пределами текущего контейнера,
         // чтобы элемент нельзя было "растянуть" за границы формы или родителя.
@@ -6648,6 +6720,17 @@ public partial class MainWindow : Window
         if (VM.IsUserPreviewMode || _isPanningViewport)
             return;
 
+        if (!string.Equals(_resizeGestureSessionId, VM.DocumentSessionId, StringComparison.Ordinal))
+        {
+            _isResizing = false;
+            _resizeGestureSessionId = string.Empty;
+            _resizingModel = null;
+            e.Pointer.Capture(null);
+            ClearGuideOverlay();
+            e.Handled = true;
+            return;
+        }
+
         if (_resizingModel is not null)
         {
             var parent = VM.GetControl(_resizingModel.ParentId);
@@ -6658,6 +6741,7 @@ public partial class MainWindow : Window
         }
 
         _isResizing = false;
+        _resizeGestureSessionId = string.Empty;
         _resizingModel = null;
         e.Pointer.Capture(null);
         ClearGuideOverlay();
@@ -6672,6 +6756,7 @@ public partial class MainWindow : Window
             return;
 
         _isResizingDesignSurface = true;
+        _resizeGestureSessionId = VM.DocumentSessionId;
         _designResizeStart = GetDesignHostPosition(e);
         _designStartWidth = VM.DesignWidth;
         _designStartHeight = VM.DesignHeight;
@@ -6690,6 +6775,12 @@ public partial class MainWindow : Window
 
         if (!_isResizingDesignSurface)
             return;
+        if (!string.Equals(_resizeGestureSessionId, VM.DocumentSessionId, StringComparison.Ordinal))
+        {
+            _isResizingDesignSurface = false;
+            _resizeGestureSessionId = string.Empty;
+            return;
+        }
 
         var current = GetDesignHostPosition(e);
         var dx = current.X - _designResizeStart.X;
@@ -6704,10 +6795,20 @@ public partial class MainWindow : Window
         if (VM.IsUserPreviewMode || _isPanningViewport)
             return;
 
+        if (!string.Equals(_resizeGestureSessionId, VM.DocumentSessionId, StringComparison.Ordinal))
+        {
+            _isResizingDesignSurface = false;
+            _resizeGestureSessionId = string.Empty;
+            e.Pointer.Capture(null);
+            e.Handled = true;
+            return;
+        }
+
         VM.DesignWidth = Math.Max(300, VM.Snap(VM.DesignWidth));
         VM.DesignHeight = Math.Max(200, VM.Snap(VM.DesignHeight));
 
         _isResizingDesignSurface = false;
+        _resizeGestureSessionId = string.Empty;
         e.Pointer.Capture(null);
         VM.CommitUndoBatch();
         RenderDesigner();
