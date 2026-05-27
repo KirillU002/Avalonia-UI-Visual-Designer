@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace FormDesigner.Models;
 
@@ -10,7 +11,15 @@ namespace FormDesigner.Models;
 /// </summary>
 public static class LayoutArrangementHelper
 {
-    public readonly record struct ChildSnapshot(string Id, double Width, double Height);
+    public readonly record struct ChildSnapshot(
+        string Id,
+        double Width,
+        double Height,
+        int GridRow = 0,
+        int GridColumn = 0,
+        int GridRowSpan = 1,
+        int GridColumnSpan = 1,
+        int StackOrder = 0);
     public readonly record struct ChildFrame(string Id, double X, double Y, double Width, double Height);
 
     public static IReadOnlyList<ChildFrame> ArrangeChildren(
@@ -52,7 +61,11 @@ public static class LayoutArrangementHelper
         var x = padding;
         var y = padding;
 
-        foreach (var child in children)
+        foreach (var child in children
+            .Select((child, index) => new { Child = child, Index = index })
+            .OrderBy(item => Math.Max(0, item.Child.StackOrder))
+            .ThenBy(item => item.Index)
+            .Select(item => item.Child))
         {
             var width = ClampLength(child.Width, innerWidth);
             var height = ClampLength(child.Height, innerHeight);
@@ -85,12 +98,16 @@ public static class LayoutArrangementHelper
         for (var index = 0; index < children.Count; index++)
         {
             var child = children[index];
-            var column = index % normalizedColumns;
-            var row = index / normalizedColumns;
+            var column = Math.Clamp(child.GridColumn, 0, normalizedColumns - 1);
+            var row = Math.Clamp(child.GridRow, 0, normalizedRows - 1);
+            var columnSpan = Math.Clamp(child.GridColumnSpan <= 0 ? 1 : child.GridColumnSpan, 1, normalizedColumns - column);
+            var rowSpan = Math.Clamp(child.GridRowSpan <= 0 ? 1 : child.GridRowSpan, 1, normalizedRows - row);
             var x = padding + (column * (cellWidth + spacing));
             var y = padding + (row * (cellHeight + spacing));
-            var width = Math.Min(Math.Max(40, child.Width), cellWidth);
-            var height = Math.Min(Math.Max(24, child.Height), cellHeight);
+            var availableCellWidth = (cellWidth * columnSpan) + (spacing * Math.Max(0, columnSpan - 1));
+            var availableCellHeight = (cellHeight * rowSpan) + (spacing * Math.Max(0, rowSpan - 1));
+            var width = Math.Min(Math.Max(40, child.Width), availableCellWidth);
+            var height = Math.Min(Math.Max(24, child.Height), availableCellHeight);
             frames.Add(new ChildFrame(child.Id, x, y, width, height));
         }
 

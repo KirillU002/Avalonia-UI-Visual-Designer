@@ -46,6 +46,10 @@ public class DesignerDocumentFileModel
 
     public int SurfaceLayoutRows { get; set; } = 3;
 
+    public string SurfaceGridColumnDefinitions { get; set; } = "";
+
+    public string SurfaceGridRowDefinitions { get; set; } = "";
+
     public string FormTheme { get; set; } = DesignerThemeCatalog.Light;
 
     public string FormTitle { get; set; } = "Form1";
@@ -91,8 +95,12 @@ public class DesignerControlFileModel
     public string FontWeight { get; set; } = "Normal";
     public double Opacity { get; set; } = 1;
     public double Padding { get; set; } = 8;
+    public string ChildLayoutMode { get; set; } = "";
     public string LayoutOrientation { get; set; } = DesignerLayoutModes.Vertical;
     public double LayoutSpacing { get; set; } = 12;
+    public string Margin { get; set; } = "0";
+    public string HorizontalAlignment { get; set; } = DesignerLayoutModes.AlignStretch;
+    public string VerticalAlignment { get; set; } = DesignerLayoutModes.AlignTop;
     public bool IsVisible { get; set; } = true;
     public bool IsLocked { get; set; }
     public string Stretch { get; set; } = "Uniform";
@@ -104,8 +112,15 @@ public class DesignerControlFileModel
     public bool AnchorTop { get; set; } = true;
     public bool AnchorRight { get; set; }
     public bool AnchorBottom { get; set; }
+    public int GridRow { get; set; }
+    public int GridColumn { get; set; }
+    public int GridRowSpan { get; set; } = 1;
+    public int GridColumnSpan { get; set; } = 1;
+    public int StackOrder { get; set; }
     public int Columns { get; set; } = 3;
     public int Rows { get; set; } = 3;
+    public string GridColumnDefinitions { get; set; } = "";
+    public string GridRowDefinitions { get; set; } = "";
     public bool ShowGridLines { get; set; } = true;
     public bool AutoGenerateColumns { get; set; }
     public string BindingSourceId { get; set; } = "";

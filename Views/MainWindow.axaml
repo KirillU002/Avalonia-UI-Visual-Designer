@@ -1,4 +1,4 @@
-<Window xmlns="https://github.com/avaloniaui"
+﻿<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
@@ -2303,11 +2303,10 @@
                     Classes="right-inspector-tabs"
                     Margin="8,0,8,8"
                     TabStripPlacement="Top"
-                    SelectedIndex="{Binding RightInspectorSelectedIndex, Mode=OneWay}">
+                    SelectedIndex="{Binding RightInspectorSelectedIndex, Mode=TwoWay}">
           <!-- Главная вкладка настройки:
                сверху свойства формы, ниже режимы дизайнера и затем свойства выделенного контрола. -->
-          <TabItem Header="Properties"
-                   IsVisible="{Binding IsDesignModePanelVisible}">
+          <TabItem Header="Properties">
             <Grid RowDefinitions="Auto,*"
                   RowSpacing="6"
                   Margin="0,8,0,0">
@@ -4867,8 +4866,7 @@
             </Grid>
           </TabItem>
 
-          <TabItem Header="Data"
-                   IsVisible="{Binding IsDataModePanelVisible}">
+          <TabItem Header="Data">
             <ScrollViewer Margin="0,12,0,0"
                           VerticalScrollBarVisibility="Auto">
               <StackPanel Spacing="12">
@@ -5348,8 +5346,134 @@
             </ScrollViewer>
           </TabItem>
 
-          <TabItem Header="Plugins"
-                   IsVisible="{Binding IsPluginsModePanelVisible}">
+          <TabItem Header="Layout">
+            <Grid RowDefinitions="Auto,*"
+                  RowSpacing="6"
+                  Margin="0,8,0,0">
+              <Grid ColumnDefinitions="*,Auto"
+                    ColumnSpacing="4">
+                <TextBox Classes="property-editor"
+                         Watermark="Search layout..."
+                         Text="{Binding PropertyGridSearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                <Button Grid.Column="1"
+                        Classes="property-header-action"
+                        Content="X"
+                        Command="{Binding ClearPropertyGridSearchCommand}"/>
+              </Grid>
+
+              <ScrollViewer Grid.Row="1"
+                            VerticalScrollBarVisibility="Auto">
+                <StackPanel Spacing="4">
+                  <Border Background="#F8FAFC"
+                          BorderBrush="#D7E2EE"
+                          BorderThickness="1"
+                          CornerRadius="6"
+                          Padding="10"
+                          IsVisible="{Binding HasNoPropertyGridRows}">
+                    <TextBlock Text="{Binding PropertyGridEmptyText}"
+                               Foreground="#64748B"
+                               TextWrapping="Wrap"/>
+                  </Border>
+
+                  <Border Classes="property-grid-table"
+                          IsVisible="{Binding HasPropertyGridRows}">
+                    <ItemsControl ItemsSource="{Binding PropertyGridCategories}">
+                      <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:PropertyGridCategoryViewModel">
+                          <StackPanel>
+                            <ToggleButton Classes="property-category-header"
+                                          IsChecked="{Binding IsExpanded, Mode=TwoWay}">
+                              <Grid ColumnDefinitions="14,*,Auto"
+                                    ColumnSpacing="4">
+                                <TextBlock Text="{Binding ExpandGlyph}"
+                                           FontSize="10"
+                                           HorizontalAlignment="Center"
+                                           VerticalAlignment="Center"/>
+                                <TextBlock Grid.Column="1"
+                                           Text="{Binding HeaderText}"
+                                           VerticalAlignment="Center"
+                                           TextTrimming="CharacterEllipsis"/>
+                                <TextBlock Grid.Column="2"
+                                           Text="{Binding Count}"
+                                           Foreground="#64748B"
+                                           FontWeight="Normal"
+                                           VerticalAlignment="Center"/>
+                              </Grid>
+                            </ToggleButton>
+
+                            <ItemsControl ItemsSource="{Binding Rows}"
+                                          IsVisible="{Binding IsExpanded}">
+                              <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:PropertyGridRowViewModel">
+                                  <Border Classes="property-row"
+                                          ToolTip.Tip="{Binding Description}">
+                                    <Grid ColumnDefinitions="18,112,*,Auto"
+                                          MinHeight="28">
+                                      <Button Classes="property-star"
+                                              Content="{Binding FavoriteGlyph}"
+                                              Command="{Binding #RootWindow.DataContext.TogglePropertyGridFavoriteCommand}"
+                                              CommandParameter="{Binding}"
+                                              ToolTip.Tip="Toggle favorite"/>
+                                      <TextBlock Grid.Column="1"
+                                                 Text="{Binding Label}"
+                                                 FontSize="12"
+                                                 Foreground="#334155"
+                                                 VerticalAlignment="Center"
+                                                 TextTrimming="CharacterEllipsis"/>
+                                      <Border Grid.Column="2"
+                                              BorderBrush="#E5E7EB"
+                                              BorderThickness="1,0,0,0"
+                                              Padding="6,1,0,1">
+                                        <Grid MinWidth="116">
+                                          <TextBox Classes="property-editor"
+                                                   Text="{Binding Value, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                   IsVisible="{Binding IsTextEditor}"
+                                                   LostFocus="PropertyGridTextBox_LostFocus"
+                                                   KeyDown="PropertyGridTextBox_KeyDown"/>
+                                          <TextBox Classes="property-editor"
+                                                   Text="{Binding Value, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                   IsVisible="{Binding IsNumberEditor}"
+                                                   LostFocus="PropertyGridTextBox_LostFocus"
+                                                   KeyDown="PropertyGridTextBox_KeyDown"/>
+                                          <CheckBox IsVisible="{Binding IsBoolEditor}"
+                                                    IsChecked="{Binding BoolValue, Mode=TwoWay}"
+                                                    HorizontalAlignment="Left"
+                                                    VerticalAlignment="Center"/>
+                                          <ComboBox Classes="property-editor"
+                                                    IsVisible="{Binding IsEnumEditor}"
+                                                    ItemsSource="{Binding Options}"
+                                                    SelectedItem="{Binding SelectedOption, Mode=TwoWay}"/>
+                                          <TextBlock Text="{Binding Value}"
+                                                     IsVisible="{Binding IsReadOnlyEditor}"
+                                                     Foreground="#475569"
+                                                     FontSize="12"
+                                                     VerticalAlignment="Center"
+                                                     TextTrimming="CharacterEllipsis"/>
+                                        </Grid>
+                                      </Border>
+                                      <TextBlock Grid.Column="3"
+                                                 Text="!"
+                                                 FontWeight="Bold"
+                                                 Foreground="#DC2626"
+                                                 IsVisible="{Binding HasValidationError}"
+                                                 ToolTip.Tip="{Binding ValidationMessage}"
+                                                 VerticalAlignment="Center"/>
+                                    </Grid>
+                                  </Border>
+                                </DataTemplate>
+                              </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                          </StackPanel>
+                        </DataTemplate>
+                      </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                  </Border>
+                </StackPanel>
+              </ScrollViewer>
+            </Grid>
+          </TabItem>
+
+          <TabItem Header="Plugins">
             <ScrollViewer Margin="0,12,0,0"
                           VerticalScrollBarVisibility="Auto">
               <StackPanel Spacing="12">
@@ -5545,8 +5669,7 @@
             </ScrollViewer>
           </TabItem>
 
-          <TabItem Header="Export"
-                   IsVisible="{Binding IsCodeModePanelVisible}">
+          <TabItem Header="Export">
             <ScrollViewer Margin="0,10,0,0"
                           HorizontalScrollBarVisibility="Disabled"
                           VerticalScrollBarVisibility="Auto">
@@ -5700,877 +5823,7 @@
             </ScrollViewer>
           </TabItem>
 
-          <TabItem Header="Export Pipeline"
-                   IsVisible="False">
-            <ScrollViewer Margin="0,10,0,0"
-                          HorizontalScrollBarVisibility="Disabled"
-                          VerticalScrollBarVisibility="Auto">
-              <StackPanel Spacing="10">
-                <Border Classes="export-card">
-                  <StackPanel Spacing="8">
-                    <TextBlock Text="Export pipeline"
-                               FontSize="16"
-                               FontWeight="Bold"/>
-                    <TextBlock Text="{Binding ExportPipelineSummary}"
-                               Foreground="#475569"
-                               FontSize="12"
-                               TextTrimming="CharacterEllipsis"
-                               MaxLines="1"/>
-                    <WrapPanel>
-                      <Border Classes="export-badge">
-                        <TextBlock Text="{Binding ExportDataGridBadgeText}"
-                                   Foreground="#1D4ED8"
-                                   FontSize="11"
-                                   FontWeight="SemiBold"/>
-                      </Border>
-                      <Border Classes="export-badge">
-                        <TextBlock Text="{Binding ExportLayoutBadgeText}"
-                                   Foreground="#1D4ED8"
-                                   FontSize="11"
-                                   FontWeight="SemiBold"/>
-                      </Border>
-                      <Border Classes="export-badge">
-                        <TextBlock Text="{Binding ExportValidationStatusText}"
-                                   Foreground="{Binding ExportValidationStatusForeground}"
-                                   FontSize="11"
-                                   FontWeight="SemiBold"/>
-                      </Border>
-                    </WrapPanel>
-                    <WrapPanel>
-                      <Button Content="Refresh"
-                              Classes="export-secondary"
-                              Command="{Binding RefreshGeneratedCodeEditorCommand}"
-                              ToolTip.Tip="{Binding RefreshGeneratedCodeEditorCommand.Hint}"
-                              MinWidth="78"
-                              Padding="10,6"
-                              Margin="0,0,6,6"/>
-                      <Button Content="Validate"
-                              Classes="export-secondary"
-                              Command="{Binding ValidateExportBuildEditorCommand}"
-                              ToolTip.Tip="{Binding ValidateExportBuildEditorCommand.Hint}"
-                              MinWidth="82"
-                              Padding="10,6"
-                              Margin="0,0,6,6"/>
-                      <Button Content="Export..."
-                              Classes="export-primary"
-                              Command="{Binding ExportToProjectEditorCommand}"
-                              ToolTip.Tip="{Binding ExportToProjectEditorCommand.Hint}"
-                              MinWidth="88"
-                              Padding="10,6"
-                              Margin="0,0,6,6"/>
-                      <Button Content="ZIP"
-                              Classes="export-secondary"
-                              Command="{Binding ExportAsZipEditorCommand}"
-                              ToolTip.Tip="{Binding ExportAsZipEditorCommand.Hint}"
-                              MinWidth="54"
-                              Padding="10,6"
-                              Margin="0,0,6,6"/>
-                    </WrapPanel>
-                  </StackPanel>
-                </Border>
-
-                <Border Classes="export-card">
-                  <StackPanel Spacing="8">
-                    <TextBlock Text="Generated files"
-                               FontWeight="Bold"
-                               FontSize="14"/>
-                    <TreeView ItemsSource="{Binding GeneratedFileTreeNodes}"
-                              SelectedItem="{Binding SelectedGeneratedFileNode, Mode=TwoWay}"
-                              MinHeight="120"
-                              MaxHeight="180"
-                              BorderThickness="0"
-                              Background="Transparent">
-                      <TreeView.Styles>
-                        <Style Selector="TreeViewItem"
-                               x:DataType="models:GeneratedFileTreeNodeModel">
-                          <Setter Property="MinHeight" Value="28"/>
-                          <Setter Property="Padding" Value="0"/>
-                        </Style>
-                      </TreeView.Styles>
-                      <TreeView.DataTemplates>
-                        <TreeDataTemplate x:DataType="models:GeneratedFileTreeNodeModel"
-                                          ItemsSource="{Binding Children}">
-                          <Grid ColumnDefinitions="Auto,*,Auto"
-                                ColumnSpacing="7"
-                                Margin="0,2">
-                            <Border Width="20"
-                                    Height="20"
-                                    CornerRadius="6"
-                                    Background="#E0F2FE"
-                                    VerticalAlignment="Center">
-                              <TextBlock Text="{Binding Icon}"
-                                         Foreground="#0369A1"
-                                         FontSize="8"
-                                         FontWeight="Bold"
-                                         HorizontalAlignment="Center"
-                                         VerticalAlignment="Center"/>
-                            </Border>
-                            <StackPanel Grid.Column="1"
-                                        Spacing="0">
-                              <TextBlock Text="{Binding Name}"
-                                         FontWeight="SemiBold"
-                                         TextTrimming="CharacterEllipsis"/>
-                              <TextBlock Text="{Binding Summary}"
-                                         Foreground="#64748B"
-                                         FontSize="11"
-                                         TextTrimming="CharacterEllipsis"/>
-                            </StackPanel>
-                            <TextBlock Grid.Column="2"
-                                       Text="{Binding StatusText}"
-                                       Foreground="{Binding SeverityForeground}"
-                                       FontSize="10"
-                                       FontWeight="Bold"
-                                       VerticalAlignment="Center"/>
-                          </Grid>
-                        </TreeDataTemplate>
-                      </TreeView.DataTemplates>
-                    </TreeView>
-                  </StackPanel>
-                </Border>
-
-                <Border Classes="export-card">
-                  <StackPanel Spacing="8">
-                    <TextBlock Text="Required packages"
-                               FontWeight="Bold"
-                               FontSize="14"/>
-                    <Border Background="#F0FDF4"
-                            BorderBrush="#BBF7D0"
-                            BorderThickness="1"
-                            CornerRadius="10"
-                            Padding="9"
-                            IsVisible="{Binding HasNoRequiredPackages}">
-                      <TextBlock Text="No additional packages required."
-                                 Foreground="#166534"
-                                 FontWeight="SemiBold"
-                                 FontSize="12"/>
-                    </Border>
-                    <ItemsControl ItemsSource="{Binding RequiredPackages}"
-                                  IsVisible="{Binding HasRequiredPackages}">
-                      <ItemsControl.ItemTemplate>
-                        <DataTemplate x:DataType="models:RequiredPackageModel">
-                          <Border Background="#FFFBEB"
-                                  BorderBrush="#FDE68A"
-                                  BorderThickness="1"
-                                  CornerRadius="10"
-                                  Padding="8"
-                                  Margin="0,0,0,6">
-                            <StackPanel Spacing="3">
-                              <TextBlock Text="{Binding Summary}"
-                                         FontWeight="Bold"
-                                         Foreground="#92400E"
-                                         TextTrimming="CharacterEllipsis"/>
-                              <TextBlock Text="{Binding Reason}"
-                                         Foreground="#78350F"
-                                         FontSize="12"
-                                         TextWrapping="Wrap"/>
-                              <TextBlock Text="{Binding InstallCommand}"
-                                         FontFamily="Consolas"
-                                         FontSize="10"
-                                         Foreground="#0F172A"
-                                         TextTrimming="CharacterEllipsis"/>
-                            </StackPanel>
-                          </Border>
-                        </DataTemplate>
-                      </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                  </StackPanel>
-                </Border>
-
-                <Border Classes="export-card">
-                  <StackPanel Spacing="8">
-                    <TextBlock Text="Export diagnostics"
-                               FontWeight="Bold"
-                               FontSize="14"/>
-                    <Border Background="#F0FDF4"
-                            BorderBrush="#BBF7D0"
-                            BorderThickness="1"
-                            CornerRadius="10"
-                            Padding="9"
-                            IsVisible="{Binding HasNoExportPipelineDiagnostics}">
-                      <TextBlock Text="No export warnings or errors."
-                                 Foreground="#166534"
-                                 FontWeight="SemiBold"
-                                 FontSize="12"/>
-                    </Border>
-                    <ItemsControl ItemsSource="{Binding ExportDiagnostics}"
-                                  IsVisible="{Binding HasExportPipelineDiagnostics}">
-                      <ItemsControl.ItemTemplate>
-                        <DataTemplate x:DataType="models:ExportDiagnosticModel">
-                          <Border Background="#FFF7ED"
-                                  BorderBrush="#FDBA74"
-                                  BorderThickness="1"
-                                  CornerRadius="10"
-                                  Padding="8"
-                                  Margin="0,0,0,6">
-                            <StackPanel Spacing="3">
-                              <DockPanel LastChildFill="True">
-                                <TextBlock Text="{Binding SeverityText}"
-                                           Foreground="{Binding SeverityForeground}"
-                                           FontSize="10"
-                                           FontWeight="Bold"
-                                           Margin="0,0,8,0"/>
-                                <TextBlock Text="{Binding Source}"
-                                           Foreground="#64748B"
-                                           FontSize="10"
-                                           HorizontalAlignment="Right"/>
-                              </DockPanel>
-                              <TextBlock Text="{Binding Message}"
-                                         FontWeight="SemiBold"
-                                         TextWrapping="Wrap"/>
-                              <TextBlock Text="{Binding Details}"
-                                         IsVisible="{Binding HasDetails}"
-                                         Foreground="#64748B"
-                                         FontSize="12"
-                                         TextWrapping="Wrap"/>
-                            </StackPanel>
-                          </Border>
-                        </DataTemplate>
-                      </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                  </StackPanel>
-                </Border>
-
-                <Border Classes="export-card">
-                  <StackPanel Spacing="8">
-                    <Grid ColumnDefinitions="*,Auto"
-                          ColumnSpacing="8">
-                      <StackPanel Spacing="2">
-                        <TextBlock Text="{Binding SelectedGeneratedFile.Path}"
-                                   FontWeight="Bold"
-                                   FontSize="13"
-                                   TextTrimming="CharacterEllipsis"/>
-                        <TextBlock Text="{Binding SelectedGeneratedFileSummary}"
-                                   Foreground="#64748B"
-                                   FontSize="11"
-                                   TextTrimming="CharacterEllipsis"/>
-                      </StackPanel>
-                      <Button Grid.Column="1"
-                              Content="Copy"
-                              Classes="export-secondary"
-                              Command="{Binding CopyCurrentGeneratedFileEditorCommand}"
-                              ToolTip.Tip="{Binding CopyCurrentGeneratedFileEditorCommand.Hint}"
-                              MinWidth="58"
-                              Padding="9,6"
-                              VerticalAlignment="Center"/>
-                    </Grid>
-
-                    <Border Classes="code-viewer"
-                            MinHeight="180"
-                            MaxHeight="320">
-                      <ScrollViewer HorizontalScrollBarVisibility="Auto"
-                                    VerticalScrollBarVisibility="Auto">
-                        <TextBlock Text="{Binding SelectedGeneratedFileContent}"
-                                   Classes="code-viewer-text"/>
-                      </ScrollViewer>
-                    </Border>
-                  </StackPanel>
-                </Border>
-              </StackPanel>
-            </ScrollViewer>
-          </TabItem>
-
-          <TabItem Header="Export XAML"
-                   IsVisible="False">
-            <Grid Margin="0,12,0,0"
-                  RowDefinitions="Auto,*">
-              <Border Classes="export-card">
-                <StackPanel Spacing="12">
-                  <Grid ColumnDefinitions="*,Auto"
-                        ColumnSpacing="12">
-                    <TextBlock Text="Экспорт в Avalonia"
-                               FontSize="18"
-                               FontWeight="Bold"
-                               VerticalAlignment="Center"/>
-                    <Border Grid.Column="1"
-                            Background="{Binding ExportStatusBadgeBackground}"
-                            BorderBrush="{Binding ExportStatusBadgeBorder}"
-                            BorderThickness="1"
-                            CornerRadius="999"
-                            Padding="9,4"
-                            VerticalAlignment="Center">
-                      <TextBlock Text="{Binding ExportStatusText}"
-                                 Foreground="{Binding ExportStatusBadgeForeground}"
-                                 FontSize="12"
-                                 FontWeight="SemiBold"/>
-                    </Border>
-                  </Grid>
-
-                  <TextBlock Text="{Binding ExportCompactSummary}"
-                             Foreground="#475569"
-                             FontSize="13"
-                             TextTrimming="CharacterEllipsis"
-                             MaxLines="1"/>
-
-                  <Border Background="{Binding ExportCacheStatusBackground}"
-                          BorderBrush="{Binding ExportCacheStatusBorder}"
-                          BorderThickness="1"
-                          CornerRadius="10"
-                          Padding="10,6">
-                    <TextBlock Text="{Binding ExportCacheStatusText}"
-                               Foreground="{Binding ExportCacheStatusForeground}"
-                               FontSize="12"
-                               FontWeight="SemiBold"/>
-                  </Border>
-
-                  <WrapPanel>
-                    <Border Classes="export-badge">
-                      <TextBlock Text="{Binding ExportDataGridBadgeText}"
-                                 Foreground="#1D4ED8"
-                                 FontSize="12"
-                                 FontWeight="SemiBold"/>
-                    </Border>
-                    <Border Classes="export-badge">
-                      <TextBlock Text="{Binding ExportLayoutBadgeText}"
-                                 Foreground="#1D4ED8"
-                                 FontSize="12"
-                                 FontWeight="SemiBold"/>
-                    </Border>
-                    <Border Classes="export-badge">
-                      <TextBlock Text="{Binding ExportViewModelBadgeText}"
-                                 Foreground="#1D4ED8"
-                                 FontSize="12"
-                                 FontWeight="SemiBold"/>
-                    </Border>
-                    <Border Classes="export-badge">
-                      <TextBlock Text="{Binding ExportInteractionsBadgeText}"
-                                 Foreground="#1D4ED8"
-                                 FontSize="12"
-                                 FontWeight="SemiBold"/>
-                    </Border>
-                  </WrapPanel>
-
-                  <StackPanel Spacing="6">
-                    <WrapPanel>
-                    <Button Content="Копировать XAML"
-                            Classes="export-primary"
-                            Command="{Binding CopyXamlEditorCommand}"
-                            ToolTip.Tip="{Binding CopyXamlEditorCommand.Hint}"
-                            Margin="0,0,8,8"/>
-                    <Button Content="Копировать C#"
-                            Classes="export-primary"
-                            Command="{Binding CopyCSharpEditorCommand}"
-                            ToolTip.Tip="{Binding CopyCSharpEditorCommand.Hint}"
-                            Margin="0,0,8,8"/>
-                    </WrapPanel>
-                    <WrapPanel>
-                    <Button Content="Обновить"
-                            Classes="export-secondary"
-                            Command="{Binding RefreshGeneratedCodeEditorCommand}"
-                            ToolTip.Tip="{Binding RefreshGeneratedCodeEditorCommand.Hint}"
-                            Margin="0,0,8,8"/>
-                    <Button Content="Диагностика"
-                            Classes="export-secondary"
-                            Command="{Binding OpenExportDiagnosticsEditorCommand}"
-                            ToolTip.Tip="{Binding OpenExportDiagnosticsEditorCommand.Hint}"
-                            Margin="0,0,8,8"
-                            IsVisible="{Binding HasExportWarnings}"/>
-                    <Button Content="Как вставить?"
-                            Classes="export-secondary"
-                            Margin="0,0,8,8">
-                      <Button.Flyout>
-                        <Flyout>
-                          <Border Padding="14"
-                                  MaxWidth="420">
-                            <StackPanel Spacing="8">
-                              <TextBlock Text="Как перенести"
-                                         FontWeight="Bold"
-                                         FontSize="16"/>
-                              <TextBlock Text="1. Создайте обычный Avalonia Desktop проект."
-                                         TextWrapping="Wrap"/>
-                              <TextBlock Text="2. Замените MainWindow.axaml на сгенерированный XAML."
-                                         TextWrapping="Wrap"/>
-                              <TextBlock Text="3. Замените MainWindow.axaml.cs на сгенерированный C#."
-                                         TextWrapping="Wrap"/>
-                              <TextBlock Text="{Binding ExportDependenciesSummary}"
-                                         Foreground="#1D4ED8"
-                                         TextWrapping="Wrap"/>
-                            </StackPanel>
-                          </Border>
-                        </Flyout>
-                      </Button.Flyout>
-                    </Button>
-                    </WrapPanel>
-                  </StackPanel>
-
-                  <Expander Header="Показать checklist"
-                            IsExpanded="False">
-                    <Border Background="#F8FAFC"
-                            BorderBrush="#D7E2EE"
-                            BorderThickness="1"
-                            CornerRadius="12"
-                            Padding="10"
-                            Margin="0,8,0,0">
-                      <ScrollViewer MaxHeight="240"
-                                    VerticalScrollBarVisibility="Auto"
-                                    HorizontalScrollBarVisibility="Disabled">
-                        <ItemsControl ItemsSource="{Binding ExportChecklistItems}">
-                          <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                              <Border Background="{Binding SeverityBackground}"
-                                      BorderBrush="{Binding SeverityBorderBrush}"
-                                      BorderThickness="1"
-                                      CornerRadius="8"
-                                      Padding="7"
-                                      Margin="0,0,0,4"
-                                      ToolTip.Tip="{Binding Details}">
-                                <Grid ColumnDefinitions="Auto,*,Auto"
-                                      ColumnSpacing="9">
-                                  <Border Background="{Binding SeverityBadgeBackground}"
-                                          CornerRadius="999"
-                                          Padding="7,2"
-                                          VerticalAlignment="Top">
-                                    <TextBlock Text="{Binding SeverityTitle}"
-                                               Foreground="White"
-                                               FontSize="10"
-                                               FontWeight="Bold"/>
-                                  </Border>
-                                  <StackPanel Grid.Column="1"
-                                              Spacing="1">
-                                    <TextBlock Text="{Binding Title}"
-                                               FontWeight="SemiBold"/>
-                                    <TextBlock Text="{Binding Details}"
-                                               Foreground="#64748B"
-                                               FontSize="12"
-                                               TextTrimming="CharacterEllipsis"
-                                               MaxLines="1"
-                                               IsVisible="{Binding HasDetails}"/>
-                                  </StackPanel>
-                                  <TextBlock Grid.Column="2"
-                                             Text="{Binding Value}"
-                                             Foreground="{Binding SeverityForeground}"
-                                             FontWeight="SemiBold"
-                                             TextTrimming="CharacterEllipsis"
-                                             MaxWidth="170"
-                                             TextAlignment="Right"/>
-                                </Grid>
-                              </Border>
-                            </DataTemplate>
-                          </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                      </ScrollViewer>
-                    </Border>
-                  </Expander>
-
-                  <Expander Header="Дополнительные настройки экспорта"
-                            IsExpanded="False">
-                    <Border Background="#F8FAFC"
-                            BorderBrush="#D7E2EE"
-                            BorderThickness="1"
-                            CornerRadius="12"
-                            Padding="10"
-                            Margin="0,8,0,0">
-                      <StackPanel Spacing="8">
-                        <Grid ColumnDefinitions="132,*"
-                              ColumnSpacing="10">
-                          <TextBlock Text="Режим"
-                                     FontWeight="SemiBold"
-                                     VerticalAlignment="Center"/>
-                          <ComboBox Grid.Column="1"
-                                    ItemsSource="{Binding AvailableGenerationModes}"
-                                    SelectedItem="{Binding GenerationMode, Mode=TwoWay}"
-                                    MinWidth="0"
-                                    HorizontalAlignment="Stretch"/>
-                        </Grid>
-                        <Grid ColumnDefinitions="132,*"
-                              ColumnSpacing="10">
-                          <TextBlock Text="Куда вставлять"
-                                     FontWeight="SemiBold"
-                                     VerticalAlignment="Center"/>
-                          <ComboBox Grid.Column="1"
-                                    ItemsSource="{Binding AvailableExportTargets}"
-                                    SelectedItem="{Binding ExportTarget, Mode=TwoWay}"
-                                    MinWidth="0"
-                                    HorizontalAlignment="Stretch"/>
-                        </Grid>
-                        <Grid ColumnDefinitions="132,*"
-                              ColumnSpacing="10">
-                          <TextBlock Text="Namespace проекта"
-                                     FontWeight="SemiBold"
-                                     VerticalAlignment="Center"/>
-                          <TextBox Grid.Column="1"
-                                   Watermark="AvaloniaApplication1"
-                                   MinWidth="0"
-                                   HorizontalAlignment="Stretch"
-                                   Text="{Binding ExportProjectNamespace, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
-                        </Grid>
-                        <Grid ColumnDefinitions="132,*"
-                              ColumnSpacing="10">
-                          <TextBlock Text="Размер XAML"
-                                     FontWeight="SemiBold"
-                                     VerticalAlignment="Center"/>
-                          <ComboBox Grid.Column="1"
-                                    ItemsSource="{Binding AvailableXamlVerbosities}"
-                                    SelectedItem="{Binding XamlVerbosity, Mode=TwoWay}"
-                                    MinWidth="0"
-                                    HorizontalAlignment="Stretch"/>
-                        </Grid>
-                        <Grid ColumnDefinitions="132,*"
-                              ColumnSpacing="10">
-                          <TextBlock Text="Макет экспорта"
-                                     FontWeight="SemiBold"
-                                     VerticalAlignment="Center"/>
-                          <ComboBox Grid.Column="1"
-                                    ItemsSource="{Binding AvailableLayoutExportModes}"
-                                    SelectedItem="{Binding LayoutExportMode, Mode=TwoWay}"
-                                    MinWidth="0"
-                                    HorizontalAlignment="Stretch"/>
-                        </Grid>
-                        <TextBlock Text="{Binding LayoutExportModeHint}"
-                                   Foreground="#64748B"
-                                   FontSize="12"
-                                   TextWrapping="Wrap"/>
-                        <Grid ColumnDefinitions="132,*"
-                              ColumnSpacing="10">
-                          <TextBlock Text="DataGrid"
-                                     FontWeight="SemiBold"
-                                     VerticalAlignment="Center"/>
-                          <ComboBox Grid.Column="1"
-                                    ItemsSource="{Binding AvailableDataGridExportModes}"
-                                    SelectedItem="{Binding DataGridExportMode, Mode=TwoWay}"
-                                    MinWidth="0"
-                                    HorizontalAlignment="Stretch"/>
-                        </Grid>
-                        <TextBlock Text="{Binding DataGridExportModeHint}"
-                                   Foreground="#64748B"
-                                   FontSize="12"
-                                   TextWrapping="Wrap"/>
-                        <WrapPanel>
-                          <CheckBox Content="Комментарии в XAML/C#"
-                                    Margin="0,0,18,8"
-                                    IsChecked="{Binding IncludeExportComments, Mode=TwoWay}"/>
-                          <CheckBox Content="Demo-данные"
-                                    Margin="0,0,18,8"
-                                    IsChecked="{Binding IncludeSampleData, Mode=TwoWay}"/>
-                          <CheckBox Content="CRUD-заготовки"
-                                    Margin="0,0,18,8"
-                                    IsChecked="{Binding IncludeCrudSkeleton, Mode=TwoWay}"/>
-                          <CheckBox Content="Атрибуты CommunityToolkit"
-                                    Margin="0,0,18,8"
-                                    IsChecked="{Binding IncludeCommunityToolkitAttributes, Mode=TwoWay}"/>
-                          <CheckBox Content="Runtime-ссылки плагинов"
-                                    Margin="0,0,18,8"
-                                    IsChecked="{Binding IncludePluginRuntimeReferences, Mode=TwoWay}"/>
-                        </WrapPanel>
-                      </StackPanel>
-                    </Border>
-                  </Expander>
-                </StackPanel>
-              </Border>
-
-              <Border Grid.Row="1"
-                      Margin="0,12,0,0"
-                      Classes="code-viewer">
-                <ScrollViewer HorizontalScrollBarVisibility="Auto"
-                              VerticalScrollBarVisibility="Auto">
-                  <TextBlock Text="{Binding GeneratedXaml}"
-                             Classes="code-viewer-text"/>
-                </ScrollViewer>
-              </Border>
-            </Grid>
-          </TabItem>
-
-          <TabItem Header="Export C#"
-                   IsVisible="False">
-            <Grid Margin="0,12,0,0"
-                  RowDefinitions="Auto,*">
-              <Border Classes="export-card">
-                <StackPanel Spacing="12">
-                  <Grid ColumnDefinitions="*,Auto"
-                        ColumnSpacing="12">
-                    <TextBlock Text="Экспорт в Avalonia"
-                               FontSize="18"
-                               FontWeight="Bold"
-                               VerticalAlignment="Center"/>
-                    <Border Grid.Column="1"
-                            Background="{Binding ExportStatusBadgeBackground}"
-                            BorderBrush="{Binding ExportStatusBadgeBorder}"
-                            BorderThickness="1"
-                            CornerRadius="999"
-                            Padding="9,4"
-                            VerticalAlignment="Center">
-                      <TextBlock Text="{Binding ExportStatusText}"
-                                 Foreground="{Binding ExportStatusBadgeForeground}"
-                                 FontSize="12"
-                                 FontWeight="SemiBold"/>
-                    </Border>
-                  </Grid>
-
-                  <TextBlock Text="{Binding ExportCompactSummary}"
-                             Foreground="#475569"
-                             FontSize="13"
-                             TextTrimming="CharacterEllipsis"
-                             MaxLines="1"/>
-
-                  <Border Background="{Binding ExportCacheStatusBackground}"
-                          BorderBrush="{Binding ExportCacheStatusBorder}"
-                          BorderThickness="1"
-                          CornerRadius="10"
-                          Padding="10,6">
-                    <TextBlock Text="{Binding ExportCacheStatusText}"
-                               Foreground="{Binding ExportCacheStatusForeground}"
-                               FontSize="12"
-                               FontWeight="SemiBold"/>
-                  </Border>
-
-                  <WrapPanel>
-                    <Border Classes="export-badge">
-                      <TextBlock Text="{Binding ExportDataGridBadgeText}"
-                                 Foreground="#1D4ED8"
-                                 FontSize="12"
-                                 FontWeight="SemiBold"/>
-                    </Border>
-                    <Border Classes="export-badge">
-                      <TextBlock Text="{Binding ExportLayoutBadgeText}"
-                                 Foreground="#1D4ED8"
-                                 FontSize="12"
-                                 FontWeight="SemiBold"/>
-                    </Border>
-                    <Border Classes="export-badge">
-                      <TextBlock Text="{Binding ExportViewModelBadgeText}"
-                                 Foreground="#1D4ED8"
-                                 FontSize="12"
-                                 FontWeight="SemiBold"/>
-                    </Border>
-                    <Border Classes="export-badge">
-                      <TextBlock Text="{Binding ExportInteractionsBadgeText}"
-                                 Foreground="#1D4ED8"
-                                 FontSize="12"
-                                 FontWeight="SemiBold"/>
-                    </Border>
-                  </WrapPanel>
-
-                  <StackPanel Spacing="6">
-                    <WrapPanel>
-                    <Button Content="Копировать XAML"
-                            Classes="export-primary"
-                            Command="{Binding CopyXamlEditorCommand}"
-                            ToolTip.Tip="{Binding CopyXamlEditorCommand.Hint}"
-                            Margin="0,0,8,8"/>
-                    <Button Content="Копировать C#"
-                            Classes="export-primary"
-                            Command="{Binding CopyCSharpEditorCommand}"
-                            ToolTip.Tip="{Binding CopyCSharpEditorCommand.Hint}"
-                            Margin="0,0,8,8"/>
-                    </WrapPanel>
-                    <WrapPanel>
-                    <Button Content="Обновить"
-                            Classes="export-secondary"
-                            Command="{Binding RefreshGeneratedCodeEditorCommand}"
-                            ToolTip.Tip="{Binding RefreshGeneratedCodeEditorCommand.Hint}"
-                            Margin="0,0,8,8"/>
-                    <Button Content="Диагностика"
-                            Classes="export-secondary"
-                            Command="{Binding OpenExportDiagnosticsEditorCommand}"
-                            ToolTip.Tip="{Binding OpenExportDiagnosticsEditorCommand.Hint}"
-                            Margin="0,0,8,8"
-                            IsVisible="{Binding HasExportWarnings}"/>
-                    <Button Content="Как вставить?"
-                            Classes="export-secondary"
-                            Margin="0,0,8,8">
-                      <Button.Flyout>
-                        <Flyout>
-                          <Border Padding="14"
-                                  MaxWidth="420">
-                            <StackPanel Spacing="8">
-                              <TextBlock Text="Как перенести"
-                                         FontWeight="Bold"
-                                         FontSize="16"/>
-                              <TextBlock Text="1. Создайте обычный Avalonia Desktop проект."
-                                         TextWrapping="Wrap"/>
-                              <TextBlock Text="2. Замените MainWindow.axaml на сгенерированный XAML."
-                                         TextWrapping="Wrap"/>
-                              <TextBlock Text="3. Замените MainWindow.axaml.cs на сгенерированный C#."
-                                         TextWrapping="Wrap"/>
-                              <TextBlock Text="{Binding ExportDependenciesSummary}"
-                                         Foreground="#1D4ED8"
-                                         TextWrapping="Wrap"/>
-                            </StackPanel>
-                          </Border>
-                        </Flyout>
-                      </Button.Flyout>
-                    </Button>
-                    </WrapPanel>
-                  </StackPanel>
-
-                  <Expander Header="Показать checklist"
-                            IsExpanded="False">
-                    <Border Background="#F8FAFC"
-                            BorderBrush="#D7E2EE"
-                            BorderThickness="1"
-                            CornerRadius="12"
-                            Padding="10"
-                            Margin="0,8,0,0">
-                      <ScrollViewer MaxHeight="240"
-                                    VerticalScrollBarVisibility="Auto"
-                                    HorizontalScrollBarVisibility="Disabled">
-                        <ItemsControl ItemsSource="{Binding ExportChecklistItems}">
-                          <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                              <Border Background="{Binding SeverityBackground}"
-                                      BorderBrush="{Binding SeverityBorderBrush}"
-                                      BorderThickness="1"
-                                      CornerRadius="8"
-                                      Padding="7"
-                                      Margin="0,0,0,4"
-                                      ToolTip.Tip="{Binding Details}">
-                                <Grid ColumnDefinitions="Auto,*,Auto"
-                                      ColumnSpacing="9">
-                                  <Border Background="{Binding SeverityBadgeBackground}"
-                                          CornerRadius="999"
-                                          Padding="7,2"
-                                          VerticalAlignment="Top">
-                                    <TextBlock Text="{Binding SeverityTitle}"
-                                               Foreground="White"
-                                               FontSize="10"
-                                               FontWeight="Bold"/>
-                                  </Border>
-                                  <StackPanel Grid.Column="1"
-                                              Spacing="1">
-                                    <TextBlock Text="{Binding Title}"
-                                               FontWeight="SemiBold"/>
-                                    <TextBlock Text="{Binding Details}"
-                                               Foreground="#64748B"
-                                               FontSize="12"
-                                               TextTrimming="CharacterEllipsis"
-                                               MaxLines="1"
-                                               IsVisible="{Binding HasDetails}"/>
-                                  </StackPanel>
-                                  <TextBlock Grid.Column="2"
-                                             Text="{Binding Value}"
-                                             Foreground="{Binding SeverityForeground}"
-                                             FontWeight="SemiBold"
-                                             TextTrimming="CharacterEllipsis"
-                                             MaxWidth="170"
-                                             TextAlignment="Right"/>
-                                </Grid>
-                              </Border>
-                            </DataTemplate>
-                          </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                      </ScrollViewer>
-                    </Border>
-                  </Expander>
-
-                  <Expander Header="Дополнительные настройки экспорта"
-                            IsExpanded="False">
-                    <Border Background="#F8FAFC"
-                            BorderBrush="#D7E2EE"
-                            BorderThickness="1"
-                            CornerRadius="12"
-                            Padding="10"
-                            Margin="0,8,0,0">
-                      <StackPanel Spacing="8">
-                        <Grid ColumnDefinitions="132,*"
-                              ColumnSpacing="10">
-                          <TextBlock Text="Режим"
-                                     FontWeight="SemiBold"
-                                     VerticalAlignment="Center"/>
-                          <ComboBox Grid.Column="1"
-                                    ItemsSource="{Binding AvailableGenerationModes}"
-                                    SelectedItem="{Binding GenerationMode, Mode=TwoWay}"
-                                    MinWidth="0"
-                                    HorizontalAlignment="Stretch"/>
-                        </Grid>
-                        <Grid ColumnDefinitions="132,*"
-                              ColumnSpacing="10">
-                          <TextBlock Text="Куда вставлять"
-                                     FontWeight="SemiBold"
-                                     VerticalAlignment="Center"/>
-                          <ComboBox Grid.Column="1"
-                                    ItemsSource="{Binding AvailableExportTargets}"
-                                    SelectedItem="{Binding ExportTarget, Mode=TwoWay}"
-                                    MinWidth="0"
-                                    HorizontalAlignment="Stretch"/>
-                        </Grid>
-                        <Grid ColumnDefinitions="132,*"
-                              ColumnSpacing="10">
-                          <TextBlock Text="Namespace проекта"
-                                     FontWeight="SemiBold"
-                                     VerticalAlignment="Center"/>
-                          <TextBox Grid.Column="1"
-                                   Watermark="AvaloniaApplication1"
-                                   MinWidth="0"
-                                   HorizontalAlignment="Stretch"
-                                   Text="{Binding ExportProjectNamespace, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
-                        </Grid>
-                        <Grid ColumnDefinitions="132,*"
-                              ColumnSpacing="10">
-                          <TextBlock Text="Размер XAML"
-                                     FontWeight="SemiBold"
-                                     VerticalAlignment="Center"/>
-                          <ComboBox Grid.Column="1"
-                                    ItemsSource="{Binding AvailableXamlVerbosities}"
-                                    SelectedItem="{Binding XamlVerbosity, Mode=TwoWay}"
-                                    MinWidth="0"
-                                    HorizontalAlignment="Stretch"/>
-                        </Grid>
-                        <Grid ColumnDefinitions="132,*"
-                              ColumnSpacing="10">
-                          <TextBlock Text="Макет экспорта"
-                                     FontWeight="SemiBold"
-                                     VerticalAlignment="Center"/>
-                          <ComboBox Grid.Column="1"
-                                    ItemsSource="{Binding AvailableLayoutExportModes}"
-                                    SelectedItem="{Binding LayoutExportMode, Mode=TwoWay}"
-                                    MinWidth="0"
-                                    HorizontalAlignment="Stretch"/>
-                        </Grid>
-                        <TextBlock Text="{Binding LayoutExportModeHint}"
-                                   Foreground="#64748B"
-                                   FontSize="12"
-                                   TextWrapping="Wrap"/>
-                        <Grid ColumnDefinitions="132,*"
-                              ColumnSpacing="10">
-                          <TextBlock Text="DataGrid"
-                                     FontWeight="SemiBold"
-                                     VerticalAlignment="Center"/>
-                          <ComboBox Grid.Column="1"
-                                    ItemsSource="{Binding AvailableDataGridExportModes}"
-                                    SelectedItem="{Binding DataGridExportMode, Mode=TwoWay}"
-                                    MinWidth="0"
-                                    HorizontalAlignment="Stretch"/>
-                        </Grid>
-                        <TextBlock Text="{Binding DataGridExportModeHint}"
-                                   Foreground="#64748B"
-                                   FontSize="12"
-                                   TextWrapping="Wrap"/>
-                        <WrapPanel>
-                          <CheckBox Content="Комментарии в XAML/C#"
-                                    Margin="0,0,18,8"
-                                    IsChecked="{Binding IncludeExportComments, Mode=TwoWay}"/>
-                          <CheckBox Content="Demo-данные"
-                                    Margin="0,0,18,8"
-                                    IsChecked="{Binding IncludeSampleData, Mode=TwoWay}"/>
-                          <CheckBox Content="CRUD-заготовки"
-                                    Margin="0,0,18,8"
-                                    IsChecked="{Binding IncludeCrudSkeleton, Mode=TwoWay}"/>
-                          <CheckBox Content="Атрибуты CommunityToolkit"
-                                    Margin="0,0,18,8"
-                                    IsChecked="{Binding IncludeCommunityToolkitAttributes, Mode=TwoWay}"/>
-                          <CheckBox Content="Runtime-ссылки плагинов"
-                                    Margin="0,0,18,8"
-                                    IsChecked="{Binding IncludePluginRuntimeReferences, Mode=TwoWay}"/>
-                        </WrapPanel>
-                      </StackPanel>
-                    </Border>
-                  </Expander>
-                </StackPanel>
-              </Border>
-
-              <Border Grid.Row="1"
-                      Margin="0,12,0,0"
-                      Classes="code-viewer">
-                <ScrollViewer HorizontalScrollBarVisibility="Auto"
-                              VerticalScrollBarVisibility="Auto">
-                  <TextBlock Text="{Binding GeneratedCSharp}"
-                             Classes="code-viewer-text"/>
-                </ScrollViewer>
-              </Border>
-            </Grid>
-          </TabItem>
-
-          <TabItem Header="Logic"
-                   IsVisible="{Binding IsLogicModePanelVisible}">
+          <TabItem Header="Logic">
             <ScrollViewer Margin="0,12,0,0"
                           VerticalScrollBarVisibility="Auto">
               <StackPanel Spacing="12">
@@ -6597,6 +5850,37 @@
                   </Grid>
                 </Border>
 
+                <Border Classes="card"
+                        IsVisible="{Binding HasLogicQuickActions}">
+                  <StackPanel Spacing="8">
+                    <TextBlock Text="Quick actions"
+                               FontSize="14"
+                               FontWeight="Bold"/>
+                    <WrapPanel>
+                      <Button Content="Show message"
+                              Command="{Binding AddShowMessageInteractionForSelectedCommand}"
+                              IsVisible="{Binding CanQuickAddButtonShowMessageInteraction}"
+                              Padding="10,7"
+                              Margin="0,0,8,8"/>
+                      <Button Content="Open another form"
+                              Command="{Binding AddOpenFormInteractionForSelectedCommand}"
+                              IsVisible="{Binding CanQuickAddButtonOpenFormInteraction}"
+                              Padding="10,7"
+                              Margin="0,0,8,8"/>
+                      <Button Content="Toggle visibility"
+                              Command="{Binding AddToggleVisibilityInteractionForSelectedCommand}"
+                              IsVisible="{Binding CanQuickAddToggleVisibilityInteraction}"
+                              Padding="10,7"
+                              Margin="0,0,8,8"/>
+                      <Button Content="Fill TextBox from row"
+                              Command="{Binding AddDataGridFillInteractionForSelectedCommand}"
+                              IsVisible="{Binding CanQuickAddDataGridFillInteraction}"
+                              Padding="10,7"
+                              Margin="0,0,8,8"/>
+                    </WrapPanel>
+                  </StackPanel>
+                </Border>
+
                 <Border Classes="card">
                   <StackPanel Spacing="10">
                     <Grid ColumnDefinitions="*,Auto"
@@ -6606,7 +5890,7 @@
                                  FontWeight="Bold"
                                  VerticalAlignment="Center"/>
                       <TextBlock Grid.Column="1"
-                                 Text="{Binding Interactions.Count, StringFormat='Всего: {0}'}"
+                                 Text="{Binding SelectedControlInteractionsCountText}"
                                  Foreground="#475569"
                                  VerticalAlignment="Center"/>
                     </Grid>
@@ -6616,14 +5900,14 @@
                             BorderThickness="1"
                             CornerRadius="12"
                             Padding="14"
-                            IsVisible="{Binding HasNoInteractions}">
+                            IsVisible="{Binding HasNoSelectedControlInteractions}">
                       <TextBlock Text="Правил логики пока нет. Нажмите «Добавить», затем выберите источник, событие, действие и цель."
                                  Foreground="#64748B"
                                  TextWrapping="Wrap"/>
                     </Border>
 
-                    <ItemsControl ItemsSource="{Binding Interactions}"
-                                  IsVisible="{Binding HasInteractions}">
+                    <ItemsControl ItemsSource="{Binding SelectedControlInteractions}"
+                                  IsVisible="{Binding HasSelectedControlInteractions}">
                       <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="models:InteractionModel">
                           <Border Background="White"
@@ -6778,6 +6062,7 @@
 
                       <StackPanel Grid.Row="3"
                                   Grid.ColumnSpan="2"
+                                  IsVisible="{Binding IsSelectedInteractionMessageVisible}"
                                   Spacing="4">
                         <TextBlock Text="Шаблон текста"
                                    FontWeight="SemiBold"/>

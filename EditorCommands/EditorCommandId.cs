@@ -28,6 +28,8 @@ public enum EditorCommandId
     AlignCenter,
     DistributeHorizontal,
     DistributeVertical,
+    ConvertSelectionToStackPanel,
+    ConvertSelectionToGrid,
     Group,
     Ungroup,
     Lock,

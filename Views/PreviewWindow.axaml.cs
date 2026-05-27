@@ -467,7 +467,9 @@ public partial class PreviewWindow : Window
 
         var layoutMode = parent is null
             ? DesignerLayoutModes.NormalizeMode(_document.SurfaceLayoutMode)
-            : DesignerLayoutModes.NormalizeMode(_registry.GetRequiredControl(parent.Type).ChildLayoutMode);
+            : string.IsNullOrWhiteSpace(parent.ChildLayoutMode)
+                ? DesignerLayoutModes.NormalizeMode(_registry.GetRequiredControl(parent.Type).ChildLayoutMode)
+                : DesignerLayoutModes.NormalizeMode(parent.ChildLayoutMode);
 
         if (DesignerLayoutModes.IsAbsolute(layoutMode))
         {
@@ -507,7 +509,15 @@ public partial class PreviewWindow : Window
             padding,
             actualParentWidth,
             actualParentHeight,
-            children.Select(child => new LayoutArrangementHelper.ChildSnapshot(child.Id, child.Width, child.Height)).ToList())
+            children.Select(child => new LayoutArrangementHelper.ChildSnapshot(
+                child.Id,
+                child.Width,
+                child.Height,
+                child.GridRow,
+                child.GridColumn,
+                child.GridRowSpan,
+                child.GridColumnSpan,
+                child.StackOrder)).ToList())
             .ToDictionary(frame => frame.Id, StringComparer.Ordinal);
 
         foreach (var child in children)

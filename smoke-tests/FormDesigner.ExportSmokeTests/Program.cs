@@ -32,6 +32,7 @@ internal static class Program
             new("InteractionsExport", ConfigureInteractionsExport, AssertInteractionsExport, RequiresRealDataGrid: true),
             new("MultiFormOpenFormExport", ConfigureMultiFormOpenFormExport, AssertMultiFormOpenFormExport),
             new("PluginFallbackExport", ConfigurePluginFallbackExport, AssertPluginFallbackExport),
+            new("GridLayoutExport", ConfigureGridLayoutExport, AssertGridLayoutExport),
             new("ResponsiveLayoutExport_StackPanel", ConfigureResponsiveStackPanelExport, AssertResponsiveStackPanelExport),
             new("ResponsiveLayoutExport_CanvasFallback", ConfigureResponsiveCanvasFallbackExport, AssertResponsiveCanvasFallbackExport)
         };
@@ -308,6 +309,44 @@ internal static class Program
         RequireNotContains(context.Xaml, "minimal:HelloCard", "Clean fallback export must not require plugin runtime namespace.");
         RequireContains(context.DiagnosticsText, "placeholder", "Diagnostics should warn about plugin placeholder export.");
         RequireContains(context.ChecklistText, "Plugins: none", "Checklist should report no runtime plugin DLLs in fallback mode.");
+    }
+
+    private static void ConfigureGridLayoutExport(MainWindowViewModel vm)
+    {
+        vm.SurfaceLayoutMode = DesignerLayoutModes.Grid;
+        vm.SurfaceLayoutColumns = 2;
+        vm.SurfaceLayoutRows = 2;
+        vm.SurfaceGridColumnDefinitions = "Auto,*";
+        vm.SurfaceGridRowDefinitions = "Auto,*";
+        var title = Control(DesignerControlTypes.TextBlock, "GridTitle", 0, 0, 220, 30, text: "Grid layout");
+        title.GridRow = 0;
+        title.GridColumn = 0;
+        title.GridColumnSpan = 2;
+        title.HorizontalAlignment = DesignerLayoutModes.AlignStretch;
+        vm.Controls.Add(title);
+
+        var input = Control(DesignerControlTypes.TextBox, "GridInput", 0, 0, 240, 38, placeholder: "Input");
+        input.GridRow = 1;
+        input.GridColumn = 0;
+        input.Margin = "0,12,12,0";
+        vm.Controls.Add(input);
+
+        var submit = Control(DesignerControlTypes.Button, "GridSubmit", 0, 0, 140, 40, text: "Submit", background: "#2563EB", foreground: "#FFFFFF", border: "#1D4ED8", radius: 10);
+        submit.GridRow = 1;
+        submit.GridColumn = 1;
+        submit.HorizontalAlignment = DesignerLayoutModes.AlignRight;
+        submit.Margin = "0,12,0,0";
+        vm.Controls.Add(submit);
+    }
+
+    private static void AssertGridLayoutExport(SmokeContext context)
+    {
+        RequireContains(context.Xaml, "<Grid x:Name=\"RootLayout\"", "Grid layout export should use Avalonia Grid as the root.");
+        RequireContains(context.Xaml, "ColumnDefinitions=\"Auto,*\"", "Grid column definitions should be exported.");
+        RequireContains(context.Xaml, "RowDefinitions=\"Auto,*\"", "Grid row definitions should be exported.");
+        RequireContains(context.Xaml, "Grid.Row=\"1\" Grid.Column=\"1\"", "Child Grid.Row/Grid.Column placement should be exported.");
+        RequireNotContains(context.Xaml, "Canvas.Left", "Grid layout children should not export Canvas.Left.");
+        RequireNotContains(context.Xaml, "primitives:UniformGrid", "Grid layout export should not use UniformGrid.");
     }
 
     private static void ConfigureResponsiveStackPanelExport(MainWindowViewModel vm)

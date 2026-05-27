@@ -69,10 +69,22 @@ public partial class DesignControlModel : ObservableObject
     private double padding = 8;
 
     [ObservableProperty]
+    private string childLayoutMode = "";
+
+    [ObservableProperty]
     private string layoutOrientation = DesignerLayoutModes.Vertical;
 
     [ObservableProperty]
     private double layoutSpacing = 12;
+
+    [ObservableProperty]
+    private string margin = "0";
+
+    [ObservableProperty]
+    private string horizontalAlignment = "Stretch";
+
+    [ObservableProperty]
+    private string verticalAlignment = "Top";
 
     [ObservableProperty]
     private bool isVisible = true;
@@ -117,10 +129,31 @@ public partial class DesignControlModel : ObservableObject
     private bool anchorBottom;
 
     [ObservableProperty]
+    private int gridRow;
+
+    [ObservableProperty]
+    private int gridColumn;
+
+    [ObservableProperty]
+    private int gridRowSpan = 1;
+
+    [ObservableProperty]
+    private int gridColumnSpan = 1;
+
+    [ObservableProperty]
+    private int stackOrder;
+
+    [ObservableProperty]
     private int columns = 3;
 
     [ObservableProperty]
     private int rows = 3;
+
+    [ObservableProperty]
+    private string gridColumnDefinitions = "";
+
+    [ObservableProperty]
+    private string gridRowDefinitions = "";
 
     [ObservableProperty]
     private bool showGridLines = true;
@@ -296,6 +329,16 @@ public partial class DesignControlModel : ObservableObject
             Padding = 0;
     }
 
+    partial void OnChildLayoutModeChanged(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return;
+
+        var normalized = DesignerLayoutModes.NormalizeMode(value);
+        if (!string.Equals(value, normalized, StringComparison.Ordinal))
+            ChildLayoutMode = normalized;
+    }
+
     partial void OnLayoutOrientationChanged(string value)
     {
         var normalized = DesignerLayoutModes.NormalizeOrientation(value);
@@ -307,6 +350,56 @@ public partial class DesignControlModel : ObservableObject
     {
         if (value < 0)
             LayoutSpacing = 0;
+    }
+
+    partial void OnMarginChanged(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            Margin = "0";
+    }
+
+    partial void OnHorizontalAlignmentChanged(string value)
+    {
+        var normalized = DesignerLayoutModes.NormalizeHorizontalAlignment(value);
+        if (!string.Equals(value, normalized, StringComparison.Ordinal))
+            HorizontalAlignment = normalized;
+    }
+
+    partial void OnVerticalAlignmentChanged(string value)
+    {
+        var normalized = DesignerLayoutModes.NormalizeVerticalAlignment(value);
+        if (!string.Equals(value, normalized, StringComparison.Ordinal))
+            VerticalAlignment = normalized;
+    }
+
+    partial void OnGridRowChanged(int value)
+    {
+        if (value < 0)
+            GridRow = 0;
+    }
+
+    partial void OnGridColumnChanged(int value)
+    {
+        if (value < 0)
+            GridColumn = 0;
+    }
+
+    partial void OnGridRowSpanChanged(int value)
+    {
+        if (value < 1)
+            GridRowSpan = 1;
+    }
+
+    partial void OnGridColumnSpanChanged(int value)
+    {
+        if (value < 1)
+            GridColumnSpan = 1;
+    }
+
+    partial void OnStackOrderChanged(int value)
+    {
+        if (value < 0)
+            StackOrder = 0;
     }
 
     partial void OnDataGridTextAlignmentChanged(string value)
@@ -415,8 +508,12 @@ public partial class DesignControlModel : ObservableObject
             FontWeight = FontWeight,
             Opacity = Opacity,
             Padding = Padding,
+            ChildLayoutMode = ChildLayoutMode,
             LayoutOrientation = LayoutOrientation,
             LayoutSpacing = LayoutSpacing,
+            Margin = Margin,
+            HorizontalAlignment = HorizontalAlignment,
+            VerticalAlignment = VerticalAlignment,
             IsVisible = IsVisible,
             IsLocked = IsLocked,
             IsTemplateInstance = IsTemplateInstance,
@@ -431,8 +528,15 @@ public partial class DesignControlModel : ObservableObject
             AnchorTop = AnchorTop,
             AnchorRight = AnchorRight,
             AnchorBottom = AnchorBottom,
+            GridRow = GridRow,
+            GridColumn = GridColumn,
+            GridRowSpan = GridRowSpan,
+            GridColumnSpan = GridColumnSpan,
+            StackOrder = StackOrder,
             Columns = Columns,
             Rows = Rows,
+            GridColumnDefinitions = GridColumnDefinitions,
+            GridRowDefinitions = GridRowDefinitions,
             ShowGridLines = ShowGridLines,
             AutoGenerateColumns = AutoGenerateColumns,
             BindingSourceId = BindingSourceId,

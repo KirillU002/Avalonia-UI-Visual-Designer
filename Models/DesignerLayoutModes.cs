@@ -14,6 +14,13 @@ public static class DesignerLayoutModes
     public const string Vertical = "Vertical";
     public const string Horizontal = "Horizontal";
 
+    public const string AlignStretch = "Stretch";
+    public const string AlignLeft = "Left";
+    public const string AlignCenter = "Center";
+    public const string AlignRight = "Right";
+    public const string AlignTop = "Top";
+    public const string AlignBottom = "Bottom";
+
     public static string NormalizeMode(string? value)
     {
         return value?.Trim() switch
@@ -31,6 +38,28 @@ public static class DesignerLayoutModes
         {
             Horizontal => Horizontal,
             _ => Vertical
+        };
+    }
+
+    public static string NormalizeHorizontalAlignment(string? value)
+    {
+        return value?.Trim() switch
+        {
+            AlignLeft => AlignLeft,
+            AlignCenter => AlignCenter,
+            AlignRight => AlignRight,
+            _ => AlignStretch
+        };
+    }
+
+    public static string NormalizeVerticalAlignment(string? value)
+    {
+        return value?.Trim() switch
+        {
+            AlignBottom => AlignBottom,
+            AlignCenter => AlignCenter,
+            AlignStretch => AlignStretch,
+            _ => AlignTop
         };
     }
 

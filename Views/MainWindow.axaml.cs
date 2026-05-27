@@ -2425,7 +2425,15 @@ public partial class MainWindow : Window
         var padding = parent?.Padding ?? 0;
 
         var snapshots = children
-            .Select(child => new LayoutArrangementHelper.ChildSnapshot(child.Id, child.Width, child.Height))
+            .Select(child => new LayoutArrangementHelper.ChildSnapshot(
+                child.Id,
+                child.Width,
+                child.Height,
+                child.GridRow,
+                child.GridColumn,
+                child.GridRowSpan,
+                child.GridColumnSpan,
+                child.StackOrder))
             .ToList();
         var frames = LayoutArrangementHelper.ArrangeChildren(
             layoutMode,
@@ -2541,6 +2549,71 @@ public partial class MainWindow : Window
                 EndPoint = new Point(surfaceWidth, y),
                 Stroke = horizontalIndex % 5 == 0 ? majorBrush : minorBrush,
                 StrokeThickness = 1,
+                IsHitTestVisible = false
+            });
+        }
+
+        RenderLayoutGridOverlay(0, 0, surfaceWidth, surfaceHeight, VM.SurfaceLayoutMode, VM.SurfaceLayoutColumns, VM.SurfaceLayoutRows);
+
+        foreach (var container in VM.Controls.Where(control => control.ShowGridLines && VM.GetLayoutModeForControl(control) == DesignerLayoutModes.Grid))
+        {
+            if (!_wrapperByControlId.TryGetValue(container.Id, out var wrapper))
+                continue;
+            var origin = wrapper.TranslatePoint(new Point(0, 0), GridOverlayCanvas);
+            if (origin is null)
+                continue;
+
+            RenderLayoutGridOverlay(
+                origin.Value.X,
+                origin.Value.Y,
+                Math.Max(1, wrapper.Width),
+                Math.Max(1, wrapper.Height),
+                VM.GetLayoutModeForControl(container),
+                container.Columns,
+                container.Rows);
+        }
+    }
+
+    private void RenderLayoutGridOverlay(
+        double offsetX,
+        double offsetY,
+        double width,
+        double height,
+        string layoutMode,
+        int columns,
+        int rows)
+    {
+        if (DesignerLayoutModes.NormalizeMode(layoutMode) != DesignerLayoutModes.Grid)
+            return;
+
+        var normalizedColumns = Math.Max(1, columns);
+        var normalizedRows = Math.Max(1, rows);
+        var brush = new SolidColorBrush(Color.FromArgb(150, 37, 99, 235));
+
+        for (var column = 1; column < normalizedColumns; column++)
+        {
+            var x = offsetX + (width / normalizedColumns * column);
+            GridOverlayCanvas.Children.Add(new Line
+            {
+                StartPoint = new Point(x, offsetY),
+                EndPoint = new Point(x, offsetY + height),
+                Stroke = brush,
+                StrokeThickness = 1.4,
+                StrokeDashArray = new Avalonia.Collections.AvaloniaList<double> { 4, 4 },
+                IsHitTestVisible = false
+            });
+        }
+
+        for (var row = 1; row < normalizedRows; row++)
+        {
+            var y = offsetY + (height / normalizedRows * row);
+            GridOverlayCanvas.Children.Add(new Line
+            {
+                StartPoint = new Point(offsetX, y),
+                EndPoint = new Point(offsetX + width, y),
+                Stroke = brush,
+                StrokeThickness = 1.4,
+                StrokeDashArray = new Avalonia.Collections.AvaloniaList<double> { 4, 4 },
                 IsHitTestVisible = false
             });
         }

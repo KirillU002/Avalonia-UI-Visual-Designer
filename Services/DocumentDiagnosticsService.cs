@@ -26,7 +26,10 @@ public sealed class DocumentDiagnosticsService
         IEnumerable<InteractionModel> interactions,
         string? currentDocumentPath,
         double designWidth,
-        double designHeight)
+        double designHeight,
+        string? surfaceLayoutMode = null,
+        int surfaceLayoutColumns = 1,
+        int surfaceLayoutRows = 1)
     {
         var controlList = controls.ToList();
         var sourceList = bindingSources.ToList();
@@ -37,6 +40,7 @@ public sealed class DocumentDiagnosticsService
         ValidateDuplicateControlNames(controlList, diagnostics);
         ValidateBindingSources(sourceList, diagnostics);
         ValidateControls(controlList, sourceList, currentDocumentPath, designWidth, designHeight, diagnostics);
+        ValidateLayoutUsage(controlList, diagnostics, surfaceLayoutMode, surfaceLayoutColumns, surfaceLayoutRows);
         ValidateInteractions(controlList, sourceList, interactionList, diagnostics);
 
         return diagnostics
@@ -584,6 +588,99 @@ public sealed class DocumentDiagnosticsService
             ValidateCustomProperties(control, descriptor, diagnostics);
             ValidateGeometry(control, designWidth, designHeight, diagnostics);
         }
+    }
+
+    private void ValidateLayoutUsage(
+        IReadOnlyList<DesignControlModel> controls,
+        ICollection<DocumentDiagnosticModel> diagnostics,
+        string? surfaceLayoutMode,
+        int surfaceLayoutColumns,
+        int surfaceLayoutRows)
+    {
+        var byId = controls
+            .Where(control => !string.IsNullOrWhiteSpace(control.Id))
+            .ToDictionary(control => control.Id, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var control in controls)
+        {
+            var parent = string.IsNullOrWhiteSpace(control.ParentId) || !byId.TryGetValue(control.ParentId, out var foundParent)
+                ? null
+                : foundParent;
+            var parentLayoutMode = parent is null
+                ? DesignerLayoutModes.NormalizeMode(surfaceLayoutMode)
+                : GetEffectiveChildLayoutMode(parent);
+            var parentColumns = Math.Max(1, parent?.Columns ?? surfaceLayoutColumns);
+            var parentRows = Math.Max(1, parent?.Rows ?? surfaceLayoutRows);
+
+            if (parentLayoutMode == DesignerLayoutModes.Grid)
+            {
+                if (control.GridColumn >= parentColumns || control.GridRow >= parentRows)
+                {
+                    diagnostics.Add(new DocumentDiagnosticModel
+                    {
+                        Severity = DocumentDiagnosticSeverity.Error,
+                        Source = control.NameOrFallback(),
+                        Category = "Layout",
+                        Message = $"Grid placement is outside the parent grid: row {control.GridRow}, column {control.GridColumn}.",
+                        Recommendation = $"Use row 0..{parentRows - 1} and column 0..{parentColumns - 1}, or add rows/columns to the Grid container.",
+                        RelatedControlId = control.Id,
+                        RelatedControlName = control.Name
+                    });
+                }
+
+                if (control.GridRow + Math.Max(1, control.GridRowSpan) > parentRows
+                    || control.GridColumn + Math.Max(1, control.GridColumnSpan) > parentColumns)
+                {
+                    diagnostics.Add(new DocumentDiagnosticModel
+                    {
+                        Severity = DocumentDiagnosticSeverity.Warning,
+                        Source = control.NameOrFallback(),
+                        Category = "Layout",
+                        Message = "Grid span exceeds the parent grid bounds.",
+                        Recommendation = "Reduce RowSpan/ColumnSpan or add rows/columns to the Grid container.",
+                        RelatedControlId = control.Id,
+                        RelatedControlName = control.Name
+                    });
+                }
+            }
+
+            if (parentLayoutMode == DesignerLayoutModes.Stack && (Math.Abs(control.X) > 0.01 || Math.Abs(control.Y) > 0.01))
+            {
+                diagnostics.Add(new DocumentDiagnosticModel
+                {
+                    Severity = DocumentDiagnosticSeverity.Info,
+                    Source = control.NameOrFallback(),
+                    Category = "Layout",
+                    Message = "Canvas.Left/Top are ignored inside StackPanel layout.",
+                    Recommendation = "Use StackPanel.Order, Margin and Alignment instead of X/Y for this child.",
+                    RelatedControlId = control.Id,
+                    RelatedControlName = control.Name
+                });
+            }
+
+            if (_registry.GetRequiredControl(control.Type).CanHostChildren
+                && !controls.Any(child => string.Equals(child.ParentId, control.Id, StringComparison.OrdinalIgnoreCase))
+                && GetEffectiveChildLayoutMode(control) is DesignerLayoutModes.Grid or DesignerLayoutModes.Stack)
+            {
+                diagnostics.Add(new DocumentDiagnosticModel
+                {
+                    Severity = DocumentDiagnosticSeverity.Info,
+                    Source = control.NameOrFallback(),
+                    Category = "Layout",
+                    Message = "Layout container has no children.",
+                    Recommendation = "Drop controls into this container or switch its Children Layout back to Canvas.",
+                    RelatedControlId = control.Id,
+                    RelatedControlName = control.Name
+                });
+            }
+        }
+    }
+
+    private string GetEffectiveChildLayoutMode(DesignControlModel control)
+    {
+        return string.IsNullOrWhiteSpace(control.ChildLayoutMode)
+            ? DesignerLayoutModes.NormalizeMode(_registry.GetRequiredControl(control.Type).ChildLayoutMode)
+            : DesignerLayoutModes.NormalizeMode(control.ChildLayoutMode);
     }
 
     private void ValidateInteractions(
