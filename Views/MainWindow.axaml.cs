@@ -1007,6 +1007,7 @@ public partial class MainWindow : Window
         _appSettings.PropertyGridFavorites = VM.CapturePropertyGridFavorites();
         _appSettings.PropertyGridCollapsedCategories = VM.CapturePropertyGridCollapsedCategories();
         _appSettings.CanvasEditor = VM.CaptureCanvasEditorSettings();
+        _appSettings.UiDensity = VM.CaptureUiDensitySettings();
         _appSettings.ExportCache = VM.CaptureExportCache();
         _appSettings.Session = CaptureSessionState();
         await _appSettingsService.SaveAsync(_appSettings);
@@ -1055,6 +1056,7 @@ public partial class MainWindow : Window
             or nameof(MainWindowViewModel.IsDistanceHintsEnabled)
             or nameof(MainWindowViewModel.IgnoreLockedDuringSelection)
             or nameof(MainWindowViewModel.IsSelectionToolbarEnabled)
+            or nameof(MainWindowViewModel.UiDensityMode)
             or nameof(MainWindowViewModel.PropertyGridSettingsVersion);
     }
 
@@ -7159,7 +7161,7 @@ public partial class MainWindow : Window
             return;
 
         var current = e.GetPosition(this);
-        VM.RightDockPanelWidth = Math.Clamp(_dockPanelResizeStartSize + _dockPanelResizeStart.X - current.X, 280, 560);
+        VM.RightDockPanelWidth = Math.Clamp(_dockPanelResizeStartSize + _dockPanelResizeStart.X - current.X, 260, 560);
         e.Handled = true;
     }
 

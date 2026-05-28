@@ -53,6 +53,9 @@ public partial class MainWindowViewModel : ObservableObject
     public const string WorkspaceModeData = "Данные";
     public const string WorkspaceModeLayout = "Layout";
     public const string WorkspaceModeCode = "Code / Export";
+    public const string UiDensityComfortable = "Comfortable";
+    public const string UiDensityCompact = "Compact";
+    public const string UiDensityDense = "Dense";
     public const string WorkspaceModePlugins = "Плагины";
     public const string WorkspaceModeLogic = "Логика";
     public const string WorkspaceModeDiagnostics = "Диагностика";
@@ -483,6 +486,13 @@ public partial class MainWindowViewModel : ObservableObject
         WorkspaceModeHistory
     };
 
+    public ObservableCollection<string> AvailableUiDensityModes { get; } = new()
+    {
+        UiDensityComfortable,
+        UiDensityCompact,
+        UiDensityDense
+    };
+
     public ObservableCollection<string> AvailableProblemsFilters { get; } = new()
     {
         ProblemsFilterAll,
@@ -694,7 +704,7 @@ public partial class MainWindowViewModel : ObservableObject
     private bool isDiagnosticsPaneExpanded = true;
 
     [ObservableProperty]
-    private double diagnosticsPaneHeight = 250;
+    private double diagnosticsPaneHeight = 180;
 
     [ObservableProperty]
     private bool isLeftDockOpen = true;
@@ -706,10 +716,10 @@ public partial class MainWindowViewModel : ObservableObject
     private bool isBottomDockOpen;
 
     [ObservableProperty]
-    private double leftDockPanelWidth = 280;
+    private double leftDockPanelWidth = 260;
 
     [ObservableProperty]
-    private double rightDockPanelWidth = 380;
+    private double rightDockPanelWidth = 340;
 
     [ObservableProperty]
     private string selectedProblemsFilter = ProblemsFilterAll;
@@ -759,6 +769,9 @@ public partial class MainWindowViewModel : ObservableObject
     [ObservableProperty]
     private string importedDllSearchText = "";
 
+    [ObservableProperty]
+    private string uiDensityMode = UiDensityCompact;
+
     public event EventHandler? DesignerChanged;
     public IDesignerRegistry Registry => _registry;
     public bool IsCleanUiGenerationMode => string.Equals(GenerationMode, GenerationModeCleanUi, StringComparison.Ordinal);
@@ -790,6 +803,9 @@ public partial class MainWindowViewModel : ObservableObject
     public bool IsLogicMode => string.Equals(WorkspaceMode, WorkspaceModeLogic, StringComparison.Ordinal);
     public bool IsDiagnosticsMode => string.Equals(WorkspaceMode, WorkspaceModeDiagnostics, StringComparison.Ordinal);
     public bool IsHistoryMode => string.Equals(WorkspaceMode, WorkspaceModeHistory, StringComparison.Ordinal);
+    public bool IsComfortableUiDensity => string.Equals(UiDensityMode, UiDensityComfortable, StringComparison.Ordinal);
+    public bool IsCompactUiDensity => string.Equals(UiDensityMode, UiDensityCompact, StringComparison.Ordinal);
+    public bool IsDenseUiDensity => string.Equals(UiDensityMode, UiDensityDense, StringComparison.Ordinal);
     public bool CanShowLeftDock => IsDesignerSidePanelsVisible && (IsDesignMode || IsDataMode || IsHistoryMode);
     public bool CanShowRightDock => IsDesignerSidePanelsVisible && !IsHistoryMode;
     public bool IsLeftDockPanelVisible => CanShowLeftDock && IsLeftDockOpen;
@@ -958,7 +974,7 @@ public partial class MainWindowViewModel : ObservableObject
         ProblemsFilterHints => $"Подсказки: {DiagnosticInfoCount}",
         _ => DiagnosticsSummary
     };
-    public double DiagnosticsPaneHostHeight => IsDiagnosticsPaneExpanded ? DiagnosticsPaneHeight : 56;
+    public double DiagnosticsPaneHostHeight => IsDiagnosticsPaneExpanded ? DiagnosticsPaneHeight : 42;
     public double BottomDockPanelHeight
     {
         get => DiagnosticsPaneHeight;
@@ -4263,9 +4279,9 @@ public partial class MainWindowViewModel : ObservableObject
         IsRightDockOpen = true;
         IsBottomDockOpen = HasDiagnosticErrors;
         IsDiagnosticsPaneExpanded = true;
-        LeftDockPanelWidth = 280;
-        RightDockPanelWidth = 380;
-        DiagnosticsPaneHeight = 220;
+        LeftDockPanelWidth = 260;
+        RightDockPanelWidth = 340;
+        DiagnosticsPaneHeight = 180;
         SelectedProblemsFilter = ProblemsFilterAll;
         SelectedOutputCategory = OutputCategoryAll;
         ActiveBottomDockTab = BottomDockTabProblems;
@@ -5473,6 +5489,7 @@ public partial class MainWindowViewModel : ObservableObject
         ApplyExportCache(settings.ExportCache);
         ApplyPropertyGridSettings(settings.PropertyGrid, settings.PropertyGridFavorites, settings.PropertyGridCollapsedCategories);
         ApplyCanvasEditorSettings(settings.CanvasEditor);
+        ApplyUiDensitySettings(settings.UiDensity);
 
         RecentFiles.Clear();
         foreach (var recentFile in settings.RecentFiles
@@ -5520,6 +5537,23 @@ public partial class MainWindowViewModel : ObservableObject
             IsDistanceHintsEnabled = IsDistanceHintsEnabled,
             IgnoreLockedDuringSelection = IgnoreLockedDuringSelection,
             IsSelectionToolbarEnabled = IsSelectionToolbarEnabled
+        };
+    }
+
+    private void ApplyUiDensitySettings(UiDensitySettingsModel? settings)
+    {
+        UiDensityMode = AvailableUiDensityModes.Contains(settings?.DensityMode ?? "")
+            ? settings!.DensityMode
+            : UiDensityCompact;
+    }
+
+    public UiDensitySettingsModel CaptureUiDensitySettings()
+    {
+        return new UiDensitySettingsModel
+        {
+            DensityMode = AvailableUiDensityModes.Contains(UiDensityMode)
+                ? UiDensityMode
+                : UiDensityCompact
         };
     }
 
@@ -5575,7 +5609,7 @@ public partial class MainWindowViewModel : ObservableObject
             IsRightPanelVisible = IsRightDockOpen,
             IsBottomPanelVisible = IsBottomDockOpen,
             LeftPanelWidth = Math.Clamp(LeftDockPanelWidth, 220, 420),
-            RightPanelWidth = Math.Clamp(RightDockPanelWidth, 280, 560),
+            RightPanelWidth = Math.Clamp(RightDockPanelWidth, 260, 560),
             BottomPanelHeight = Math.Clamp(DiagnosticsPaneHeight, 140, 520),
             ActiveLeftTab = IsDataMode ? "Data" : IsHistoryMode ? "History" : "Components",
             ActiveRightTab = IsDataMode ? "Data" : IsPluginsMode ? "Plugins" : IsCodeMode ? "Code" : IsLogicMode ? "Logic" : "Properties",
@@ -5594,9 +5628,9 @@ public partial class MainWindowViewModel : ObservableObject
         ActiveBottomDockTab = string.Equals(layout.ActiveBottomTab, BottomDockTabOutput, StringComparison.OrdinalIgnoreCase)
             ? BottomDockTabOutput
             : BottomDockTabProblems;
-        LeftDockPanelWidth = Math.Clamp(layout.LeftPanelWidth <= 0 ? 280 : layout.LeftPanelWidth, 220, 420);
-        RightDockPanelWidth = Math.Clamp(layout.RightPanelWidth <= 0 ? 380 : layout.RightPanelWidth, 280, 560);
-        DiagnosticsPaneHeight = Math.Clamp(layout.BottomPanelHeight <= 0 ? 220 : layout.BottomPanelHeight, 140, 520);
+        LeftDockPanelWidth = Math.Clamp(layout.LeftPanelWidth <= 0 ? 260 : layout.LeftPanelWidth, 220, 420);
+        RightDockPanelWidth = Math.Clamp(layout.RightPanelWidth <= 0 ? 340 : layout.RightPanelWidth, 260, 560);
+        DiagnosticsPaneHeight = Math.Clamp(layout.BottomPanelHeight <= 0 ? 180 : layout.BottomPanelHeight, 140, 520);
     }
 
     private void ApplyPropertyGridSettings(
@@ -15153,6 +15187,20 @@ public partial class MainWindowViewModel : ObservableObject
         FilterOutputEntries();
     }
 
+    partial void OnUiDensityModeChanged(string value)
+    {
+        if (!AvailableUiDensityModes.Contains(value))
+        {
+            UiDensityMode = UiDensityCompact;
+            return;
+        }
+
+        StatusText = $"UI density: {value}.";
+        OnPropertyChanged(nameof(IsComfortableUiDensity));
+        OnPropertyChanged(nameof(IsCompactUiDensity));
+        OnPropertyChanged(nameof(IsDenseUiDensity));
+    }
+
     partial void OnSelectedGeneratedFileChanged(GeneratedFileModel? value)
     {
         OnPropertyChanged(nameof(SelectedGeneratedFileContent));
@@ -15243,7 +15291,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     partial void OnRightDockPanelWidthChanged(double value)
     {
-        var clamped = Math.Clamp(value, 280, 560);
+        var clamped = Math.Clamp(value, 260, 560);
         if (Math.Abs(value - clamped) > 0.01)
         {
             RightDockPanelWidth = clamped;

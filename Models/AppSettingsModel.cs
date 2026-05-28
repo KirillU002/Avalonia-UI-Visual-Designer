@@ -18,6 +18,8 @@ public class AppSettingsModel
 
     public CanvasEditorSettingsModel CanvasEditor { get; set; } = new();
 
+    public UiDensitySettingsModel UiDensity { get; set; } = new();
+
     public SessionStateModel Session { get; set; } = new();
 
     public ExportCacheModel ExportCache { get; set; } = new();
@@ -38,6 +40,11 @@ public sealed class CanvasEditorSettingsModel
     public bool IgnoreLockedDuringSelection { get; set; } = true;
 
     public bool IsSelectionToolbarEnabled { get; set; } = true;
+}
+
+public sealed class UiDensitySettingsModel
+{
+    public string DensityMode { get; set; } = "Compact";
 }
 
 public sealed class PropertyGridUserSettings
@@ -117,11 +124,11 @@ public sealed class EditorShellLayoutState
 
     public bool IsBottomPanelVisible { get; set; }
 
-    public double LeftPanelWidth { get; set; } = 280;
+    public double LeftPanelWidth { get; set; } = 260;
 
-    public double RightPanelWidth { get; set; } = 380;
+    public double RightPanelWidth { get; set; } = 340;
 
-    public double BottomPanelHeight { get; set; } = 220;
+    public double BottomPanelHeight { get; set; } = 180;
 
     public string ActiveLeftTab { get; set; } = "Components";
 
