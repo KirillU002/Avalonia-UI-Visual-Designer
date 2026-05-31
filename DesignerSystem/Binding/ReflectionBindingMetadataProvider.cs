@@ -1,4 +1,4 @@
-using FormDesigner.Models;
+﻿using FormDesigner.Models;
 using FormDesigner.PluginContracts;
 using System;
 using System.Collections.Immutable;
@@ -1611,52 +1611,53 @@ public sealed class ReflectionBindingMetadataProvider : IBindingMetadataProvider
 
     private sealed class PortableMetadataType
     {
-        public required string Name { get; init; }
-        public required string Namespace { get; init; }
-        public required string FullName { get; init; }
-        public required string BaseTypeFullName { get; init; }
-        public required bool IsClass { get; init; }
-        public required bool IsAbstract { get; init; }
-        public required bool IsGenericTypeDefinition { get; init; }
-        public required bool IsNested { get; init; }
-        public required bool IsEnum { get; init; }
-        public required bool HasTableAttribute { get; init; }
-        public required string TableName { get; init; }
-        public required IReadOnlyList<PortableMetadataProperty> Properties { get; init; }
+        public string Name { get; init; } = "";
+        public string Namespace { get; init; } = "";
+        public string FullName { get; init; } = "";
+        public string BaseTypeFullName { get; init; } = "";
+        public bool IsClass { get; init; }
+        public bool IsAbstract { get; init; }
+        public bool IsGenericTypeDefinition { get; init; }
+        public bool IsNested { get; init; }
+        public bool IsEnum { get; init; }
+        public bool HasTableAttribute { get; init; }
+        public string TableName { get; init; } = "";
+        public IReadOnlyList<PortableMetadataProperty> Properties { get; init; } = Array.Empty<PortableMetadataProperty>();
 
         public bool HasColumnAttributes => Properties.Any(property => property.HasColumnAttribute);
     }
 
     private sealed class PortableMetadataProperty
     {
-        public required string Name { get; init; }
-        public required string TypeName { get; init; }
-        public required bool IsPublicReadable { get; init; }
-        public required bool HasColumnAttribute { get; init; }
-        public required bool HasAssociationAttribute { get; init; }
+        public string Name { get; init; } = "";
+        public string TypeName { get; init; } = "";
+        public bool IsPublicReadable { get; init; }
+        public bool HasColumnAttribute { get; init; }
+        public bool HasAssociationAttribute { get; init; }
     }
 
     private sealed class PortableMetadataTypeAnalysis
     {
-        public required PortableMetadataType Type { get; init; }
-        public required ReflectionTypeCategory Category { get; init; }
-        public required int Score { get; init; }
+        public PortableMetadataType Type { get; init; } = new();
+        public ReflectionTypeCategory Category { get; init; }
+        public int Score { get; init; }
         public bool ImportFailed { get; set; }
     }
 
     private sealed class ReflectionTypeAnalysis
     {
-        public required Type Type { get; init; }
-        public required ReflectionTypeCategory Category { get; init; }
-        public required int Score { get; init; }
-        public required bool HasTableAttribute { get; init; }
-        public required bool HasColumnAttributes { get; init; }
+        public Type Type { get; init; } = typeof(object);
+        public ReflectionTypeCategory Category { get; init; }
+        public int Score { get; init; }
+        public bool HasTableAttribute { get; init; }
+        public bool HasColumnAttributes { get; init; }
         public bool ImportFailed { get; set; }
     }
 
     private sealed class LoadableTypeSnapshot
     {
-        public required IReadOnlyList<Type> Types { get; init; }
-        public required int LoaderExceptionCount { get; init; }
+        public IReadOnlyList<Type> Types { get; init; } = Array.Empty<Type>();
+        public int LoaderExceptionCount { get; init; }
     }
 }
+

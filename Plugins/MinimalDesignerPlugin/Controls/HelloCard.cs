@@ -1,4 +1,4 @@
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
@@ -65,7 +65,6 @@ public sealed class HelloCard : Border
         Child = new Grid
         {
             ColumnDefinitions = new ColumnDefinitions("Auto,*"),
-            ColumnSpacing = 12,
             Children =
             {
                 _accentBar,
@@ -113,3 +112,4 @@ public sealed class HelloCard : Border
         _accentBar.Background = AccentBrush ?? Brushes.DodgerBlue;
     }
 }
+

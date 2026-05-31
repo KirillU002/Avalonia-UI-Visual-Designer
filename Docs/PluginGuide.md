@@ -17,14 +17,14 @@ Plugin control - это отдельная DLL, которая подключа�
 
 ## Быстрый старт
 
-1. Создайте class library project на `net7.0`.
+1. Создайте class library project на `net6.0`.
 2. Добавьте ссылку на `FormDesigner.PluginContracts`.
 3. Реализуйте `IFormDesignerPlugin`.
 4. Добавьте `[assembly: FormDesignerPlugin(typeof(...))]`.
 5. Зарегистрируйте descriptor через `registry.RegisterControl(...)`.
 6. В descriptor реализуйте `CreateDefaultDefinition`, `BuildPreview`, `AppendXaml`.
 7. Соберите DLL.
-8. Положите DLL и зависимости в `bin\<Configuration>\net7.0\Plugins\<PluginName>\`.
+8. Положите DLL и зависимости в `bin\<Configuration>\net6.0\Plugins\<PluginName>\`.
 9. Перезапустите редактор или нажмите **Plugins -> Reload plugins**.
 10. Проверьте control в toolbox и вкладке **Plugins**.
 
@@ -210,4 +210,3 @@ Custom properties сохраняются в `.formdesigner.json` как JSON-с�
 - diagnostics показывает missing plugin descriptor
 
 Это позволяет открыть и сохранить документ без потери данных.
-

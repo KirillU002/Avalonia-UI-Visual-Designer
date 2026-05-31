@@ -28,9 +28,9 @@ public sealed class DesignerProjectModel
 
     public string DefaultNamespace { get; set; } = "AvaloniaApplication1";
 
-    public string TargetFramework { get; set; } = "net7.0";
+    public string TargetFramework { get; set; } = "net6.0";
 
-    public string AvaloniaVersion { get; set; } = "11.3.12";
+    public string AvaloniaVersion { get; set; } = "11.1.1";
 
     public List<DesignerFormDocument> Forms { get; set; } = new();
 
@@ -128,7 +128,7 @@ public sealed class DesignerExportProfileModel
 
     public string Namespace { get; set; } = "AvaloniaApplication1";
 
-    public string TargetFramework { get; set; } = "net7.0";
+    public string TargetFramework { get; set; } = "net6.0";
 
     public string DataGridExportMode { get; set; } = "Visual table without NuGet";
 

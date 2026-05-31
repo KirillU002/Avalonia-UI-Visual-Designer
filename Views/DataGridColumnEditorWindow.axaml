@@ -1,4 +1,4 @@
-<Window xmlns="https://github.com/avaloniaui"
+﻿<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
@@ -120,11 +120,9 @@
   </Window.Styles>
 
   <Grid Margin="16"
-        RowDefinitions="Auto,*"
-        RowSpacing="12">
+        RowDefinitions="Auto,*">
     <Border Classes="card">
-      <Grid ColumnDefinitions="*,Auto"
-            ColumnSpacing="12">
+      <Grid ColumnDefinitions="*,Auto">
         <StackPanel Spacing="4">
           <TextBlock Text="{Binding HeaderText}"
                      FontSize="20"
@@ -163,11 +161,9 @@
 
     <Grid Grid.Row="1"
           ColumnDefinitions="340,*"
-          ColumnSpacing="12"
           IsVisible="{Binding HasBindingSource}">
       <Border Classes="card">
-        <Grid RowDefinitions="Auto,Auto,Auto,*"
-              RowSpacing="10">
+        <Grid RowDefinitions="Auto,Auto,Auto,*">
           <TextBlock Text="Колонки"
                      FontSize="17"
                      FontWeight="Bold"/>
@@ -175,7 +171,7 @@
           <TextBox Grid.Row="1"
                    Classes="editor-input"
                    Watermark="Поиск по заголовку, пути или примеру..."
-                   Text="{Binding SearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                   Text="{Binding SearchText, Mode=TwoWay}"/>
 
           <WrapPanel Grid.Row="2"
                      Orientation="Horizontal">
@@ -232,7 +228,6 @@
             <ListBox.ItemTemplate>
               <DataTemplate x:DataType="views:DataGridColumnEditorFieldItem">
                 <Grid ColumnDefinitions="*,Auto"
-                      ColumnSpacing="8"
                       Margin="0,4">
                   <StackPanel Spacing="2">
                     <TextBlock Text="{Binding Title}"
@@ -305,8 +300,7 @@
                           BorderThickness="1"
                           CornerRadius="12"
                           Padding="12">
-                    <Grid ColumnDefinitions="*,Auto"
-                          ColumnSpacing="12">
+                    <Grid ColumnDefinitions="*,Auto">
                       <StackPanel Spacing="2">
                         <TextBlock Text="{Binding Header}"
                                    FontSize="18"
@@ -340,13 +334,12 @@
                                    Text="Название колонки, путь к полю данных и пример значения для preview."/>
                       </StackPanel>
 
-                      <Grid ColumnDefinitions="*,*"
-                            ColumnSpacing="12">
+                      <Grid ColumnDefinitions="*,*">
                         <StackPanel Spacing="5">
                           <TextBlock Classes="field-label"
                                      Text="Заголовок"/>
                           <TextBox Classes="editor-input"
-                                   Text="{Binding Header, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                                   Text="{Binding Header, Mode=TwoWay}"/>
                         </StackPanel>
 
                         <StackPanel Grid.Column="1"
@@ -355,17 +348,16 @@
                                      Text="Путь данных"/>
                           <TextBox Classes="editor-input"
                                    Watermark="Например: Name или Customer.Email"
-                                   Text="{Binding Path, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                                   Text="{Binding Path, Mode=TwoWay}"/>
                         </StackPanel>
                       </Grid>
 
-                      <Grid ColumnDefinitions="*,170"
-                            ColumnSpacing="12">
+                      <Grid ColumnDefinitions="*,170">
                         <StackPanel Spacing="5">
                           <TextBlock Classes="field-label"
                                      Text="Пример значения"/>
                           <TextBox Classes="editor-input"
-                                   Text="{Binding SampleValue, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                                   Text="{Binding SampleValue, Mode=TwoWay}"/>
                         </StackPanel>
 
                         <StackPanel Grid.Column="1"
@@ -374,7 +366,7 @@
                                      Text="Ширина"/>
                           <TextBox Classes="editor-input"
                                    Watermark="*, 120, 2*"
-                                   Text="{Binding Width, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                                   Text="{Binding Width, Mode=TwoWay}"/>
                         </StackPanel>
                       </Grid>
 
@@ -448,8 +440,7 @@
                                    Text="Настройки отображения текста в заголовке и ячейках."/>
                       </StackPanel>
 
-                      <Grid ColumnDefinitions="*,*"
-                            ColumnSpacing="12">
+                      <Grid ColumnDefinitions="*,*">
                         <StackPanel Spacing="5">
                           <TextBlock Classes="field-label"
                                      Text="Выравнивание заголовка"/>
@@ -482,14 +473,13 @@
                         </StackPanel>
                       </Grid>
 
-                      <Grid ColumnDefinitions="*,*"
-                            ColumnSpacing="12">
+                      <Grid ColumnDefinitions="*,*">
                         <StackPanel Spacing="5">
                           <TextBlock Classes="field-label"
                                      Text="Формат значения"/>
                           <TextBox Classes="editor-input"
                                    Watermark="N2, dd.MM.yyyy или {0:C}"
-                                   Text="{Binding FormatString, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                                   Text="{Binding FormatString, Mode=TwoWay}"/>
                         </StackPanel>
 
                         <StackPanel Grid.Column="1"
@@ -498,12 +488,11 @@
                                      Text="Текст для Null"/>
                           <TextBox Classes="editor-input"
                                    Watermark="—"
-                                   Text="{Binding NullText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                                   Text="{Binding NullText, Mode=TwoWay}"/>
                         </StackPanel>
                       </Grid>
 
-                      <Grid ColumnDefinitions="*,*,140"
-                            ColumnSpacing="12">
+                      <Grid ColumnDefinitions="*,*,140">
                         <StackPanel Spacing="5">
                           <TextBlock Classes="field-label"
                                      Text="Обрезка текста"/>
@@ -555,8 +544,7 @@
                                    Text="Ограничения ширины. Значение 0 для максимума означает “без ограничения”."/>
                       </StackPanel>
 
-                      <Grid ColumnDefinitions="*,*"
-                            ColumnSpacing="12">
+                      <Grid ColumnDefinitions="*,*">
                         <StackPanel Spacing="5">
                           <TextBlock Classes="field-label"
                                      Text="Минимальная ширина"/>
@@ -585,8 +573,7 @@
                                    Text="Enterprise-настройки колонки: порядок сортировки, группировки и footer-итоги."/>
                       </StackPanel>
 
-                      <Grid ColumnDefinitions="*,*,*"
-                            ColumnSpacing="12">
+                      <Grid ColumnDefinitions="*,*,*">
                         <StackPanel Spacing="5">
                           <TextBlock Classes="field-label"
                                      Text="Направление сортировки"/>
@@ -613,8 +600,7 @@
 
                         <StackPanel Grid.Column="2"
                                     Spacing="5">
-                          <Grid ColumnDefinitions="*,Auto"
-                                ColumnSpacing="8">
+                          <Grid ColumnDefinitions="*,Auto">
                             <TextBlock Classes="field-label"
                                        Text="Порядок группировки"
                                        VerticalAlignment="Center"/>
@@ -631,8 +617,7 @@
                         </StackPanel>
                       </Grid>
 
-                      <Grid ColumnDefinitions="220,*"
-                            ColumnSpacing="12">
+                      <Grid ColumnDefinitions="220,*">
                         <StackPanel Spacing="5">
                           <TextBlock Classes="field-label"
                                      Text="Тип итога"/>
@@ -654,7 +639,7 @@
                                      Text="Формат итога"/>
                           <TextBox Classes="editor-input"
                                    Watermark="Итого: {0:N2}"
-                                   Text="{Binding SummaryFormat, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                                   Text="{Binding SummaryFormat, Mode=TwoWay}"/>
                         </StackPanel>
                       </Grid>
                     </StackPanel>
@@ -668,3 +653,5 @@
     </Grid>
   </Grid>
 </Window>
+
+

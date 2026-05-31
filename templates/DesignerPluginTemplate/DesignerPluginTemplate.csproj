@@ -1,19 +1,18 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net7.0</TargetFramework>
+    <TargetFramework>net6.0</TargetFramework>
     <Nullable>enable</Nullable>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-    <OutputPath>..\..\bin\$(Configuration)\net7.0\Plugins\DesignerPluginTemplate\</OutputPath>
+    <OutputPath>..\..\bin\$(Configuration)\net6.0\Plugins\DesignerPluginTemplate\</OutputPath>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Avalonia" Version="11.3.12" />
+    <PackageReference Include="Avalonia" Version="11.1.1" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\PluginContracts\FormDesigner.PluginContracts.csproj" />
   </ItemGroup>
 </Project>
-

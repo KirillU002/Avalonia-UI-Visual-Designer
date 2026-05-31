@@ -1,4 +1,4 @@
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Layout;
@@ -91,7 +91,6 @@ public sealed class DemoGridControl : Border
         var titleGrid = new Grid
         {
             ColumnDefinitions = new ColumnDefinitions("5,*,Auto"),
-            ColumnSpacing = 12
         };
         titleGrid.Children.Add(_accentStrip);
         titleGrid.Children.Add(_titleText);
@@ -103,7 +102,6 @@ public sealed class DemoGridControl : Border
         _headerGrid = new Grid
         {
             ColumnDefinitions = new ColumnDefinitions("2.2*,1.1*,1.6*"),
-            ColumnSpacing = 0
         };
 
         _headerShell = new Border
@@ -418,3 +416,4 @@ public sealed class DemoGridControl : Border
 
     private sealed record GridRowSample(string Company, string Code, string Status, bool IsFeatured);
 }
+

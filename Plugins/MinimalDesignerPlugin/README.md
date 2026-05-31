@@ -20,8 +20,7 @@ dotnet build .\Plugins\MinimalDesignerPlugin\MinimalDesignerPlugin.csproj
 The project writes its output to:
 
 ```text
-bin\<Configuration>\net7.0\Plugins\MinimalDesignerPlugin\
+bin\<Configuration>\net6.0\Plugins\MinimalDesignerPlugin\
 ```
 
 After build, start the editor and open the **Plugins** workspace. The control appears as **Hello Card** in the plugin toolbox.
-

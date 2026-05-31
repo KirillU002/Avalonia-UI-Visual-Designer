@@ -1,4 +1,4 @@
-<Window xmlns="https://github.com/avaloniaui"
+﻿<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="FormDesigner.Views.UnsavedChangesWindow"
         Width="500"
@@ -15,8 +15,7 @@
           BorderThickness="1"
           CornerRadius="18"
           Padding="18">
-    <Grid RowDefinitions="Auto,*,Auto"
-          RowSpacing="16">
+    <Grid RowDefinitions="Auto,*,Auto">
       <StackPanel Spacing="6">
         <TextBlock Text="Есть несохранённые изменения"
                    FontSize="22"
@@ -54,3 +53,4 @@
     </Grid>
   </Border>
 </Window>
+

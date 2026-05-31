@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 
 namespace FormDesigner.Models;
@@ -229,25 +229,25 @@ public static class ThemeResourceKeys
 
 public sealed class FormThemePalette
 {
-    public required string Name { get; init; }
-    public required string SurfaceBackground { get; init; }
-    public required string SurfaceGridMinorColor { get; init; }
-    public required string SurfaceGridMajorColor { get; init; }
-    public required string TextBrush { get; init; }
-    public required string MutedTextBrush { get; init; }
-    public required string BorderBrush { get; init; }
-    public required string InputBackground { get; init; }
-    public required string ContainerBackground { get; init; }
-    public required string ButtonBackground { get; init; }
-    public required string ButtonForeground { get; init; }
-    public required string ButtonBorderBrush { get; init; }
-    public required string AccentBrush { get; init; }
-    public required string AccentStrongBrush { get; init; }
-    public required string AccentForegroundBrush { get; init; }
-    public required string DataGridHeaderBackground { get; init; }
-    public required string DataGridHeaderForeground { get; init; }
-    public required string DataGridRowBackground { get; init; }
-    public required string DataGridAlternateRowBackground { get; init; }
+    public string Name { get; init; } = "";
+    public string SurfaceBackground { get; init; } = "";
+    public string SurfaceGridMinorColor { get; init; } = "";
+    public string SurfaceGridMajorColor { get; init; } = "";
+    public string TextBrush { get; init; } = "";
+    public string MutedTextBrush { get; init; } = "";
+    public string BorderBrush { get; init; } = "";
+    public string InputBackground { get; init; } = "";
+    public string ContainerBackground { get; init; } = "";
+    public string ButtonBackground { get; init; } = "";
+    public string ButtonForeground { get; init; } = "";
+    public string ButtonBorderBrush { get; init; } = "";
+    public string AccentBrush { get; init; } = "";
+    public string AccentStrongBrush { get; init; } = "";
+    public string AccentForegroundBrush { get; init; } = "";
+    public string DataGridHeaderBackground { get; init; } = "";
+    public string DataGridHeaderForeground { get; init; } = "";
+    public string DataGridRowBackground { get; init; } = "";
+    public string DataGridAlternateRowBackground { get; init; } = "";
 }
 
 public sealed class ThemeControlDefaults
@@ -259,3 +259,4 @@ public sealed class ThemeControlDefaults
     public string? ForegroundResourceKey { get; init; }
     public string? BorderBrushResourceKey { get; init; }
 }
+

@@ -1,4 +1,4 @@
-using FormDesigner.Models;
+﻿using FormDesigner.Models;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -13,8 +13,8 @@ namespace FormDesigner.Services;
 
 public sealed class ExportPipelineService
 {
-    private const string AvaloniaVersion = "11.3.12";
-    private const string AvaloniaDesktopVersion = "11.3.11";
+    private const string AvaloniaVersion = "11.1.1";
+    private const string AvaloniaDesktopVersion = "11.1.1";
 
     public ExportResult CreateResult(
         ExportProfile profile,
@@ -139,48 +139,45 @@ public sealed class ExportPipelineService
             packageLines.AppendLine($"    <PackageReference Include=\"{EscapeXml(package.Id)}\" Version=\"{EscapeXml(version)}\" />");
         }
 
-        return $$"""
-<Project Sdk="Microsoft.NET.Sdk">
+        return $@"<Project Sdk=""Microsoft.NET.Sdk"">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net7.0</TargetFramework>
+    <TargetFramework>net6.0</TargetFramework>
     <Nullable>enable</Nullable>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Avalonia" Version="{{AvaloniaVersion}}" />
-    <PackageReference Include="Avalonia.Desktop" Version="{{AvaloniaDesktopVersion}}" />
-    <PackageReference Include="Avalonia.Themes.Fluent" Version="{{AvaloniaVersion}}" />
-    <PackageReference Include="Avalonia.Fonts.Inter" Version="{{AvaloniaDesktopVersion}}" />
-{{packageLines.ToString().TrimEnd()}}
+    <PackageReference Include=""Avalonia"" Version=""{AvaloniaVersion}"" />
+    <PackageReference Include=""Avalonia.Desktop"" Version=""{AvaloniaDesktopVersion}"" />
+    <PackageReference Include=""Avalonia.Themes.Fluent"" Version=""{AvaloniaVersion}"" />
+    <PackageReference Include=""Avalonia.Fonts.Inter"" Version=""{AvaloniaDesktopVersion}"" />
+{packageLines.ToString().TrimEnd()}
   </ItemGroup>
 </Project>
-""";
+";
     }
 
     private static string BuildAppXaml(string ns)
     {
-        return $$"""
-<Application xmlns="https://github.com/avaloniaui"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             x:Class="{{ns}}.App"
-             RequestedThemeVariant="Default">
+        return $@"<Application xmlns=""https://github.com/avaloniaui""
+             xmlns:x=""http://schemas.microsoft.com/winfx/2006/xaml""
+             x:Class=""{ns}.App""
+             RequestedThemeVariant=""Default"">
   <Application.Styles>
     <FluentTheme />
   </Application.Styles>
 </Application>
-""";
+";
     }
 
     private static string BuildAppCode(string ns)
     {
-        return $$"""
-using Avalonia;
+        return @"using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 
-namespace {{ns}};
+namespace {Namespace};
 
 public partial class App : Application
 {
@@ -197,16 +194,15 @@ public partial class App : Application
         base.OnFrameworkInitializationCompleted();
     }
 }
-""";
+".Replace("{Namespace}", ns);
     }
 
     private static string BuildProgramCode(string ns)
     {
-        return $$"""
-using Avalonia;
+        return @"using Avalonia;
 using System;
 
-namespace {{ns}};
+namespace {Namespace};
 
 internal sealed class Program
 {
@@ -224,13 +220,12 @@ internal sealed class Program
             .LogToTrace();
     }
 }
-""";
+".Replace("{Namespace}", ns);
     }
 
     private static string BuildReadme(ExportResult result)
     {
-        return $"""
-# Generated Avalonia Export
+        return $@"# Generated Avalonia Export
 
 Generated: {result.GeneratedUtc:u}
 Target: {result.Profile.TargetMode}
@@ -246,7 +241,7 @@ Layout: {result.Profile.LayoutExportMode}
 
 ## Diagnostics
 {BuildDiagnosticsText(result)}
-""";
+";
     }
 
     private static string BuildPackagesText(ExportResult result)
@@ -336,3 +331,4 @@ Layout: {result.Profile.LayoutExportMode}
 
     private sealed record ProcessResult(int ExitCode, string Output);
 }
+

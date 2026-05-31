@@ -13,11 +13,10 @@ public sealed class ProjectResourceService
         {
             Name = name,
             RelativePath = $"Resources/{name}",
-            Content = """
-<ResourceDictionary xmlns="https://github.com/avaloniaui"
-                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+            Content = @"<ResourceDictionary xmlns=""https://github.com/avaloniaui""
+                    xmlns:x=""http://schemas.microsoft.com/winfx/2006/xaml"">
 </ResourceDictionary>
-"""
+"
         };
         project.Resources.Add(resource);
         return resource;

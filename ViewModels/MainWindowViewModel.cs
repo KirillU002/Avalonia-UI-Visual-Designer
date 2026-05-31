@@ -1,4 +1,4 @@
-using CommunityToolkit.Mvvm.ComponentModel;
+﻿using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Avalonia.Threading;
 using FormDesigner.DesignerSystem.BuiltIn;
@@ -9326,7 +9326,7 @@ public partial class MainWindowViewModel : ObservableObject
     {
         return packageId switch
         {
-            "Avalonia.Controls.DataGrid" => "11.3.12",
+            "Avalonia.Controls.DataGrid" => "11.1.1",
             "CommunityToolkit.Mvvm" => "8.2.1",
             "Microsoft.Data.SqlClient" => "5.2.2",
             _ => ""
@@ -13970,7 +13970,7 @@ public partial class MainWindowViewModel : ObservableObject
         {
             var field = visibleFields[index];
             var filterTextBinding = crudContext is not null && field.AllowFilter
-                ? $" Text=\"{{Binding {EscapeXml(GetColumnFilterPropertyName(crudContext, field))}, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}}\""
+                ? $" Text=\"{{Binding {EscapeXml(GetColumnFilterPropertyName(crudContext, field))}, Mode=TwoWay}}\""
                 : "";
 
             sb.AppendLine($"{Indent(indentLevel + 1)}<Border Grid.Column=\"{index}\" BorderBrush=\"{gridLineBrush}\" BorderThickness=\"0,0,1,1\" Padding=\"{ToInvariant(Math.Max(4, cellPadding * 0.5))}\">");
@@ -16748,15 +16748,15 @@ public partial class MainWindowViewModel : ObservableObject
 
     private sealed class CrudGenerationContext
     {
-        public required BindingSourceModel Source { get; init; }
-        public required string ItemTypeName { get; init; }
-        public required string CollectionPropertyName { get; init; }
-        public required string ViewCollectionPropertyName { get; init; }
-        public required string SearchTextPropertyName { get; init; }
-        public required string SelectedItemPropertyName { get; init; }
-        public required string CurrentItemPropertyName { get; init; }
-        public required IReadOnlyList<BindingFieldModel> Fields { get; init; }
-        public required IReadOnlyList<BindingFieldModel> SearchFields { get; init; }
+        public BindingSourceModel Source { get; init; } = new();
+        public string ItemTypeName { get; init; } = "";
+        public string CollectionPropertyName { get; init; } = "";
+        public string ViewCollectionPropertyName { get; init; } = "";
+        public string SearchTextPropertyName { get; init; } = "";
+        public string SelectedItemPropertyName { get; init; } = "";
+        public string CurrentItemPropertyName { get; init; } = "";
+        public IReadOnlyList<BindingFieldModel> Fields { get; init; } = Array.Empty<BindingFieldModel>();
+        public IReadOnlyList<BindingFieldModel> SearchFields { get; init; } = Array.Empty<BindingFieldModel>();
     }
 
     private sealed record ExportableInteraction(
@@ -17060,3 +17060,5 @@ public partial class MainWindowViewModel : ObservableObject
         DesignerChanged?.Invoke(this, EventArgs.Empty);
     }
 }
+
+

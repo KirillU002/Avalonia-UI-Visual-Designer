@@ -17,7 +17,7 @@ dotnet build .\Plugins\MyCompanyPlugin\MyCompanyPlugin.csproj
 6. Put the output DLL and its dependencies into:
 
 ```text
-bin\<Configuration>\net7.0\Plugins\MyCompanyPlugin\
+bin\<Configuration>\net6.0\Plugins\MyCompanyPlugin\
 ```
 
 7. Restart the editor or use **Plugins -> Reload plugins**.
@@ -37,4 +37,3 @@ Open the **Plugins** workspace in the editor. It shows:
 - warnings/errors
 - registered controls
 - dependency or duplicate `TypeKey` problems
-

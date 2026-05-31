@@ -547,8 +547,7 @@
             BorderBrush="#1E293B"
             BorderThickness="0,0,0,1"
             IsVisible="{Binding IsDesignerShellHeaderVisible}">
-      <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,8,Auto,Auto,8,Auto,Auto,Auto,*,Auto,Auto,Auto"
-            ColumnSpacing="4">
+      <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,8,Auto,Auto,8,Auto,Auto,Auto,*,Auto,Auto,Auto">
         <TextBlock Text="Avalonia Designer"
                    Foreground="White"
                    FontSize="13"
@@ -671,7 +670,6 @@
                     <ItemsControl.ItemTemplate>
                       <DataTemplate x:DataType="models:RecentFileModel">
                         <Grid ColumnDefinitions="*,Auto,Auto"
-                              ColumnSpacing="6"
                               Margin="0,0,0,4">
                           <Button Tag="{Binding}"
                                   Click="OpenRecentFileButton_Click"
@@ -710,8 +708,7 @@
                           Background="#E2E8F0"
                           Margin="0,2"/>
 
-                  <Grid ColumnDefinitions="Auto,*"
-                        ColumnSpacing="8">
+                  <Grid ColumnDefinitions="Auto,*">
                     <TextBlock Text="Density"
                                FontWeight="SemiBold"
                                VerticalAlignment="Center"/>
@@ -733,11 +730,9 @@
          слева тулбокс/структура, по центру форма, справа свойства/данные/код. -->
     <Grid Grid.Row="1"
           Margin="6"
-          RowDefinitions="*,Auto"
-          RowSpacing="4">
+          RowDefinitions="*,Auto">
       <Grid Grid.Row="0"
-            ColumnDefinitions="Auto,Auto,Auto,*,Auto,Auto,Auto"
-            ColumnSpacing="4">
+            ColumnDefinitions="Auto,Auto,Auto,*,Auto,Auto,Auto">
       <Button Grid.Column="0"
               Width="28"
               MinHeight="64"
@@ -768,8 +763,7 @@
                   BorderBrush="#D7E2EE"
                   BorderThickness="0,0,0,1"
                   Padding="8,5">
-            <Grid ColumnDefinitions="*,Auto"
-                  ColumnSpacing="8">
+            <Grid ColumnDefinitions="*,Auto">
               <StackPanel Spacing="2"
                           VerticalAlignment="Center">
                 <TextBlock Text="{Binding LeftDockHeaderTitle}"
@@ -798,8 +792,7 @@
                    IsVisible="{Binding IsDesignMode}">
             <Grid RowDefinitions="Auto,*"
                   Margin="0,6,0,0">
-              <Grid RowDefinitions="Auto,Auto"
-                    RowSpacing="5">
+              <Grid RowDefinitions="Auto,Auto">
                 <StackPanel Spacing="1">
                   <TextBlock Text="{Binding CurrentProjectDisplayName}"
                              FontSize="14"
@@ -857,7 +850,6 @@
                               Margin="0"
                               DoubleTapped="ProjectExplorerItem_DoubleTapped">
                         <Grid ColumnDefinitions="Auto,*,Auto"
-                              ColumnSpacing="6"
                               MinHeight="26">
                           <Border Width="18"
                                   Height="18"
@@ -880,7 +872,7 @@
                                        IsVisible="{Binding IsDisplayNameVisible}"
                                        VerticalAlignment="Center"
                                        TextTrimming="CharacterEllipsis"/>
-                            <TextBox Text="{Binding Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                            <TextBox Text="{Binding Name, Mode=TwoWay}"
                                      IsVisible="{Binding IsRenameEditorVisible}"
                                      MinHeight="26"
                                      Padding="6,3"
@@ -977,7 +969,6 @@
                               PointerPressed="ToolboxItem_PointerPressed"
                               ToolTip.Tip="{Binding Description}">
                         <Grid ColumnDefinitions="Auto,*,Auto"
-                              ColumnSpacing="6"
                               MinHeight="26">
                           <Border Width="18"
                                   Height="18"
@@ -1080,7 +1071,7 @@
                                      FontWeight="Bold"
                                      TextWrapping="Wrap"
                                      IsVisible="{Binding IsBuiltIn}"/>
-                          <TextBox Text="{Binding Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                          <TextBox Text="{Binding Name, Mode=TwoWay}"
                                    FontSize="15"
                                    FontWeight="SemiBold"
                                    IsVisible="{Binding CanEdit}"/>
@@ -1099,7 +1090,6 @@
                                   HorizontalAlignment="Stretch"/>
 
                           <Grid ColumnDefinitions="*,*"
-                                ColumnSpacing="8"
                                 IsVisible="{Binding CanEdit}">
                             <Button Grid.Column="0"
                                     Content="Сохранить имя"
@@ -1126,8 +1116,7 @@
             <Grid RowDefinitions="Auto,Auto,*"
                   Margin="0,12,0,0">
               <StackPanel Spacing="6">
-                <Grid ColumnDefinitions="*,Auto"
-                      ColumnSpacing="8">
+                <Grid ColumnDefinitions="*,Auto">
                   <StackPanel Spacing="3">
                     <TextBlock Text="Структура формы"
                                FontSize="16"
@@ -1148,7 +1137,7 @@
               <TextBox Grid.Row="1"
                        Margin="0,10,0,8"
                        Watermark="Поиск по имени или типу..."
-                       Text="{Binding StructureSearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                       Text="{Binding StructureSearchText, Mode=TwoWay}"
                        MinHeight="34"/>
 
               <Border Grid.Row="2"
@@ -1231,8 +1220,7 @@
                           </ContextMenu>
                         </Border.ContextMenu>
 
-                          <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto"
-                                ColumnSpacing="5">
+                          <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto">
                             <Border Width="24"
                                     Height="22"
                                     Background="{Binding TypeBadgeBackground}"
@@ -1248,10 +1236,9 @@
 
                             <Grid Grid.Column="1"
                                   ColumnDefinitions="*,Auto"
-                                  ColumnSpacing="6"
                                   MinWidth="0"
                                   VerticalAlignment="Center">
-                              <TextBox Text="{Binding Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                              <TextBox Text="{Binding Name, Mode=TwoWay}"
                                        IsEnabled="{Binding CanRename}"
                                        Foreground="{Binding NameForeground}"
                                        Background="Transparent"
@@ -1373,8 +1360,7 @@
                                 BorderBrush="#D7E2EE"
                                 BorderThickness="1"
                                 CornerRadius="14">
-                          <Grid ColumnDefinitions="Auto,*"
-                                ColumnSpacing="10">
+                          <Grid ColumnDefinitions="Auto,*">
                             <Border Width="34"
                                     Height="34"
                                     Background="#DBEAFE"
@@ -1457,7 +1443,7 @@
                            TextWrapping="Wrap"/>
 
                 <TextBox Watermark="Поиск по имени DLL, типу или источнику..."
-                         Text="{Binding ImportedDllSearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                         Text="{Binding ImportedDllSearchText, Mode=TwoWay}"/>
 
                 <Border Background="#F8FAFC"
                         BorderBrush="#D7E2EE"
@@ -1576,8 +1562,7 @@
                             BorderBrush="{Binding BorderBrush}"
                             BorderThickness="1"
                             CornerRadius="6">
-                      <Grid ColumnDefinitions="*,Auto"
-                            ColumnSpacing="6">
+                      <Grid ColumnDefinitions="*,Auto">
                         <Button Content="{Binding Title}"
                                 Command="{Binding #RootWindow.DataContext.SwitchDocumentCommand}"
                                 CommandParameter="{Binding}"
@@ -1612,9 +1597,7 @@
                   Padding="6"
                   IsVisible="{Binding IsDesignerCanvasWorkspaceVisible}">
             <Grid RowDefinitions="Auto,Auto"
-                  ColumnDefinitions="*,Auto"
-                  RowSpacing="5"
-                  ColumnSpacing="8">
+                  ColumnDefinitions="*,Auto">
               <StackPanel Spacing="1">
                 <TextBlock Text="Поверхность формы"
                            FontSize="13"
@@ -1746,8 +1729,7 @@
                             BorderThickness="1,1,1,0"
                             CornerRadius="10,10,0,0">
                       <Grid ColumnDefinitions="*,Auto,Auto"
-                            Margin="12,0"
-                            ColumnSpacing="10">
+                            Margin="12,0">
                         <TextBlock Text="{Binding FormTitle}"
                                    VerticalAlignment="Center"
                                    FontWeight="SemiBold"
@@ -1807,9 +1789,7 @@
                             PointerPressed="DesignerCanvas_PointerPressed"
                             PointerMoved="DesignerCanvas_PointerMoved"
                             PointerReleased="DesignerCanvas_PointerReleased"
-                            DragDrop.AllowDrop="True"
-                            DragDrop.DragOver="DesignerCanvas_DragOver"
-                            DragDrop.Drop="DesignerCanvas_Drop"/>
+                            DragDrop.AllowDrop="True"/>
 
                     <Canvas x:Name="SelectionOverlayCanvas"
                             Width="{Binding PreviewFormWidth}"
@@ -1997,8 +1977,7 @@
                       VerticalAlignment="Bottom"
                       Margin="0,0,12,12"
                       IsVisible="False">
-                <Grid RowDefinitions="Auto,Auto,*"
-                      RowSpacing="8">
+                <Grid RowDefinitions="Auto,Auto,*">
                   <TextBlock Text="Навигация"
                              FontWeight="Bold"
                              FontSize="14"
@@ -2022,15 +2001,13 @@
 
           <Grid Grid.RowSpan="3"
                 RowDefinitions="Auto,*"
-                RowSpacing="12"
                 IsVisible="{Binding IsExportPipelineWorkspaceVisible}">
             <Border Background="#FFFFFF"
                     BorderBrush="#D7E2EE"
                     BorderThickness="1"
                     CornerRadius="12"
                     Padding="14">
-              <Grid ColumnDefinitions="*,Auto"
-                    ColumnSpacing="16">
+              <Grid ColumnDefinitions="*,Auto">
                 <StackPanel Spacing="4">
                   <TextBlock Text="Export Pipeline"
                              FontSize="22"
@@ -2093,15 +2070,13 @@
             </Border>
 
             <Grid Grid.Row="1"
-                  ColumnDefinitions="270,*,320"
-                  ColumnSpacing="12">
+                  ColumnDefinitions="270,*,320">
               <Border Background="#FFFFFF"
                       BorderBrush="#D7E2EE"
                       BorderThickness="1"
                       CornerRadius="12"
                       Padding="12">
-                <Grid RowDefinitions="Auto,*"
-                      RowSpacing="8">
+                <Grid RowDefinitions="Auto,*">
                   <TextBlock Text="Generated files"
                              FontSize="14"
                              FontWeight="Bold"/>
@@ -2121,7 +2096,6 @@
                       <TreeDataTemplate x:DataType="models:GeneratedFileTreeNodeModel"
                                         ItemsSource="{Binding Children}">
                         <Grid ColumnDefinitions="Auto,*,Auto"
-                              ColumnSpacing="8"
                               Margin="0,3">
                           <Border Width="22"
                                   Height="22"
@@ -2159,15 +2133,13 @@
               </Border>
 
               <Grid Grid.Column="1"
-                    RowDefinitions="Auto,*"
-                    RowSpacing="8">
+                    RowDefinitions="Auto,*">
                 <Border Background="#FFFFFF"
                         BorderBrush="#D7E2EE"
                         BorderThickness="1"
                         CornerRadius="12"
                         Padding="10">
-                  <Grid ColumnDefinitions="*,Auto"
-                        ColumnSpacing="12">
+                  <Grid ColumnDefinitions="*,Auto">
                     <StackPanel Spacing="2">
                       <TextBlock Text="{Binding SelectedGeneratedFile.Path}"
                                  FontWeight="Bold"
@@ -2388,8 +2360,7 @@
                   BorderBrush="#D7E2EE"
                   BorderThickness="0,0,0,1"
                   Padding="8,6">
-            <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto"
-                  ColumnSpacing="4">
+            <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto">
               <StackPanel Spacing="1"
                           VerticalAlignment="Center">
                 <TextBlock Text="{Binding RightInspectorHeaderTitle}"
@@ -2433,7 +2404,6 @@
                сверху свойства формы, ниже режимы дизайнера и затем свойства выделенного контрола. -->
           <TabItem Header="Properties">
             <Grid RowDefinitions="Auto,*"
-                  RowSpacing="6"
                   Margin="0,6,0,0">
               <Border Background="White"
                       BorderBrush="#D7E2EE"
@@ -2454,11 +2424,10 @@
               </Border>
 
               <Grid Grid.Row="0"
-                    ColumnDefinitions="*,Auto"
-                    ColumnSpacing="4">
+                    ColumnDefinitions="*,Auto">
                 <TextBox Classes="property-editor"
                          Watermark="Search properties..."
-                         Text="{Binding PropertyGridSearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                         Text="{Binding PropertyGridSearchText, Mode=TwoWay}"/>
                 <Button Grid.Column="1"
                         Classes="property-header-action"
                         Content="X"
@@ -2486,8 +2455,7 @@
                           Padding="8"
                           IsVisible="{Binding IsActiveLayoutGrid}">
                     <StackPanel Spacing="8">
-                      <Grid ColumnDefinitions="*,Auto,Auto"
-                            ColumnSpacing="6">
+                      <Grid ColumnDefinitions="*,Auto,Auto">
                         <StackPanel Spacing="1">
                           <TextBlock Text="Grid definitions"
                                      FontWeight="Bold"
@@ -2519,8 +2487,7 @@
                               <Border BorderBrush="#E5E7EB"
                                       BorderThickness="0,0,0,1"
                                       Padding="0,2">
-                                <Grid ColumnDefinitions="28,86,58,*,Auto,Auto,Auto"
-                                      ColumnSpacing="4">
+                                <Grid ColumnDefinitions="28,86,58,*,Auto,Auto,Auto">
                                   <TextBlock Text="{Binding Index}"
                                              VerticalAlignment="Center"
                                              Foreground="#64748B"/>
@@ -2571,8 +2538,7 @@
                               <Border BorderBrush="#E5E7EB"
                                       BorderThickness="0,0,0,1"
                                       Padding="0,2">
-                                <Grid ColumnDefinitions="28,86,58,*,Auto,Auto,Auto"
-                                      ColumnSpacing="4">
+                                <Grid ColumnDefinitions="28,86,58,*,Auto,Auto,Auto">
                                   <TextBlock Text="{Binding Index}"
                                              VerticalAlignment="Center"
                                              Foreground="#64748B"/>
@@ -2625,8 +2591,7 @@
                       <TextBlock Text="StackPanel workflow"
                                  FontWeight="Bold"
                                  FontSize="13"/>
-                      <Grid ColumnDefinitions="*,*"
-                            ColumnSpacing="8">
+                      <Grid ColumnDefinitions="*,*">
                         <StackPanel Spacing="3">
                           <TextBlock Text="Orientation"
                                      FontSize="11"
@@ -2668,8 +2633,7 @@
                         <StackPanel>
                           <ToggleButton Classes="property-category-header"
                                         IsChecked="{Binding IsExpanded, Mode=TwoWay}">
-                            <Grid ColumnDefinitions="14,*,Auto"
-                                  ColumnSpacing="4">
+                            <Grid ColumnDefinitions="14,*,Auto">
                               <TextBlock Text="{Binding ExpandGlyph}"
                                          FontSize="10"
                                          HorizontalAlignment="Center"
@@ -2719,13 +2683,13 @@
                                               Padding="6,1,0,1">
                                         <Grid MinWidth="116">
                                         <TextBox Classes="property-editor"
-                                                 Text="{Binding Value, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                 Text="{Binding Value, Mode=TwoWay}"
                                                  IsVisible="{Binding IsTextEditor}"
                                                  LostFocus="PropertyGridTextBox_LostFocus"
                                                  KeyDown="PropertyGridTextBox_KeyDown"/>
 
                                         <TextBox Classes="property-editor"
-                                                 Text="{Binding Value, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                 Text="{Binding Value, Mode=TwoWay}"
                                                  IsVisible="{Binding IsNumberEditor}"
                                                  LostFocus="PropertyGridTextBox_LostFocus"
                                                  KeyDown="PropertyGridTextBox_KeyDown"/>
@@ -2746,10 +2710,9 @@
                                                   SelectedItem="{Binding SelectedOption, Mode=TwoWay}"/>
 
                                         <Grid IsVisible="{Binding IsColorEditor}"
-                                              ColumnDefinitions="*,Auto"
-                                              ColumnSpacing="4">
+                                              ColumnDefinitions="*,Auto">
                                           <TextBox Classes="property-editor"
-                                                   Text="{Binding Value, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                   Text="{Binding Value, Mode=TwoWay}"
                                                    LostFocus="PropertyGridTextBox_LostFocus"
                                                    KeyDown="PropertyGridTextBox_KeyDown"/>
                                           <Button Grid.Column="1"
@@ -2820,11 +2783,10 @@
                     <StackPanel Spacing="4">
                       <TextBlock Text="Заголовок"
                                  FontWeight="SemiBold"/>
-                      <TextBox Text="{Binding FormTitle, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                      <TextBox Text="{Binding FormTitle, Mode=TwoWay}"/>
                     </StackPanel>
 
-                    <Grid ColumnDefinitions="*,*"
-                          ColumnSpacing="10">
+                    <Grid ColumnDefinitions="*,*">
                       <StackPanel Spacing="4">
                         <TextBlock Text="Ширина"
                                    FontWeight="SemiBold"/>
@@ -2860,8 +2822,7 @@
                       </StackPanel>
                     </Border>
 
-                    <Grid ColumnDefinitions="*,*"
-                          ColumnSpacing="10">
+                    <Grid ColumnDefinitions="*,*">
                       <StackPanel Spacing="4">
                         <TextBlock Text="Позиция запуска"
                                    FontWeight="SemiBold"/>
@@ -2878,8 +2839,7 @@
                       </StackPanel>
                     </Grid>
 
-                    <Grid ColumnDefinitions="*,*"
-                          ColumnSpacing="10">
+                    <Grid ColumnDefinitions="*,*">
                       <StackPanel Spacing="4">
                         <TextBlock Text="Тема"
                                    FontWeight="SemiBold"/>
@@ -2891,7 +2851,7 @@
                                   Spacing="4">
                         <TextBlock Text="Фон"
                                    FontWeight="SemiBold"/>
-                        <TextBox Text="{Binding SurfaceBackground, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                        <TextBox Text="{Binding SurfaceBackground, Mode=TwoWay}"
                                  Watermark="#FFFFFF"/>
                         <Button Classes="color-picker-button"
                                 Tag="SurfaceBackground"
@@ -2925,8 +2885,7 @@
                       </StackPanel>
                     </Border>
 
-                    <Grid ColumnDefinitions="*,*"
-                          ColumnSpacing="10">
+                    <Grid ColumnDefinitions="*,*">
                       <StackPanel Spacing="4">
                         <TextBlock Text="Оформление"
                                    FontWeight="SemiBold"/>
@@ -2936,8 +2895,7 @@
                       </StackPanel>
                     </Grid>
 
-                    <Grid ColumnDefinitions="*,*"
-                          ColumnSpacing="10">
+                    <Grid ColumnDefinitions="*,*">
                       <StackPanel Spacing="4">
                         <TextBlock Text="Режим layout"
                                    FontWeight="SemiBold"/>
@@ -2955,8 +2913,7 @@
                       </StackPanel>
                     </Grid>
 
-                    <Grid ColumnDefinitions="*,*"
-                          ColumnSpacing="10">
+                    <Grid ColumnDefinitions="*,*">
                       <StackPanel Spacing="4"
                                   IsVisible="{Binding CanEditSurfaceFlowLayout}">
                         <TextBlock Text="Отступ между элементами"
@@ -3025,8 +2982,7 @@
                       </WrapPanel>
                     </StackPanel>
 
-                    <Grid ColumnDefinitions="*,*"
-                          ColumnSpacing="10">
+                    <Grid ColumnDefinitions="*,*">
                       <CheckBox Content="Можно менять размер"
                                 IsChecked="{Binding FormCanResize, Mode=TwoWay}"/>
                       <CheckBox Grid.Column="1"
@@ -3034,8 +2990,7 @@
                                 IsChecked="{Binding FormHasSystemDecorations, Mode=TwoWay}"/>
                     </Grid>
 
-                    <Grid ColumnDefinitions="*,*"
-                          ColumnSpacing="10">
+                    <Grid ColumnDefinitions="*,*">
                       <CheckBox Content="Показывать в панели задач"
                                 IsChecked="{Binding FormShowInTaskbar, Mode=TwoWay}"/>
                       <CheckBox Grid.Column="1"
@@ -3056,8 +3011,7 @@
                                FontSize="18"
                                FontWeight="Bold"/>
 
-                    <Grid ColumnDefinitions="*,*"
-                          ColumnSpacing="10">
+                    <Grid ColumnDefinitions="*,*">
                       <StackPanel Spacing="4">
                         <TextBlock Text="Шаг сетки"
                                    FontWeight="SemiBold"/>
@@ -3076,8 +3030,7 @@
                       </StackPanel>
                     </Grid>
 
-                    <Grid ColumnDefinitions="*,*"
-                          ColumnSpacing="10">
+                    <Grid ColumnDefinitions="*,*">
                       <CheckBox Content="Enable snapping"
                                 IsChecked="{Binding IsCanvasSnappingEnabled, Mode=TwoWay}"/>
                       <CheckBox Grid.Column="1"
@@ -3085,8 +3038,7 @@
                                 IsChecked="{Binding IsDesignerGridVisible, Mode=TwoWay}"/>
                     </Grid>
 
-                    <Grid ColumnDefinitions="*,*"
-                          ColumnSpacing="10">
+                    <Grid ColumnDefinitions="*,*">
                       <CheckBox Content="Snap to grid"
                                 IsChecked="{Binding IsGridSnapEnabled, Mode=TwoWay}"/>
                       <CheckBox Grid.Column="1"
@@ -3094,8 +3046,7 @@
                                 IsChecked="{Binding IsControlSnapEnabled, Mode=TwoWay}"/>
                     </Grid>
 
-                    <Grid ColumnDefinitions="*,*"
-                          ColumnSpacing="10">
+                    <Grid ColumnDefinitions="*,*">
                       <CheckBox Content="Smart guides"
                                 IsChecked="{Binding IsSmartGuidesEnabled, Mode=TwoWay}"/>
                       <CheckBox Grid.Column="1"
@@ -3103,8 +3054,7 @@
                                 IsChecked="{Binding IsDistanceHintsEnabled, Mode=TwoWay}"/>
                     </Grid>
 
-                    <Grid ColumnDefinitions="*,*"
-                          ColumnSpacing="10">
+                    <Grid ColumnDefinitions="*,*">
                       <CheckBox Content="Ignore locked in marquee"
                                 IsChecked="{Binding IgnoreLockedDuringSelection, Mode=TwoWay}"/>
                       <CheckBox Grid.Column="1"
@@ -3112,8 +3062,7 @@
                                 IsChecked="{Binding IsSelectionToolbarEnabled, Mode=TwoWay}"/>
                     </Grid>
 
-                    <Grid ColumnDefinitions="*,*"
-                          ColumnSpacing="10">
+                    <Grid ColumnDefinitions="*,*">
                       <StackPanel Spacing="4">
                         <TextBlock Text="Режим редактирования"
                                    FontWeight="SemiBold"/>
@@ -3232,12 +3181,11 @@
 
                     <StackPanel IsVisible="{Binding HasSelectedControl}"
                                 Spacing="10">
-                      <Grid ColumnDefinitions="*,Auto,Auto"
-                            ColumnSpacing="8">
+                      <Grid ColumnDefinitions="*,Auto,Auto">
                         <StackPanel Spacing="4">
                           <TextBlock Text="Имя"
                                      FontWeight="SemiBold"/>
-                          <TextBox Text="{Binding SelectedControl.Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                          <TextBox Text="{Binding SelectedControl.Name, Mode=TwoWay}"/>
                         </StackPanel>
 
                         <Border Grid.Column="1"
@@ -3267,7 +3215,7 @@
                         <TextBlock Text="{Binding SelectedTextLabel}"
                                    FontWeight="SemiBold"/>
                         <TextBox Tag="Text"
-                                 Text="{Binding SelectedControl.Text, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                 Text="{Binding SelectedControl.Text, Mode=TwoWay}"
                                  TextChanged="SelectedTextPropertyTextChanged"/>
                       </StackPanel>
 
@@ -3276,7 +3224,7 @@
                         <TextBlock Text="Подсказка / Watermark"
                                    FontWeight="SemiBold"/>
                         <TextBox Tag="PlaceholderText"
-                                 Text="{Binding SelectedControl.PlaceholderText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                 Text="{Binding SelectedControl.PlaceholderText, Mode=TwoWay}"
                                  TextChanged="SelectedTextPropertyTextChanged"/>
                       </StackPanel>
 
@@ -3285,7 +3233,7 @@
                         <TextBlock Text="Источник изображения"
                                    FontWeight="SemiBold"/>
                         <TextBox Tag="ImageSource"
-                                 Text="{Binding SelectedControl.ImageSource, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                 Text="{Binding SelectedControl.ImageSource, Mode=TwoWay}"
                                  TextChanged="SelectedTextPropertyTextChanged"/>
                         <StackPanel Orientation="Horizontal"
                                     Spacing="8">
@@ -3309,7 +3257,6 @@
                       </StackPanel>
 
                       <Grid ColumnDefinitions="*,*"
-                            ColumnSpacing="10"
                             IsVisible="{Binding CanEditSelectedAbsolutePosition}">
                         <StackPanel Spacing="4">
                           <TextBlock Text="X"
@@ -3347,16 +3294,14 @@
                         <TextBlock Text="Привязка к краям родительского контейнера. Left+Right и Top+Bottom растягивают элемент при изменении размера."
                                    Foreground="#64748B"
                                    TextWrapping="Wrap"/>
-                        <Grid ColumnDefinitions="*,*"
-                              ColumnSpacing="10">
+                        <Grid ColumnDefinitions="*,*">
                           <CheckBox Content="Слева"
                                     IsChecked="{Binding SelectedControl.AnchorLeft, Mode=TwoWay}"/>
                           <CheckBox Grid.Column="1"
                                     Content="Справа"
                                     IsChecked="{Binding SelectedControl.AnchorRight, Mode=TwoWay}"/>
                         </Grid>
-                        <Grid ColumnDefinitions="*,*"
-                              ColumnSpacing="10">
+                        <Grid ColumnDefinitions="*,*">
                           <CheckBox Content="Сверху"
                                     IsChecked="{Binding SelectedControl.AnchorTop, Mode=TwoWay}"/>
                           <CheckBox Grid.Column="1"
@@ -3370,8 +3315,7 @@
                         <TextBlock Text="Параметры layout"
                                    FontWeight="SemiBold"/>
 
-                        <Grid ColumnDefinitions="*,*"
-                              ColumnSpacing="10">
+                        <Grid ColumnDefinitions="*,*">
                           <StackPanel Spacing="4">
                             <TextBlock Text="Ориентация"
                                        FontWeight="SemiBold"/>
@@ -3392,8 +3336,7 @@
                         </Grid>
                       </StackPanel>
 
-                      <Grid ColumnDefinitions="*,*"
-                            ColumnSpacing="10">
+                      <Grid ColumnDefinitions="*,*">
                         <StackPanel Spacing="4">
                           <TextBlock Text="Ширина"
                                      FontWeight="SemiBold"/>
@@ -3412,8 +3355,7 @@
                         </StackPanel>
                       </Grid>
 
-                      <Grid ColumnDefinitions="*,*"
-                            ColumnSpacing="10">
+                      <Grid ColumnDefinitions="*,*">
                         <StackPanel Spacing="4">
                           <TextBlock Text="Прозрачность"
                                      FontWeight="SemiBold"/>
@@ -3457,8 +3399,7 @@
                                        TextWrapping="Wrap"/>
                           </StackPanel>
 
-                          <Grid ColumnDefinitions="*,*"
-                                ColumnSpacing="10">
+                          <Grid ColumnDefinitions="*,*">
                             <StackPanel Spacing="4">
                               <TextBlock Text="BindingSource"
                                          FontWeight="SemiBold"/>
@@ -3493,8 +3434,7 @@
                                   BorderThickness="1"
                                   CornerRadius="12"
                                   Padding="12">
-                            <Grid ColumnDefinitions="*,Auto"
-                                  ColumnSpacing="12">
+                            <Grid ColumnDefinitions="*,Auto">
                               <StackPanel Spacing="4">
                                 <TextBlock Text="{Binding SelectedGridColumnEditorTitle}"
                                            FontWeight="Bold"/>
@@ -3512,8 +3452,7 @@
                             </Grid>
                           </Border>
 
-                          <Grid ColumnDefinitions="*,*"
-                                ColumnSpacing="10">
+                          <Grid ColumnDefinitions="*,*">
                             <StackPanel Spacing="8">
                               <CheckBox Content="Строка фильтра"
                                         Tag="ShowFilterRow"
@@ -3585,8 +3524,7 @@
                             </WrapPanel>
                           </StackPanel>
 
-                          <Grid ColumnDefinitions="*,*"
-                                ColumnSpacing="10">
+                          <Grid ColumnDefinitions="*,*">
                             <StackPanel Spacing="4">
                               <TextBlock Text="Высота шапки"
                                          FontWeight="SemiBold"/>
@@ -3612,8 +3550,7 @@
                                   Padding="12"
                                   IsVisible="{Binding CanEditDataGridInteractions}">
                             <StackPanel Spacing="10">
-                              <Grid ColumnDefinitions="*,Auto"
-                                    ColumnSpacing="10">
+                              <Grid ColumnDefinitions="*,Auto">
                                 <StackPanel Spacing="2">
                                   <TextBlock Text="Логика выбора строки"
                                              FontSize="16"
@@ -3642,8 +3579,7 @@
                                             BorderThickness="1"
                                             CornerRadius="12">
                                       <StackPanel Spacing="8">
-                                        <Grid ColumnDefinitions="*,Auto"
-                                              ColumnSpacing="8">
+                                        <Grid ColumnDefinitions="*,Auto">
                                           <TextBlock Text="{Binding Summary}"
                                                      FontWeight="SemiBold"
                                                      TextWrapping="Wrap"/>
@@ -3654,8 +3590,7 @@
                                                   Padding="10,6"/>
                                         </Grid>
 
-                                        <Grid ColumnDefinitions="*,*"
-                                              ColumnSpacing="8">
+                                        <Grid ColumnDefinitions="*,*">
                                           <StackPanel Spacing="4">
                                             <TextBlock Text="Куда"
                                                        FontWeight="SemiBold"/>
@@ -3679,8 +3614,7 @@
                                           </StackPanel>
                                         </Grid>
 
-                                        <Grid ColumnDefinitions="*,*"
-                                              ColumnSpacing="8">
+                                        <Grid ColumnDefinitions="*,*">
                                           <StackPanel Spacing="4">
                                             <TextBlock Text="Поле строки"
                                                        FontWeight="SemiBold"/>
@@ -3692,7 +3626,7 @@
                                                       Spacing="4">
                                             <TextBlock Text="Шаблон"
                                                        FontWeight="SemiBold"/>
-                                            <TextBox Text="{Binding TextTemplate, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                            <TextBox Text="{Binding TextTemplate, Mode=TwoWay}"
                                                      Watermark="Клиент: {Name}, Email: {Email}"/>
                                           </StackPanel>
                                         </Grid>
@@ -3717,15 +3651,13 @@
                                            Foreground="#475569"
                                            TextWrapping="Wrap"/>
 
-                                <Grid ColumnDefinitions="*,*"
-                                      ColumnSpacing="10">
+                                <Grid ColumnDefinitions="*,*">
                                   <StackPanel Spacing="4">
                                     <TextBlock Text="Фон шапки"
                                                FontWeight="SemiBold"/>
-                                    <Grid ColumnDefinitions="*,Auto"
-                                          ColumnSpacing="8">
+                                    <Grid ColumnDefinitions="*,Auto">
                                       <TextBox Tag="DataGridHeaderBackground"
-                                               Text="{Binding SelectedControl.DataGridHeaderBackground, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                               Text="{Binding SelectedControl.DataGridHeaderBackground, Mode=TwoWay}"
                                                TextChanged="SelectedTextPropertyTextChanged"/>
                                       <Button Grid.Column="1"
                                               Content="..."
@@ -3739,10 +3671,9 @@
                                               Spacing="4">
                                     <TextBlock Text="Текст шапки"
                                                FontWeight="SemiBold"/>
-                                    <Grid ColumnDefinitions="*,Auto"
-                                          ColumnSpacing="8">
+                                    <Grid ColumnDefinitions="*,Auto">
                                       <TextBox Tag="DataGridHeaderForeground"
-                                               Text="{Binding SelectedControl.DataGridHeaderForeground, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                               Text="{Binding SelectedControl.DataGridHeaderForeground, Mode=TwoWay}"
                                                TextChanged="SelectedTextPropertyTextChanged"/>
                                       <Button Grid.Column="1"
                                               Content="..."
@@ -3753,15 +3684,13 @@
                                   </StackPanel>
                                 </Grid>
 
-                                <Grid ColumnDefinitions="*,*"
-                                      ColumnSpacing="10">
+                                <Grid ColumnDefinitions="*,*">
                                   <StackPanel Spacing="4">
                                     <TextBlock Text="Фон строки"
                                                FontWeight="SemiBold"/>
-                                    <Grid ColumnDefinitions="*,Auto"
-                                          ColumnSpacing="8">
+                                    <Grid ColumnDefinitions="*,Auto">
                                       <TextBox Tag="DataGridRowBackground"
-                                               Text="{Binding SelectedControl.DataGridRowBackground, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                               Text="{Binding SelectedControl.DataGridRowBackground, Mode=TwoWay}"
                                                TextChanged="SelectedTextPropertyTextChanged"/>
                                       <Button Grid.Column="1"
                                               Content="..."
@@ -3775,10 +3704,9 @@
                                               Spacing="4">
                                     <TextBlock Text="Чередующаяся строка"
                                                FontWeight="SemiBold"/>
-                                    <Grid ColumnDefinitions="*,Auto"
-                                          ColumnSpacing="8">
+                                    <Grid ColumnDefinitions="*,Auto">
                                       <TextBox Tag="DataGridAlternateRowBackground"
-                                               Text="{Binding SelectedControl.DataGridAlternateRowBackground, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                               Text="{Binding SelectedControl.DataGridAlternateRowBackground, Mode=TwoWay}"
                                                TextChanged="SelectedTextPropertyTextChanged"/>
                                       <Button Grid.Column="1"
                                               Content="..."
@@ -3789,15 +3717,13 @@
                                   </StackPanel>
                                 </Grid>
 
-                                <Grid ColumnDefinitions="*,*"
-                                      ColumnSpacing="10">
+                                <Grid ColumnDefinitions="*,*">
                                   <StackPanel Spacing="4">
                                     <TextBlock Text="Выбранная строка"
                                                FontWeight="SemiBold"/>
-                                    <Grid ColumnDefinitions="*,Auto"
-                                          ColumnSpacing="8">
+                                    <Grid ColumnDefinitions="*,Auto">
                                       <TextBox Tag="DataGridSelectedRowBackground"
-                                               Text="{Binding SelectedControl.DataGridSelectedRowBackground, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                               Text="{Binding SelectedControl.DataGridSelectedRowBackground, Mode=TwoWay}"
                                                TextChanged="SelectedTextPropertyTextChanged"/>
                                       <Button Grid.Column="1"
                                               Content="..."
@@ -3811,10 +3737,9 @@
                                               Spacing="4">
                                     <TextBlock Text="Строка при наведении"
                                                FontWeight="SemiBold"/>
-                                    <Grid ColumnDefinitions="*,Auto"
-                                          ColumnSpacing="8">
+                                    <Grid ColumnDefinitions="*,Auto">
                                       <TextBox Tag="DataGridHoverRowBackground"
-                                               Text="{Binding SelectedControl.DataGridHoverRowBackground, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                               Text="{Binding SelectedControl.DataGridHoverRowBackground, Mode=TwoWay}"
                                                TextChanged="SelectedTextPropertyTextChanged"/>
                                       <Button Grid.Column="1"
                                               Content="..."
@@ -3825,15 +3750,13 @@
                                   </StackPanel>
                                 </Grid>
 
-                                <Grid ColumnDefinitions="*,*"
-                                      ColumnSpacing="10">
+                                <Grid ColumnDefinitions="*,*">
                                   <StackPanel Spacing="4">
                                     <TextBlock Text="Линии таблицы"
                                                FontWeight="SemiBold"/>
-                                    <Grid ColumnDefinitions="*,Auto"
-                                          ColumnSpacing="8">
+                                    <Grid ColumnDefinitions="*,Auto">
                                       <TextBox Tag="DataGridGridLineBrush"
-                                               Text="{Binding SelectedControl.DataGridGridLineBrush, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                               Text="{Binding SelectedControl.DataGridGridLineBrush, Mode=TwoWay}"
                                                TextChanged="SelectedTextPropertyTextChanged"/>
                                       <Button Grid.Column="1"
                                               Content="..."
@@ -3847,10 +3770,9 @@
                                               Spacing="4">
                                     <TextBlock Text="Граница"
                                                FontWeight="SemiBold"/>
-                                    <Grid ColumnDefinitions="*,Auto"
-                                          ColumnSpacing="8">
+                                    <Grid ColumnDefinitions="*,Auto">
                                       <TextBox Tag="DataGridOuterBorderBrush"
-                                               Text="{Binding SelectedControl.DataGridOuterBorderBrush, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                               Text="{Binding SelectedControl.DataGridOuterBorderBrush, Mode=TwoWay}"
                                                TextChanged="SelectedTextPropertyTextChanged"/>
                                       <Button Grid.Column="1"
                                               Content="..."
@@ -3861,8 +3783,7 @@
                                   </StackPanel>
                                 </Grid>
 
-                                <Grid ColumnDefinitions="*,*,*"
-                                      ColumnSpacing="10">
+                                <Grid ColumnDefinitions="*,*,*">
                                   <StackPanel Spacing="4">
                                     <TextBlock Text="Скругление"
                                                FontWeight="SemiBold"/>
@@ -3891,8 +3812,7 @@
                                   </StackPanel>
                                 </Grid>
 
-                                <Grid ColumnDefinitions="*,*"
-                                      ColumnSpacing="10">
+                                <Grid ColumnDefinitions="*,*">
                                   <StackPanel Spacing="4">
                                     <TextBlock Text="Шрифт"
                                                FontWeight="SemiBold"/>
@@ -3913,8 +3833,7 @@
                                   </StackPanel>
                                 </Grid>
 
-                                <Grid ColumnDefinitions="*,*,*"
-                                      ColumnSpacing="10">
+                                <Grid ColumnDefinitions="*,*,*">
                                   <StackPanel Spacing="4">
                                     <TextBlock Text="Размер шрифта шапки"
                                                FontWeight="SemiBold"/>
@@ -3959,8 +3878,7 @@
                                            Foreground="#475569"
                                            TextWrapping="Wrap"/>
 
-                                <Grid ColumnDefinitions="*,*"
-                                      ColumnSpacing="10">
+                                <Grid ColumnDefinitions="*,*">
                                   <StackPanel Spacing="8">
                                     <CheckBox Content="Показывать шапку"
                                               Tag="DataGridShowHeader"
@@ -4025,9 +3943,7 @@
                                 </StackPanel>
 
                                 <Grid ColumnDefinitions="*,*"
-                                      RowDefinitions="Auto,Auto"
-                                      ColumnSpacing="10"
-                                      RowSpacing="10">
+                                      RowDefinitions="Auto,Auto">
                                   <Border Background="#FFFFFF"
                                           BorderBrush="#FCD34D"
                                           BorderThickness="1"
@@ -4131,7 +4047,7 @@
                                      TextWrapping="Wrap"
                                      IsVisible="{Binding CanEditDataGridAlternateRowBackground}"/>
                           <TextBox Tag="Background"
-                                   Text="{Binding SelectedControl.Background, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                   Text="{Binding SelectedControl.Background, Mode=TwoWay}"
                                    TextChanged="SelectedTextPropertyTextChanged"/>
                           <Button Grid.Column="1"
                                   Tag="Background"
@@ -4173,7 +4089,7 @@
                                    TextWrapping="Wrap"/>
                         <StackPanel Spacing="8">
                           <TextBox Tag="DataGridGlowColor"
-                                   Text="{Binding SelectedControl.DataGridGlowColor, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                   Text="{Binding SelectedControl.DataGridGlowColor, Mode=TwoWay}"
                                    TextChanged="SelectedTextPropertyTextChanged"/>
                           <Button Tag="DataGridGlowColor"
                                   Click="OpenColorPickerButton_Click"
@@ -4204,7 +4120,7 @@
                                    TextWrapping="Wrap"/>
                         <StackPanel Spacing="8">
                           <TextBox Tag="DataGridRowBackground"
-                                   Text="{Binding SelectedControl.DataGridRowBackground, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                   Text="{Binding SelectedControl.DataGridRowBackground, Mode=TwoWay}"
                                    TextChanged="SelectedTextPropertyTextChanged"/>
                           <Button Tag="DataGridRowBackground"
                                   Click="OpenColorPickerButton_Click"
@@ -4235,7 +4151,7 @@
                                    TextWrapping="Wrap"/>
                         <StackPanel Spacing="8">
                           <TextBox Tag="DataGridAlternateRowBackground"
-                                   Text="{Binding SelectedControl.DataGridAlternateRowBackground, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                   Text="{Binding SelectedControl.DataGridAlternateRowBackground, Mode=TwoWay}"
                                    TextChanged="SelectedTextPropertyTextChanged"/>
                           <Button Tag="DataGridAlternateRowBackground"
                                   Click="OpenColorPickerButton_Click"
@@ -4296,93 +4212,92 @@
                                      Foreground="#64748B"
                                      TextWrapping="Wrap"/>
 
-                          <Grid ColumnDefinitions="*,*"
-                                ColumnSpacing="10">
+                          <Grid ColumnDefinitions="*,*">
                             <StackPanel Spacing="4">
                               <TextBlock Text="Фон заголовка" FontWeight="SemiBold"/>
-                              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                                <TextBox Tag="DataGridHeaderBackground" Text="{Binding SelectedControl.DataGridHeaderBackground, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" TextChanged="SelectedTextPropertyTextChanged"/>
+                              <Grid ColumnDefinitions="*,Auto">
+                                <TextBox Tag="DataGridHeaderBackground" Text="{Binding SelectedControl.DataGridHeaderBackground, Mode=TwoWay}" TextChanged="SelectedTextPropertyTextChanged"/>
                                 <Button Grid.Column="1" Content="..." Tag="DataGridHeaderBackground" Click="OpenColorPickerButton_Click" Classes="data-action-button"/>
                               </Grid>
                             </StackPanel>
                             <StackPanel Grid.Column="1" Spacing="4">
                               <TextBlock Text="Текст заголовка" FontWeight="SemiBold"/>
-                              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                                <TextBox Tag="DataGridHeaderForeground" Text="{Binding SelectedControl.DataGridHeaderForeground, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" TextChanged="SelectedTextPropertyTextChanged"/>
+                              <Grid ColumnDefinitions="*,Auto">
+                                <TextBox Tag="DataGridHeaderForeground" Text="{Binding SelectedControl.DataGridHeaderForeground, Mode=TwoWay}" TextChanged="SelectedTextPropertyTextChanged"/>
                                 <Button Grid.Column="1" Content="..." Tag="DataGridHeaderForeground" Click="OpenColorPickerButton_Click" Classes="data-action-button"/>
                               </Grid>
                             </StackPanel>
                           </Grid>
 
-                          <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                          <Grid ColumnDefinitions="*,*">
                             <StackPanel Spacing="4">
                               <TextBlock Text="Текст строк" FontWeight="SemiBold"/>
-                              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                                <TextBox Tag="DataGridRowForeground" Text="{Binding SelectedControl.DataGridRowForeground, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" TextChanged="SelectedTextPropertyTextChanged"/>
+                              <Grid ColumnDefinitions="*,Auto">
+                                <TextBox Tag="DataGridRowForeground" Text="{Binding SelectedControl.DataGridRowForeground, Mode=TwoWay}" TextChanged="SelectedTextPropertyTextChanged"/>
                                 <Button Grid.Column="1" Content="..." Tag="DataGridRowForeground" Click="OpenColorPickerButton_Click" Classes="data-action-button"/>
                               </Grid>
                             </StackPanel>
                             <StackPanel Grid.Column="1" Spacing="4">
                               <TextBlock Text="Наведение строки" FontWeight="SemiBold"/>
-                              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                                <TextBox Tag="DataGridHoverRowBackground" Text="{Binding SelectedControl.DataGridHoverRowBackground, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" TextChanged="SelectedTextPropertyTextChanged"/>
+                              <Grid ColumnDefinitions="*,Auto">
+                                <TextBox Tag="DataGridHoverRowBackground" Text="{Binding SelectedControl.DataGridHoverRowBackground, Mode=TwoWay}" TextChanged="SelectedTextPropertyTextChanged"/>
                                 <Button Grid.Column="1" Content="..." Tag="DataGridHoverRowBackground" Click="OpenColorPickerButton_Click" Classes="data-action-button"/>
                               </Grid>
                             </StackPanel>
                           </Grid>
 
-                          <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                          <Grid ColumnDefinitions="*,*">
                             <StackPanel Spacing="4">
                               <TextBlock Text="Выбранная строка" FontWeight="SemiBold"/>
-                              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                                <TextBox Tag="DataGridSelectedRowBackground" Text="{Binding SelectedControl.DataGridSelectedRowBackground, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" TextChanged="SelectedTextPropertyTextChanged"/>
+                              <Grid ColumnDefinitions="*,Auto">
+                                <TextBox Tag="DataGridSelectedRowBackground" Text="{Binding SelectedControl.DataGridSelectedRowBackground, Mode=TwoWay}" TextChanged="SelectedTextPropertyTextChanged"/>
                                 <Button Grid.Column="1" Content="..." Tag="DataGridSelectedRowBackground" Click="OpenColorPickerButton_Click" Classes="data-action-button"/>
                               </Grid>
                             </StackPanel>
                             <StackPanel Grid.Column="1" Spacing="4">
                               <TextBlock Text="Текст выбранной" FontWeight="SemiBold"/>
-                              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                                <TextBox Tag="DataGridSelectedRowForeground" Text="{Binding SelectedControl.DataGridSelectedRowForeground, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" TextChanged="SelectedTextPropertyTextChanged"/>
+                              <Grid ColumnDefinitions="*,Auto">
+                                <TextBox Tag="DataGridSelectedRowForeground" Text="{Binding SelectedControl.DataGridSelectedRowForeground, Mode=TwoWay}" TextChanged="SelectedTextPropertyTextChanged"/>
                                 <Button Grid.Column="1" Content="..." Tag="DataGridSelectedRowForeground" Click="OpenColorPickerButton_Click" Classes="data-action-button"/>
                               </Grid>
                             </StackPanel>
                           </Grid>
 
-                          <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                          <Grid ColumnDefinitions="*,*">
                             <StackPanel Spacing="4">
                               <TextBlock Text="Линии сетки" FontWeight="SemiBold"/>
-                              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                                <TextBox Tag="DataGridGridLineBrush" Text="{Binding SelectedControl.DataGridGridLineBrush, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" TextChanged="SelectedTextPropertyTextChanged"/>
+                              <Grid ColumnDefinitions="*,Auto">
+                                <TextBox Tag="DataGridGridLineBrush" Text="{Binding SelectedControl.DataGridGridLineBrush, Mode=TwoWay}" TextChanged="SelectedTextPropertyTextChanged"/>
                                 <Button Grid.Column="1" Content="..." Tag="DataGridGridLineBrush" Click="OpenColorPickerButton_Click" Classes="data-action-button"/>
                               </Grid>
                             </StackPanel>
                             <StackPanel Grid.Column="1" Spacing="4">
                               <TextBlock Text="Внешняя рамка" FontWeight="SemiBold"/>
-                              <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                                <TextBox Tag="DataGridOuterBorderBrush" Text="{Binding SelectedControl.DataGridOuterBorderBrush, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" TextChanged="SelectedTextPropertyTextChanged"/>
+                              <Grid ColumnDefinitions="*,Auto">
+                                <TextBox Tag="DataGridOuterBorderBrush" Text="{Binding SelectedControl.DataGridOuterBorderBrush, Mode=TwoWay}" TextChanged="SelectedTextPropertyTextChanged"/>
                                 <Button Grid.Column="1" Content="..." Tag="DataGridOuterBorderBrush" Click="OpenColorPickerButton_Click" Classes="data-action-button"/>
                               </Grid>
                             </StackPanel>
                           </Grid>
 
-                          <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                          <Grid ColumnDefinitions="*,*">
                             <StackPanel Spacing="4">
                               <TextBlock Text="Шрифт заголовка" FontWeight="SemiBold"/>
-                              <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+                              <Grid ColumnDefinitions="*,*">
                                 <TextBox Tag="DataGridHeaderFontSize" Text="{Binding SelectedControl.DataGridHeaderFontSize, Mode=TwoWay}" TextChanged="SelectedNumericTextBox_TextChanged"/>
                                 <ComboBox Grid.Column="1" ItemsSource="{Binding AvailableFontWeights}" Tag="DataGridHeaderFontWeight" SelectedItem="{Binding SelectedControl.DataGridHeaderFontWeight, Mode=TwoWay}" SelectionChanged="SelectedComboBox_SelectionChanged"/>
                               </Grid>
                             </StackPanel>
                             <StackPanel Grid.Column="1" Spacing="4">
                               <TextBlock Text="Шрифт строк" FontWeight="SemiBold"/>
-                              <Grid ColumnDefinitions="*,*" ColumnSpacing="8">
+                              <Grid ColumnDefinitions="*,*">
                                 <TextBox Tag="DataGridRowFontSize" Text="{Binding SelectedControl.DataGridRowFontSize, Mode=TwoWay}" TextChanged="SelectedNumericTextBox_TextChanged"/>
                                 <ComboBox Grid.Column="1" ItemsSource="{Binding AvailableFontWeights}" Tag="DataGridRowFontWeight" SelectedItem="{Binding SelectedControl.DataGridRowFontWeight, Mode=TwoWay}" SelectionChanged="SelectedComboBox_SelectionChanged"/>
                               </Grid>
                             </StackPanel>
                           </Grid>
 
-                          <Grid ColumnDefinitions="*,*,*" ColumnSpacing="10">
+                          <Grid ColumnDefinitions="*,*,*">
                             <StackPanel Spacing="4">
                               <TextBlock Text="Высота заголовка" FontWeight="SemiBold"/>
                               <TextBox Tag="DataGridHeaderHeight" Text="{Binding SelectedControl.DataGridHeaderHeight, Mode=TwoWay}" TextChanged="SelectedNumericTextBox_TextChanged"/>
@@ -4397,7 +4312,7 @@
                             </StackPanel>
                           </Grid>
 
-                          <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
+                          <Grid ColumnDefinitions="*,*">
                             <StackPanel Spacing="4">
                               <CheckBox Content="Показывать заголовок" Tag="DataGridShowHeader" IsChecked="{Binding SelectedControl.DataGridShowHeader, Mode=TwoWay}" Click="SelectedCheckBox_Click"/>
                               <CheckBox Content="Горизонтальные линии" Tag="DataGridShowRowLines" IsChecked="{Binding SelectedControl.DataGridShowRowLines, Mode=TwoWay}" Click="SelectedCheckBox_Click"/>
@@ -4416,7 +4331,7 @@
                                    FontWeight="SemiBold"/>
                         <StackPanel Spacing="8">
                           <TextBox Tag="Foreground"
-                                   Text="{Binding SelectedControl.Foreground, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                   Text="{Binding SelectedControl.Foreground, Mode=TwoWay}"
                                    TextChanged="SelectedTextPropertyTextChanged"/>
                           <Button Grid.Column="1"
                                   Tag="Foreground"
@@ -4454,14 +4369,13 @@
                         <TextBlock Text="Граница"
                                    FontWeight="SemiBold"/>
 
-                        <Grid ColumnDefinitions="*,*"
-                              ColumnSpacing="10">
+                        <Grid ColumnDefinitions="*,*">
                           <StackPanel Spacing="4">
                             <TextBlock Text="Цвет"
                                        FontWeight="SemiBold"/>
                             <StackPanel Spacing="8">
                               <TextBox Tag="BorderBrush"
-                                       Text="{Binding SelectedControl.BorderBrush, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                       Text="{Binding SelectedControl.BorderBrush, Mode=TwoWay}"
                                        TextChanged="SelectedTextPropertyTextChanged"/>
                               <Button Grid.Column="1"
                                       Tag="BorderBrush"
@@ -4588,8 +4502,7 @@
                         <TextBlock Text="Типографика"
                                    FontWeight="SemiBold"/>
 
-                        <Grid ColumnDefinitions="*,*"
-                              ColumnSpacing="10">
+                        <Grid ColumnDefinitions="*,*">
                           <StackPanel Spacing="4">
                             <TextBlock Text="Шрифт"
                                        FontWeight="SemiBold"/>
@@ -4610,8 +4523,7 @@
                           </StackPanel>
                         </Grid>
 
-                        <Grid ColumnDefinitions="*,*"
-                              ColumnSpacing="10">
+                        <Grid ColumnDefinitions="*,*">
                           <StackPanel Spacing="4">
                             <TextBlock Text="Размер шрифта"
                                        FontWeight="SemiBold"/>
@@ -4674,11 +4586,11 @@
                                                TextWrapping="Wrap"/>
 
                                     <TextBox IsVisible="{Binding IsTextEditor}"
-                                             Text="{Binding StringValue, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                                             Text="{Binding StringValue, Mode=TwoWay}"/>
 
                                     <StackPanel IsVisible="{Binding IsColorEditor}"
                                                 Spacing="8">
-                                      <TextBox Text="{Binding StringValue, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                      <TextBox Text="{Binding StringValue, Mode=TwoWay}"
                                                Watermark="#38BDF8"/>
                                       <Button Tag="{Binding Key}"
                                               Click="OpenColorPickerButton_Click"
@@ -4700,7 +4612,7 @@
                                     </StackPanel>
 
                                     <TextBox IsVisible="{Binding IsNumberEditor}"
-                                             Text="{Binding StringValue, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                                             Text="{Binding StringValue, Mode=TwoWay}"/>
 
                                     <CheckBox IsVisible="{Binding IsBoolEditor}"
                                               Content="Включено"
@@ -4734,8 +4646,7 @@
                         <TextBlock Text="Параметры Grid"
                                    FontWeight="SemiBold"/>
 
-                        <Grid ColumnDefinitions="*,*"
-                              ColumnSpacing="10">
+                        <Grid ColumnDefinitions="*,*">
                           <StackPanel Spacing="4">
                             <TextBlock Text="Колонки"
                                        FontWeight="SemiBold"/>
@@ -4933,8 +4844,7 @@
                                 CornerRadius="14"
                                 Padding="12"
                                 IsVisible="{Binding HasGridColumnWidthEditor}">
-                          <Grid ColumnDefinitions="*,Auto"
-                                ColumnSpacing="12">
+                          <Grid ColumnDefinitions="*,Auto">
                             <StackPanel Spacing="4">
                               <TextBlock Text="{Binding SelectedGridColumnEditorTitle}"
                                          FontWeight="SemiBold"/>
@@ -4954,8 +4864,7 @@
 
                         <StackPanel Spacing="8"
                                     IsVisible="False">
-                          <Grid ColumnDefinitions="*,Auto"
-                                ColumnSpacing="10">
+                          <Grid ColumnDefinitions="*,Auto">
                             <StackPanel Spacing="2">
                               <TextBlock Text="{Binding SelectedGridColumnEditorTitle}"
                                          FontWeight="SemiBold"/>
@@ -4981,8 +4890,7 @@
                                         Padding="10"
                                         Margin="0,0,0,8">
                                   <StackPanel Spacing="8">
-                                    <Grid ColumnDefinitions="*,140"
-                                          ColumnSpacing="10">
+                                    <Grid ColumnDefinitions="*,140">
                                       <StackPanel Spacing="2">
                                         <TextBlock Text="{Binding Header}"
                                                    FontWeight="SemiBold"/>
@@ -4997,7 +4905,7 @@
                                                    FontWeight="SemiBold"
                                                    FontSize="12"/>
                                         <TextBox Watermark="120 или 2*"
-                                                 Text="{Binding Width, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                                                 Text="{Binding Width, Mode=TwoWay}"/>
                                       </StackPanel>
                                     </Grid>
 
@@ -5034,8 +4942,7 @@
                                               Click="SetSelectedGridColumnWidthPresetButton_Click"/>
                                     </WrapPanel>
 
-                                    <Grid ColumnDefinitions="*,*"
-                                          ColumnSpacing="8">
+                                    <Grid ColumnDefinitions="*,*">
                                       <StackPanel Spacing="4">
                                         <TextBlock Text="Заголовок"
                                                    FontSize="12"
@@ -5053,14 +4960,13 @@
                                       </StackPanel>
                                     </Grid>
 
-                                    <Grid ColumnDefinitions="*,*"
-                                          ColumnSpacing="8">
+                                    <Grid ColumnDefinitions="*,*">
                                       <StackPanel Spacing="4">
                                         <TextBlock Text="Формат"
                                                    FontSize="12"
                                                    FontWeight="SemiBold"/>
                                         <TextBox Watermark="N2, dd.MM.yyyy или {0:C}"
-                                                 Text="{Binding FormatString, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                                                 Text="{Binding FormatString, Mode=TwoWay}"/>
                                       </StackPanel>
                                       <StackPanel Grid.Column="1"
                                                   Spacing="4">
@@ -5068,12 +4974,11 @@
                                                    FontSize="12"
                                                    FontWeight="SemiBold"/>
                                         <TextBox Watermark="—"
-                                                 Text="{Binding NullText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                                                 Text="{Binding NullText, Mode=TwoWay}"/>
                                       </StackPanel>
                                     </Grid>
 
-                                    <Grid ColumnDefinitions="*,*"
-                                          ColumnSpacing="8">
+                                    <Grid ColumnDefinitions="*,*">
                                       <StackPanel Spacing="4">
                                         <TextBlock Text="Итог"
                                                    FontSize="12"
@@ -5087,12 +4992,11 @@
                                                    FontSize="12"
                                                    FontWeight="SemiBold"/>
                                         <TextBox Watermark="Итого: {0:N2}"
-                                                 Text="{Binding SummaryFormat, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                                                 Text="{Binding SummaryFormat, Mode=TwoWay}"/>
                                       </StackPanel>
                                     </Grid>
 
-                                    <Grid ColumnDefinitions="*,*,70,80,80"
-                                          ColumnSpacing="8">
+                                    <Grid ColumnDefinitions="*,*,70,80,80">
                                       <StackPanel Spacing="4">
                                         <TextBlock Text="Обрезка"
                                                    FontSize="12"
@@ -5150,8 +5054,7 @@
                                                   Margin="0,0,12,8"/>
                                       </WrapPanel>
 
-                                      <Grid ColumnDefinitions="*,*"
-                                            ColumnSpacing="8">
+                                      <Grid ColumnDefinitions="*,*">
                                         <StackPanel Spacing="4">
                                           <TextBlock Text="Порядок группы"
                                                      FontSize="12"
@@ -5196,8 +5099,7 @@
                         Padding="10"
                         IsVisible="{Binding CanShowDataGridDataSetup}">
                   <StackPanel Spacing="8">
-                    <Grid ColumnDefinitions="*,Auto"
-                          ColumnSpacing="8">
+                    <Grid ColumnDefinitions="*,Auto">
                       <StackPanel Spacing="1">
                         <TextBlock Text="DataGrid data setup"
                                    FontWeight="Bold"
@@ -5222,8 +5124,7 @@
                       </Border>
                     </Grid>
 
-                    <Grid ColumnDefinitions="*,Auto,Auto"
-                          ColumnSpacing="6">
+                    <Grid ColumnDefinitions="*,Auto,Auto">
                       <ComboBox Classes="property-editor"
                                 ItemsSource="{Binding BindingSources}"
                                 SelectedItem="{Binding SelectedBindingSourceForControl, Mode=TwoWay}"
@@ -5247,8 +5148,7 @@
                               ToolTip.Tip="Create/normalize columns from the selected BindingSource"/>
                     </Grid>
 
-                    <Grid ColumnDefinitions="*,Auto"
-                          ColumnSpacing="8">
+                    <Grid ColumnDefinitions="*,Auto">
                       <CheckBox Content="AutoGenerateColumns"
                                 Tag="AutoGenerateColumns"
                                 IsChecked="{Binding SelectedControl.AutoGenerateColumns, Mode=TwoWay}"
@@ -5404,25 +5304,25 @@
                     <StackPanel Spacing="4">
                       <TextBlock Text="Имя"
                                  FontWeight="SemiBold"/>
-                      <TextBox Text="{Binding SelectedBindingSource.Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                      <TextBox Text="{Binding SelectedBindingSource.Name, Mode=TwoWay}"/>
                     </StackPanel>
 
                     <StackPanel Spacing="4">
                       <TextBlock Text="Путь привязки"
                                  FontWeight="SemiBold"/>
-                      <TextBox Text="{Binding SelectedBindingSource.Path, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                      <TextBox Text="{Binding SelectedBindingSource.Path, Mode=TwoWay}"/>
                     </StackPanel>
 
                     <StackPanel Spacing="4">
                       <TextBlock Text="Тип элемента"
                                  FontWeight="SemiBold"/>
-                      <TextBox Text="{Binding SelectedBindingSource.ItemTypeName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                      <TextBox Text="{Binding SelectedBindingSource.ItemTypeName, Mode=TwoWay}"/>
                     </StackPanel>
 
                     <StackPanel Spacing="4">
                       <TextBlock Text="Описание"
                                  FontWeight="SemiBold"/>
-                      <TextBox Text="{Binding SelectedBindingSource.Description, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                      <TextBox Text="{Binding SelectedBindingSource.Description, Mode=TwoWay}"
                                AcceptsReturn="True"
                                TextWrapping="Wrap"
                                MinHeight="72"/>
@@ -5443,16 +5343,15 @@
                         <StackPanel Spacing="4">
                           <TextBlock Text="Строка подключения"
                                      FontWeight="SemiBold"/>
-                          <TextBox Text="{Binding SelectedBindingSource.SourceConnectionString, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                          <TextBox Text="{Binding SelectedBindingSource.SourceConnectionString, Mode=TwoWay}"
                                    Watermark="Server=.;Database=DemoDb;Trusted_Connection=True;TrustServerCertificate=True"/>
                         </StackPanel>
 
-                        <Grid ColumnDefinitions="*,*"
-                              ColumnSpacing="8">
+                        <Grid ColumnDefinitions="*,*">
                           <StackPanel Spacing="4">
                             <TextBlock Text="Схема"
                                        FontWeight="SemiBold"/>
-                            <TextBox Text="{Binding SelectedBindingSource.SourceSchemaName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                            <TextBox Text="{Binding SelectedBindingSource.SourceSchemaName, Mode=TwoWay}"
                                      Watermark="dbo"/>
                           </StackPanel>
 
@@ -5460,7 +5359,7 @@
                                       Spacing="4">
                             <TextBlock Text="Таблица"
                                        FontWeight="SemiBold"/>
-                            <TextBox Text="{Binding SelectedBindingSource.SourceTableName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                            <TextBox Text="{Binding SelectedBindingSource.SourceTableName, Mode=TwoWay}"
                                      Watermark="Customers"/>
                           </StackPanel>
                         </Grid>
@@ -5468,7 +5367,7 @@
                         <StackPanel Spacing="4">
                           <TextBlock Text="SQL-запрос (необязательно)"
                                      FontWeight="SemiBold"/>
-                          <TextBox Text="{Binding SelectedBindingSource.SourceQuery, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                          <TextBox Text="{Binding SelectedBindingSource.SourceQuery, Mode=TwoWay}"
                                    AcceptsReturn="True"
                                    TextWrapping="Wrap"
                                    MinHeight="72"
@@ -5504,8 +5403,7 @@
                       </StackPanel>
                     </Border>
 
-                    <Grid ColumnDefinitions="*,Auto,Auto"
-                          ColumnSpacing="8">
+                    <Grid ColumnDefinitions="*,Auto,Auto">
                       <TextBlock Text="Поля"
                                  FontSize="18"
                                  FontWeight="Bold"
@@ -5538,19 +5436,18 @@
                                   BorderThickness="1"
                                   CornerRadius="12">
                             <StackPanel Spacing="8">
-                              <Grid ColumnDefinitions="*,*,*,90,Auto"
-                                    ColumnSpacing="8">
+                              <Grid ColumnDefinitions="*,*,*,90,Auto">
                                 <TextBox Watermark="Заголовок"
-                                         Text="{Binding Header, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                                         Text="{Binding Header, Mode=TwoWay}"/>
                                 <TextBox Grid.Column="1"
                                          Watermark="Путь"
-                                         Text="{Binding Path, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                                         Text="{Binding Path, Mode=TwoWay}"/>
                                 <TextBox Grid.Column="2"
                                          Watermark="Пример"
-                                         Text="{Binding SampleValue, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                                         Text="{Binding SampleValue, Mode=TwoWay}"/>
                                 <TextBox Grid.Column="3"
                                          Watermark="Ширина"
-                                         Text="{Binding Width, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                                         Text="{Binding Width, Mode=TwoWay}"/>
                                 <Button Grid.Column="4"
                                         Content="Удалить"
                                         Classes="data-action-button"
@@ -5576,8 +5473,7 @@
                                             Margin="0,0,12,8"/>
                                 </WrapPanel>
 
-                                <Grid ColumnDefinitions="*,80,80"
-                                      ColumnSpacing="8">
+                                <Grid ColumnDefinitions="*,80,80">
                                   <StackPanel Spacing="4">
                                     <TextBlock Text="Направление сортировки"
                                                FontSize="12"
@@ -5605,8 +5501,7 @@
                                 </Grid>
                               </StackPanel>
 
-                              <Grid ColumnDefinitions="*,*,*"
-                                    ColumnSpacing="8">
+                              <Grid ColumnDefinitions="*,*,*">
                                 <StackPanel Spacing="4">
                                   <TextBlock Text="Заголовок"
                                              FontSize="12"
@@ -5632,14 +5527,13 @@
                                 </StackPanel>
                               </Grid>
 
-                              <Grid ColumnDefinitions="*,*"
-                                    ColumnSpacing="8">
+                              <Grid ColumnDefinitions="*,*">
                                 <StackPanel Spacing="4">
                                   <TextBlock Text="Формат"
                                              FontSize="12"
                                              FontWeight="SemiBold"/>
                                   <TextBox Watermark="N2, dd.MM.yyyy или {0:C}"
-                                           Text="{Binding FormatString, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                                           Text="{Binding FormatString, Mode=TwoWay}"/>
                                 </StackPanel>
                                 <StackPanel Grid.Column="1"
                                             Spacing="4">
@@ -5647,12 +5541,11 @@
                                              FontSize="12"
                                              FontWeight="SemiBold"/>
                                   <TextBox Watermark="—"
-                                           Text="{Binding NullText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                                           Text="{Binding NullText, Mode=TwoWay}"/>
                                 </StackPanel>
                               </Grid>
 
-                              <Grid ColumnDefinitions="*,*"
-                                    ColumnSpacing="8">
+                              <Grid ColumnDefinitions="*,*">
                                 <StackPanel Spacing="4">
                                   <TextBlock Text="Итог"
                                              FontSize="12"
@@ -5666,12 +5559,11 @@
                                              FontSize="12"
                                              FontWeight="SemiBold"/>
                                   <TextBox Watermark="Итого: {0:N2}"
-                                           Text="{Binding SummaryFormat, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                                           Text="{Binding SummaryFormat, Mode=TwoWay}"/>
                                 </StackPanel>
                               </Grid>
 
-                              <Grid ColumnDefinitions="*,*,80,90,90"
-                                    ColumnSpacing="8">
+                              <Grid ColumnDefinitions="*,*,80,90,90">
                                 <StackPanel Spacing="4">
                                   <TextBlock Text="Обрезка"
                                              FontSize="12"
@@ -5730,10 +5622,8 @@
                         BorderThickness="1"
                         CornerRadius="14"
                         Padding="12">
-                  <Grid RowDefinitions="Auto,*"
-                        RowSpacing="10">
-                    <Grid ColumnDefinitions="*,Auto"
-                          ColumnSpacing="12">
+                  <Grid RowDefinitions="Auto,*">
+                    <Grid ColumnDefinitions="*,Auto">
                       <StackPanel Spacing="4">
                         <TextBlock Text="Мастер привязок"
                                    FontSize="18"
@@ -5765,13 +5655,11 @@
 
           <TabItem Header="Layout">
             <Grid RowDefinitions="Auto,*"
-                  RowSpacing="6"
                   Margin="0,8,0,0">
-              <Grid ColumnDefinitions="*,Auto"
-                    ColumnSpacing="4">
+              <Grid ColumnDefinitions="*,Auto">
                 <TextBox Classes="property-editor"
                          Watermark="Search layout..."
-                         Text="{Binding PropertyGridSearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                         Text="{Binding PropertyGridSearchText, Mode=TwoWay}"/>
                 <Button Grid.Column="1"
                         Classes="property-header-action"
                         Content="X"
@@ -5800,8 +5688,7 @@
                           <StackPanel>
                             <ToggleButton Classes="property-category-header"
                                           IsChecked="{Binding IsExpanded, Mode=TwoWay}">
-                              <Grid ColumnDefinitions="14,*,Auto"
-                                    ColumnSpacing="4">
+                              <Grid ColumnDefinitions="14,*,Auto">
                                 <TextBlock Text="{Binding ExpandGlyph}"
                                            FontSize="10"
                                            HorizontalAlignment="Center"
@@ -5849,12 +5736,12 @@
                                               Padding="6,1,0,1">
                                         <Grid MinWidth="116">
                                           <TextBox Classes="property-editor"
-                                                   Text="{Binding Value, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                   Text="{Binding Value, Mode=TwoWay}"
                                                    IsVisible="{Binding IsTextEditor}"
                                                    LostFocus="PropertyGridTextBox_LostFocus"
                                                    KeyDown="PropertyGridTextBox_KeyDown"/>
                                           <TextBox Classes="property-editor"
-                                                   Text="{Binding Value, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                   Text="{Binding Value, Mode=TwoWay}"
                                                    IsVisible="{Binding IsNumberEditor}"
                                                    LostFocus="PropertyGridTextBox_LostFocus"
                                                    KeyDown="PropertyGridTextBox_KeyDown"/>
@@ -6176,8 +6063,7 @@
                   <Border Classes="export-card"
                           Margin="0,8,0,0">
                     <StackPanel Spacing="8">
-                      <Grid ColumnDefinitions="96,*"
-                            ColumnSpacing="8">
+                      <Grid ColumnDefinitions="96,*">
                         <TextBlock Text="Target"
                                    FontWeight="SemiBold"
                                    VerticalAlignment="Center"/>
@@ -6187,17 +6073,15 @@
                                   MinWidth="0"
                                   HorizontalAlignment="Stretch"/>
                       </Grid>
-                      <Grid ColumnDefinitions="96,*"
-                            ColumnSpacing="8">
+                      <Grid ColumnDefinitions="96,*">
                         <TextBlock Text="Namespace"
                                    FontWeight="SemiBold"
                                    VerticalAlignment="Center"/>
                         <TextBox Grid.Column="1"
                                  Watermark="AvaloniaApplication1"
-                                 Text="{Binding ExportProjectNamespace, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+                                 Text="{Binding ExportProjectNamespace, Mode=TwoWay}"/>
                       </Grid>
-                      <Grid ColumnDefinitions="96,*"
-                            ColumnSpacing="8">
+                      <Grid ColumnDefinitions="96,*">
                         <TextBlock Text="Layout"
                                    FontWeight="SemiBold"
                                    VerticalAlignment="Center"/>
@@ -6207,8 +6091,7 @@
                                   MinWidth="0"
                                   HorizontalAlignment="Stretch"/>
                       </Grid>
-                      <Grid ColumnDefinitions="96,*"
-                            ColumnSpacing="8">
+                      <Grid ColumnDefinitions="96,*">
                         <TextBlock Text="DataGrid"
                                    FontWeight="SemiBold"
                                    VerticalAlignment="Center"/>
@@ -6258,8 +6141,7 @@
                           VerticalScrollBarVisibility="Auto">
               <StackPanel Spacing="12">
                 <Border Classes="card">
-                    <Grid ColumnDefinitions="*,Auto"
-                        ColumnSpacing="10">
+                    <Grid ColumnDefinitions="*,Auto">
                     <StackPanel Spacing="4">
                       <TextBlock Text="Логика формы"
                                  FontSize="18"
@@ -6313,8 +6195,7 @@
 
                 <Border Classes="card">
                   <StackPanel Spacing="10">
-                    <Grid ColumnDefinitions="*,Auto"
-                          ColumnSpacing="10">
+                    <Grid ColumnDefinitions="*,Auto">
                       <TextBlock Text="Правила логики"
                                  FontSize="16"
                                  FontWeight="Bold"
@@ -6346,8 +6227,7 @@
                                   CornerRadius="12"
                                   Padding="10"
                                   Margin="0,0,0,8">
-                            <Grid ColumnDefinitions="*,Auto,Auto,Auto"
-                                  ColumnSpacing="8">
+                            <Grid ColumnDefinitions="*,Auto,Auto,Auto">
                               <Button HorizontalContentAlignment="Stretch"
                                       Command="{Binding #RootWindow.DataContext.SelectInteractionCommand}"
                                       CommandParameter="{Binding}"
@@ -6393,9 +6273,7 @@
                                FontSize="16"
                                FontWeight="Bold"/>
                     <Grid ColumnDefinitions="*,*"
-                          RowDefinitions="Auto,Auto,Auto,Auto,Auto"
-                          ColumnSpacing="10"
-                          RowSpacing="10">
+                          RowDefinitions="Auto,Auto,Auto,Auto,Auto">
                       <StackPanel Spacing="4">
                         <TextBlock Text="Источник"
                                    FontWeight="SemiBold"/>
@@ -6512,8 +6390,7 @@
                                   Spacing="8">
                         <TextBlock Text="OpenForm"
                                    FontWeight="SemiBold"/>
-                        <Grid ColumnDefinitions="*,Auto,Auto"
-                              ColumnSpacing="10">
+                        <Grid ColumnDefinitions="*,Auto,Auto">
                           <ComboBox ItemsSource="{Binding OpenFormTargetForms}"
                                     SelectedValue="{Binding SelectedInteraction.TargetFormId, Mode=TwoWay}"
                                     SelectedValueBinding="{Binding Id}">
@@ -6590,8 +6467,7 @@
                   BorderThickness="0,0,0,1"
                   CornerRadius="8,8,0,0"
                   Padding="6,4">
-            <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,*,Auto,Auto,Auto"
-                  ColumnSpacing="6">
+            <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,*,Auto,Auto,Auto">
               <StackPanel Orientation="Horizontal"
                           Spacing="6"
                           VerticalAlignment="Center">
@@ -6776,8 +6652,7 @@
                             Padding="8"
                             Margin="0,0,0,4">
                       <StackPanel Spacing="5">
-                        <Grid ColumnDefinitions="Auto,*,Auto"
-                              ColumnSpacing="10">
+                        <Grid ColumnDefinitions="Auto,*,Auto">
                           <Border Background="{Binding SeverityBackground}"
                                   BorderBrush="{Binding SeverityBorderBrush}"
                                   BorderThickness="1"
@@ -6872,7 +6747,6 @@
                 <ItemsControl.ItemTemplate>
                   <DataTemplate x:DataType="models:WorkspaceLogEntryModel">
                     <Grid ColumnDefinitions="72,86,110,*"
-                          ColumnSpacing="10"
                           MinHeight="30"
                           Margin="8,0"
                           VerticalAlignment="Center">
@@ -6926,8 +6800,7 @@
               CornerRadius="8"
               Padding="6,4"
               IsVisible="{Binding IsCompactDiagnosticsBarVisible}">
-        <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,*,Auto"
-              ColumnSpacing="8">
+        <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,*,Auto">
           <Button Content="{Binding ProblemsDockButtonText}"
                   Command="{Binding ToggleProblemsPanelEditorCommand}"
                   Classes="dock-rail"
@@ -7013,8 +6886,7 @@
             BorderThickness="0,1,0,0"
             Padding="8,3"
             MinHeight="26">
-      <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,*,Auto"
-            ColumnSpacing="12">
+      <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,*,Auto">
         <TextBlock Text="{Binding WorkspaceDirtyStatusText}"
                    Foreground="#E2E8F0"
                    FontWeight="SemiBold"
@@ -7083,8 +6955,7 @@
                 HorizontalAlignment="Center"
                       VerticalAlignment="Center"
                       IsVisible="False">
-          <Grid RowDefinitions="Auto,Auto,*"
-                RowSpacing="16">
+          <Grid RowDefinitions="Auto,Auto,*">
             <Grid ColumnDefinitions="*,Auto">
               <StackPanel Spacing="3">
                 <TextBlock Text="Avalonia UI Visual Designer"
@@ -7120,8 +6991,7 @@
             </WrapPanel>
 
             <Grid Grid.Row="2"
-                  ColumnDefinitions="*,*"
-                  ColumnSpacing="16">
+                  ColumnDefinitions="*,*">
               <Border BorderBrush="#E2E8F0"
                       BorderThickness="1"
                       CornerRadius="12"
@@ -7192,10 +7062,8 @@
                 HorizontalAlignment="Center"
                 VerticalAlignment="Top"
                 Margin="0,84,0,0">
-          <Grid RowDefinitions="Auto,Auto,*"
-                RowSpacing="10">
-            <Grid ColumnDefinitions="*,Auto"
-                  ColumnSpacing="8">
+          <Grid RowDefinitions="Auto,Auto,*">
+            <Grid ColumnDefinitions="*,Auto">
               <StackPanel Spacing="2">
                 <TextBlock Text="Command Palette"
                            FontSize="16"
@@ -7214,7 +7082,7 @@
 
             <TextBox x:Name="CommandPaletteSearchTextBox"
                      Grid.Row="1"
-                     Text="{Binding CommandPaletteSearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                     Text="{Binding CommandPaletteSearchText, Mode=TwoWay}"
                      Watermark="Type a command name, e.g. Export, Preview, Delete, Group"
                      KeyDown="CommandPaletteTextBox_KeyDown"/>
 
@@ -7231,7 +7099,6 @@
                 <ListBox.ItemTemplate>
                   <DataTemplate x:DataType="commands:EditorCommand">
                     <Grid ColumnDefinitions="Auto,*,Auto"
-                          ColumnSpacing="10"
                           MinHeight="38"
                           Margin="2">
                       <TextBlock Text="{Binding Icon}"
@@ -7292,8 +7159,7 @@
                   CornerRadius="12"
                   Padding="12"
                   Margin="0,0,0,8">
-            <Grid ColumnDefinitions="4,*,Auto"
-                  ColumnSpacing="10">
+            <Grid ColumnDefinitions="4,*,Auto">
               <Border Background="{Binding LevelBrush}"
                       CornerRadius="999"/>
               <StackPanel Grid.Column="1"
@@ -7358,5 +7224,7 @@
     </Border>
   </Grid>
 </Window>
+
+
 
 

@@ -1,4 +1,4 @@
-using FormDesigner.DesignerSystem.Binding;
+﻿using FormDesigner.DesignerSystem.Binding;
 using FormDesigner.DesignerSystem.BuiltIn;
 using FormDesigner.DesignerSystem.Infrastructure;
 using FormDesigner.Models;
@@ -10,8 +10,8 @@ namespace FormDesigner.ExportSmokeTests;
 
 internal static class Program
 {
-    private const string AvaloniaVersion = "11.3.12";
-    private const string AvaloniaDesktopVersion = "11.3.11";
+    private const string AvaloniaVersion = "11.1.1";
+    private const string AvaloniaDesktopVersion = "11.1.1";
 
     public static int Main(string[] args)
     {
@@ -576,53 +576,48 @@ internal static class Program
     private static string BuildProjectFile(SmokeScenario scenario)
     {
         var dataGridPackage = scenario.RequiresRealDataGrid
-            ? $"""
-                <PackageReference Include="Avalonia.Controls.DataGrid" Version="{AvaloniaVersion}" />
-            """
+            ? $@"    <PackageReference Include=""Avalonia.Controls.DataGrid"" Version=""{AvaloniaVersion}"" />"
             : "";
 
-        return $"""
-<Project Sdk="Microsoft.NET.Sdk">
+        return $@"<Project Sdk=""Microsoft.NET.Sdk"">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net7.0</TargetFramework>
+    <TargetFramework>net6.0</TargetFramework>
     <Nullable>enable</Nullable>
-    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <AvaloniaUseCompiledBindingsByDefault>false</AvaloniaUseCompiledBindingsByDefault>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Avalonia" Version="{AvaloniaVersion}" />
-    <PackageReference Include="Avalonia.Desktop" Version="{AvaloniaDesktopVersion}" />
-    <PackageReference Include="Avalonia.Themes.Fluent" Version="{AvaloniaVersion}" />
-    <PackageReference Include="Avalonia.Fonts.Inter" Version="{AvaloniaDesktopVersion}" />
+    <PackageReference Include=""Avalonia"" Version=""{AvaloniaVersion}"" />
+    <PackageReference Include=""Avalonia.Desktop"" Version=""{AvaloniaDesktopVersion}"" />
+    <PackageReference Include=""Avalonia.Themes.Fluent"" Version=""{AvaloniaVersion}"" />
+    <PackageReference Include=""Avalonia.Fonts.Inter"" Version=""{AvaloniaDesktopVersion}"" />
 {dataGridPackage}
   </ItemGroup>
 </Project>
-""";
+";
     }
 
     private static string BuildAppXaml(string ns)
     {
-        return $"""
-<Application xmlns="https://github.com/avaloniaui"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             x:Class="{ns}.App"
-             RequestedThemeVariant="Default">
+        return $@"<Application xmlns=""https://github.com/avaloniaui""
+             xmlns:x=""http://schemas.microsoft.com/winfx/2006/xaml""
+             x:Class=""{ns}.App""
+             RequestedThemeVariant=""Default"">
   <Application.Styles>
     <FluentTheme />
   </Application.Styles>
 </Application>
-""";
+";
     }
 
     private static string BuildAppCode(string ns)
     {
-        return $$"""
-using Avalonia;
+        return @"using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 
-namespace {{ns}};
+namespace {Namespace};
 
 public partial class App : Application
 {
@@ -639,16 +634,15 @@ public partial class App : Application
         base.OnFrameworkInitializationCompleted();
     }
 }
-""";
+".Replace("{Namespace}", ns);
     }
 
     private static string BuildProgramCode(string ns)
     {
-        return $$"""
-using Avalonia;
+        return @"using Avalonia;
 using System;
 
-namespace {{ns}};
+namespace {Namespace};
 
 internal sealed class Program
 {
@@ -666,13 +660,12 @@ internal sealed class Program
             .LogToTrace();
     }
 }
-""";
+".Replace("{Namespace}", ns);
     }
 
     private static string BuildSummary(SmokeContext context)
     {
-        return $"""
-Scenario: {context.Scenario.Name}
+        return $@"Scenario: {context.Scenario.Name}
 Project: {context.ProjectPath}
 
 Checklist:
@@ -680,7 +673,7 @@ Checklist:
 
 Diagnostics:
 {context.DiagnosticsText}
-""";
+";
     }
 
     private static void DotnetBuild(string projectPath)
@@ -801,3 +794,4 @@ Diagnostics:
 
     private sealed record ProcessResult(int ExitCode, string Output);
 }
+

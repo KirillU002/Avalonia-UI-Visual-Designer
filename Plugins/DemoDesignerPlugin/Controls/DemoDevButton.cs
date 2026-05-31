@@ -1,4 +1,4 @@
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
@@ -69,7 +69,6 @@ public sealed class DemoDevButton : Border
         var grid = new Grid
         {
             ColumnDefinitions = new ColumnDefinitions("4,*,Auto"),
-            ColumnSpacing = 12
         };
         grid.Children.Add(_accentBar);
         grid.Children.Add(_textBlock);
@@ -196,3 +195,4 @@ public sealed class DemoDevButton : Border
         return Color.FromArgb(alpha, color.R, color.G, color.B);
     }
 }
+

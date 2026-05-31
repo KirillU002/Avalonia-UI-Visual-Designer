@@ -37,10 +37,8 @@ public partial class PreviewWindow : Window
 {
     private const double RuntimeToolbarHeight = 52;
     private const int MaxPreviewDataGridRows = 120;
-    private static readonly DataFormat<string> RuntimeDataGridGroupFieldFormat =
-        DataFormat.CreateStringApplicationFormat("formdesigner-preview-datagrid-group-field");
-    private static readonly DataFormat<string> RuntimeDataGridUngroupFieldFormat =
-        DataFormat.CreateStringApplicationFormat("formdesigner-preview-datagrid-ungroup-field");
+    private const string RuntimeDataGridGroupFieldFormat = "formdesigner-preview-datagrid-group-field";
+    private const string RuntimeDataGridUngroupFieldFormat = "formdesigner-preview-datagrid-ungroup-field";
 
     private DesignerDocumentFileModel _document = new();
     private readonly Dictionary<string, DesignerFormDocument> _projectFormsById = new(StringComparer.OrdinalIgnoreCase);
@@ -282,13 +280,13 @@ public partial class PreviewWindow : Window
             return;
 
         dragState.IsDragDropActive = true;
-        var data = new DataTransfer();
-        data.Add(DataTransferItem.Create(RuntimeDataGridGroupFieldFormat, dragState.Field.Path));
-        data.Add(DataTransferItem.CreateText(dragState.Field.Header));
+        var data = new DataObject();
+        data.Set(RuntimeDataGridGroupFieldFormat, dragState.Field.Path);
+        data.Set(DataFormats.Text, dragState.Field.Header);
 
         try
         {
-            await DragDrop.DoDragDropAsync(e, data, DragDropEffects.Copy);
+            await DragDrop.DoDragDrop(e, data, DragDropEffects.Copy);
         }
         finally
         {
@@ -2097,7 +2095,7 @@ public partial class PreviewWindow : Window
         var activeBackground = new SolidColorBrush(Color.Parse("#DBEAFE"));
 
         DragDrop.SetAllowDrop(groupDropTarget, true);
-        DragDrop.AddDragOverHandler(groupDropTarget, (_, e) =>
+        groupDropTarget.AddHandler(DragDrop.DragOverEvent, (_, e) =>
         {
             if (TryResolveRuntimeDataGridGroupField(e, control, out BindingFieldFileModel? ignoredField))
             {
@@ -2109,11 +2107,11 @@ public partial class PreviewWindow : Window
 
             e.DragEffects = DragDropEffects.None;
         });
-        DragDrop.AddDragLeaveHandler(groupDropTarget, (_, _) =>
+        groupDropTarget.AddHandler(DragDrop.DragLeaveEvent, (_, _) =>
         {
             groupDropTarget.Background = normalBackground;
         });
-        DragDrop.AddDropHandler(groupDropTarget, (_, e) =>
+        groupDropTarget.AddHandler(DragDrop.DropEvent, (_, e) =>
         {
             groupDropTarget.Background = normalBackground;
             if (!TryResolveRuntimeDataGridGroupField(e, control, out var field) || field is null)
@@ -2181,10 +2179,10 @@ public partial class PreviewWindow : Window
             if (!pointer.Properties.IsLeftButtonPressed)
                 return;
 
-            var data = new DataTransfer();
-            data.Add(DataTransferItem.Create(RuntimeDataGridUngroupFieldFormat, field.Path));
-            data.Add(DataTransferItem.CreateText(field.Header));
-            await DragDrop.DoDragDropAsync(e, data, DragDropEffects.Move);
+            var data = new DataObject();
+            data.Set(RuntimeDataGridUngroupFieldFormat, field.Path);
+            data.Set(DataFormats.Text, field.Header);
+            await DragDrop.DoDragDrop(e, data, DragDropEffects.Move);
             e.Handled = true;
         };
 
@@ -2219,7 +2217,7 @@ public partial class PreviewWindow : Window
     private void AttachRuntimeDataGridUngroupDropTarget(Control target, DesignerControlFileModel control)
     {
         DragDrop.SetAllowDrop(target, true);
-        DragDrop.AddDragOverHandler(target, (_, e) =>
+        target.AddHandler(DragDrop.DragOverEvent, (_, e) =>
         {
             if (TryResolveRuntimeDataGridUngroupField(e, control, out BindingFieldFileModel? ignoredField))
             {
@@ -2228,10 +2226,10 @@ public partial class PreviewWindow : Window
                 return;
             }
 
-            if (e.DataTransfer.Contains(RuntimeDataGridUngroupFieldFormat))
+            if (e.Data.Contains(RuntimeDataGridUngroupFieldFormat))
                 e.DragEffects = DragDropEffects.None;
         });
-        DragDrop.AddDropHandler(target, (_, e) =>
+        target.AddHandler(DragDrop.DropEvent, (_, e) =>
         {
             if (!TryResolveRuntimeDataGridUngroupField(e, control, out var field) || field is null)
                 return;
@@ -2244,10 +2242,10 @@ public partial class PreviewWindow : Window
     private bool TryResolveRuntimeDataGridGroupField(DragEventArgs e, DesignerControlFileModel control, out BindingFieldFileModel? field)
     {
         field = null;
-        if (!control.AllowGrouping || !e.DataTransfer.Contains(RuntimeDataGridGroupFieldFormat))
+        if (!control.AllowGrouping || !e.Data.Contains(RuntimeDataGridGroupFieldFormat))
             return false;
 
-        var path = e.DataTransfer.TryGetValue(RuntimeDataGridGroupFieldFormat);
+        var path = e.Data.Get(RuntimeDataGridGroupFieldFormat) as string;
         if (string.IsNullOrWhiteSpace(path))
             return false;
 
@@ -2260,10 +2258,10 @@ public partial class PreviewWindow : Window
     private bool TryResolveRuntimeDataGridUngroupField(DragEventArgs e, DesignerControlFileModel control, out BindingFieldFileModel? field)
     {
         field = null;
-        if (!control.AllowGrouping || !e.DataTransfer.Contains(RuntimeDataGridUngroupFieldFormat))
+        if (!control.AllowGrouping || !e.Data.Contains(RuntimeDataGridUngroupFieldFormat))
             return false;
 
-        var path = e.DataTransfer.TryGetValue(RuntimeDataGridUngroupFieldFormat);
+        var path = e.Data.Get(RuntimeDataGridUngroupFieldFormat) as string;
         if (string.IsNullOrWhiteSpace(path))
             return false;
 
@@ -2560,7 +2558,6 @@ public partial class PreviewWindow : Window
         var titleGrid = new Grid
         {
             ColumnDefinitions = new ColumnDefinitions("6,*"),
-            ColumnSpacing = 12
         };
         titleGrid.Children.Add(new Border
         {
@@ -2928,7 +2925,6 @@ public partial class PreviewWindow : Window
         var content = new Grid
         {
             ColumnDefinitions = new ColumnDefinitions("*,Auto"),
-            ColumnSpacing = 10,
             Children =
             {
                 title
@@ -4050,3 +4046,4 @@ public partial class PreviewWindow : Window
         }
     }
 }
+

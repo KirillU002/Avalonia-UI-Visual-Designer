@@ -1,4 +1,4 @@
-<Window xmlns="https://github.com/avaloniaui"
+﻿<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="FormDesigner.Views.HelpWindow"
         Title="Справка по конструктору форм"
@@ -173,7 +173,6 @@
     </Window.Styles>
 
     <Grid RowDefinitions="Auto,*"
-          RowSpacing="14"
           Margin="16">
         <Border Classes="hero"
                 Padding="18">
@@ -185,8 +184,7 @@
                 </LinearGradientBrush>
             </Border.Background>
 
-            <Grid ColumnDefinitions="0.92*,1.08*"
-                  ColumnSpacing="18">
+            <Grid ColumnDefinitions="0.92*,1.08*">
                 <StackPanel Spacing="14"
                             VerticalAlignment="Center"
                             MaxWidth="480">
@@ -199,8 +197,7 @@
                                    Text="Эта справка собрана как onboarding center: быстрые шаги, визуальные сценарии, экспорт, BindingSource и plugin system без ощущения технической свалки." />
                     </StackPanel>
 
-                    <Grid ColumnDefinitions="*,*,*"
-                          ColumnSpacing="10">
+                    <Grid ColumnDefinitions="*,*,*">
                         <Border Background="#18FFFFFF"
                                 BorderBrush="#2AFFFFFF"
                                 BorderThickness="1"
@@ -251,15 +248,13 @@
                         BorderThickness="1"
                         CornerRadius="12"
                         Padding="14">
-                    <Grid RowDefinitions="*,Auto"
-                          RowSpacing="12">
+                    <Grid RowDefinitions="*,Auto">
                         <Grid Height="268">
                             <Border x:Name="DemoFrame0"
                                     Background="#F8FAFC"
                                     CornerRadius="10"
                                     Padding="12">
-                                <Grid ColumnDefinitions="96,*,116"
-                                      ColumnSpacing="10">
+                                <Grid ColumnDefinitions="96,*,116">
                                     <Border Background="#E0F2FE"
                                             BorderBrush="#7DD3FC"
                                             BorderThickness="1"
@@ -331,15 +326,13 @@
                                     CornerRadius="10"
                                     Padding="12"
                                     IsVisible="False">
-                                <Grid ColumnDefinitions="1.4*,*"
-                                      ColumnSpacing="12">
+                                <Grid ColumnDefinitions="1.4*,*">
                                     <Border Background="#FFFFFF"
                                             BorderBrush="#CBD5E1"
                                             BorderThickness="1"
                                             CornerRadius="9"
                                             Padding="10">
-                                        <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto"
-                                              RowSpacing="7">
+                                        <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto">
                                             <Border Background="#0F766E" CornerRadius="6" Height="28" />
                                             <Grid Grid.Row="1" ColumnDefinitions="52,*,*,*">
                                                 <Border Background="#E2E8F0" CornerRadius="4" Height="20" Margin="0,0,6,0" />
@@ -382,7 +375,6 @@
                                     Padding="12"
                                     IsVisible="False">
                                 <Grid ColumnDefinitions="*,Auto,*"
-                                      ColumnSpacing="14"
                                       VerticalAlignment="Center">
                                     <Border Background="#EEF2FF"
                                             BorderBrush="#A5B4FC"
@@ -423,8 +415,7 @@
                                                        FontWeight="Bold" />
                                             <TextBlock Text="Set details fields + Show panel"
                                                        Classes="body" />
-                                            <Grid ColumnDefinitions="*,*"
-                                                  ColumnSpacing="7">
+                                            <Grid ColumnDefinitions="*,*">
                                                 <Border Background="#FDE68A" CornerRadius="5" Height="30" />
                                                 <Border Grid.Column="1" Background="#FDE68A" CornerRadius="5" Height="30" />
                                             </Grid>
@@ -438,8 +429,7 @@
                                     CornerRadius="10"
                                     Padding="12"
                                     IsVisible="False">
-                                <Grid ColumnDefinitions="1.25*,*"
-                                      ColumnSpacing="12">
+                                <Grid ColumnDefinitions="1.25*,*">
                                     <Border Background="#111827"
                                             BorderBrush="#334155"
                                             BorderThickness="1"
@@ -486,7 +476,6 @@
                                     Padding="12"
                                     IsVisible="False">
                                 <Grid ColumnDefinitions="*,Auto,*"
-                                      ColumnSpacing="14"
                                       VerticalAlignment="Center">
                                     <Border Background="#FAE8FF"
                                             BorderBrush="#E879F9"
@@ -538,10 +527,8 @@
                                         BorderThickness="1"
                                         CornerRadius="10"
                                         Padding="14">
-                                    <Grid RowDefinitions="Auto,*"
-                                          RowSpacing="12">
-                                        <Grid ColumnDefinitions="Auto,*,Auto"
-                                              ColumnSpacing="10">
+                                    <Grid RowDefinitions="Auto,*">
+                                        <Grid ColumnDefinitions="Auto,*,Auto">
                                             <Border Background="#22C55E" CornerRadius="7" Width="14" Height="14" />
                                             <TextBlock Grid.Column="1"
                                                        Text="Preview mode"
@@ -552,8 +539,7 @@
                                             </Border>
                                         </Grid>
                                         <Grid Grid.Row="1"
-                                              ColumnDefinitions="1.2*,*"
-                                              ColumnSpacing="12">
+                                              ColumnDefinitions="1.2*,*">
                                             <StackPanel Spacing="8">
                                                 <Border Background="#E2E8F0" CornerRadius="5" Height="28" />
                                                 <Border Background="#E2E8F0" CornerRadius="5" Height="28" />
@@ -571,8 +557,7 @@
                         </Grid>
 
                         <Grid Grid.Row="1"
-                              ColumnDefinitions="Auto,*,Auto"
-                              ColumnSpacing="12">
+                              ColumnDefinitions="Auto,*,Auto">
                             <Button Classes="carousel-nav"
                                     Content="Prev"
                                     Click="DemoPreviousButton_Click" />
@@ -613,8 +598,7 @@
                     <ScrollViewer>
                         <StackPanel Margin="18"
                                     Spacing="16">
-                            <Grid ColumnDefinitions="1.35*,*"
-                                  ColumnSpacing="16">
+                            <Grid ColumnDefinitions="1.35*,*">
                                 <StackPanel Spacing="6">
                                     <TextBlock Classes="tab-title"
                                                Text="Quick Start: от пустого окна до export" />
@@ -633,12 +617,9 @@
                             </Grid>
 
                             <Grid ColumnDefinitions="*,*,*"
-                                  RowDefinitions="Auto,Auto"
-                                  ColumnSpacing="12"
-                                  RowSpacing="12">
+                                  RowDefinitions="Auto,Auto">
                                 <Button Classes="step-card">
-                                    <Grid RowDefinitions="Auto,Auto,*"
-                                          RowSpacing="8">
+                                    <Grid RowDefinitions="Auto,Auto,*">
                                         <Border Background="#DBEAFE" CornerRadius="9" Width="40" Height="40" HorizontalAlignment="Left">
                                             <TextBlock Text="1"
                                                        Foreground="#1D4ED8"
@@ -653,8 +634,7 @@
                                 </Button>
 
                                 <Button Grid.Column="1" Classes="step-card">
-                                    <Grid RowDefinitions="Auto,Auto,*"
-                                          RowSpacing="8">
+                                    <Grid RowDefinitions="Auto,Auto,*">
                                         <Border Background="#DCFCE7" CornerRadius="9" Width="40" Height="40" HorizontalAlignment="Left">
                                             <TextBlock Text="2" Foreground="#15803D" FontSize="20" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
                                         </Border>
@@ -664,8 +644,7 @@
                                 </Button>
 
                                 <Button Grid.Column="2" Classes="step-card">
-                                    <Grid RowDefinitions="Auto,Auto,*"
-                                          RowSpacing="8">
+                                    <Grid RowDefinitions="Auto,Auto,*">
                                         <Border Background="#FEF3C7" CornerRadius="9" Width="40" Height="40" HorizontalAlignment="Left">
                                             <TextBlock Text="3" Foreground="#B45309" FontSize="20" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
                                         </Border>
@@ -675,8 +654,7 @@
                                 </Button>
 
                                 <Button Grid.Row="1" Classes="step-card">
-                                    <Grid RowDefinitions="Auto,Auto,*"
-                                          RowSpacing="8">
+                                    <Grid RowDefinitions="Auto,Auto,*">
                                         <Border Background="#CCFBF1" CornerRadius="9" Width="40" Height="40" HorizontalAlignment="Left">
                                             <TextBlock Text="4" Foreground="#0F766E" FontSize="20" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
                                         </Border>
@@ -686,8 +664,7 @@
                                 </Button>
 
                                 <Button Grid.Row="1" Grid.Column="1" Classes="step-card">
-                                    <Grid RowDefinitions="Auto,Auto,*"
-                                          RowSpacing="8">
+                                    <Grid RowDefinitions="Auto,Auto,*">
                                         <Border Background="#EDE9FE" CornerRadius="9" Width="40" Height="40" HorizontalAlignment="Left">
                                             <TextBlock Text="5" Foreground="#7C3AED" FontSize="20" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
                                         </Border>
@@ -697,8 +674,7 @@
                                 </Button>
 
                                 <Button Grid.Row="1" Grid.Column="2" Classes="step-card">
-                                    <Grid RowDefinitions="Auto,Auto,*"
-                                          RowSpacing="8">
+                                    <Grid RowDefinitions="Auto,Auto,*">
                                         <Border Background="#FCE7F3" CornerRadius="9" Width="40" Height="40" HorizontalAlignment="Left">
                                             <TextBlock Text="6" Foreground="#BE185D" FontSize="20" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
                                         </Border>
@@ -708,8 +684,7 @@
                                 </Button>
                             </Grid>
 
-                            <Grid ColumnDefinitions="*,*"
-                                  ColumnSpacing="12">
+                            <Grid ColumnDefinitions="*,*">
                                 <Border Classes="tinted-card">
                                     <StackPanel Spacing="8">
                                         <TextBlock Classes="section-title" Text="Мини-карта интерфейса" />
@@ -733,8 +708,7 @@
                     <ScrollViewer>
                         <StackPanel Margin="18"
                                     Spacing="14">
-                            <Grid ColumnDefinitions="*,*"
-                                  ColumnSpacing="14">
+                            <Grid ColumnDefinitions="*,*">
                                 <StackPanel Spacing="6">
                                     <TextBlock Classes="tab-title" Text="BindingSource и DataGrid" />
                                     <TextBlock Classes="body" Text="BindingSource описывает данные формы: имя источника, список полей и runtime items для preview/export. DataGrid использует эти поля как колонки." />
@@ -747,8 +721,7 @@
                                 </Border>
                             </Grid>
 
-                            <Grid ColumnDefinitions="*,*,*"
-                                  ColumnSpacing="12">
+                            <Grid ColumnDefinitions="*,*,*">
                                 <Border Classes="soft-card">
                                     <StackPanel Spacing="8">
                                         <TextBlock Classes="card-title" Text="Создать вручную" />
@@ -773,8 +746,7 @@
                                 </Border>
                             </Grid>
 
-                            <Grid ColumnDefinitions="*,*,*"
-                                  ColumnSpacing="12">
+                            <Grid ColumnDefinitions="*,*,*">
                                 <Border Background="#F8FAFC"
                                         BorderBrush="#CBD5E1"
                                         BorderThickness="1"
@@ -811,8 +783,7 @@
                                 </Border>
                             </Grid>
 
-                            <Grid ColumnDefinitions="*,*"
-                                  ColumnSpacing="12">
+                            <Grid ColumnDefinitions="*,*">
                                 <Border Classes="tinted-card">
                                     <StackPanel Spacing="8">
                                         <TextBlock Classes="section-title" Text="Если источник данных не выбран" />
@@ -836,8 +807,7 @@
                     <ScrollViewer>
                         <StackPanel Margin="18"
                                     Spacing="14">
-                            <Grid ColumnDefinitions="1.1*,*"
-                                  ColumnSpacing="14">
+                            <Grid ColumnDefinitions="1.1*,*">
                                 <StackPanel Spacing="6">
                                     <TextBlock Classes="tab-title" Text="Export XAML/C#" />
                                     <TextBlock Classes="body" Text="Code/Export mode показывает готовый XAML, C# и checklist. Сначала выберите target и layout mode, затем копируйте файлы в Avalonia project." />
@@ -850,8 +820,7 @@
                                 </Border>
                             </Grid>
 
-                            <Grid ColumnDefinitions="*,*,*"
-                                  ColumnSpacing="12">
+                            <Grid ColumnDefinitions="*,*,*">
                                 <Border Classes="soft-card">
                                     <StackPanel Spacing="8">
                                         <TextBlock Classes="card-title" Text="Target" />
@@ -876,8 +845,7 @@
                                 </Border>
                             </Grid>
 
-                            <Grid ColumnDefinitions="*,*"
-                                  ColumnSpacing="12">
+                            <Grid ColumnDefinitions="*,*">
                                 <Border Background="#F0FDF4"
                                         BorderBrush="#BBF7D0"
                                         BorderThickness="1"
@@ -909,8 +877,7 @@
                     <ScrollViewer>
                         <StackPanel Margin="18"
                                     Spacing="14">
-                            <Grid ColumnDefinitions="1.05*,*"
-                                  ColumnSpacing="14">
+                            <Grid ColumnDefinitions="1.05*,*">
                                 <StackPanel Spacing="6">
                                     <TextBlock Classes="tab-title" Text="Как подключить свой plugin control" />
                                     <TextBlock Classes="body" Text="Plugin system добавляет новые controls без изменения основного приложения. DLL регистрирует descriptors, а descriptor строит preview, свойства и XAML export." />
@@ -927,8 +894,7 @@
                                 </Border>
                             </Grid>
 
-                            <Grid ColumnDefinitions="*,*,*,*"
-                                  ColumnSpacing="12">
+                            <Grid ColumnDefinitions="*,*,*,*">
                                 <Border Classes="soft-card">
                                     <StackPanel Spacing="8">
                                         <TextBlock Classes="card-title" Text="1. Собрать DLL" />
@@ -970,8 +936,7 @@
                                 </StackPanel>
                             </Border>
 
-                            <Grid ColumnDefinitions="*,*"
-                                  ColumnSpacing="12">
+                            <Grid ColumnDefinitions="*,*">
                                 <Border Classes="tinted-card">
                                     <StackPanel Spacing="8">
                                         <TextBlock Classes="section-title" Text="Что делает descriptor" />
@@ -993,8 +958,7 @@
                                            Text="using FormDesigner.PluginContracts;&#10;&#10;[assembly: FormDesignerPlugin(typeof(MyPlugin))]&#10;&#10;public sealed class MyPlugin : IFormDesignerPlugin&#10;{&#10;    public string Id =&gt; &quot;Acme.Tools&quot;;&#10;    public string Title =&gt; &quot;Acme Tools&quot;;&#10;    public Version ApiVersion =&gt; new(1, 0, 0);&#10;&#10;    public void Register(IDesignerRegistry registry)&#10;    {&#10;        registry.RegisterControl(new MyControlDescriptor());&#10;    }&#10;}&#10;&#10;public sealed class MyControlDescriptor : IControlDescriptor&#10;{&#10;    // TypeKey, Title, Properties&#10;    // CreateDefaultDefinition(...)&#10;    // BuildPreview(...)&#10;    // AppendXaml(...)&#10;}" />
                             </Border>
 
-                            <Grid ColumnDefinitions="*,*"
-                                  ColumnSpacing="12">
+                            <Grid ColumnDefinitions="*,*">
                                 <Border Background="#ECFEFF"
                                         BorderBrush="#67E8F9"
                                         BorderThickness="1"
@@ -1026,8 +990,7 @@
                     <ScrollViewer>
                         <StackPanel Margin="18"
                                     Spacing="14">
-                            <Grid ColumnDefinitions="1.2*,*"
-                                  ColumnSpacing="14">
+                            <Grid ColumnDefinitions="1.2*,*">
                                 <StackPanel Spacing="6">
                                     <TextBlock Classes="tab-title" Text="Templates и готовые сценарии" />
                                     <TextBlock Classes="body" Text="Templates нужны для быстрого старта: они вставляют готовый набор controls, BindingSource и interactions, который можно сразу адаптировать под свою форму." />
@@ -1045,8 +1008,7 @@
                                     BorderThickness="1"
                                     CornerRadius="10"
                                     Padding="16">
-                                <Grid ColumnDefinitions="Auto,*,Auto"
-                                      ColumnSpacing="16">
+                                <Grid ColumnDefinitions="Auto,*,Auto">
                                     <Border Background="#DBEAFE"
                                             CornerRadius="10"
                                             Width="62"
@@ -1088,8 +1050,7 @@
                                 </Grid>
                             </Border>
 
-                            <Grid ColumnDefinitions="*,*"
-                                  ColumnSpacing="12">
+                            <Grid ColumnDefinitions="*,*">
                                 <Border Classes="soft-card">
                                     <StackPanel Spacing="8">
                                         <TextBlock Classes="card-title" Text="Когда использовать template" />
@@ -1112,3 +1073,4 @@
         </Border>
     </Grid>
 </Window>
+

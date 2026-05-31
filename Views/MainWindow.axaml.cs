@@ -41,7 +41,7 @@ public partial class MainWindow : Window
     private static readonly TimeSpan AutosaveInterval = TimeSpan.FromSeconds(45);
     private static readonly double[] SurfaceZoomLevels = { 0.25, 0.5, 0.75, 1.0, 1.5, 2.0 };
     // Avalonia validates application-format identifiers and rejects values with '/'.
-    private static readonly DataFormat<string> ControlTypeDataFormat = DataFormat.CreateStringApplicationFormat("formdesigner-control-type");
+    private const string ControlTypeDataFormat = "formdesigner-control-type";
     private static readonly FilePickerFileType DesignerDocumentFileType = new("Документы конструктора форм")
     {
         Patterns = new[] { "*.formdesigner.json", "*.json" }
@@ -160,6 +160,8 @@ public partial class MainWindow : Window
         DesignerViewportScrollViewer.AddHandler(InputElement.PointerPressedEvent, DesignerViewport_PointerPressed, RoutingStrategies.Tunnel, true);
         DesignerViewportScrollViewer.AddHandler(InputElement.PointerMovedEvent, DesignerViewport_PointerMoved, RoutingStrategies.Tunnel, true);
         DesignerViewportScrollViewer.AddHandler(InputElement.PointerReleasedEvent, DesignerViewport_PointerReleased, RoutingStrategies.Tunnel, true);
+        DesignerCanvas.AddHandler(DragDrop.DragOverEvent, DesignerCanvas_DragOver);
+        DesignerCanvas.AddHandler(DragDrop.DropEvent, DesignerCanvas_Drop);
         DesignerViewportScrollViewer.SizeChanged += (_, _) => RenderMiniMap();
         DesignerViewportScrollViewer.PropertyChanged += DesignerViewportScrollViewer_PropertyChanged;
         DesignViewportRoot.SizeChanged += (_, _) => RenderMiniMap();
@@ -2161,10 +2163,10 @@ public partial class MainWindow : Window
 
         // В drag-and-drop передаем только тип контрола.
         // Конкретная модель будет создана уже в момент drop на поверхности.
-        var data = new DataTransfer();
-        data.Add(DataTransferItem.Create(ControlTypeDataFormat, item.Type));
+        var data = new DataObject();
+        data.Set(ControlTypeDataFormat, item.Type);
 
-        await DragDrop.DoDragDropAsync(e, data, DragDropEffects.Copy);
+        await DragDrop.DoDragDrop(e, data, DragDropEffects.Copy);
     }
 
     private void DesignerCanvas_PointerPressed(object? sender, PointerPressedEventArgs e)
@@ -2289,7 +2291,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        e.DragEffects = e.DataTransfer.Contains(ControlTypeDataFormat)
+        e.DragEffects = e.Data.Contains(ControlTypeDataFormat)
             ? DragDropEffects.Copy
             : DragDropEffects.None;
 
@@ -2310,10 +2312,10 @@ public partial class MainWindow : Window
         if (VM.IsUserPreviewMode)
             return;
 
-        if (!e.DataTransfer.Contains(ControlTypeDataFormat))
+        if (!e.Data.Contains(ControlTypeDataFormat))
             return;
 
-        var type = e.DataTransfer.TryGetValue(ControlTypeDataFormat);
+        var type = e.Data.Get(ControlTypeDataFormat) as string;
         if (string.IsNullOrWhiteSpace(type))
             return;
 
@@ -4170,7 +4172,6 @@ public partial class MainWindow : Window
             Width = model.Width,
             Height = model.Height,
             ColumnDefinitions = new ColumnDefinitions("Auto,*"),
-            ColumnSpacing = 10,
             Margin = new Thickness(6, 0, 6, 0),
             IsHitTestVisible = false
         };
@@ -4811,7 +4812,6 @@ public partial class MainWindow : Window
         var titleGrid = new Grid
         {
             ColumnDefinitions = new ColumnDefinitions("6,*"),
-            ColumnSpacing = 12,
             IsHitTestVisible = showInteractivePreview
         };
         titleGrid.Children.Add(new Border
@@ -5224,7 +5224,6 @@ public partial class MainWindow : Window
         var content = new Grid
         {
             ColumnDefinitions = new ColumnDefinitions("*,Auto"),
-            ColumnSpacing = 10,
             Children =
             {
                 title
@@ -9188,3 +9187,5 @@ public partial class MainWindow : Window
         ApplyStringPropertyToSelection(nameof(DesignControlModel.ImageSource), "avares://FormDesigner/Assets/avalonia-logo.ico");
     }
 }
+
+

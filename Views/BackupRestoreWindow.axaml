@@ -1,4 +1,4 @@
-<Window xmlns="https://github.com/avaloniaui"
+﻿<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:models="clr-namespace:FormDesigner.Models"
         x:Class="FormDesigner.Views.BackupRestoreWindow"
@@ -15,8 +15,7 @@
           BorderThickness="1"
           CornerRadius="18"
           Padding="18">
-    <Grid RowDefinitions="Auto,*,Auto"
-          RowSpacing="14">
+    <Grid RowDefinitions="Auto,*,Auto">
       <StackPanel Spacing="5">
         <TextBlock Text="Резервные копии документа"
                    FontSize="22"
@@ -36,7 +35,6 @@
           <ListBox.ItemTemplate>
             <DataTemplate x:DataType="models:BackupFileModel">
               <Grid ColumnDefinitions="*,Auto"
-                    ColumnSpacing="12"
                     Margin="4"
                     MinHeight="54">
                 <StackPanel Spacing="3">
@@ -74,3 +72,4 @@
     </Grid>
   </Border>
 </Window>
+

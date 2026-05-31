@@ -26,6 +26,5 @@ dotnet build .\Plugins\DemoDesignerPlugin\DemoDesignerPlugin.csproj
 The output is copied to:
 
 ```text
-bin\<Configuration>\net7.0\Plugins\DemoDesignerPlugin\
+bin\<Configuration>\net6.0\Plugins\DemoDesignerPlugin\
 ```
-

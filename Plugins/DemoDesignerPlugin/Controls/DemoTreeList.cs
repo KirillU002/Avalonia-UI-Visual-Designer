@@ -1,4 +1,4 @@
-using Avalonia;
+﻿using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
@@ -105,7 +105,6 @@ public sealed class DemoTreeList : Border
         var titleGrid = new Grid
         {
             ColumnDefinitions = new ColumnDefinitions("5,*,Auto"),
-            ColumnSpacing = 12
         };
         titleGrid.Children.Add(_accentStrip);
         titleGrid.Children.Add(_titleText);
@@ -451,7 +450,6 @@ public sealed class DemoTreeList : Border
         var host = new Grid
         {
             ColumnDefinitions = new ColumnDefinitions("Auto,Auto,*"),
-            ColumnSpacing = 8,
             Margin = new Thickness(node.Depth * 18, 0, 10, 0)
         };
 
@@ -770,3 +768,4 @@ public sealed class DemoTreeList : Border
 
     private sealed record IconRule(string MatchText, string Glyph, Color Color);
 }
+

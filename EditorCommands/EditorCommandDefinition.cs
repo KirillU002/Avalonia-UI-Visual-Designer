@@ -1,12 +1,12 @@
-using System;
+﻿using System;
 
 namespace FormDesigner.EditorCommands;
 
 public sealed class EditorCommandDefinition
 {
-    public required EditorCommandId Id { get; init; }
+    public EditorCommandId Id { get; init; }
 
-    public required string Title { get; init; }
+    public string Title { get; init; } = "";
 
     public string Description { get; init; } = "";
 
@@ -18,7 +18,8 @@ public sealed class EditorCommandDefinition
 
     public bool IsDangerous { get; init; }
 
-    public required Action Execute { get; init; }
+    public Action Execute { get; init; } = static () => { };
 
     public Func<EditorCommandState>? GetState { get; init; }
 }
+
