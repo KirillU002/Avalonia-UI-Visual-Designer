@@ -1,7 +1,7 @@
 ﻿<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="FormDesigner.Views.HelpWindow"
-        Title="Справка по конструктору форм"
+        Title="Справка по конструктору форм · Alpha 0.2"
         Width="1280"
         Height="860"
         MinWidth="1040"
@@ -190,7 +190,7 @@
                             MaxWidth="480">
                     <StackPanel Spacing="7">
                         <TextBlock Classes="hero-kicker"
-                                   Text="PRODUCT GUIDE" />
+                                   Text="PRODUCT GUIDE · 0.2.0-alpha" />
                         <TextBlock Classes="hero-title"
                                    Text="Создавайте формы, подключайте данные и экспортируйте рабочий Avalonia UI" />
                         <TextBlock Classes="hero-body"

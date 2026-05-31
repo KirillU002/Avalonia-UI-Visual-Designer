@@ -15,7 +15,7 @@
         MinWidth="1040"
         MinHeight="640"
         RequestedThemeVariant="Light"
-        Title="Конструктор форм Avalonia"
+        Title="Конструктор форм Avalonia · Alpha 0.2"
         Background="#EAF1F8"
         Classes.density-comfortable="{Binding IsComfortableUiDensity}"
         Classes.density-compact="{Binding IsCompactUiDensity}"
@@ -6958,7 +6958,7 @@
           <Grid RowDefinitions="Auto,Auto,*">
             <Grid ColumnDefinitions="*,Auto">
               <StackPanel Spacing="3">
-                <TextBlock Text="Avalonia UI Visual Designer"
+                <TextBlock Text="Avalonia UI Visual Designer · 0.2.0-alpha"
                            FontSize="24"
                            FontWeight="Bold"
                            Foreground="#0F172A"/>

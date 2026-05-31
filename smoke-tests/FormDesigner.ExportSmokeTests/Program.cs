@@ -5,6 +5,7 @@ using FormDesigner.Models;
 using FormDesigner.ViewModels;
 using System.Diagnostics;
 using System.Text;
+using System.Text.Json;
 
 namespace FormDesigner.ExportSmokeTests;
 
@@ -31,6 +32,12 @@ internal static class Program
             new("RealDataGridExport", ConfigureRealDataGridExport, AssertRealDataGridExport, RequiresRealDataGrid: true),
             new("InteractionsExport", ConfigureInteractionsExport, AssertInteractionsExport, RequiresRealDataGrid: true),
             new("MultiFormOpenFormExport", ConfigureMultiFormOpenFormExport, AssertMultiFormOpenFormExport),
+            new("AlphaEndToEndProjectExport", ConfigureAlphaEndToEndProjectExport, AssertAlphaEndToEndProjectExport, RequiresRealDataGrid: true),
+            new("DataGridBindingSourceWorkflow", ConfigureDataGridBindingSourceWorkflow, AssertDataGridBindingSourceWorkflow, RequiresRealDataGrid: true),
+            new("OpenFormPreviewAndExport", ConfigureOpenFormPreviewAndExport, AssertOpenFormPreviewAndExport),
+            new("PropertyGridDataGridSetup", ConfigurePropertyGridDataGridSetup, AssertPropertyGridDataGridSetup, RequiresRealDataGrid: true),
+            new("SaveLoadMultiFormProject", ConfigureSaveLoadMultiFormProject, AssertSaveLoadMultiFormProject, RequiresRealDataGrid: true),
+            new("ExportToProjectBuildValidation", ConfigureExportToProjectBuildValidation, AssertExportToProjectBuildValidation, RequiresRealDataGrid: true),
             new("PluginFallbackExport", ConfigurePluginFallbackExport, AssertPluginFallbackExport),
             new("GridLayoutExport", ConfigureGridLayoutExport, AssertGridLayoutExport),
             new("StackPanelLayoutExport", ConfigureStackPanelLayoutExport, AssertStackPanelLayoutExport),
@@ -279,6 +286,264 @@ internal static class Program
         RequireContains(context.CSharp, "windowForm2.Show();", "OpenForm handler should show Form2.");
         RequireContains(context.ChecklistText, "Forms exported: 3/3", "Export checklist should report all forms.");
         RequireContains(context.ChecklistText, "OpenForm interactions: 1", "Export checklist should report OpenForm interaction.");
+    }
+
+    private static void ConfigureAlphaEndToEndProjectExport(MainWindowViewModel vm)
+    {
+        ConfigureAlphaProject(vm);
+    }
+
+    private static void AssertAlphaEndToEndProjectExport(SmokeContext context)
+    {
+        RequireGeneratedFile(context, "MainWindow.axaml");
+        RequireGeneratedFile(context, "MainWindow.axaml.cs");
+        RequireGeneratedFile(context, "Form2.axaml");
+        RequireGeneratedFile(context, "Form2.axaml.cs");
+        RequireContains(context.Xaml, "Click=\"OpenForm2ButtonClick\"", "Alpha OpenForm handler should be wired in XAML.");
+        RequireContains(context.Xaml, "SelectionChanged=\"CustomersGrid_SelectionChanged\"", "Alpha DataGrid.SelectionChanged handler should be wired in XAML.");
+        RequireContains(context.Xaml, "Checked=\"DetailsCheckBox_Checked\"", "Alpha CheckBox.Checked handler should be wired in XAML.");
+        RequireContains(context.CSharp, "var windowForm2 = new Form2();", "Alpha OpenForm handler should instantiate Form2.");
+        RequireContains(context.CSharp, "SelectedNameTextBox.Text = ResolveInteractionValue(selectedItem, @\"Name\", @\"\");", "Alpha DataGrid selection should fill TextBox from Name.");
+        RequireContains(context.ChecklistText, "Forms exported: 2/2", "Alpha export should include both forms.");
+        RequireContains(context.ChecklistText, "Interactions exported: 4/4", "Alpha export should include all configured interactions.");
+        RequireContains(context.ChecklistText, "OpenForm interactions: 1", "Alpha checklist should report OpenForm.");
+        RequireContains(context.ChecklistText, "Avalonia.Controls.DataGrid", "Alpha Real DataGrid export should require DataGrid NuGet.");
+    }
+
+    private static void ConfigureDataGridBindingSourceWorkflow(MainWindowViewModel vm)
+    {
+        var source = CustomersSource();
+        vm.BindingSources.Add(source);
+        vm.SelectedBindingSource = source;
+        vm.DataGridExportMode = MainWindowViewModel.DataGridExportModeReal;
+
+        var grid = DataGrid("CustomersGrid", source.Id, 34, 48, 650, 300);
+        grid.ShowFilterRow = true;
+        grid.ShowGroupPanel = true;
+        grid.AllowGrouping = true;
+        vm.Controls.Add(grid);
+    }
+
+    private static void AssertDataGridBindingSourceWorkflow(SmokeContext context)
+    {
+        RequireContains(context.Xaml, "<dataGrid:DataGrid", "BindingSource workflow should export a real DataGrid.");
+        RequireContains(context.Xaml, "Binding Path=\"Id\"", "DataGrid should include BindingSource field Id.");
+        RequireContains(context.Xaml, "Binding Path=\"Name\"", "DataGrid should include BindingSource field Name.");
+        RequireContains(context.Xaml, "Binding Path=\"Email\"", "DataGrid should include BindingSource field Email.");
+        RequireContains(context.Xaml, "Binding Path=\"Status\"", "DataGrid should include BindingSource field Status.");
+        RequireContains(context.ChecklistText, "DataGrid: Real Avalonia DataGrid", "Checklist should keep Real DataGrid mode.");
+        RequireContains(context.ChecklistText, "Avalonia.Controls.DataGrid", "Checklist should report DataGrid package.");
+        RequireNotContains(context.DiagnosticsText, "DataGrid without fields", "DataGrid with real BindingSource fields must not warn about missing fields.");
+    }
+
+    private static void ConfigureOpenFormPreviewAndExport(MainWindowViewModel vm)
+    {
+        ConfigureTwoFormOpenFormProject(vm);
+    }
+
+    private static void AssertOpenFormPreviewAndExport(SmokeContext context)
+    {
+        RequireGeneratedFile(context, "MainWindow.axaml");
+        RequireGeneratedFile(context, "MainWindow.axaml.cs");
+        RequireGeneratedFile(context, "Form2.axaml");
+        RequireGeneratedFile(context, "Form2.axaml.cs");
+        RequireContains(context.Xaml, "Click=\"OpenForm2ButtonClick\"", "OpenForm preview/export smoke should wire Button.Click.");
+        RequireContains(context.CSharp, "var windowForm2 = new Form2();", "OpenForm export should create Form2.");
+        RequireContains(context.CSharp, "windowForm2.Show();", "OpenForm export should call Show.");
+        RequireNotContains(context.DiagnosticsText, "OpenForm target form not found", "OpenForm target should be valid.");
+        RequireNotContains(context.DiagnosticsText, "OpenForm target form не выбран", "OpenForm target should be selected.");
+    }
+
+    private static void ConfigurePropertyGridDataGridSetup(MainWindowViewModel vm)
+    {
+        ConfigureDataGridBindingSourceWorkflow(vm);
+        var grid = vm.Controls.First(control => string.Equals(control.Name, "CustomersGrid", StringComparison.OrdinalIgnoreCase));
+        vm.SelectControls(new[] { grid }, grid);
+        vm.WorkspaceMode = MainWindowViewModel.WorkspaceModeData;
+
+        RequirePropertyGridRow(vm, "Width");
+        RequirePropertyGridRow(vm, "Height");
+        RequirePropertyGridRow(vm, "HeaderBackground");
+        if (vm.SelectedBindingSourceForControl is null || vm.SelectedBindingSourceForControl.Fields.Count != 4)
+            throw new InvalidOperationException("DataGrid setup should expose the selected BindingSource with four fields.");
+        if (!vm.SelectedGridColumnCompactSummary.Contains("4", StringComparison.Ordinal))
+            throw new InvalidOperationException("DataGrid column summary should report four generated fields.");
+    }
+
+    private static void AssertPropertyGridDataGridSetup(SmokeContext context)
+    {
+        RequireContains(context.Xaml, "CustomersGrid", "PropertyGrid setup scenario should keep DataGrid in export.");
+        RequireContains(context.ChecklistText, "Avalonia.Controls.DataGrid", "PropertyGrid setup should preserve required DataGrid package.");
+        RequireNotContains(context.DiagnosticsText, "BindingSource не выбран", "PropertyGrid setup should keep DataGrid BindingSource assigned.");
+    }
+
+    private static void ConfigureSaveLoadMultiFormProject(MainWindowViewModel vm)
+    {
+        ConfigureAlphaProject(vm);
+
+        var form2Tab = vm.DocumentTabs.First(tab => string.Equals(tab.Title.Replace(" *", ""), "Form2", StringComparison.OrdinalIgnoreCase));
+        vm.SelectedDocumentTab = form2Tab;
+        var form1Tab = vm.DocumentTabs.First(tab => tab.Title.StartsWith("Form1", StringComparison.OrdinalIgnoreCase));
+        vm.SelectedDocumentTab = form1Tab;
+
+        var json = JsonSerializer.Serialize(vm.Workspace, new JsonSerializerOptions { WriteIndented = true });
+        var restored = JsonSerializer.Deserialize<WorkspaceModel>(json) ?? throw new InvalidOperationException("Workspace round-trip returned null.");
+        if (restored.Project.Forms.Count != 2)
+            throw new InvalidOperationException("Workspace round-trip should preserve two forms.");
+
+        var form1 = restored.Project.Forms.FirstOrDefault(form => string.Equals(form.DisplayName, "Form1", StringComparison.OrdinalIgnoreCase))
+            ?? throw new InvalidOperationException("Workspace round-trip should preserve Form1.");
+        var form2 = restored.Project.Forms.FirstOrDefault(form => string.Equals(form.DisplayName, "Form2", StringComparison.OrdinalIgnoreCase))
+            ?? throw new InvalidOperationException("Workspace round-trip should preserve Form2.");
+        if (form1.Document.Controls.All(control => !string.Equals(control.Name, "CustomersGrid", StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidOperationException("Workspace round-trip should preserve Form1 controls.");
+        if (form1.Document.BindingSources.Count != 1 || form1.Document.BindingSources[0].Fields.Count != 4)
+            throw new InvalidOperationException("Workspace round-trip should preserve BindingSource fields.");
+        if (form1.Document.Interactions.Count != 4)
+            throw new InvalidOperationException("Workspace round-trip should preserve Form1 interactions.");
+        if (form2.Document.Controls.All(control => !string.Equals(control.Name, "Form2Title", StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidOperationException("Workspace round-trip should preserve Form2 controls.");
+    }
+
+    private static void AssertSaveLoadMultiFormProject(SmokeContext context)
+    {
+        RequireGeneratedFile(context, "Form2.axaml");
+        RequireContains(context.ChecklistText, "Forms exported: 2/2", "Save/load smoke should still export both forms.");
+        RequireContains(context.CSharp, "new Form2()", "Save/load smoke should preserve OpenForm interaction.");
+    }
+
+    private static void ConfigureExportToProjectBuildValidation(MainWindowViewModel vm)
+    {
+        ConfigureAlphaProject(vm);
+    }
+
+    private static void AssertExportToProjectBuildValidation(SmokeContext context)
+    {
+        var scenarioRoot = Directory.GetParent(context.ProjectPath)?.FullName ?? context.ProjectPath;
+        var validationRoot = Path.Combine(scenarioRoot, $"{context.Scenario.Name}-validation");
+        var result = context.ViewModel.ValidateCurrentExportBuildAsync(validationRoot).GetAwaiter().GetResult();
+        if (result.Status != ExportBuildValidationStatus.Passed)
+            throw new InvalidOperationException($"Export pipeline build validation failed.{Environment.NewLine}{result.Output}");
+
+        RequireContains(result.ProjectPath, "-validation", "Build validation should create a temporary validation project.");
+        RequireContains(File.ReadAllText(Path.Combine(result.ProjectPath, "ExportValidation.csproj"), Encoding.UTF8), "<TargetFramework>net6.0</TargetFramework>", "Validation project should target net6.0.");
+        RequireContains(File.ReadAllText(Path.Combine(result.ProjectPath, "ExportValidation.csproj"), Encoding.UTF8), "Avalonia.Controls.DataGrid", "Validation project should include DataGrid package.");
+    }
+
+    private static void ConfigureAlphaProject(MainWindowViewModel vm)
+    {
+        var source = CustomersSource();
+        vm.BindingSources.Add(source);
+        vm.SelectedBindingSource = source;
+        vm.DataGridExportMode = MainWindowViewModel.DataGridExportModeReal;
+
+        vm.Controls.Add(Control(DesignerControlTypes.TextBlock, "Form1Title", 30, 24, 360, 32, text: "Customers"));
+        vm.Controls.Add(Control(DesignerControlTypes.Button, "OpenForm2Button", 30, 74, 190, 42, text: "Открыть Form2", background: "#2563EB", foreground: "#FFFFFF", border: "#1D4ED8", radius: 8));
+        vm.Controls.Add(DataGrid("CustomersGrid", source.Id, 30, 136, 620, 280));
+        vm.Controls.Add(Control(DesignerControlTypes.TextBox, "SelectedNameTextBox", 690, 136, 250, 38, placeholder: "Selected Name"));
+        vm.Controls.Add(Control(DesignerControlTypes.CheckBox, "DetailsCheckBox", 690, 196, 180, 34, text: "Show details"));
+        vm.Controls.Add(Control(DesignerControlTypes.Border, "DetailsPanel", 690, 250, 250, 118, background: "#EFF6FF", border: "#BFDBFE", radius: 10));
+
+        var form1 = vm.ActiveFormDocument ?? throw new InvalidOperationException("Active Form1 document missing.");
+        form1.Name = "Form1";
+        form1.Document.FormTitle = "Form1";
+        vm.FormTitle = "Form1";
+        vm.NewFormEditorCommand?.Execute(null);
+        var form2 = vm.ActiveFormDocument ?? throw new InvalidOperationException("Active Form2 document missing.");
+        form2.Name = "Form2";
+        form2.Document.FormTitle = "Form2";
+        vm.FormTitle = "Form2";
+        vm.Controls.Add(Control(DesignerControlTypes.TextBlock, "Form2Title", 40, 40, 360, 32, text: "Form2"));
+        vm.Controls.Add(Control(DesignerControlTypes.TextBox, "Form2Input", 40, 96, 280, 40, placeholder: "Form2 input"));
+
+        vm.SelectedDocumentTab = vm.DocumentTabs.First(tab => tab.DocumentId == form1.Id);
+        RequireActiveControls(vm, "OpenForm2Button", "CustomersGrid", "SelectedNameTextBox", "DetailsCheckBox", "DetailsPanel");
+        RequireNoActiveControls(vm, "Form2Title", "Form2Input");
+
+        vm.Interactions.Add(new InteractionModel
+        {
+            SourceControlName = "OpenForm2Button",
+            EventName = InteractionModel.EventButtonClick,
+            ActionType = InteractionModel.ActionOpenForm,
+            TargetFormId = form2.Id,
+            TargetFormName = form2.DisplayName,
+            OpenMode = InteractionModel.OpenModeShow
+        });
+        vm.Interactions.Add(new InteractionModel
+        {
+            SourceControlName = "CustomersGrid",
+            EventName = InteractionModel.EventDataGridSelectionChanged,
+            ActionType = InteractionModel.ActionSetProperty,
+            TargetControlName = "SelectedNameTextBox",
+            TargetProperty = InteractionModel.TargetPropertyText,
+            SourcePath = "Name"
+        });
+        vm.Interactions.Add(new InteractionModel
+        {
+            SourceControlName = "DetailsCheckBox",
+            EventName = InteractionModel.EventCheckBoxChecked,
+            ActionType = InteractionModel.ActionToggleVisibility,
+            TargetControlName = "DetailsPanel",
+            TargetProperty = InteractionModel.TargetPropertyIsVisible
+        });
+        vm.Interactions.Add(new InteractionModel
+        {
+            SourceControlName = "DetailsCheckBox",
+            EventName = InteractionModel.EventCheckBoxUnchecked,
+            ActionType = InteractionModel.ActionToggleVisibility,
+            TargetControlName = "DetailsPanel",
+            TargetProperty = InteractionModel.TargetPropertyIsVisible
+        });
+    }
+
+    private static void ConfigureTwoFormOpenFormProject(MainWindowViewModel vm)
+    {
+        vm.ExportTarget = MainWindowViewModel.ExportTargetMainWindow;
+        vm.Controls.Add(Control(DesignerControlTypes.Button, "OpenForm2Button", 36, 92, 180, 42, text: "Open Form2", background: "#2563EB", foreground: "#FFFFFF", border: "#1D4ED8", radius: 10));
+        var form1 = vm.ActiveFormDocument ?? throw new InvalidOperationException("Active Form1 document missing.");
+        vm.NewFormEditorCommand?.Execute(null);
+        var form2 = vm.ActiveFormDocument ?? throw new InvalidOperationException("Active Form2 document missing.");
+        form2.Name = "Form2";
+        form2.Document.FormTitle = "Form2";
+        vm.FormTitle = "Form2";
+        vm.Controls.Add(Control(DesignerControlTypes.TextBlock, "Form2Title", 36, 34, 340, 30, text: "Form2 window"));
+        vm.SelectedDocumentTab = vm.DocumentTabs.First(tab => tab.DocumentId == form1.Id);
+        vm.Interactions.Add(new InteractionModel
+        {
+            SourceControlName = "OpenForm2Button",
+            EventName = InteractionModel.EventButtonClick,
+            ActionType = InteractionModel.ActionOpenForm,
+            TargetFormId = form2.Id,
+            TargetFormName = form2.DisplayName,
+            OpenMode = InteractionModel.OpenModeShow
+        });
+    }
+
+    private static BindingSourceModel CustomersSource()
+    {
+        var source = new BindingSourceModel
+        {
+            Id = "customers-source",
+            Name = "CustomersSource",
+            Path = "Customers",
+            ItemTypeName = "CustomerRow",
+            Description = "Alpha 0.2 customers source."
+        };
+        source.Fields.Add(Field("Id", "Id", "1", "int", "80"));
+        source.Fields.Add(Field("Name", "Name", "Ada Lovelace", "string", "2*"));
+        source.Fields.Add(Field("Email", "Email", "ada@example.com", "string", "2*"));
+        source.Fields.Add(Field("Status", "Status", "Active", "string", "*"));
+        return source;
+    }
+
+    private static void RequirePropertyGridRow(MainWindowViewModel vm, string label)
+    {
+        var hasRow = vm.PropertyGridCategories
+            .SelectMany(category => category.Rows)
+            .Any(row => string.Equals(row.Label, label, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(row.Key, label, StringComparison.OrdinalIgnoreCase));
+        if (!hasRow)
+            throw new InvalidOperationException($"PropertyGrid row missing: {label}");
     }
 
     private static void RequireActiveControls(MainWindowViewModel vm, params string[] names)
