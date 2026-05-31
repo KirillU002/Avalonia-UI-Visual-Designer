@@ -188,6 +188,11 @@
                     Margin="0,0,8,8"
                     IsEnabled="{Binding HasSelectedField}"
                     Click="DeleteColumnButton_Click"/>
+            <Button Content="Дублировать"
+                    Classes="editor-action"
+                    Margin="0,0,8,8"
+                    IsEnabled="{Binding HasSelectedField}"
+                    Click="DuplicateColumnButton_Click"/>
             <Button Content="Вверх"
                     Classes="editor-action"
                     Margin="0,0,8,8"
@@ -210,6 +215,10 @@
                     Classes="editor-action"
                     Margin="0,0,8,8"
                     Click="ResetColumnWidthsButton_Click"/>
+            <Button Content="Из BindingSource"
+                    Classes="editor-action"
+                    Margin="0,0,8,8"
+                    Click="CreateColumnsFromBindingSourceButton_Click"/>
             <Button Content="Очистить группировку"
                     Classes="editor-action"
                     Margin="0,0,8,8"

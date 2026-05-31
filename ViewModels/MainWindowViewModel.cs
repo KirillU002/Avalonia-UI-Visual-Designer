@@ -493,6 +493,13 @@ public partial class MainWindowViewModel : ObservableObject
         UiDensityDense
     };
 
+    public ObservableCollection<string> AvailableLayoutDefinitionSizeKinds { get; } = new()
+    {
+        "Auto",
+        "Star",
+        "Fixed"
+    };
+
     public ObservableCollection<string> AvailableProblemsFilters { get; } = new()
     {
         ProblemsFilterAll,
@@ -503,6 +510,17 @@ public partial class MainWindowViewModel : ObservableObject
 
     [ObservableProperty]
     private DesignControlModel? selectedControl;
+
+    public ObservableCollection<LayoutDefinitionEditorItem> LayoutGridRows { get; } = new();
+    public ObservableCollection<LayoutDefinitionEditorItem> LayoutGridColumns { get; } = new();
+
+    [ObservableProperty]
+    private LayoutDefinitionEditorItem? selectedLayoutGridRow;
+
+    [ObservableProperty]
+    private LayoutDefinitionEditorItem? selectedLayoutGridColumn;
+
+    private bool _isSyncingLayoutDefinitionEditor;
 
     [ObservableProperty]
     private bool isCommandPaletteOpen;
@@ -1168,6 +1186,39 @@ public partial class MainWindowViewModel : ObservableObject
     public bool IsSelectedControlManagedByLayout => SelectedControl is not null && !IsAbsoluteLayoutParent(SelectedControl.ParentId);
     public bool CanEditSurfaceFlowLayout => DesignerLayoutModes.IsFlow(SurfaceLayoutMode);
     public bool CanEditSurfaceGridLayout => DesignerLayoutModes.NormalizeMode(SurfaceLayoutMode) == DesignerLayoutModes.Grid;
+    public DesignControlModel? ActiveLayoutHost => GetActiveLayoutHost();
+    public bool IsActiveLayoutRoot => ActiveLayoutHost is null;
+    public string ActiveLayoutHostTitle => ActiveLayoutHost?.Name ?? "Root form";
+    public string ActiveLayoutMode => GetActiveLayoutMode();
+    public bool IsActiveLayoutGrid => DesignerLayoutModes.NormalizeMode(ActiveLayoutMode) == DesignerLayoutModes.Grid;
+    public bool IsActiveLayoutStack => DesignerLayoutModes.NormalizeMode(ActiveLayoutMode) == DesignerLayoutModes.Stack;
+    public bool IsActiveLayoutFlow => DesignerLayoutModes.IsFlow(ActiveLayoutMode);
+    public bool IsLayoutOverlayVisible => IsDesignerCanvasWorkspaceVisible && !IsUserPreviewMode && (IsActiveLayoutGrid || IsActiveLayoutStack);
+    public string ActiveLayoutOverlayTitle => IsActiveLayoutGrid
+        ? $"{ActiveLayoutHostTitle} · Grid"
+        : IsActiveLayoutStack
+            ? $"{ActiveLayoutHostTitle} · StackPanel"
+            : $"{ActiveLayoutHostTitle} · Canvas";
+    public string ActiveLayoutOverlaySummary => IsActiveLayoutGrid
+        ? $"Rows: {GetActiveLayoutRows()} · Columns: {GetActiveLayoutColumns()} · {ActiveGridDefinitionsPreview}"
+        : IsActiveLayoutStack
+            ? $"{GetActiveLayoutOrientation()} · Spacing {GetActiveLayoutSpacing():0.#}"
+            : "Canvas layout";
+    public string ActiveGridDefinitionsPreview => IsActiveLayoutGrid
+        ? $"Rows {BuildGridDefinitions(GetActiveLayoutRows(), GetActiveGridRowDefinitions())}; Columns {BuildGridDefinitions(GetActiveLayoutColumns(), GetActiveGridColumnDefinitions())}"
+        : "";
+    public bool HasLayoutGridRows => LayoutGridRows.Count > 0;
+    public bool HasLayoutGridColumns => LayoutGridColumns.Count > 0;
+    public string ActiveStackOrientation
+    {
+        get => GetActiveLayoutOrientation();
+        set => SetActiveLayoutOrientation(value);
+    }
+    public double ActiveStackSpacing
+    {
+        get => GetActiveLayoutSpacing();
+        set => SetActiveLayoutSpacing(value);
+    }
     public bool CanApplyButtonVisualPresets => SelectedControl?.Type == DesignerControlTypes.Button;
     public bool CanEditDataGridBasic => SelectedControl?.Type == DesignerControlTypes.DataGrid;
     public bool CanEditCommonBackground => CanEditBackground && !CanEditDataGridBasic;
@@ -1435,6 +1486,59 @@ public partial class MainWindowViewModel : ObservableObject
             var summaryCount = source.Fields.Count(field => BindingFieldModel.NormalizeSummaryType(field.SummaryType) != BindingFieldModel.SummaryTypeNone);
 
             return $"Всего: {totalCount}, видимых: {visibleCount}, скрытых: {hiddenCount}, сортируемых: {sortableCount}, сортировок: {sortedCount}, группировок: {groupedCount}, итогов: {summaryCount}.";
+        }
+    }
+
+    public bool CanShowDataGridDataSetup => SelectedControl?.Type == DesignerControlTypes.DataGrid;
+
+    public bool HasSelectedDataGridBindingWarning => !string.IsNullOrWhiteSpace(SelectedDataGridBindingWarning);
+
+    public string SelectedDataGridBindingWarning
+    {
+        get
+        {
+            if (!CanShowDataGridDataSetup)
+                return "";
+
+            var source = SelectedBindingSourceForControl;
+            if (source is null)
+                return "BindingSource не выбран. DataGrid будет экспортирован как placeholder или визуальный макет без рабочих колонок.";
+
+            if (source.Fields.Count == 0)
+                return "BindingSource выбран, но fields пустые. Добавьте поля или создайте sample fields.";
+
+            if (source.Fields.All(field => !field.IsVisible))
+                return "Все колонки скрыты. В export таблица не получит видимых колонок.";
+
+            return "";
+        }
+    }
+
+    public string SelectedDataGridColumnCountText
+    {
+        get
+        {
+            var source = SelectedBindingSourceForControl;
+            if (source is null)
+                return "Columns: none";
+
+            var visibleCount = source.Fields.Count(field => field.IsVisible);
+            return $"Columns: {visibleCount}/{source.Fields.Count}";
+        }
+    }
+
+    public string DataGridDataSetupSummary
+    {
+        get
+        {
+            if (!CanShowDataGridDataSetup)
+                return "Выберите DataGrid, чтобы настроить данные таблицы.";
+
+            var source = SelectedBindingSourceForControl;
+            if (source is null)
+                return "Выберите существующий BindingSource или создайте новый. После этого откройте Column Editor.";
+
+            return $"{source.Name} · {source.ItemTypeName} · {SelectedDataGridColumnCountText}";
         }
     }
 
@@ -1766,6 +1870,11 @@ public partial class MainWindowViewModel : ObservableObject
             OnPropertyChanged(nameof(SelectedGridColumnsForControl));
             OnPropertyChanged(nameof(SelectedGridColumnEditorSummary));
             OnPropertyChanged(nameof(SelectedGridColumnCompactSummary));
+            OnPropertyChanged(nameof(CanShowDataGridDataSetup));
+            OnPropertyChanged(nameof(SelectedDataGridBindingWarning));
+            OnPropertyChanged(nameof(HasSelectedDataGridBindingWarning));
+            OnPropertyChanged(nameof(SelectedDataGridColumnCountText));
+            OnPropertyChanged(nameof(DataGridDataSetupSummary));
         }
     }
 
@@ -1820,6 +1929,7 @@ public partial class MainWindowViewModel : ObservableObject
         RebuildImportedDllCatalog();
         RefreshDiagnostics();
         GenerateXaml();
+        RebuildLayoutDefinitionEditor();
         RegisterEditorCommands();
         RefreshEditorCommands();
         RaiseEditorCommandProperties();
@@ -1863,8 +1973,8 @@ public partial class MainWindowViewModel : ObservableObject
         RegisterEditorCommand(EditorCommandId.AlignCenter, "Align Center", "Align selected elements by center.", "", "", EditorCommandCategory.Arrange, AlignSelectionCenter, () => StateWhen(CanArrangeSelection, "Select at least two editable elements."));
         RegisterEditorCommand(EditorCommandId.DistributeHorizontal, "Distribute Horizontal", "Distribute selected elements horizontally.", "", "", EditorCommandCategory.Arrange, DistributeSelectionHorizontal, () => StateWhen(CanDistributeSelection, "Select at least three editable elements."));
         RegisterEditorCommand(EditorCommandId.DistributeVertical, "Distribute Vertical", "Distribute selected elements vertically.", "", "", EditorCommandCategory.Arrange, DistributeSelectionVertical, () => StateWhen(CanDistributeSelection, "Select at least three editable elements."));
-        RegisterEditorCommand(EditorCommandId.ConvertSelectionToStackPanel, "Convert Container to StackPanel", "Use StackPanel layout for the selected container children.", "", "", EditorCommandCategory.Arrange, () => ConvertSelectedContainerLayout(DesignerLayoutModes.Stack), () => StateWhen(SelectedControl is not null && CanHostChildren(SelectedControl), "Select a container such as Border, Group or Layout."));
-        RegisterEditorCommand(EditorCommandId.ConvertSelectionToGrid, "Convert Container to Grid", "Use Grid layout for the selected container children.", "", "", EditorCommandCategory.Arrange, () => ConvertSelectedContainerLayout(DesignerLayoutModes.Grid), () => StateWhen(SelectedControl is not null && CanHostChildren(SelectedControl), "Select a container such as Border, Group or Layout."));
+        RegisterEditorCommand(EditorCommandId.ConvertSelectionToStackPanel, "Wrap/Convert to StackPanel", "Wrap the selection in a StackPanel container or convert the selected container.", "", "", EditorCommandCategory.Arrange, () => ConvertSelectedContainerLayout(DesignerLayoutModes.Stack), () => StateWhen((SelectedControl is not null && CanHostChildren(SelectedControl)) || CanWrapSelectionInContainer(), "Select a container or one or more controls."));
+        RegisterEditorCommand(EditorCommandId.ConvertSelectionToGrid, "Wrap/Convert to Grid", "Wrap the selection in a Grid container or convert the selected container.", "", "", EditorCommandCategory.Arrange, () => ConvertSelectedContainerLayout(DesignerLayoutModes.Grid), () => StateWhen((SelectedControl is not null && CanHostChildren(SelectedControl)) || CanWrapSelectionInContainer(), "Select a container or one or more controls."));
 
         RegisterEditorCommand(EditorCommandId.Group, "Group", "Group selected elements.", "", "Ctrl+G", EditorCommandCategory.Group, GroupSelection, () => StateWhen(CanGroupSelection, "Select at least two elements that can be grouped."));
         RegisterEditorCommand(EditorCommandId.Ungroup, "Ungroup", "Ungroup selected groups.", "", "Ctrl+Shift+G", EditorCommandCategory.Group, UngroupSelection, () => StateWhen(CanUngroupSelection, "Select a group."));
@@ -3294,6 +3404,152 @@ public partial class MainWindowViewModel : ObservableObject
         return DesignerLayoutModes.IsAbsolute(GetLayoutModeForParent(parentId));
     }
 
+    private DesignControlModel? GetActiveLayoutHost()
+    {
+        if (SelectedControl is not null && CanHostChildren(SelectedControl))
+            return SelectedControl;
+
+        if (SelectedControl is not null)
+            return GetControl(SelectedControl.ParentId);
+
+        return null;
+    }
+
+    private string GetActiveLayoutMode()
+    {
+        var host = GetActiveLayoutHost();
+        return host is null
+            ? DesignerLayoutModes.NormalizeMode(SurfaceLayoutMode)
+            : GetLayoutModeForControl(host);
+    }
+
+    private string GetActiveLayoutOrientation()
+    {
+        var host = GetActiveLayoutHost();
+        return host is null
+            ? DesignerLayoutModes.NormalizeOrientation(SurfaceLayoutOrientation)
+            : DesignerLayoutModes.NormalizeOrientation(host.LayoutOrientation);
+    }
+
+    private double GetActiveLayoutSpacing()
+    {
+        var host = GetActiveLayoutHost();
+        return Math.Max(0, host?.LayoutSpacing ?? SurfaceLayoutSpacing);
+    }
+
+    private int GetActiveLayoutColumns()
+    {
+        var host = GetActiveLayoutHost();
+        return Math.Max(1, host?.Columns ?? SurfaceLayoutColumns);
+    }
+
+    private int GetActiveLayoutRows()
+    {
+        var host = GetActiveLayoutHost();
+        return Math.Max(1, host?.Rows ?? SurfaceLayoutRows);
+    }
+
+    private string GetActiveGridColumnDefinitions()
+    {
+        var host = GetActiveLayoutHost();
+        return host?.GridColumnDefinitions ?? SurfaceGridColumnDefinitions;
+    }
+
+    private string GetActiveGridRowDefinitions()
+    {
+        var host = GetActiveLayoutHost();
+        return host?.GridRowDefinitions ?? SurfaceGridRowDefinitions;
+    }
+
+    private IReadOnlyList<DesignControlModel> GetActiveLayoutChildren()
+    {
+        return GetChildControls(GetActiveLayoutHost()?.Id).ToList();
+    }
+
+    private void SetActiveLayoutMode(string layoutMode)
+    {
+        var normalized = DesignerLayoutModes.NormalizeMode(layoutMode);
+        var host = GetActiveLayoutHost();
+
+        BeginUndoBatch();
+        try
+        {
+            if (host is null)
+            {
+                SurfaceLayoutMode = normalized;
+                if (normalized == DesignerLayoutModes.Grid)
+                {
+                    SurfaceLayoutColumns = Math.Max(1, SurfaceLayoutColumns);
+                    SurfaceLayoutRows = Math.Max(1, SurfaceLayoutRows);
+                }
+            }
+            else
+            {
+                host.ChildLayoutMode = normalized;
+                if (normalized == DesignerLayoutModes.Grid)
+                {
+                    host.Columns = Math.Max(1, host.Columns);
+                    host.Rows = Math.Max(1, host.Rows);
+                    host.ShowGridLines = true;
+                }
+            }
+
+            NormalizeActiveStackOrders();
+            RebuildLayoutDefinitionEditor();
+            RaiseActiveLayoutProperties();
+            NotifyDesignerStateChanged();
+        }
+        finally
+        {
+            CommitUndoBatch();
+        }
+    }
+
+    private void SetActiveLayoutOrientation(string value)
+    {
+        var normalized = DesignerLayoutModes.NormalizeOrientation(value);
+        var host = GetActiveLayoutHost();
+        if (host is null)
+            SurfaceLayoutOrientation = normalized;
+        else
+            host.LayoutOrientation = normalized;
+
+        RaiseActiveLayoutProperties();
+        NotifyDesignerStateChanged();
+    }
+
+    private void SetActiveLayoutSpacing(double value)
+    {
+        var normalized = Math.Max(0, value);
+        var host = GetActiveLayoutHost();
+        if (host is null)
+            SurfaceLayoutSpacing = normalized;
+        else
+            host.LayoutSpacing = normalized;
+
+        RaiseActiveLayoutProperties();
+        NotifyDesignerStateChanged();
+    }
+
+    private void RaiseActiveLayoutProperties()
+    {
+        OnPropertyChanged(nameof(ActiveLayoutHost));
+        OnPropertyChanged(nameof(IsActiveLayoutRoot));
+        OnPropertyChanged(nameof(ActiveLayoutHostTitle));
+        OnPropertyChanged(nameof(ActiveLayoutMode));
+        OnPropertyChanged(nameof(IsActiveLayoutGrid));
+        OnPropertyChanged(nameof(IsActiveLayoutStack));
+        OnPropertyChanged(nameof(IsActiveLayoutFlow));
+        OnPropertyChanged(nameof(IsLayoutOverlayVisible));
+        OnPropertyChanged(nameof(ActiveLayoutOverlayTitle));
+        OnPropertyChanged(nameof(ActiveLayoutOverlaySummary));
+        OnPropertyChanged(nameof(ActiveGridDefinitionsPreview));
+        OnPropertyChanged(nameof(ActiveStackOrientation));
+        OnPropertyChanged(nameof(ActiveStackSpacing));
+        OnPropertyChanged(nameof(HasLayoutGridRows));
+        OnPropertyChanged(nameof(HasLayoutGridColumns));
+    }
+
     public bool IsControlSelected(DesignControlModel? control)
     {
         return control is not null && SelectedControlIds.Contains(control.Id);
@@ -4553,11 +4809,25 @@ public partial class MainWindowViewModel : ObservableObject
         var model = CreateDefaultControl(type);
         model.Name = GetUniqueControlName(type);
         model.ParentId = NormalizeId(parentId);
+        var parentLayoutMode = GetLayoutModeForParent(model.ParentId);
 
-        if (IsAbsoluteLayoutParent(model.ParentId))
+        if (DesignerLayoutModes.IsAbsolute(parentLayoutMode))
         {
-            model.X = bypassGridSnap ? x : Snap(x);
-            model.Y = bypassGridSnap ? y : Snap(y);
+            var local = ToLocalPosition(model.ParentId, x, y);
+            model.X = bypassGridSnap ? local.X : Snap(local.X);
+            model.Y = bypassGridSnap ? local.Y : Snap(local.Y);
+        }
+        else if (DesignerLayoutModes.NormalizeMode(parentLayoutMode) == DesignerLayoutModes.Grid)
+        {
+            ApplyGridDropPlacement(model, model.ParentId, x, y);
+            model.X = 0;
+            model.Y = 0;
+        }
+        else if (DesignerLayoutModes.NormalizeMode(parentLayoutMode) == DesignerLayoutModes.Stack)
+        {
+            ApplyStackDropOrder(model, model.ParentId, x, y);
+            model.X = 0;
+            model.Y = 0;
         }
         else
         {
@@ -4604,6 +4874,122 @@ public partial class MainWindowViewModel : ObservableObject
         StatusText = "Создан SQL BindingSource. Заполните строку подключения и нажмите «Подтянуть из БД».";
         RaiseBindingEditorProperties();
         return source;
+    }
+
+    [RelayCommand]
+    private void CreateBindingSourceForSelectedControl()
+    {
+        if (SelectedControl is null || !SupportsDataBinding(SelectedControl))
+        {
+            StatusText = "Выберите DataGrid, чтобы создать BindingSource для него.";
+            return;
+        }
+
+        BeginUndoBatch();
+        try
+        {
+            var source = AddBindingSource();
+            source.Name = GetUniqueBindingSourceName($"{SelectedControl.NameOrFallback()}Source");
+            source.Path = source.Name;
+            source.ItemTypeName = $"{SelectedControl.NameOrFallback()}Row";
+            source.Description = "Источник создан из DataGrid data setup.";
+            EnsureSampleFields(source);
+            SelectedControl.BindingSourceId = source.Id;
+            SelectedBindingSource = source;
+            RaiseBindingEditorProperties();
+            StatusText = $"BindingSource «{source.Name}» создан и подключен к {SelectedControl.NameOrFallback()}.";
+        }
+        finally
+        {
+            CommitUndoBatch();
+        }
+    }
+
+    [RelayCommand]
+    private void CreateColumnsFromSelectedBindingSource()
+    {
+        var source = SelectedBindingSourceForControl ?? SelectedBindingSource;
+        if (source is null)
+        {
+            StatusText = "Сначала выберите или создайте BindingSource.";
+            return;
+        }
+
+        BeginUndoBatch();
+        try
+        {
+            if (source.Fields.Count == 0)
+                EnsureSampleFields(source);
+
+            var visibleIndex = 0;
+            foreach (var field in source.Fields)
+            {
+                if (string.IsNullOrWhiteSpace(field.Header))
+                    field.Header = string.IsNullOrWhiteSpace(field.Path) ? $"Column {visibleIndex + 1}" : field.Path;
+                if (string.IsNullOrWhiteSpace(field.Width))
+                    field.Width = "*";
+
+                field.IsVisible = true;
+                field.VisibleIndex = visibleIndex++;
+            }
+
+            if (SelectedControl is { Type: DesignerControlTypes.DataGrid } grid)
+                grid.AutoGenerateColumns = false;
+
+            RaiseBindingEditorProperties();
+            NotifyDesignerStateChanged();
+            StatusText = $"Колонки DataGrid подготовлены из BindingSource «{source.Name}».";
+        }
+        finally
+        {
+            CommitUndoBatch();
+        }
+    }
+
+    [RelayCommand]
+    private void OpenLogicForSelectedControl()
+    {
+        WorkspaceMode = WorkspaceModeLogic;
+    }
+
+    [RelayCommand]
+    private void OpenBindingSourceEditor()
+    {
+        WorkspaceMode = WorkspaceModeData;
+    }
+
+    private static void EnsureSampleFields(BindingSourceModel source)
+    {
+        if (source.Fields.Count > 0)
+            return;
+
+        source.Fields.Add(new BindingFieldModel
+        {
+            Header = "Id",
+            Path = "Id",
+            SampleValue = "1",
+            Width = "80",
+            TypeName = "int",
+            VisibleIndex = 0
+        });
+        source.Fields.Add(new BindingFieldModel
+        {
+            Header = "Name",
+            Path = "Name",
+            SampleValue = "Customer",
+            Width = "2*",
+            TypeName = "string",
+            VisibleIndex = 1
+        });
+        source.Fields.Add(new BindingFieldModel
+        {
+            Header = "Status",
+            Path = "Status",
+            SampleValue = "Active",
+            Width = "*",
+            TypeName = "string",
+            VisibleIndex = 2
+        });
     }
 
     public int ImportBindingSourcesFromAssembly(string assemblyPath)
@@ -6028,10 +6414,7 @@ public partial class MainWindowViewModel : ObservableObject
             if (hasSearch)
             {
                 rows = rows
-                    .Where(row => row.Label.Contains(query, StringComparison.OrdinalIgnoreCase)
-                        || row.Key.Contains(query, StringComparison.OrdinalIgnoreCase)
-                        || row.Category.Contains(query, StringComparison.OrdinalIgnoreCase)
-                        || row.Description.Contains(query, StringComparison.OrdinalIgnoreCase))
+                    .Where(row => row.MatchesSearch(query))
                     .ToList();
             }
 
@@ -6106,6 +6489,13 @@ public partial class MainWindowViewModel : ObservableObject
     private IEnumerable<PropertyGridRowViewModel> BuildPropertyGridRows()
     {
         var layoutOnly = IsLayoutMode;
+
+        if (SelectedControlIds.Count > 1)
+        {
+            foreach (var row in BuildMultiSelectionPropertyGridRows())
+                yield return row;
+            yield break;
+        }
 
         if (SelectedControl is null)
         {
@@ -6250,13 +6640,114 @@ public partial class MainWindowViewModel : ObservableObject
         }
     }
 
+    private IEnumerable<PropertyGridRowViewModel> BuildMultiSelectionPropertyGridRows()
+    {
+        var controls = GetSelectedControls().Where(control => !control.IsLocked).ToList();
+        if (controls.Count == 0)
+        {
+            yield return CreateReadOnlyRow(PropertyGridCategoryCommon, "Selection", "Selection", $"{SelectedControlIds.Count} selected", "Selected controls are locked.");
+            yield break;
+        }
+
+        yield return CreateReadOnlyRow(PropertyGridCategoryCommon, "Selection", "Selection", $"{SelectedControlIds.Count} selected", "Common properties for selected controls.");
+        yield return CreateMultiNumberRow(PropertyGridCategoryLayout, nameof(DesignControlModel.X), "X", controls, c => c.X, (c, value) => { c.X = Math.Max(0, value); ClampControlToSurface(c); }, "Left position for all selected controls.");
+        yield return CreateMultiNumberRow(PropertyGridCategoryLayout, nameof(DesignControlModel.Y), "Y", controls, c => c.Y, (c, value) => { c.Y = Math.Max(0, value); ClampControlToSurface(c); }, "Top position for all selected controls.");
+        yield return CreateMultiNumberRow(PropertyGridCategoryLayout, nameof(DesignControlModel.Width), "Width", controls, c => c.Width, (c, value) => { c.Width = value; ClampControlToSurface(c); }, "Width applied to every selected control.");
+        yield return CreateMultiNumberRow(PropertyGridCategoryLayout, nameof(DesignControlModel.Height), "Height", controls, c => c.Height, (c, value) => { c.Height = value; ClampControlToSurface(c); }, "Height applied to every selected control.");
+        yield return CreateMultiBoolRow(PropertyGridCategoryCommon, nameof(DesignControlModel.IsVisible), "IsVisible", controls, c => c.IsVisible, (c, value) => c.IsVisible = value, "Show or hide all selected controls.");
+        yield return CreateMultiBoolRow(PropertyGridCategoryCommon, nameof(DesignControlModel.IsLocked), "IsLocked", controls, c => c.IsLocked, (c, value) => c.IsLocked = value, "Lock or unlock all selected controls.");
+
+        if (controls.All(control => SupportsText(control)))
+        {
+            yield return CreateTextRow(
+                PropertyGridCategoryCommon,
+                nameof(DesignControlModel.Text),
+                "Text / Content",
+                GetMixedStringValue(controls, control => control.Text),
+                "Displayed text or content. Use a value to apply it to every selected control.",
+                value =>
+                {
+                    foreach (var control in controls)
+                        control.Text = value;
+                });
+        }
+
+        yield return CreateMultiNumberRow(PropertyGridCategoryAppearance, nameof(DesignControlModel.FontSize), "FontSize", controls, c => c.FontSize, (c, value) => c.FontSize = Math.Max(1, value), "Font size applied to every selected control.");
+    }
+
+    private PropertyGridRowViewModel CreateMultiNumberRow(
+        string category,
+        string key,
+        string label,
+        IReadOnlyList<DesignControlModel> controls,
+        Func<DesignControlModel, double> getValue,
+        Action<DesignControlModel, double> apply,
+        string description)
+    {
+        var value = GetMixedNumberValue(controls, getValue);
+        return CreateRow(category, key, label, PropertyGridEditorKind.Number, value, description, (row, newValue) =>
+        {
+            if (!double.TryParse(newValue, NumberStyles.Any, CultureInfo.InvariantCulture, out var invariant)
+                && !double.TryParse(newValue, NumberStyles.Any, CultureInfo.CurrentCulture, out invariant))
+            {
+                row.ValidationMessage = "Invalid number";
+                row.ValidationState = PropertyGridValidationState.Error;
+                return;
+            }
+
+            row.ValidationMessage = "";
+            row.ValidationState = PropertyGridValidationState.None;
+            foreach (var control in controls)
+                apply(control, invariant);
+        }, null, aliases: "multi selection common");
+    }
+
+    private PropertyGridRowViewModel CreateMultiBoolRow(
+        string category,
+        string key,
+        string label,
+        IReadOnlyList<DesignControlModel> controls,
+        Func<DesignControlModel, bool> getValue,
+        Action<DesignControlModel, bool> apply,
+        string description)
+    {
+        var allTrue = controls.All(getValue);
+        return CreateRow(category, key, label, PropertyGridEditorKind.Bool, allTrue ? "True" : "False", description, null, (_, value) =>
+        {
+            foreach (var control in controls)
+                apply(control, value);
+        }, boolValue: allTrue, aliases: "multi selection common");
+    }
+
+    private static string GetMixedNumberValue(IReadOnlyList<DesignControlModel> controls, Func<DesignControlModel, double> getValue)
+    {
+        if (controls.Count == 0)
+            return "";
+
+        var first = getValue(controls[0]);
+        return controls.Skip(1).Any(control => Math.Abs(getValue(control) - first) > 0.0001)
+            ? "<multiple>"
+            : first.ToString(CultureInfo.InvariantCulture);
+    }
+
+    private static string GetMixedStringValue(IReadOnlyList<DesignControlModel> controls, Func<DesignControlModel, string> getValue)
+    {
+        if (controls.Count == 0)
+            return "";
+
+        var first = getValue(controls[0]) ?? "";
+        return controls.Skip(1).Any(control => !string.Equals(getValue(control), first, StringComparison.Ordinal))
+            ? "<multiple>"
+            : first;
+    }
+
     private IEnumerable<PropertyGridRowViewModel> BuildDataGridPropertyRows(DesignControlModel control, bool includeDataAndExport = true)
     {
         if (includeDataAndExport)
         {
             yield return CreateBindingSourceRow(control);
             yield return CreateBoolRow(PropertyGridCategoryData, nameof(DesignControlModel.AutoGenerateColumns), "AutoGenerateColumns", control.AutoGenerateColumns, "Generate columns from BindingSource fields.", value => control.AutoGenerateColumns = value);
-            yield return CreateActionRow(PropertyGridCategoryData, "Columns", "Columns", SelectedGridColumnCompactSummary, "Open the DataGrid column editor.", "Edit...");
+            yield return CreateActionRow(PropertyGridCategoryData, "Columns", "Columns", SelectedGridColumnCompactSummary, "Open the DataGrid column editor.", "Edit columns...", PropertyGridEditorKind.ColumnCollection, "column columns datagrid edit autogenerated");
         }
         yield return CreateColorRow(PropertyGridCategoryAppearance, nameof(DesignControlModel.DataGridHeaderBackground), "HeaderBackground", control.DataGridHeaderBackground, "Header background.", value => control.DataGridHeaderBackground = value);
         yield return CreateColorRow(PropertyGridCategoryAppearance, nameof(DesignControlModel.DataGridRowBackground), "RowBackground", control.DataGridRowBackground, "Row background.", value => control.DataGridRowBackground = value);
@@ -6359,11 +6850,13 @@ public partial class MainWindowViewModel : ObservableObject
                 || double.TryParse(newValue, NumberStyles.Any, CultureInfo.CurrentCulture, out invariant))
             {
                 row.ValidationMessage = "";
+                row.ValidationState = PropertyGridValidationState.None;
                 apply(invariant);
                 return;
             }
 
             row.ValidationMessage = "Invalid number";
+            row.ValidationState = PropertyGridValidationState.Error;
         }, null, isAdvanced);
     }
 
@@ -6389,9 +6882,9 @@ public partial class MainWindowViewModel : ObservableObject
         return CreateRow(category, key, label, PropertyGridEditorKind.ReadOnly, value, description, null, null, isReadOnly: true);
     }
 
-    private PropertyGridRowViewModel CreateActionRow(string category, string key, string label, string value, string description, string actionText)
+    private PropertyGridRowViewModel CreateActionRow(string category, string key, string label, string value, string description, string actionText, PropertyGridEditorKind editor = PropertyGridEditorKind.Action, string aliases = "")
     {
-        return CreateRow(category, key, label, PropertyGridEditorKind.Action, value, description, null, null, actionText: actionText);
+        return CreateRow(category, key, label, editor, value, description, null, null, actionText: actionText, aliases: aliases);
     }
 
     private PropertyGridRowViewModel CreateBindingSourceRow(DesignControlModel control)
@@ -6418,8 +6911,10 @@ public partial class MainWindowViewModel : ObservableObject
         bool isAdvanced = false,
         bool isReadOnly = false,
         bool boolValue = false,
-        string actionText = "Edit...")
+        string actionText = "Edit...",
+        string aliases = "")
     {
+        var defaultValue = GetPropertyGridDefaultValue(key);
         return new PropertyGridRowViewModel(
             key,
             label,
@@ -6444,7 +6939,57 @@ public partial class MainWindowViewModel : ObservableObject
             IsPropertyGridFavorite(key),
             isAdvanced,
             isReadOnly,
-            actionText);
+            actionText,
+            defaultValue,
+            aliases);
+    }
+
+    private static string GetPropertyGridDefaultValue(string key)
+    {
+        return key switch
+        {
+            nameof(DesignControlModel.X) or nameof(DesignControlModel.Y) => "0",
+            nameof(DesignControlModel.Width) => "140",
+            nameof(DesignControlModel.Height) => "36",
+            nameof(DesignControlModel.IsVisible) => "True",
+            nameof(DesignControlModel.IsLocked) => "False",
+            nameof(DesignControlModel.Background) => "#FFFFFF",
+            nameof(DesignControlModel.Foreground) => "#0F172A",
+            nameof(DesignControlModel.BorderBrush) => "#94A3B8",
+            nameof(DesignControlModel.BorderThickness) => "1",
+            nameof(DesignControlModel.CornerRadius) => "6",
+            nameof(DesignControlModel.FontFamily) => "Inter",
+            nameof(DesignControlModel.FontSize) => "14",
+            nameof(DesignControlModel.FontWeight) => "Normal",
+            nameof(DesignControlModel.Opacity) => "1",
+            nameof(DesignControlModel.Margin) => "0",
+            nameof(DesignControlModel.HorizontalAlignment) => "Stretch",
+            nameof(DesignControlModel.VerticalAlignment) => "Top",
+            nameof(DesignControlModel.AnchorLeft) => "True",
+            nameof(DesignControlModel.AnchorTop) => "True",
+            nameof(DesignControlModel.AnchorRight) => "False",
+            nameof(DesignControlModel.AnchorBottom) => "False",
+            nameof(DesignControlModel.GridRow) or nameof(DesignControlModel.GridColumn) or nameof(DesignControlModel.StackOrder) => "0",
+            nameof(DesignControlModel.GridRowSpan) or nameof(DesignControlModel.GridColumnSpan) => "1",
+            nameof(DesignControlModel.AutoGenerateColumns) => "False",
+            nameof(DesignControlModel.DataGridHeaderBackground) => "#E2E8F0",
+            nameof(DesignControlModel.DataGridRowBackground) => "#FFFFFF",
+            nameof(DesignControlModel.DataGridAlternateRowBackground) => "#F8FAFC",
+            nameof(DesignControlModel.DataGridOuterBorderBrush) => "#60A5FA",
+            nameof(DesignControlModel.DataGridRowFontSize) => "13",
+            nameof(DesignControlModel.DataGridRowHeight) => "36",
+            nameof(DesignControlModel.DataGridHeaderHeight) => "46",
+            nameof(DesignControlModel.DataGridShowHeader) => "True",
+            nameof(DesignControlModel.ShowFilterRow) => "True",
+            nameof(DesignControlModel.FilterMode) => DesignControlModel.DataGridFilterModeContains,
+            nameof(DesignControlModel.ShowGroupPanel) => "True",
+            nameof(DesignControlModel.AllowGrouping) => "True",
+            nameof(DesignControlModel.ShowFooter) => "True",
+            nameof(DesignControlModel.DataGridGridLineBrush) => "#D7E2EE",
+            nameof(DesignControlModel.DataGridTextAlignment) => DesignControlModel.DataGridTextAlignmentLeft,
+            nameof(DesignControlModel.DataGridCellPadding) => "14",
+            _ => ""
+        };
     }
 
     private void RefreshFromPropertyGridEdit()
@@ -7216,11 +7761,17 @@ public partial class MainWindowViewModel : ObservableObject
     private void ConvertSelectedContainerLayout(string layoutMode)
     {
         if (SelectedControl is null || !CanHostChildren(SelectedControl))
+        {
+            WrapSelectionInLayoutContainer(layoutMode);
             return;
+        }
 
         var normalized = DesignerLayoutModes.NormalizeMode(layoutMode);
         if (DesignerLayoutModes.IsAbsolute(normalized))
+        {
+            SetActiveLayoutMode(DesignerLayoutModes.Absolute);
             return;
+        }
 
         BeginUndoBatch();
         try
@@ -7239,6 +7790,378 @@ public partial class MainWindowViewModel : ObservableObject
             StatusText = normalized == DesignerLayoutModes.Grid
                 ? "Контейнер переведен в Grid layout."
                 : "Контейнер переведен в StackPanel layout.";
+        }
+        finally
+        {
+            CommitUndoBatch();
+        }
+    }
+
+    [RelayCommand]
+    private void SetActiveLayoutToCanvas()
+    {
+        SetActiveLayoutMode(DesignerLayoutModes.Absolute);
+    }
+
+    [RelayCommand]
+    private void SetActiveLayoutToStack()
+    {
+        SetActiveLayoutMode(DesignerLayoutModes.Stack);
+    }
+
+    [RelayCommand]
+    private void SetActiveLayoutToGrid()
+    {
+        SetActiveLayoutMode(DesignerLayoutModes.Grid);
+    }
+
+    [RelayCommand]
+    private void ToggleActiveGridOverlay()
+    {
+        var host = GetActiveLayoutHost();
+        if (host is null)
+        {
+            IsDesignerGridVisible = !IsDesignerGridVisible;
+        }
+        else
+        {
+            host.ShowGridLines = !host.ShowGridLines;
+        }
+
+        RaiseActiveLayoutProperties();
+        NotifyDesignerStateChanged(trackHistory: false);
+    }
+
+    [RelayCommand]
+    private void AddGridRowDefinition()
+    {
+        MutateGridDefinitions(isRows: true, definitions =>
+        {
+            definitions.Add(LayoutDefinitionToken.Star(1));
+            return definitions;
+        });
+    }
+
+    [RelayCommand]
+    private void AddGridColumnDefinition()
+    {
+        MutateGridDefinitions(isRows: false, definitions =>
+        {
+            definitions.Add(LayoutDefinitionToken.Star(1));
+            return definitions;
+        });
+    }
+
+    [RelayCommand]
+    private void DeleteLayoutGridRow(LayoutDefinitionEditorItem? item)
+    {
+        if (item is null)
+            return;
+
+        MutateGridDefinitions(isRows: true, definitions =>
+        {
+            if (definitions.Count <= 1)
+                return definitions;
+            var index = Math.Clamp(item.Index, 0, definitions.Count - 1);
+            definitions.RemoveAt(index);
+            NormalizeChildrenAfterGridDefinitionDelete(isRows: true, index, definitions.Count);
+            return definitions;
+        });
+    }
+
+    [RelayCommand]
+    private void DeleteLayoutGridColumn(LayoutDefinitionEditorItem? item)
+    {
+        if (item is null)
+            return;
+
+        MutateGridDefinitions(isRows: false, definitions =>
+        {
+            if (definitions.Count <= 1)
+                return definitions;
+            var index = Math.Clamp(item.Index, 0, definitions.Count - 1);
+            definitions.RemoveAt(index);
+            NormalizeChildrenAfterGridDefinitionDelete(isRows: false, index, definitions.Count);
+            return definitions;
+        });
+    }
+
+    [RelayCommand]
+    private void MoveLayoutGridRowUp(LayoutDefinitionEditorItem? item)
+    {
+        MoveGridDefinition(isRows: true, item, direction: -1);
+    }
+
+    [RelayCommand]
+    private void MoveLayoutGridRowDown(LayoutDefinitionEditorItem? item)
+    {
+        MoveGridDefinition(isRows: true, item, direction: 1);
+    }
+
+    [RelayCommand]
+    private void MoveLayoutGridColumnUp(LayoutDefinitionEditorItem? item)
+    {
+        MoveGridDefinition(isRows: false, item, direction: -1);
+    }
+
+    [RelayCommand]
+    private void MoveLayoutGridColumnDown(LayoutDefinitionEditorItem? item)
+    {
+        MoveGridDefinition(isRows: false, item, direction: 1);
+    }
+
+    [RelayCommand]
+    private void MoveSelectedStackChildUp()
+    {
+        MoveSelectedStackChild(-1);
+    }
+
+    [RelayCommand]
+    private void MoveSelectedStackChildDown()
+    {
+        MoveSelectedStackChild(1);
+    }
+
+    private void MoveGridDefinition(bool isRows, LayoutDefinitionEditorItem? item, int direction)
+    {
+        if (item is null)
+            return;
+
+        MutateGridDefinitions(isRows, definitions =>
+        {
+            var index = Math.Clamp(item.Index, 0, definitions.Count - 1);
+            var targetIndex = index + direction;
+            if (targetIndex < 0 || targetIndex >= definitions.Count)
+                return definitions;
+
+            (definitions[index], definitions[targetIndex]) = (definitions[targetIndex], definitions[index]);
+            foreach (var child in GetActiveLayoutChildren())
+            {
+                if (isRows)
+                {
+                    if (child.GridRow == index)
+                        child.GridRow = targetIndex;
+                    else if (child.GridRow == targetIndex)
+                        child.GridRow = index;
+                }
+                else
+                {
+                    if (child.GridColumn == index)
+                        child.GridColumn = targetIndex;
+                    else if (child.GridColumn == targetIndex)
+                        child.GridColumn = index;
+                }
+            }
+
+            return definitions;
+        });
+    }
+
+    private void MutateGridDefinitions(bool isRows, Func<List<LayoutDefinitionToken>, List<LayoutDefinitionToken>> mutate)
+    {
+        if (!IsActiveLayoutGrid)
+            SetActiveLayoutMode(DesignerLayoutModes.Grid);
+
+        BeginUndoBatch();
+        try
+        {
+            var count = isRows ? GetActiveLayoutRows() : GetActiveLayoutColumns();
+            var raw = isRows ? GetActiveGridRowDefinitions() : GetActiveGridColumnDefinitions();
+            var definitions = ParseLayoutDefinitions(raw, count);
+            definitions = mutate(definitions);
+            ApplyActiveGridDefinitions(isRows, definitions);
+            RebuildLayoutDefinitionEditor();
+            RaiseActiveLayoutProperties();
+            NotifyDesignerStateChanged();
+        }
+        finally
+        {
+            CommitUndoBatch();
+        }
+    }
+
+    private void ApplyActiveGridDefinitions(bool isRows, IReadOnlyList<LayoutDefinitionToken> definitions)
+    {
+        var normalized = definitions.Count == 0
+            ? new List<LayoutDefinitionToken> { LayoutDefinitionToken.Star(1) }
+            : definitions.ToList();
+        var text = string.Join(",", normalized.Select(definition => definition.ToXaml()));
+        var host = GetActiveLayoutHost();
+
+        if (host is null)
+        {
+            if (isRows)
+            {
+                SurfaceLayoutRows = normalized.Count;
+                SurfaceGridRowDefinitions = text;
+            }
+            else
+            {
+                SurfaceLayoutColumns = normalized.Count;
+                SurfaceGridColumnDefinitions = text;
+            }
+
+            return;
+        }
+
+        if (isRows)
+        {
+            host.Rows = normalized.Count;
+            host.GridRowDefinitions = text;
+        }
+        else
+        {
+            host.Columns = normalized.Count;
+            host.GridColumnDefinitions = text;
+        }
+    }
+
+    private void NormalizeChildrenAfterGridDefinitionDelete(bool isRows, int removedIndex, int newCount)
+    {
+        foreach (var child in GetActiveLayoutChildren())
+        {
+            if (isRows)
+            {
+                if (child.GridRow > removedIndex)
+                    child.GridRow--;
+                child.GridRow = Math.Clamp(child.GridRow, 0, Math.Max(0, newCount - 1));
+                child.GridRowSpan = Math.Clamp(child.GridRowSpan <= 0 ? 1 : child.GridRowSpan, 1, Math.Max(1, newCount - child.GridRow));
+            }
+            else
+            {
+                if (child.GridColumn > removedIndex)
+                    child.GridColumn--;
+                child.GridColumn = Math.Clamp(child.GridColumn, 0, Math.Max(0, newCount - 1));
+                child.GridColumnSpan = Math.Clamp(child.GridColumnSpan <= 0 ? 1 : child.GridColumnSpan, 1, Math.Max(1, newCount - child.GridColumn));
+            }
+        }
+    }
+
+    private void MoveSelectedStackChild(int direction)
+    {
+        if (SelectedControl is null || GetLayoutModeForParent(SelectedControl.ParentId) != DesignerLayoutModes.Stack)
+            return;
+
+        BeginUndoBatch();
+        try
+        {
+            var siblings = GetChildControls(SelectedControl.ParentId)
+                .OrderBy(control => Math.Max(0, control.StackOrder))
+                .ThenBy(control => control.Y)
+                .ThenBy(control => control.X)
+                .ToList();
+            var index = siblings.FindIndex(control => control.Id == SelectedControl.Id);
+            var targetIndex = index + direction;
+            if (index < 0 || targetIndex < 0 || targetIndex >= siblings.Count)
+                return;
+
+            (siblings[index], siblings[targetIndex]) = (siblings[targetIndex], siblings[index]);
+            for (var order = 0; order < siblings.Count; order++)
+                siblings[order].StackOrder = order;
+
+            NotifyDesignerStateChanged();
+            RaiseActiveLayoutProperties();
+        }
+        finally
+        {
+            CommitUndoBatch();
+        }
+    }
+
+    private void NormalizeActiveStackOrders()
+    {
+        var children = GetActiveLayoutChildren()
+            .OrderBy(control => Math.Max(0, control.StackOrder))
+            .ThenBy(control => control.Y)
+            .ThenBy(control => control.X)
+            .ToList();
+
+        for (var index = 0; index < children.Count; index++)
+            children[index].StackOrder = index;
+    }
+
+    private void WrapSelectionInLayoutContainer(string layoutMode)
+    {
+        var normalized = DesignerLayoutModes.NormalizeMode(layoutMode);
+        if (DesignerLayoutModes.IsAbsolute(normalized) || !CanWrapSelectionInContainer())
+            return;
+
+        BeginUndoBatch();
+        try
+        {
+            var selectedRoots = GetVisibleEditableSelectedRootControls().ToList();
+            var commonParentId = NormalizeId(selectedRoots[0].ParentId);
+            var orderedChildren = selectedRoots
+                .OrderBy(control => normalized == DesignerLayoutModes.Stack && SurfaceLayoutOrientation == DesignerLayoutModes.Horizontal ? control.X : control.Y)
+                .ThenBy(control => control.X)
+                .ToList();
+
+            var padding = 10d;
+            var left = selectedRoots.Min(control => control.X);
+            var top = selectedRoots.Min(control => control.Y);
+            var right = selectedRoots.Max(control => control.X + control.Width);
+            var bottom = selectedRoots.Max(control => control.Y + control.Height);
+            var container = CreateDefaultControl(DesignerControlTypes.Border);
+            container.Id = Guid.NewGuid().ToString("N");
+            container.Name = GetUniqueControlName(normalized == DesignerLayoutModes.Grid ? "GridContainer" : "StackPanel");
+            container.ParentId = commonParentId;
+            container.Background = "Transparent";
+            container.BorderBrush = "#CBD5E1";
+            container.BorderThickness = 1;
+            container.CornerRadius = 8;
+            container.Padding = padding;
+            container.ChildLayoutMode = normalized;
+            container.LayoutOrientation = SurfaceLayoutOrientation;
+            container.LayoutSpacing = SurfaceLayoutSpacing;
+            container.X = Math.Max(0, left - padding);
+            container.Y = Math.Max(0, top - padding);
+            container.Width = Math.Max(80, (right - container.X) + padding);
+            container.Height = Math.Max(48, (bottom - container.Y) + padding);
+
+            if (normalized == DesignerLayoutModes.Grid)
+            {
+                container.Columns = Math.Min(Math.Max(1, orderedChildren.Count), 3);
+                container.Rows = Math.Max(1, (int)Math.Ceiling(orderedChildren.Count / (double)container.Columns));
+                container.GridColumnDefinitions = BuildGridDefinitions(container.Columns, "");
+                container.GridRowDefinitions = BuildGridDefinitions(container.Rows, "");
+                container.ShowGridLines = true;
+            }
+
+            Controls.Add(container);
+
+            for (var index = 0; index < orderedChildren.Count; index++)
+            {
+                var child = orderedChildren[index];
+                child.ParentId = container.Id;
+                child.X -= container.X;
+                child.Y -= container.Y;
+
+                if (normalized == DesignerLayoutModes.Stack)
+                {
+                    child.StackOrder = index;
+                    child.X = 0;
+                    child.Y = 0;
+                }
+                else if (normalized == DesignerLayoutModes.Grid)
+                {
+                    child.GridColumn = index % container.Columns;
+                    child.GridRow = index / container.Columns;
+                    child.GridColumnSpan = 1;
+                    child.GridRowSpan = 1;
+                    child.X = 0;
+                    child.Y = 0;
+                }
+
+                ClampControlToSurface(child);
+            }
+
+            SetSelection(new[] { container }, container);
+            RebuildControlTree();
+            RebuildLayoutDefinitionEditor();
+            NotifyDesignerStateChanged();
+            StatusText = normalized == DesignerLayoutModes.Grid
+                ? $"Wrapped selection in Grid container {container.Name}."
+                : $"Wrapped selection in StackPanel container {container.Name}.";
         }
         finally
         {
@@ -12028,11 +12951,68 @@ public partial class MainWindowViewModel : ObservableObject
             : "Vertical";
     }
 
+    private void RebuildLayoutDefinitionEditor()
+    {
+        if (_isSyncingLayoutDefinitionEditor)
+            return;
+
+        _isSyncingLayoutDefinitionEditor = true;
+        try
+        {
+            LayoutGridRows.Clear();
+            LayoutGridColumns.Clear();
+
+            if (IsActiveLayoutGrid)
+            {
+                foreach (var (definition, index) in ParseLayoutDefinitions(GetActiveGridRowDefinitions(), GetActiveLayoutRows()).Select((definition, index) => (definition, index)))
+                    LayoutGridRows.Add(new LayoutDefinitionEditorItem(index, definition.Kind, definition.Value, ApplyLayoutDefinitionEditorToActiveGrid));
+
+                foreach (var (definition, index) in ParseLayoutDefinitions(GetActiveGridColumnDefinitions(), GetActiveLayoutColumns()).Select((definition, index) => (definition, index)))
+                    LayoutGridColumns.Add(new LayoutDefinitionEditorItem(index, definition.Kind, definition.Value, ApplyLayoutDefinitionEditorToActiveGrid));
+
+                SelectedLayoutGridRow = LayoutGridRows.FirstOrDefault();
+                SelectedLayoutGridColumn = LayoutGridColumns.FirstOrDefault();
+            }
+            else
+            {
+                SelectedLayoutGridRow = null;
+                SelectedLayoutGridColumn = null;
+            }
+        }
+        finally
+        {
+            _isSyncingLayoutDefinitionEditor = false;
+        }
+
+        RaiseActiveLayoutProperties();
+    }
+
+    private void ApplyLayoutDefinitionEditorToActiveGrid()
+    {
+        if (_isSyncingLayoutDefinitionEditor || !IsActiveLayoutGrid)
+            return;
+
+        BeginUndoBatch();
+        try
+        {
+            _isSyncingLayoutDefinitionEditor = true;
+            ApplyActiveGridDefinitions(isRows: true, LayoutGridRows.Select(LayoutDefinitionToken.FromEditor).ToList());
+            ApplyActiveGridDefinitions(isRows: false, LayoutGridColumns.Select(LayoutDefinitionToken.FromEditor).ToList());
+            _isSyncingLayoutDefinitionEditor = false;
+            RaiseActiveLayoutProperties();
+            NotifyDesignerStateChanged();
+        }
+        finally
+        {
+            _isSyncingLayoutDefinitionEditor = false;
+            CommitUndoBatch();
+        }
+    }
+
     private static string BuildGridDefinitions(int count, string? explicitDefinitions)
     {
-        var parts = (explicitDefinitions ?? "")
-            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Where(part => !string.IsNullOrWhiteSpace(part))
+        var parts = ParseLayoutDefinitions(explicitDefinitions, count)
+            .Select(definition => definition.ToXaml())
             .ToList();
 
         if (parts.Count == 0)
@@ -12049,6 +13029,63 @@ public partial class MainWindowViewModel : ObservableObject
             .ToList();
 
         return parts.Count > 0 ? parts.Count : Math.Max(1, count);
+    }
+
+    private static List<LayoutDefinitionToken> ParseLayoutDefinitions(string? explicitDefinitions, int fallbackCount)
+    {
+        var parts = (explicitDefinitions ?? "")
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(part => !string.IsNullOrWhiteSpace(part))
+            .Select(LayoutDefinitionToken.Parse)
+            .ToList();
+
+        if (parts.Count == 0)
+            parts = Enumerable.Repeat(LayoutDefinitionToken.Star(1), Math.Max(1, fallbackCount)).ToList();
+
+        return parts;
+    }
+
+    private readonly record struct LayoutDefinitionToken(string Kind, double Value)
+    {
+        public static LayoutDefinitionToken Star(double value) => new("Star", Math.Max(1, value));
+
+        public static LayoutDefinitionToken FromEditor(LayoutDefinitionEditorItem item)
+        {
+            return new LayoutDefinitionToken(item.SizeKind, item.Value);
+        }
+
+        public static LayoutDefinitionToken Parse(string value)
+        {
+            var normalized = value.Trim();
+            if (normalized.Equals("Auto", StringComparison.OrdinalIgnoreCase))
+                return new LayoutDefinitionToken("Auto", 1);
+
+            if (normalized.EndsWith("*", StringComparison.Ordinal))
+            {
+                var starValue = normalized[..^1];
+                return new LayoutDefinitionToken(
+                    "Star",
+                    string.IsNullOrWhiteSpace(starValue) || !double.TryParse(starValue, NumberStyles.Any, CultureInfo.InvariantCulture, out var parsed)
+                        ? 1
+                        : Math.Max(1, parsed));
+            }
+
+            return double.TryParse(normalized, NumberStyles.Any, CultureInfo.InvariantCulture, out var fixedValue)
+                ? new LayoutDefinitionToken("Fixed", Math.Max(1, fixedValue))
+                : Star(1);
+        }
+
+        public string ToXaml()
+        {
+            return Kind switch
+            {
+                "Auto" => "Auto",
+                "Fixed" => Math.Max(1, Value).ToString("0.##", CultureInfo.InvariantCulture),
+                _ => Math.Abs(Value - 1) < 0.001
+                    ? "*"
+                    : $"{Math.Max(1, Value).ToString("0.##", CultureInfo.InvariantCulture)}*"
+            };
+        }
     }
 
     private static string AlignmentAttributes(DesignControlModel control)
@@ -14187,6 +15224,11 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(SelectedGridColumnEditorTitle));
         OnPropertyChanged(nameof(SelectedGridColumnEditorSummary));
         OnPropertyChanged(nameof(SelectedGridColumnCompactSummary));
+        OnPropertyChanged(nameof(CanShowDataGridDataSetup));
+        OnPropertyChanged(nameof(SelectedDataGridBindingWarning));
+        OnPropertyChanged(nameof(HasSelectedDataGridBindingWarning));
+        OnPropertyChanged(nameof(SelectedDataGridColumnCountText));
+        OnPropertyChanged(nameof(DataGridDataSetupSummary));
     }
 
     private void RaiseInteractionDesignerProperties()
@@ -14587,6 +15629,11 @@ public partial class MainWindowViewModel : ObservableObject
                 OnPropertyChanged(nameof(HasDescriptorCustomProperties));
                 RaiseBindingEditorProperties();
                 RaiseInteractionDesignerProperties();
+                if (IsLayoutDefinitionProperty(e.PropertyName))
+                {
+                    RebuildLayoutDefinitionEditor();
+                    RaiseActiveLayoutProperties();
+                }
             }
         }
 
@@ -14740,6 +15787,24 @@ public partial class MainWindowViewModel : ObservableObject
         NotifyDesignerStateChanged();
     }
 
+    private static bool IsLayoutDefinitionProperty(string? propertyName)
+    {
+        return propertyName is nameof(DesignControlModel.ChildLayoutMode)
+            or nameof(DesignControlModel.LayoutOrientation)
+            or nameof(DesignControlModel.LayoutSpacing)
+            or nameof(DesignControlModel.Columns)
+            or nameof(DesignControlModel.Rows)
+            or nameof(DesignControlModel.GridColumnDefinitions)
+            or nameof(DesignControlModel.GridRowDefinitions)
+            or nameof(DesignControlModel.ShowGridLines)
+            or nameof(DesignControlModel.ParentId)
+            or nameof(DesignControlModel.GridRow)
+            or nameof(DesignControlModel.GridColumn)
+            or nameof(DesignControlModel.GridRowSpan)
+            or nameof(DesignControlModel.GridColumnSpan)
+            or nameof(DesignControlModel.StackOrder);
+    }
+
     partial void OnSelectedInteractionChanged(InteractionModel? value)
     {
         if (value is not null)
@@ -14805,6 +15870,8 @@ public partial class MainWindowViewModel : ObservableObject
         RaiseBindingEditorProperties();
         RaiseInteractionDesignerProperties();
         RaiseSelectionProperties();
+        RebuildLayoutDefinitionEditor();
+        RaiseActiveLayoutProperties();
         NotifyDesignerStateChanged(trackHistory: false);
     }
 
@@ -15040,6 +16107,8 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(CanEditSelectedAnchors));
         OnPropertyChanged(nameof(IsSelectedControlManagedByLayout));
         RaisePreviewProperties();
+        RebuildLayoutDefinitionEditor();
+        RaiseActiveLayoutProperties();
         NotifyDesignerStateChanged();
     }
 
@@ -15052,6 +16121,7 @@ public partial class MainWindowViewModel : ObservableObject
             return;
         }
 
+        RaiseActiveLayoutProperties();
         NotifyDesignerStateChanged();
     }
 
@@ -15063,6 +16133,7 @@ public partial class MainWindowViewModel : ObservableObject
             return;
         }
 
+        RaiseActiveLayoutProperties();
         NotifyDesignerStateChanged();
     }
 
@@ -15074,6 +16145,8 @@ public partial class MainWindowViewModel : ObservableObject
             return;
         }
 
+        RebuildLayoutDefinitionEditor();
+        RaiseActiveLayoutProperties();
         NotifyDesignerStateChanged();
     }
 
@@ -15085,16 +16158,22 @@ public partial class MainWindowViewModel : ObservableObject
             return;
         }
 
+        RebuildLayoutDefinitionEditor();
+        RaiseActiveLayoutProperties();
         NotifyDesignerStateChanged();
     }
 
     partial void OnSurfaceGridColumnDefinitionsChanged(string value)
     {
+        RebuildLayoutDefinitionEditor();
+        RaiseActiveLayoutProperties();
         NotifyDesignerStateChanged();
     }
 
     partial void OnSurfaceGridRowDefinitionsChanged(string value)
     {
+        RebuildLayoutDefinitionEditor();
+        RaiseActiveLayoutProperties();
         NotifyDesignerStateChanged();
     }
 

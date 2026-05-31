@@ -12,9 +12,21 @@ public enum PropertyGridEditorKind
     Bool,
     Enum,
     Color,
+    Thickness,
+    Size,
     BindingSource,
+    ColumnCollection,
+    Interaction,
+    Asset,
     Action,
     ReadOnly
+}
+
+public enum PropertyGridValidationState
+{
+    None,
+    Warning,
+    Error
 }
 
 public sealed class PropertyGridRowViewModel : ObservableObject
@@ -27,6 +39,7 @@ public sealed class PropertyGridRowViewModel : ObservableObject
     private bool _isFavorite;
     private bool _isApplying;
     private string _validationMessage = "";
+    private PropertyGridValidationState _validationState;
 
     public PropertyGridRowViewModel(
         string key,
@@ -41,7 +54,9 @@ public sealed class PropertyGridRowViewModel : ObservableObject
         bool isFavorite = false,
         bool isAdvanced = false,
         bool isReadOnly = false,
-        string actionText = "Edit...")
+        string actionText = "Edit...",
+        string defaultValue = "",
+        string aliases = "")
     {
         Key = key;
         Label = label;
@@ -56,6 +71,9 @@ public sealed class PropertyGridRowViewModel : ObservableObject
         IsAdvanced = isAdvanced;
         IsReadOnly = isReadOnly;
         ActionText = actionText;
+        DefaultValue = defaultValue ?? string.Empty;
+        Aliases = aliases ?? string.Empty;
+        RefreshModifiedState();
     }
 
     public string Key { get; }
@@ -69,6 +87,10 @@ public sealed class PropertyGridRowViewModel : ObservableObject
     public string Description { get; }
 
     public string ActionText { get; }
+
+    public string DefaultValue { get; }
+
+    public string Aliases { get; }
 
     public bool IsAdvanced { get; }
 
@@ -86,9 +108,22 @@ public sealed class PropertyGridRowViewModel : ObservableObject
 
     public bool IsColorEditor => Editor == PropertyGridEditorKind.Color;
 
+    public bool IsThicknessEditor => Editor == PropertyGridEditorKind.Thickness;
+
+    public bool IsSizeEditor => Editor == PropertyGridEditorKind.Size;
+
     public bool IsBindingSourceEditor => Editor == PropertyGridEditorKind.BindingSource;
 
-    public bool IsActionEditor => Editor == PropertyGridEditorKind.Action;
+    public bool IsColumnCollectionEditor => Editor == PropertyGridEditorKind.ColumnCollection;
+
+    public bool IsInteractionEditor => Editor == PropertyGridEditorKind.Interaction;
+
+    public bool IsAssetEditor => Editor == PropertyGridEditorKind.Asset;
+
+    public bool IsActionEditor => Editor == PropertyGridEditorKind.Action
+        || Editor == PropertyGridEditorKind.ColumnCollection
+        || Editor == PropertyGridEditorKind.Interaction
+        || Editor == PropertyGridEditorKind.Asset;
 
     public bool IsReadOnlyEditor => Editor == PropertyGridEditorKind.ReadOnly;
 
@@ -96,12 +131,32 @@ public sealed class PropertyGridRowViewModel : ObservableObject
 
     public string FavoriteGlyph => IsFavorite ? "\u2605" : "\u2606";
 
+    public bool HasDefaultValue => !string.IsNullOrWhiteSpace(DefaultValue);
+
+    public bool IsModified => HasDefaultValue && !ValueEqualsDefault();
+
+    public bool CanResetToDefault => HasDefaultValue && IsModified && !IsReadOnly;
+
+    public string ModifiedGlyph => IsModified ? "\u25CF " : "";
+
+    public string DefaultTooltip => HasDefaultValue ? $"Default: {DefaultValue}" : "";
+
     public bool HasValidationError => !string.IsNullOrWhiteSpace(ValidationMessage);
+
+    public bool HasValidationWarning => ValidationState == PropertyGridValidationState.Warning;
+
+    public bool HasValidationIssue => ValidationState != PropertyGridValidationState.None;
 
     public string Value
     {
         get => _value;
-        set => SetProperty(ref _value, value ?? string.Empty);
+        set
+        {
+            if (!SetProperty(ref _value, value ?? string.Empty))
+                return;
+
+            RefreshModifiedState();
+        }
     }
 
     public bool BoolValue
@@ -149,7 +204,25 @@ public sealed class PropertyGridRowViewModel : ObservableObject
             if (!SetProperty(ref _validationMessage, value ?? string.Empty))
                 return;
 
+            if (string.IsNullOrWhiteSpace(_validationMessage))
+                ValidationState = PropertyGridValidationState.None;
+            else if (ValidationState == PropertyGridValidationState.None)
+                ValidationState = PropertyGridValidationState.Error;
+
             OnPropertyChanged(nameof(HasValidationError));
+        }
+    }
+
+    public PropertyGridValidationState ValidationState
+    {
+        get => _validationState;
+        set
+        {
+            if (!SetProperty(ref _validationState, value))
+                return;
+
+            OnPropertyChanged(nameof(HasValidationWarning));
+            OnPropertyChanged(nameof(HasValidationIssue));
         }
     }
 
@@ -177,6 +250,30 @@ public sealed class PropertyGridRowViewModel : ObservableObject
             return;
 
         _applyValue?.Invoke(this, Value);
+        RefreshModifiedState();
+    }
+
+    public void ResetToDefault()
+    {
+        if (!CanResetToDefault)
+            return;
+
+        if (IsBoolEditor && bool.TryParse(DefaultValue, out var boolValue))
+        {
+            _isApplying = true;
+            BoolValue = boolValue;
+            _isApplying = false;
+            _applyBool?.Invoke(this, boolValue);
+            Value = boolValue ? "True" : "False";
+        }
+        else
+        {
+            Value = DefaultValue;
+            _applyValue?.Invoke(this, DefaultValue);
+            RefreshSelectedOption();
+        }
+
+        RefreshModifiedState();
     }
 
     public void Refresh(string value, bool boolValue, bool isFavorite)
@@ -186,7 +283,50 @@ public sealed class PropertyGridRowViewModel : ObservableObject
         BoolValue = boolValue;
         IsFavorite = isFavorite;
         RefreshSelectedOption();
+        RefreshModifiedState();
         _isApplying = false;
+    }
+
+    public bool MatchesSearch(string query)
+    {
+        if (string.IsNullOrWhiteSpace(query))
+            return true;
+
+        return Contains(Label, query)
+            || Contains(Key, query)
+            || Contains(Category, query)
+            || Contains(Description, query)
+            || Contains(Editor.ToString(), query)
+            || Contains(ActionText, query)
+            || Contains(Aliases, query);
+    }
+
+    private static bool Contains(string? value, string query)
+    {
+        return value?.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0;
+    }
+
+    private bool ValueEqualsDefault()
+    {
+        if (!HasDefaultValue)
+            return true;
+
+        if (IsNumberEditor
+            && double.TryParse(Value, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var valueNumber)
+            && double.TryParse(DefaultValue, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var defaultNumber))
+        {
+            return Math.Abs(valueNumber - defaultNumber) < 0.0001;
+        }
+
+        return string.Equals(Value, DefaultValue, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void RefreshModifiedState()
+    {
+        OnPropertyChanged(nameof(IsModified));
+        OnPropertyChanged(nameof(CanResetToDefault));
+        OnPropertyChanged(nameof(ModifiedGlyph));
+        OnPropertyChanged(nameof(DefaultTooltip));
     }
 
     private void RefreshSelectedOption()

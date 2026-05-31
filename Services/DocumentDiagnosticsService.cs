@@ -658,6 +658,20 @@ public sealed class DocumentDiagnosticsService
                 });
             }
 
+            if (parentLayoutMode == DesignerLayoutModes.Grid && (Math.Abs(control.X) > 0.01 || Math.Abs(control.Y) > 0.01))
+            {
+                diagnostics.Add(new DocumentDiagnosticModel
+                {
+                    Severity = DocumentDiagnosticSeverity.Info,
+                    Source = control.NameOrFallback(),
+                    Category = "Layout",
+                    Message = "Canvas.Left/Top are ignored inside Grid layout.",
+                    Recommendation = "Use Grid.Row, Grid.Column, spans, Margin and Alignment instead of X/Y for this child.",
+                    RelatedControlId = control.Id,
+                    RelatedControlName = control.Name
+                });
+            }
+
             if (_registry.GetRequiredControl(control.Type).CanHostChildren
                 && !controls.Any(child => string.Equals(child.ParentId, control.Id, StringComparison.OrdinalIgnoreCase))
                 && GetEffectiveChildLayoutMode(control) is DesignerLayoutModes.Grid or DesignerLayoutModes.Stack)
@@ -671,6 +685,58 @@ public sealed class DocumentDiagnosticsService
                     Recommendation = "Drop controls into this container or switch its Children Layout back to Canvas.",
                     RelatedControlId = control.Id,
                     RelatedControlName = control.Name
+                });
+            }
+        }
+
+        foreach (var group in controls.GroupBy(control => string.IsNullOrWhiteSpace(control.ParentId) ? "" : control.ParentId, StringComparer.OrdinalIgnoreCase))
+        {
+            var parent = string.IsNullOrWhiteSpace(group.Key) || !byId.TryGetValue(group.Key, out var foundParent)
+                ? null
+                : foundParent;
+            var parentLayoutMode = parent is null
+                ? DesignerLayoutModes.NormalizeMode(surfaceLayoutMode)
+                : GetEffectiveChildLayoutMode(parent);
+
+            if (parentLayoutMode != DesignerLayoutModes.Stack)
+                continue;
+
+            var stackChildren = group.ToList();
+            var duplicateOrders = stackChildren
+                .GroupBy(control => Math.Max(0, control.StackOrder))
+                .Where(orderGroup => orderGroup.Count() > 1)
+                .ToList();
+
+            foreach (var duplicate in duplicateOrders)
+            {
+                diagnostics.Add(new DocumentDiagnosticModel
+                {
+                    Severity = DocumentDiagnosticSeverity.Warning,
+                    Source = parent?.NameOrFallback() ?? "Root form",
+                    Category = "Layout",
+                    Message = $"StackPanel has duplicate child order {duplicate.Key}.",
+                    Recommendation = "Use Move Up/Move Down or normalize StackPanel.Order values.",
+                    RelatedControlId = parent?.Id ?? "",
+                    RelatedControlName = parent?.Name ?? ""
+                });
+            }
+
+            var normalizedOrders = stackChildren
+                .Select(control => Math.Max(0, control.StackOrder))
+                .Distinct()
+                .OrderBy(order => order)
+                .ToList();
+            if (normalizedOrders.Count > 0 && normalizedOrders[^1] + 1 != normalizedOrders.Count)
+            {
+                diagnostics.Add(new DocumentDiagnosticModel
+                {
+                    Severity = DocumentDiagnosticSeverity.Info,
+                    Source = parent?.NameOrFallback() ?? "Root form",
+                    Category = "Layout",
+                    Message = "StackPanel child order has gaps.",
+                    Recommendation = "Move a child up/down once to normalize StackPanel.Order values.",
+                    RelatedControlId = parent?.Id ?? "",
+                    RelatedControlName = parent?.Name ?? ""
                 });
             }
         }

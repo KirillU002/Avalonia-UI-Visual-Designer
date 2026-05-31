@@ -145,6 +145,7 @@ public partial class MainWindow : Window
     private bool _isCloseConfirmed;
     private bool _suppressRecoverySessionChangeHandling;
     private string _lastObservedDocumentSessionId = string.Empty;
+    private int _responsiveShellBreakpoint = -1;
 
     /// <summary>
     /// Подключает обработчики окна и запускает первичную синхронизацию предпросмотра.
@@ -179,6 +180,7 @@ public partial class MainWindow : Window
         {
             if (DataContext is MainWindowViewModel viewModel && viewModel.IsImmersiveDesignerMode)
                 RefreshPreviewMetricsAndSurface();
+            ApplyResponsiveShellPreset(Bounds.Width);
             ScheduleSettingsSave();
         };
 
@@ -196,6 +198,30 @@ public partial class MainWindow : Window
     }
 
     private MainWindowViewModel VM => (MainWindowViewModel)DataContext!;
+
+    private void ApplyResponsiveShellPreset(double width)
+    {
+        if (_isApplyingAppSettings || DataContext is not MainWindowViewModel viewModel)
+            return;
+
+        var breakpoint = width < 1366 ? 2 : width < 1600 ? 1 : 0;
+        if (breakpoint == _responsiveShellBreakpoint)
+            return;
+
+        _responsiveShellBreakpoint = breakpoint;
+
+        if (breakpoint >= 1)
+        {
+            viewModel.IsBottomDockOpen = false;
+            viewModel.RightDockPanelWidth = Math.Min(viewModel.RightDockPanelWidth, 320);
+        }
+
+        if (breakpoint >= 2)
+        {
+            viewModel.IsLeftDockOpen = false;
+            viewModel.IsRightDockOpen = false;
+        }
+    }
 
     private IEnumerable<DesignControlModel> GetActiveChildControls(string? parentId)
     {
@@ -2271,7 +2297,7 @@ public partial class MainWindow : Window
         {
             ClearGuideOverlay();
             var position = GetDesignCanvasPosition(e);
-            RenderContainerHighlight(VM.FindDeepestContainerAt(position.X, position.Y));
+            RenderLayoutDropHint(VM.FindDeepestContainerAt(position.X, position.Y), position);
         }
         else
         {
@@ -2295,8 +2321,7 @@ public partial class MainWindow : Window
         // создаем новый контрол. Благодаря этому drag работает и для вложенных Border/Grid.
         var position = GetDesignCanvasPosition(e);
         var targetContainer = VM.FindDeepestContainerAt(position.X, position.Y);
-        var localPosition = VM.ToLocalPosition(targetContainer?.Id, position.X, position.Y);
-        VM.CreateControl(type, localPosition.X, localPosition.Y, targetContainer?.Id, bypassGridSnap: IsSnapBypassed(e.KeyModifiers));
+        VM.CreateControl(type, position.X, position.Y, targetContainer?.Id, bypassGridSnap: IsSnapBypassed(e.KeyModifiers));
         ClearGuideOverlay();
     }
 
@@ -2555,7 +2580,16 @@ public partial class MainWindow : Window
             });
         }
 
-        RenderLayoutGridOverlay(0, 0, surfaceWidth, surfaceHeight, VM.SurfaceLayoutMode, VM.SurfaceLayoutColumns, VM.SurfaceLayoutRows);
+        RenderLayoutGridOverlay(
+            0,
+            0,
+            surfaceWidth,
+            surfaceHeight,
+            VM.SurfaceLayoutMode,
+            VM.SurfaceLayoutColumns,
+            VM.SurfaceLayoutRows,
+            VM.SurfaceGridColumnDefinitions,
+            VM.SurfaceGridRowDefinitions);
 
         foreach (var container in VM.Controls.Where(control => control.ShowGridLines && VM.GetLayoutModeForControl(control) == DesignerLayoutModes.Grid))
         {
@@ -2572,7 +2606,9 @@ public partial class MainWindow : Window
                 Math.Max(1, wrapper.Height),
                 VM.GetLayoutModeForControl(container),
                 container.Columns,
-                container.Rows);
+                container.Rows,
+                container.GridColumnDefinitions,
+                container.GridRowDefinitions);
         }
     }
 
@@ -2583,7 +2619,9 @@ public partial class MainWindow : Window
         double height,
         string layoutMode,
         int columns,
-        int rows)
+        int rows,
+        string? columnDefinitions,
+        string? rowDefinitions)
     {
         if (DesignerLayoutModes.NormalizeMode(layoutMode) != DesignerLayoutModes.Grid)
             return;
@@ -2591,6 +2629,9 @@ public partial class MainWindow : Window
         var normalizedColumns = Math.Max(1, columns);
         var normalizedRows = Math.Max(1, rows);
         var brush = new SolidColorBrush(Color.FromArgb(150, 37, 99, 235));
+        var labelBrush = new SolidColorBrush(Color.Parse("#1D4ED8"));
+        var columnLabels = BuildLayoutDefinitionLabels(columnDefinitions, normalizedColumns);
+        var rowLabels = BuildLayoutDefinitionLabels(rowDefinitions, normalizedRows);
 
         for (var column = 1; column < normalizedColumns; column++)
         {
@@ -2606,6 +2647,17 @@ public partial class MainWindow : Window
             });
         }
 
+        for (var column = 0; column < normalizedColumns; column++)
+        {
+            var x = offsetX + (width / normalizedColumns * column);
+            AddLayoutGridBadge(
+                GridOverlayCanvas,
+                $"{column}: {columnLabels[column]}",
+                x + 4,
+                offsetY + 4,
+                labelBrush);
+        }
+
         for (var row = 1; row < normalizedRows; row++)
         {
             var y = offsetY + (height / normalizedRows * row);
@@ -2619,6 +2671,57 @@ public partial class MainWindow : Window
                 IsHitTestVisible = false
             });
         }
+
+        for (var row = 0; row < normalizedRows; row++)
+        {
+            var y = offsetY + (height / normalizedRows * row);
+            AddLayoutGridBadge(
+                GridOverlayCanvas,
+                $"{row}: {rowLabels[row]}",
+                offsetX + 4,
+                y + 24,
+                labelBrush);
+        }
+    }
+
+    private static IReadOnlyList<string> BuildLayoutDefinitionLabels(string? definitions, int count)
+    {
+        var labels = (definitions ?? "")
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(item => !string.IsNullOrWhiteSpace(item))
+            .ToList();
+
+        if (labels.Count == 0)
+            labels = Enumerable.Repeat("*", Math.Max(1, count)).ToList();
+
+        while (labels.Count < count)
+            labels.Add("*");
+
+        return labels.Take(Math.Max(1, count)).ToList();
+    }
+
+    private static void AddLayoutGridBadge(Canvas host, string text, double left, double top, IBrush foreground)
+    {
+        var badge = new Border
+        {
+            Background = new SolidColorBrush(Color.FromArgb(220, 239, 246, 255)),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(210, 147, 197, 253)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(999),
+            Padding = new Thickness(5, 1),
+            Child = new TextBlock
+            {
+                Text = text,
+                FontSize = 10,
+                FontWeight = FontWeight.SemiBold,
+                Foreground = foreground
+            },
+            IsHitTestVisible = false
+        };
+
+        Canvas.SetLeft(badge, left);
+        Canvas.SetTop(badge, top);
+        host.Children.Add(badge);
     }
 
     private void ClearGuideOverlay()
@@ -2644,6 +2747,142 @@ public partial class MainWindow : Window
             return;
 
         RenderSelectionBounds(selectedRoots, SelectionOverlayCanvas, includeToolbar: VM.IsSelectionToolbarEnabled);
+    }
+
+    private void RenderLayoutDropHint(DesignControlModel? container, Point pointerPosition)
+    {
+        var host = container;
+        var layoutMode = host is null
+            ? DesignerLayoutModes.NormalizeMode(VM.SurfaceLayoutMode)
+            : VM.GetLayoutModeForControl(host);
+
+        if (host is null && DesignerLayoutModes.IsAbsolute(layoutMode))
+            return;
+
+        if (host is not null && DesignerLayoutModes.IsAbsolute(layoutMode))
+        {
+            RenderContainerHighlight(host);
+            return;
+        }
+
+        var bounds = host is null
+            ? new Rect(0, 0, VM.PreviewFormWidth, VM.PreviewFormHeight)
+            : GetAbsoluteBounds(host);
+
+        if (layoutMode == DesignerLayoutModes.Grid)
+        {
+            RenderGridCellDropHint(host, bounds, pointerPosition);
+            return;
+        }
+
+        if (layoutMode == DesignerLayoutModes.Stack)
+        {
+            RenderStackInsertDropHint(host, bounds, pointerPosition);
+            return;
+        }
+
+        if (host is not null)
+            RenderContainerHighlight(host);
+    }
+
+    private void RenderGridCellDropHint(DesignControlModel? host, Rect bounds, Point pointerPosition)
+    {
+        var columns = Math.Max(1, host?.Columns ?? VM.SurfaceLayoutColumns);
+        var rows = Math.Max(1, host?.Rows ?? VM.SurfaceLayoutRows);
+        var cellWidth = Math.Max(1, bounds.Width / columns);
+        var cellHeight = Math.Max(1, bounds.Height / rows);
+        var column = Math.Clamp((int)Math.Floor((pointerPosition.X - bounds.X) / cellWidth), 0, columns - 1);
+        var row = Math.Clamp((int)Math.Floor((pointerPosition.Y - bounds.Y) / cellHeight), 0, rows - 1);
+        var rect = new Rectangle
+        {
+            Width = cellWidth,
+            Height = cellHeight,
+            Stroke = new SolidColorBrush(Color.Parse("#F59E0B")),
+            StrokeThickness = 2,
+            Fill = new SolidColorBrush(Color.FromArgb(32, 245, 158, 11)),
+            IsHitTestVisible = false
+        };
+
+        Canvas.SetLeft(rect, bounds.X + column * cellWidth);
+        Canvas.SetTop(rect, bounds.Y + row * cellHeight);
+        GuideOverlayCanvas.Children.Add(rect);
+
+        AddLayoutDropLabel(
+            $"Grid cell {row},{column}",
+            Math.Clamp(bounds.X + column * cellWidth + 8, 0, Math.Max(0, VM.PreviewFormWidth - 150)),
+            Math.Max(0, bounds.Y + row * cellHeight - 24));
+    }
+
+    private void RenderStackInsertDropHint(DesignControlModel? host, Rect bounds, Point pointerPosition)
+    {
+        var orientation = DesignerLayoutModes.NormalizeOrientation(host?.LayoutOrientation ?? VM.SurfaceLayoutOrientation);
+        var children = VM.GetChildControls(host?.Id)
+            .Select(GetAbsoluteBounds)
+            .OrderBy(bound => orientation == DesignerLayoutModes.Horizontal ? bound.X : bound.Y)
+            .ToList();
+        var insertion = children.Count;
+        var probe = orientation == DesignerLayoutModes.Horizontal ? pointerPosition.X : pointerPosition.Y;
+
+        for (var index = 0; index < children.Count; index++)
+        {
+            var midpoint = orientation == DesignerLayoutModes.Horizontal
+                ? children[index].X + children[index].Width / 2
+                : children[index].Y + children[index].Height / 2;
+            if (probe < midpoint)
+            {
+                insertion = index;
+                break;
+            }
+        }
+
+        var coordinate = insertion >= children.Count
+            ? (children.Count == 0
+                ? (orientation == DesignerLayoutModes.Horizontal ? bounds.X + 10 : bounds.Y + 10)
+                : (orientation == DesignerLayoutModes.Horizontal ? children[^1].Right + 4 : children[^1].Bottom + 4))
+            : (orientation == DesignerLayoutModes.Horizontal ? children[insertion].X - 4 : children[insertion].Y - 4);
+
+        var line = new Line
+        {
+            StartPoint = orientation == DesignerLayoutModes.Horizontal
+                ? new Point(coordinate, bounds.Y + 4)
+                : new Point(bounds.X + 4, coordinate),
+            EndPoint = orientation == DesignerLayoutModes.Horizontal
+                ? new Point(coordinate, bounds.Bottom - 4)
+                : new Point(bounds.Right - 4, coordinate),
+            Stroke = new SolidColorBrush(Color.Parse("#F59E0B")),
+            StrokeThickness = 3,
+            IsHitTestVisible = false
+        };
+
+        GuideOverlayCanvas.Children.Add(line);
+        AddLayoutDropLabel(
+            children.Count == 0 ? "Drop controls here" : $"Insert at {insertion}",
+            Math.Clamp(bounds.X + 8, 0, Math.Max(0, VM.PreviewFormWidth - 150)),
+            Math.Max(0, bounds.Y - 24));
+    }
+
+    private void AddLayoutDropLabel(string text, double left, double top)
+    {
+        var label = new Border
+        {
+            Background = new SolidColorBrush(Color.Parse("#FFFBEB")),
+            BorderBrush = new SolidColorBrush(Color.Parse("#F59E0B")),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(999),
+            Padding = new Thickness(8, 3),
+            Child = new TextBlock
+            {
+                Text = text,
+                FontSize = 11,
+                FontWeight = FontWeight.SemiBold,
+                Foreground = new SolidColorBrush(Color.Parse("#92400E"))
+            },
+            IsHitTestVisible = false
+        };
+
+        Canvas.SetLeft(label, left);
+        Canvas.SetTop(label, top);
+        GuideOverlayCanvas.Children.Add(label);
     }
 
     private void RenderContainerHighlight(DesignControlModel? container)
@@ -6784,13 +7023,6 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (!VM.IsAbsoluteLayoutParent(model.ParentId))
-        {
-            VM.SelectSingleControl(model);
-            e.Handled = true;
-            return;
-        }
-
         _isDragging = true;
         _dragGestureSessionId = VM.DocumentSessionId;
 
@@ -6848,6 +7080,9 @@ public partial class MainWindow : Window
             if (!_dragRootStartPositions.TryGetValue(root.Id, out var start))
                 continue;
 
+            if (!VM.IsAbsoluteLayoutParent(root.ParentId))
+                continue;
+
             root.X = ApplyGridSnap(start.X + dx, keyModifiers);
             root.Y = ApplyGridSnap(start.Y + dy, keyModifiers);
             VM.ClampControlToSurface(root);
@@ -6862,7 +7097,12 @@ public partial class MainWindow : Window
         if (_dragSelectionRoots.Count == 1)
         {
             var active = _dragSelectionRoots[0];
-            if (ShouldUseControlSnap(keyModifiers))
+            if (!VM.IsAbsoluteLayoutParent(active.ParentId))
+            {
+                ClearGuideOverlay();
+                RenderLayoutDropHint(VM.GetControl(active.ParentId), position);
+            }
+            else if (ShouldUseControlSnap(keyModifiers))
                 UpdateDragGuides(active);
             else
                 ClearGuideOverlay();
@@ -6940,9 +7180,12 @@ public partial class MainWindow : Window
         if (_dragSelectionRoots.Count == 1)
         {
             var draggedRoot = _dragSelectionRoots[0];
-            var absolutePosition = VM.GetAbsolutePosition(draggedRoot);
-            var probeX = absolutePosition.X + (draggedRoot.Width / 2);
-            var probeY = absolutePosition.Y + (draggedRoot.Height / 2);
+            var releasePosition = GetDesignCanvasPosition(e);
+            var absolutePosition = VM.IsAbsoluteLayoutParent(draggedRoot.ParentId)
+                ? VM.GetAbsolutePosition(draggedRoot)
+                : (X: releasePosition.X - draggedRoot.Width / 2, Y: releasePosition.Y - draggedRoot.Height / 2);
+            var probeX = releasePosition.X;
+            var probeY = releasePosition.Y;
             var targetContainer = VM.FindDeepestContainerAt(probeX, probeY);
 
             if (targetContainer?.Id == draggedRoot.Id)
@@ -7942,6 +8185,15 @@ public partial class MainWindow : Window
 
         row.Value = selectedColor;
         row.CommitValue();
+        RefreshFromPropertyPanel();
+    }
+
+    private void PropertyGridResetButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { DataContext: PropertyGridRowViewModel row })
+            return;
+
+        row.ResetToDefault();
         RefreshFromPropertyPanel();
     }
 

@@ -50,6 +50,11 @@ public partial class DataGridColumnEditorWindow : Window
         _editor?.DeleteSelectedColumn();
     }
 
+    private void DuplicateColumnButton_Click(object? sender, RoutedEventArgs e)
+    {
+        _editor?.DuplicateSelectedColumn();
+    }
+
     private void MoveColumnUpButton_Click(object? sender, RoutedEventArgs e)
     {
         _editor?.MoveSelectedColumn(-1);
@@ -73,6 +78,11 @@ public partial class DataGridColumnEditorWindow : Window
     private void ResetColumnWidthsButton_Click(object? sender, RoutedEventArgs e)
     {
         _editor?.ResetColumnWidths();
+    }
+
+    private void CreateColumnsFromBindingSourceButton_Click(object? sender, RoutedEventArgs e)
+    {
+        _editor?.CreateColumnsFromBindingSource();
     }
 
     private void ClearGroupingButton_Click(object? sender, RoutedEventArgs e)
@@ -283,6 +293,34 @@ public sealed partial class DataGridColumnEditorViewModel : ObservableObject, ID
         }
     }
 
+    public void DuplicateSelectedColumn()
+    {
+        if (_bindingSource is null || SelectedItem is null)
+            return;
+
+        var sourceField = SelectedItem.Field;
+        var orderedFields = OrderedFields().ToList();
+        var insertIndex = Math.Max(0, orderedFields.IndexOf(sourceField)) + 1;
+        var clone = sourceField.Clone();
+        clone.Header = CreateUniqueHeader($"{sourceField.Header} Copy");
+        clone.Path = CreateUniquePath($"{sourceField.Path}Copy");
+        clone.VisibleIndex = insertIndex;
+
+        _owner.BeginUndoBatch();
+        try
+        {
+            _bindingSource.Fields.Add(clone);
+            orderedFields.Insert(Math.Clamp(insertIndex, 0, orderedFields.Count), clone);
+            NormalizeVisibleIndexes(orderedFields);
+            RebuildFilteredFields(clone);
+            _owner.StatusText = $"Колонка «{sourceField.Header}» продублирована";
+        }
+        finally
+        {
+            _owner.CommitUndoBatch();
+        }
+    }
+
     public void MoveSelectedColumn(int direction)
     {
         if (_bindingSource is null || SelectedItem is null || direction == 0)
@@ -342,6 +380,69 @@ public sealed partial class DataGridColumnEditorViewModel : ObservableObject, ID
                 field.Width = "*";
 
             _owner.StatusText = "Ширины колонок DataGrid сброшены";
+        }
+        finally
+        {
+            _owner.CommitUndoBatch();
+        }
+    }
+
+    public void CreateColumnsFromBindingSource()
+    {
+        if (_bindingSource is null)
+            return;
+
+        _owner.BeginUndoBatch();
+        try
+        {
+            if (_bindingSource.Fields.Count == 0)
+            {
+                _bindingSource.Fields.Add(new BindingFieldModel
+                {
+                    Header = "Id",
+                    Path = "Id",
+                    SampleValue = "1",
+                    Width = "80",
+                    TypeName = "int",
+                    VisibleIndex = 0
+                });
+                _bindingSource.Fields.Add(new BindingFieldModel
+                {
+                    Header = "Name",
+                    Path = "Name",
+                    SampleValue = "Customer",
+                    Width = "2*",
+                    TypeName = "string",
+                    VisibleIndex = 1
+                });
+                _bindingSource.Fields.Add(new BindingFieldModel
+                {
+                    Header = "Status",
+                    Path = "Status",
+                    SampleValue = "Active",
+                    Width = "*",
+                    TypeName = "string",
+                    VisibleIndex = 2
+                });
+            }
+
+            var index = 0;
+            foreach (var field in _bindingSource.Fields)
+            {
+                if (string.IsNullOrWhiteSpace(field.Header))
+                    field.Header = string.IsNullOrWhiteSpace(field.Path) ? $"Column {index + 1}" : field.Path;
+                if (string.IsNullOrWhiteSpace(field.Path))
+                    field.Path = CreateUniquePath($"Field{index + 1}");
+                if (string.IsNullOrWhiteSpace(field.Width))
+                    field.Width = "*";
+
+                field.IsVisible = true;
+                field.VisibleIndex = index++;
+            }
+
+            _dataGrid.AutoGenerateColumns = false;
+            RebuildFilteredFields(SelectedItem?.Field);
+            _owner.StatusText = $"Колонки DataGrid собраны из BindingSource «{_bindingSource.Name}»";
         }
         finally
         {
@@ -597,6 +698,26 @@ public sealed partial class DataGridColumnEditorViewModel : ObservableObject, ID
             suffix++;
 
         return $"{candidate}{suffix}";
+    }
+
+    private string CreateUniqueHeader(string candidate)
+    {
+        if (_bindingSource is null)
+            return candidate;
+
+        var usedHeaders = _bindingSource.Fields
+            .Select(field => field.Header)
+            .Where(header => !string.IsNullOrWhiteSpace(header))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        if (!usedHeaders.Contains(candidate))
+            return candidate;
+
+        var suffix = 2;
+        while (usedHeaders.Contains($"{candidate} {suffix}"))
+            suffix++;
+
+        return $"{candidate} {suffix}";
     }
 }
 

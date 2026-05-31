@@ -33,6 +33,9 @@ internal static class Program
             new("MultiFormOpenFormExport", ConfigureMultiFormOpenFormExport, AssertMultiFormOpenFormExport),
             new("PluginFallbackExport", ConfigurePluginFallbackExport, AssertPluginFallbackExport),
             new("GridLayoutExport", ConfigureGridLayoutExport, AssertGridLayoutExport),
+            new("StackPanelLayoutExport", ConfigureStackPanelLayoutExport, AssertStackPanelLayoutExport),
+            new("LayoutContainerExport", ConfigureLayoutContainerExport, AssertLayoutContainerExport),
+            new("LayoutConversionExport", ConfigureLayoutConversionExport, AssertLayoutConversionExport),
             new("ResponsiveLayoutExport_StackPanel", ConfigureResponsiveStackPanelExport, AssertResponsiveStackPanelExport),
             new("ResponsiveLayoutExport_CanvasFallback", ConfigureResponsiveCanvasFallbackExport, AssertResponsiveCanvasFallbackExport)
         };
@@ -347,6 +350,77 @@ internal static class Program
         RequireContains(context.Xaml, "Grid.Row=\"1\" Grid.Column=\"1\"", "Child Grid.Row/Grid.Column placement should be exported.");
         RequireNotContains(context.Xaml, "Canvas.Left", "Grid layout children should not export Canvas.Left.");
         RequireNotContains(context.Xaml, "primitives:UniformGrid", "Grid layout export should not use UniformGrid.");
+    }
+
+    private static void ConfigureStackPanelLayoutExport(MainWindowViewModel vm)
+    {
+        vm.SurfaceLayoutMode = DesignerLayoutModes.Stack;
+        vm.SurfaceLayoutOrientation = DesignerLayoutModes.Vertical;
+        vm.SurfaceLayoutSpacing = 8;
+
+        var input = Control(DesignerControlTypes.TextBox, "StackInput", 0, 0, 260, 38, placeholder: "Email");
+        input.StackOrder = 0;
+        vm.Controls.Add(input);
+
+        var submit = Control(DesignerControlTypes.Button, "StackSubmit", 0, 0, 140, 40, text: "Submit", background: "#2563EB", foreground: "#FFFFFF", border: "#1D4ED8", radius: 10);
+        submit.StackOrder = 1;
+        submit.Margin = "0,4,0,0";
+        vm.Controls.Add(submit);
+    }
+
+    private static void AssertStackPanelLayoutExport(SmokeContext context)
+    {
+        RequireContains(context.Xaml, "<StackPanel x:Name=\"RootLayout\" Orientation=\"Vertical\" Spacing=\"8\"", "StackPanel layout should export root StackPanel with orientation and spacing.");
+        RequireContains(context.Xaml, "StackInput", "First StackPanel child should be exported.");
+        RequireContains(context.Xaml, "StackSubmit", "Second StackPanel child should be exported.");
+        RequireNotContains(context.Xaml, "Canvas.Left", "StackPanel layout children should not export Canvas.Left.");
+        RequireNotContains(context.Xaml, "Canvas.Top", "StackPanel layout children should not export Canvas.Top.");
+    }
+
+    private static void ConfigureLayoutContainerExport(MainWindowViewModel vm)
+    {
+        var border = Control(DesignerControlTypes.Border, "DetailsPanel", 40, 40, 360, 160, background: "Transparent", border: "#CBD5E1", radius: 8);
+        border.ChildLayoutMode = DesignerLayoutModes.Stack;
+        border.LayoutOrientation = DesignerLayoutModes.Vertical;
+        border.LayoutSpacing = 6;
+        border.Padding = 12;
+        vm.Controls.Add(border);
+
+        var title = Control(DesignerControlTypes.TextBlock, "DetailsTitle", 0, 0, 240, 28, text: "Details");
+        title.ParentId = border.Id;
+        title.StackOrder = 0;
+        vm.Controls.Add(title);
+
+        var input = Control(DesignerControlTypes.TextBox, "DetailsInput", 0, 0, 260, 38, placeholder: "Name");
+        input.ParentId = border.Id;
+        input.StackOrder = 1;
+        vm.Controls.Add(input);
+    }
+
+    private static void AssertLayoutContainerExport(SmokeContext context)
+    {
+        RequireContains(context.Xaml, "DetailsPanel", "Layout container should be exported.");
+        RequireContains(context.Xaml, "<StackPanel Orientation=\"Vertical\" Spacing=\"6\"", "Border layout container should export inner StackPanel.");
+        RequireContains(context.Xaml, "DetailsTitle", "Container child TextBlock should be exported.");
+        RequireContains(context.Xaml, "DetailsInput", "Container child TextBox should be exported.");
+    }
+
+    private static void ConfigureLayoutConversionExport(MainWindowViewModel vm)
+    {
+        var first = Control(DesignerControlTypes.TextBox, "ConvertedInput", 40, 40, 260, 38, placeholder: "Converted");
+        var second = Control(DesignerControlTypes.Button, "ConvertedButton", 40, 96, 160, 40, text: "Save", background: "#2563EB", foreground: "#FFFFFF", border: "#1D4ED8", radius: 10);
+        vm.Controls.Add(first);
+        vm.Controls.Add(second);
+        vm.SelectControls(new[] { first, second }, second);
+        vm.ConvertSelectionToStackPanelEditorCommand?.Execute(null);
+    }
+
+    private static void AssertLayoutConversionExport(SmokeContext context)
+    {
+        RequireContains(context.Xaml, "StackPanel", "Converted selection should export as a StackPanel container.");
+        RequireContains(context.Xaml, "ConvertedInput", "Converted TextBox should be preserved.");
+        RequireContains(context.Xaml, "ConvertedButton", "Converted Button should be preserved.");
+        RequireNotContains(context.DiagnosticsText, "outside the parent grid", "Conversion should not create invalid Grid placement.");
     }
 
     private static void ConfigureResponsiveStackPanelExport(MainWindowViewModel vm)

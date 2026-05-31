@@ -168,9 +168,9 @@
 
     <Style Selector="Button.property-star">
       <Setter Property="Width" Value="18"/>
-      <Setter Property="Height" Value="22"/>
+      <Setter Property="Height" Value="20"/>
       <Setter Property="MinWidth" Value="18"/>
-      <Setter Property="MinHeight" Value="22"/>
+      <Setter Property="MinHeight" Value="20"/>
       <Setter Property="Padding" Value="0"/>
       <Setter Property="Background" Value="Transparent"/>
       <Setter Property="Foreground" Value="#94A3B8"/>
@@ -187,7 +187,7 @@
     </Style>
 
     <Style Selector="Button.property-action">
-      <Setter Property="MinHeight" Value="24"/>
+      <Setter Property="MinHeight" Value="22"/>
       <Setter Property="Padding" Value="7,2"/>
       <Setter Property="CornerRadius" Value="3"/>
       <Setter Property="Background" Value="#EFF6FF"/>
@@ -202,14 +202,14 @@
     </Style>
 
     <Style Selector="TextBox.property-editor">
-      <Setter Property="MinHeight" Value="24"/>
+      <Setter Property="MinHeight" Value="22"/>
       <Setter Property="Padding" Value="6,2"/>
       <Setter Property="CornerRadius" Value="3"/>
       <Setter Property="FontSize" Value="12"/>
     </Style>
 
     <Style Selector="ComboBox.property-editor">
-      <Setter Property="MinHeight" Value="24"/>
+      <Setter Property="MinHeight" Value="22"/>
       <Setter Property="Padding" Value="6,2"/>
       <Setter Property="CornerRadius" Value="3"/>
       <Setter Property="FontSize" Value="12"/>
@@ -234,8 +234,8 @@
     </Style>
 
     <Style Selector="ToggleButton.property-category-header">
-      <Setter Property="MinHeight" Value="24"/>
-      <Setter Property="Padding" Value="4,3"/>
+      <Setter Property="MinHeight" Value="22"/>
+      <Setter Property="Padding" Value="4,2"/>
       <Setter Property="Background" Value="#F8FAFC"/>
       <Setter Property="Foreground" Value="#0F172A"/>
       <Setter Property="BorderBrush" Value="#E2E8F0"/>
@@ -261,8 +261,8 @@
     <Style Selector="Border.property-grid-table">
       <Setter Property="Background" Value="#FFFFFF"/>
       <Setter Property="BorderBrush" Value="#CBD5E1"/>
-      <Setter Property="BorderThickness" Value="1"/>
-      <Setter Property="CornerRadius" Value="4"/>
+      <Setter Property="BorderThickness" Value="1,0,1,1"/>
+      <Setter Property="CornerRadius" Value="0"/>
     </Style>
 
     <Style Selector="Border.property-row">
@@ -540,224 +540,192 @@
 
   <!-- Каркас всего окна: верхняя шапка конструктора и основная рабочая область. -->
   <Grid RowDefinitions="Auto,*,Auto">
-    <!-- Верхняя шапка редактора:
-         действия над выделенными, операции с документом и строка состояния. -->
+    <!-- Compact IDE command bar. Detailed document state lives in the status bar. -->
     <Border Grid.Row="0"
             Background="#0F172A"
-            Padding="8,6"
+            Padding="6,4"
             BorderBrush="#1E293B"
             BorderThickness="0,0,0,1"
             IsVisible="{Binding IsDesignerShellHeaderVisible}">
-      <Grid RowDefinitions="Auto,Auto"
-            RowSpacing="6">
-        <Grid ColumnDefinitions="*,Auto"
-              ColumnSpacing="10">
-          <StackPanel Spacing="1">
-            <TextBlock Text="Конструктор форм Avalonia"
-                       FontSize="16"
-                       FontWeight="Bold"
-                       Foreground="White"/>
-            <TextBlock Text="{Binding WorkspaceModeDescription}"
-                       FontSize="12"
-                       MaxLines="1"
-                       TextTrimming="CharacterEllipsis"
-                       Foreground="#CBD5E1"/>
-          </StackPanel>
+      <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,8,Auto,Auto,8,Auto,Auto,Auto,*,Auto,Auto,Auto"
+            ColumnSpacing="4">
+        <TextBlock Text="Avalonia Designer"
+                   Foreground="White"
+                   FontSize="13"
+                   FontWeight="Bold"
+                   VerticalAlignment="Center"
+                   Margin="0,0,8,0"/>
 
-          <Border Grid.Column="1"
-                  Background="#172554"
-                  BorderBrush="#2563EB"
-                  BorderThickness="1"
-                  CornerRadius="8"
-                  Padding="8,4"
-                  VerticalAlignment="Center">
-            <StackPanel Orientation="Horizontal"
-                        Spacing="6"
-                        VerticalAlignment="Center">
-              <TextBlock Text="Режим"
-                         Foreground="#BFDBFE"
-                         FontWeight="SemiBold"
-                         FontSize="12"
-                         VerticalAlignment="Center"/>
-              <ComboBox ItemsSource="{Binding AvailableWorkspaceModes}"
-                        SelectedItem="{Binding WorkspaceMode, Mode=TwoWay}"
-                        MinWidth="138"
-                        Background="#EFF6FF"
-                        Foreground="#0F172A"/>
-              <TextBlock Text="Density"
-                         Foreground="#BFDBFE"
-                         FontSize="12"
-                         FontWeight="SemiBold"
-                         VerticalAlignment="Center"/>
-              <ComboBox ItemsSource="{Binding AvailableUiDensityModes}"
-                        SelectedItem="{Binding UiDensityMode, Mode=TwoWay}"
-                        MinWidth="104"
-                        Background="#EFF6FF"
-                        Foreground="#0F172A"
-                        ToolTip.Tip="UI density: Comfortable, Compact or Dense"/>
-            </StackPanel>
-          </Border>
-        </Grid>
+        <Button Grid.Column="1"
+                Content="New"
+                Classes="toolbar-button"
+                Command="{Binding NewEditorCommand}"
+                ToolTip.Tip="{Binding NewEditorCommand.Hint}"/>
+        <Button Grid.Column="2"
+                Content="Open"
+                Classes="toolbar-button"
+                Command="{Binding OpenEditorCommand}"
+                ToolTip.Tip="{Binding OpenEditorCommand.Hint}"/>
+        <Button Grid.Column="3"
+                Content="Save"
+                Classes="toolbar-button"
+                Command="{Binding SaveEditorCommand}"
+                ToolTip.Tip="{Binding SaveEditorCommand.Hint}"/>
 
-        <Border Grid.Row="1"
-                Background="#111F3A"
-                BorderBrush="#22314E"
-                BorderThickness="1"
-                CornerRadius="8"
-                Padding="6,5">
-          <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,12,Auto,Auto,Auto,Auto,12,*,Auto"
-                ColumnSpacing="4">
-            <Button Content="Создать"
-                    Classes="toolbar-button"
-                    Command="{Binding NewEditorCommand}"
-                    ToolTip.Tip="{Binding NewEditorCommand.Hint}"
-                    Padding="8,4"/>
+        <Button Grid.Column="5"
+                Content="Undo"
+                Classes="toolbar-button"
+                Command="{Binding UndoEditorCommand}"
+                ToolTip.Tip="{Binding UndoEditorCommand.Hint}"/>
+        <Button Grid.Column="6"
+                Content="Redo"
+                Classes="toolbar-button"
+                Command="{Binding RedoEditorCommand}"
+                ToolTip.Tip="{Binding RedoEditorCommand.Hint}"/>
 
-            <Button Grid.Column="1"
-                    Content="Открыть"
-                    Classes="toolbar-button"
-                    Command="{Binding OpenEditorCommand}"
-                    ToolTip.Tip="{Binding OpenEditorCommand.Hint}"
-                    Padding="8,4"/>
+        <Button Grid.Column="8"
+                Content="Preview"
+                Classes="toolbar-button"
+                Command="{Binding PreviewEditorCommand}"
+                ToolTip.Tip="{Binding PreviewEditorCommand.Hint}"/>
+        <Button Grid.Column="9"
+                Content="Export"
+                Classes="toolbar-button"
+                Command="{Binding OpenExportPipelineEditorCommand}"
+                ToolTip.Tip="{Binding OpenExportPipelineEditorCommand.Hint}"/>
+        <Button Grid.Column="10"
+                Content="Help"
+                Classes="toolbar-button"
+                Command="{Binding HelpEditorCommand}"
+                ToolTip.Tip="Открыть подробную справку по конструктору форм (F1)"/>
 
-            <Button Grid.Column="2"
-                    Content="Сохранить"
-                    Classes="toolbar-button"
-                    Command="{Binding SaveEditorCommand}"
-                    ToolTip.Tip="{Binding SaveEditorCommand.Hint}"
-                    Padding="8,4"/>
+        <TextBlock Grid.Column="11"
+                   Text="{Binding WorkspaceModeDescription}"
+                   Foreground="#94A3B8"
+                   FontSize="11"
+                   MaxLines="1"
+                   TextTrimming="CharacterEllipsis"
+                   VerticalAlignment="Center"
+                   Margin="8,0"/>
 
-            <Button Grid.Column="3"
-                    Content="Сохранить как"
-                    Classes="toolbar-button"
-                    Command="{Binding SaveAsEditorCommand}"
-                    ToolTip.Tip="{Binding SaveAsEditorCommand.Hint}"
-                    Padding="8,4"/>
-
-            <Button Grid.Column="4"
-                    Content="Последние"
-                    Classes="toolbar-button"
-                    IsEnabled="{Binding HasRecentFiles}"
-                    Padding="8,4">
-              <Button.Flyout>
-                <Flyout>
-                  <Border Padding="12"
-                          MaxWidth="520">
-                    <StackPanel Spacing="10">
-                      <TextBlock Text="{Binding RecentFilesSummary}"
-                                 FontWeight="Bold"/>
-                      <ItemsControl ItemsSource="{Binding RecentFiles}">
-                        <ItemsControl.ItemTemplate>
-                          <DataTemplate x:DataType="models:RecentFileModel">
-                            <Grid ColumnDefinitions="*,Auto,Auto"
-                                  ColumnSpacing="8"
-                                  Margin="0,0,0,8">
-                              <Button Tag="{Binding}"
-                                      Click="OpenRecentFileButton_Click"
-                                      HorizontalAlignment="Stretch"
-                                      HorizontalContentAlignment="Stretch"
-                                      Padding="10,8">
-                                <StackPanel Spacing="2">
-                                  <TextBlock Text="{Binding Title}"
-                                             FontWeight="SemiBold"/>
-                                  <TextBlock Text="{Binding PathText}"
-                                             FontSize="11"
-                                             Foreground="#64748B"
-                                             TextTrimming="CharacterEllipsis"/>
-                                  <TextBlock Text="{Binding LastOpenedText}"
-                                             FontSize="11"
-                                             Foreground="#64748B"/>
-                                </StackPanel>
-                              </Button>
-                              <Button Grid.Column="1"
-                                      Content="{Binding PinText}"
-                                      Tag="{Binding}"
-                                      Click="ToggleRecentPinButton_Click"
-                                      MinWidth="54"
-                                      Padding="8,6"/>
-                              <Button Grid.Column="2"
-                                      Content="×"
-                                      Tag="{Binding}"
-                                      Click="RemoveRecentFileButton_Click"
-                                      MinWidth="34"
-                                      Padding="8,6"/>
-                            </Grid>
-                          </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                      </ItemsControl>
-                    </StackPanel>
-                  </Border>
-                </Flyout>
-              </Button.Flyout>
-            </Button>
-
-            <Button Grid.Column="5"
-                    Content="Backups"
-                    Classes="toolbar-button"
-                    Click="RestoreBackupButton_Click"
-                    Padding="8,4"/>
-
-            <Button Grid.Column="7"
-                    Content="Отменить"
-                    Classes="toolbar-button"
-                    Command="{Binding UndoEditorCommand}"
-                    ToolTip.Tip="{Binding UndoEditorCommand.Hint}"
-                    Padding="8,4"/>
-
-            <Button Grid.Column="8"
-                    Content="Повторить"
-                    Classes="toolbar-button"
-                    Command="{Binding RedoEditorCommand}"
-                    ToolTip.Tip="{Binding RedoEditorCommand.Hint}"
-                    Padding="8,4"/>
-
-            <Button Grid.Column="9"
-                    Content="Предпросмотр запуска"
-                    Classes="toolbar-button"
-                    Command="{Binding PreviewEditorCommand}"
-                    ToolTip.Tip="{Binding PreviewEditorCommand.Hint}"
-                    Padding="8,4"/>
-
-            <Button Grid.Column="10"
-                    Content="Справка"
-                    Classes="toolbar-button"
-                    Command="{Binding HelpEditorCommand}"
-                    Padding="8,4"
-                    ToolTip.Tip="Открыть подробную справку по конструктору форм (F1)"/>
-
-            <StackPanel Grid.Column="12"
-                        VerticalAlignment="Center"
-                        Spacing="0"
-                        MaxWidth="360">
-              <TextBlock Text="{Binding CurrentDocumentDisplayName}"
-                         Foreground="White"
-                         FontWeight="SemiBold"
-                         TextTrimming="CharacterEllipsis"/>
-              <TextBlock Text="{Binding StatusText}"
-                         Foreground="#94A3B8"
-                         FontSize="11"
-                         MaxLines="1"
-                         TextTrimming="CharacterEllipsis"/>
-              <TextBlock Text="{Binding AutosaveStatusText}"
-                         Foreground="#7DD3FC"
-                         FontSize="10"
-                         MaxLines="1"
-                         TextTrimming="CharacterEllipsis"/>
-            </StackPanel>
-
-            <Border Grid.Column="13"
-                    Background="#0B7A42"
-                    CornerRadius="999"
-                    Padding="8,3"
-                    VerticalAlignment="Center"
-                    IsVisible="{Binding HasUnsavedChanges}">
-              <TextBlock Text="Есть несохраненные изменения"
-                         Foreground="White"
-                         FontSize="11"
-                         FontWeight="SemiBold"/>
-            </Border>
-          </Grid>
+        <Border Grid.Column="12"
+                Background="#0B7A42"
+                CornerRadius="999"
+                Padding="6,2"
+                VerticalAlignment="Center"
+                IsVisible="{Binding HasUnsavedChanges}">
+          <TextBlock Text="Unsaved"
+                     Foreground="White"
+                     FontSize="10"
+                     FontWeight="SemiBold"/>
         </Border>
+
+        <Border Grid.Column="13"
+                Background="#172554"
+                BorderBrush="#2563EB"
+                BorderThickness="1"
+                CornerRadius="6"
+                Padding="6,2"
+                VerticalAlignment="Center">
+          <StackPanel Orientation="Horizontal"
+                      Spacing="4"
+                      VerticalAlignment="Center">
+            <TextBlock Text="Mode"
+                       Foreground="#BFDBFE"
+                       FontWeight="SemiBold"
+                       FontSize="11"
+                       VerticalAlignment="Center"/>
+            <ComboBox ItemsSource="{Binding AvailableWorkspaceModes}"
+                      SelectedItem="{Binding WorkspaceMode, Mode=TwoWay}"
+                      MinWidth="126"
+                      Background="#EFF6FF"
+                      Foreground="#0F172A"/>
+          </StackPanel>
+        </Border>
+
+        <Button Grid.Column="14"
+                Content="More"
+                Classes="toolbar-button">
+          <Button.Flyout>
+            <Flyout>
+              <Border Padding="10"
+                      MaxWidth="440">
+                <StackPanel Spacing="8">
+                  <Button Content="Save as..."
+                          Classes="data-action-button"
+                          Command="{Binding SaveAsEditorCommand}"
+                          HorizontalAlignment="Stretch"/>
+                  <Button Content="Restore backup..."
+                          Classes="data-action-button"
+                          Click="RestoreBackupButton_Click"
+                          HorizontalAlignment="Stretch"/>
+
+                  <Border Height="1"
+                          Background="#E2E8F0"
+                          Margin="0,2"/>
+
+                  <TextBlock Text="{Binding RecentFilesSummary}"
+                             FontWeight="Bold"
+                             FontSize="12"/>
+                  <ItemsControl ItemsSource="{Binding RecentFiles}">
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate x:DataType="models:RecentFileModel">
+                        <Grid ColumnDefinitions="*,Auto,Auto"
+                              ColumnSpacing="6"
+                              Margin="0,0,0,4">
+                          <Button Tag="{Binding}"
+                                  Click="OpenRecentFileButton_Click"
+                                  HorizontalAlignment="Stretch"
+                                  HorizontalContentAlignment="Stretch"
+                                  Padding="7,4">
+                            <StackPanel Spacing="0">
+                              <TextBlock Text="{Binding Title}"
+                                         FontWeight="SemiBold"
+                                         FontSize="12"/>
+                              <TextBlock Text="{Binding PathText}"
+                                         FontSize="10"
+                                         Foreground="#64748B"
+                                         TextTrimming="CharacterEllipsis"
+                                         MaxLines="1"/>
+                            </StackPanel>
+                          </Button>
+                          <Button Grid.Column="1"
+                                  Content="{Binding PinText}"
+                                  Tag="{Binding}"
+                                  Click="ToggleRecentPinButton_Click"
+                                  MinWidth="44"
+                                  Padding="6,3"/>
+                          <Button Grid.Column="2"
+                                  Content="×"
+                                  Tag="{Binding}"
+                                  Click="RemoveRecentFileButton_Click"
+                                  MinWidth="28"
+                                  Padding="6,3"/>
+                        </Grid>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+
+                  <Border Height="1"
+                          Background="#E2E8F0"
+                          Margin="0,2"/>
+
+                  <Grid ColumnDefinitions="Auto,*"
+                        ColumnSpacing="8">
+                    <TextBlock Text="Density"
+                               FontWeight="SemiBold"
+                               VerticalAlignment="Center"/>
+                    <ComboBox Grid.Column="1"
+                              ItemsSource="{Binding AvailableUiDensityModes}"
+                              SelectedItem="{Binding UiDensityMode, Mode=TwoWay}"
+                              MinWidth="140"
+                              ToolTip.Tip="UI density: Comfortable, Compact or Dense"/>
+                  </Grid>
+                </StackPanel>
+              </Border>
+            </Flyout>
+          </Button.Flyout>
+        </Button>
       </Grid>
     </Border>
 
@@ -771,25 +739,16 @@
             ColumnDefinitions="Auto,Auto,Auto,*,Auto,Auto,Auto"
             ColumnSpacing="4">
       <Button Grid.Column="0"
-              Width="32"
-              MinHeight="96"
+              Width="28"
+              MinHeight="64"
               Classes="dock-rail"
               Command="{Binding ToggleLeftPanelEditorCommand}"
               IsVisible="{Binding IsLeftDockRailVisible}"
               ToolTip.Tip="Показать левую панель">
-        <StackPanel Spacing="4"
-                    HorizontalAlignment="Center">
-          <TextBlock Text="›"
-                     FontSize="18"
-                     FontWeight="Bold"
-                     HorizontalAlignment="Center"/>
-          <TextBlock Text="Компоненты"
-                     Width="22"
-                     TextWrapping="Wrap"
-                     TextAlignment="Center"
-                     FontSize="10"
-                     FontWeight="SemiBold"/>
-        </StackPanel>
+        <TextBlock Text="☰"
+                   FontSize="13"
+                   FontWeight="Bold"
+                   HorizontalAlignment="Center"/>
       </Button>
       <!-- Левая панель навигации по документу. -->
       <Border x:Name="LeftDockPanel"
@@ -1010,39 +969,41 @@
                   <ItemsControl.ItemTemplate>
                     <DataTemplate x:DataType="models:ToolboxItem">
                       <Border Margin="0,0,0,3"
-                              Padding="7,5"
+                              Padding="6,2"
                               Background="White"
                               BorderBrush="#D7E2EE"
-                              BorderThickness="1"
-                              CornerRadius="6"
-                              PointerPressed="ToolboxItem_PointerPressed">
-                        <StackPanel Spacing="2">
-                          <DockPanel LastChildFill="True">
-                            <Border Background="#DBEAFE"
-                                    CornerRadius="999"
-                                    Padding="6,1"
-                                    HorizontalAlignment="Left">
-                              <TextBlock Text="{Binding Category}"
-                                         Foreground="#1D4ED8"
-                                         FontSize="10"
-                                         FontWeight="SemiBold"/>
-                            </Border>
-                            <TextBlock Text="{Binding Type}"
-                                       Foreground="#64748B"
-                                       FontSize="11"
-                                       HorizontalAlignment="Right"/>
-                          </DockPanel>
-
-                          <TextBlock Text="{Binding Title}"
-                                     FontSize="13"
-                                     FontWeight="SemiBold"/>
-
-                          <TextBlock Text="{Binding Description}"
-                                     Foreground="#475569"
-                                     FontSize="11"
-                                     MaxLines="1"
+                              BorderThickness="0,0,0,1"
+                              CornerRadius="0"
+                              PointerPressed="ToolboxItem_PointerPressed"
+                              ToolTip.Tip="{Binding Description}">
+                        <Grid ColumnDefinitions="Auto,*,Auto"
+                              ColumnSpacing="6"
+                              MinHeight="26">
+                          <Border Width="18"
+                                  Height="18"
+                                  CornerRadius="4"
+                                  Background="#DBEAFE"
+                                  VerticalAlignment="Center">
+                            <TextBlock Text="▣"
+                                       Foreground="#1D4ED8"
+                                       FontSize="9"
+                                       FontWeight="Bold"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"/>
+                          </Border>
+                          <TextBlock Grid.Column="1"
+                                     Text="{Binding Title}"
+                                     FontSize="12"
+                                     FontWeight="SemiBold"
+                                     VerticalAlignment="Center"
                                      TextTrimming="CharacterEllipsis"/>
-                        </StackPanel>
+                          <TextBlock Grid.Column="2"
+                                     Text="{Binding Type}"
+                                     Foreground="#64748B"
+                                     FontSize="10"
+                                     VerticalAlignment="Center"
+                                     TextTrimming="CharacterEllipsis"/>
+                        </Grid>
                       </Border>
                     </DataTemplate>
                   </ItemsControl.ItemTemplate>
@@ -1662,7 +1623,9 @@
                            TextTrimming="CharacterEllipsis"/>
                 <TextBlock Text="{Binding SelectedControlSummary}"
                            Foreground="#475569"
-                           TextWrapping="Wrap"/>
+                           FontSize="11"
+                           MaxLines="1"
+                           TextTrimming="CharacterEllipsis"/>
               </StackPanel>
 
               <Border Grid.Column="1"
@@ -1671,20 +1634,29 @@
                       BorderThickness="1"
                       CornerRadius="6"
                       Padding="8,4">
-                <StackPanel Spacing="0">
+                <StackPanel Orientation="Horizontal"
+                            Spacing="7">
                   <TextBlock Text="{Binding FormTitle}"
-                             FontSize="12"
-                             Foreground="#64748B"/>
+                             FontSize="11"
+                             Foreground="#64748B"
+                             VerticalAlignment="Center"/>
                   <TextBlock Text="{Binding FormWindowState}"
                              Foreground="#1D4ED8"
-                             FontWeight="SemiBold"/>
+                             FontSize="11"
+                             FontWeight="SemiBold"
+                             VerticalAlignment="Center"/>
                   <TextBlock Text="{Binding PreviewFormWidth, StringFormat='{}{0:0} px'}"
-                             FontWeight="SemiBold"/>
+                             FontSize="11"
+                             FontWeight="SemiBold"
+                             VerticalAlignment="Center"/>
+                  <TextBlock Text="×"
+                             Foreground="#64748B"
+                             FontSize="11"
+                             VerticalAlignment="Center"/>
                   <TextBlock Text="{Binding PreviewFormHeight, StringFormat='{}{0:0} px'}"
-                             FontWeight="SemiBold"/>
-                  <TextBlock Text="{Binding PreviewSurfaceSummary}"
-                             Foreground="#475569"
-                             FontSize="11"/>
+                             FontSize="11"
+                             FontWeight="SemiBold"
+                             VerticalAlignment="Center"/>
                 </StackPanel>
               </Border>
 
@@ -1932,6 +1904,85 @@
                           ToolTip.Tip="{Binding SendToBackEditorCommand.Hint}"
                           IsEnabled="{Binding CanChangeZOrder}"
                           Padding="10,7"/>
+                </StackPanel>
+              </Border>
+
+              <Border Background="#F8FBFFEE"
+                      BorderBrush="#93C5FD"
+                      BorderThickness="1"
+                      CornerRadius="10"
+                      Padding="8,6"
+                      HorizontalAlignment="Center"
+                      VerticalAlignment="Top"
+                      Margin="0,12,0,0"
+                      IsVisible="{Binding IsLayoutOverlayVisible}">
+                <StackPanel Orientation="Horizontal"
+                            Spacing="6">
+                  <StackPanel Spacing="0"
+                              MinWidth="150">
+                    <TextBlock Text="{Binding ActiveLayoutOverlayTitle}"
+                               FontSize="12"
+                               FontWeight="Bold"
+                               Foreground="#0F172A"
+                               MaxLines="1"
+                               TextTrimming="CharacterEllipsis"/>
+                    <TextBlock Text="{Binding ActiveLayoutOverlaySummary}"
+                               FontSize="10"
+                               Foreground="#475569"
+                               MaxLines="1"
+                               TextTrimming="CharacterEllipsis"/>
+                  </StackPanel>
+
+                  <Button Content="+ Row"
+                          Classes="data-action-button"
+                          Command="{Binding AddGridRowDefinitionCommand}"
+                          IsVisible="{Binding IsActiveLayoutGrid}"
+                          Padding="8,4"/>
+                  <Button Content="+ Column"
+                          Classes="data-action-button"
+                          Command="{Binding AddGridColumnDefinitionCommand}"
+                          IsVisible="{Binding IsActiveLayoutGrid}"
+                          Padding="8,4"/>
+                  <Button Content="Edit rows/columns"
+                          Classes="data-action-button"
+                          Command="{Binding SetActiveLayoutToGridCommand}"
+                          IsVisible="{Binding IsActiveLayoutGrid}"
+                          Padding="8,4"
+                          ToolTip.Tip="Open the Layout inspector tab to edit Grid definitions"/>
+                  <Button Content="Grid overlay"
+                          Classes="data-action-button"
+                          Command="{Binding ToggleActiveGridOverlayCommand}"
+                          IsVisible="{Binding IsActiveLayoutGrid}"
+                          Padding="8,4"/>
+
+                  <ComboBox ItemsSource="{Binding AvailableLayoutOrientations}"
+                            SelectedItem="{Binding ActiveStackOrientation, Mode=TwoWay}"
+                            IsVisible="{Binding IsActiveLayoutStack}"
+                            Width="104"/>
+                  <TextBox Classes="property-editor"
+                           Text="{Binding ActiveStackSpacing, Mode=TwoWay}"
+                           IsVisible="{Binding IsActiveLayoutStack}"
+                           Width="52"
+                           ToolTip.Tip="StackPanel spacing"/>
+                  <Button Content="Reverse"
+                          Classes="data-action-button"
+                          Command="{Binding MoveSelectedStackChildDownCommand}"
+                          IsVisible="{Binding IsActiveLayoutStack}"
+                          Padding="8,4"
+                          ToolTip.Tip="Move selected child down in StackPanel order"/>
+
+                  <Button Content="Canvas"
+                          Classes="data-action-button"
+                          Command="{Binding SetActiveLayoutToCanvasCommand}"
+                          Padding="8,4"/>
+                  <Button Content="Stack"
+                          Classes="data-action-button"
+                          Command="{Binding SetActiveLayoutToStackCommand}"
+                          Padding="8,4"/>
+                  <Button Content="Grid"
+                          Classes="data-action-button"
+                          Command="{Binding SetActiveLayoutToGridCommand}"
+                          Padding="8,4"/>
                 </StackPanel>
               </Border>
 
@@ -2428,6 +2479,187 @@
                                TextWrapping="Wrap"/>
                   </Border>
 
+                  <Border Background="#FFFFFF"
+                          BorderBrush="#CBD5E1"
+                          BorderThickness="1"
+                          CornerRadius="6"
+                          Padding="8"
+                          IsVisible="{Binding IsActiveLayoutGrid}">
+                    <StackPanel Spacing="8">
+                      <Grid ColumnDefinitions="*,Auto,Auto"
+                            ColumnSpacing="6">
+                        <StackPanel Spacing="1">
+                          <TextBlock Text="Grid definitions"
+                                     FontWeight="Bold"
+                                     FontSize="13"/>
+                          <TextBlock Text="{Binding ActiveGridDefinitionsPreview}"
+                                     Foreground="#64748B"
+                                     FontSize="11"
+                                     TextTrimming="CharacterEllipsis"/>
+                        </StackPanel>
+                        <Button Grid.Column="1"
+                                Content="+ Row"
+                                Classes="data-action-button"
+                                Command="{Binding AddGridRowDefinitionCommand}"
+                                Padding="7,3"/>
+                        <Button Grid.Column="2"
+                                Content="+ Column"
+                                Classes="data-action-button"
+                                Command="{Binding AddGridColumnDefinitionCommand}"
+                                Padding="7,3"/>
+                      </Grid>
+
+                      <StackPanel Spacing="4">
+                        <TextBlock Text="Rows"
+                                   FontWeight="SemiBold"
+                                   FontSize="12"/>
+                        <ItemsControl ItemsSource="{Binding LayoutGridRows}">
+                          <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:LayoutDefinitionEditorItem">
+                              <Border BorderBrush="#E5E7EB"
+                                      BorderThickness="0,0,0,1"
+                                      Padding="0,2">
+                                <Grid ColumnDefinitions="28,86,58,*,Auto,Auto,Auto"
+                                      ColumnSpacing="4">
+                                  <TextBlock Text="{Binding Index}"
+                                             VerticalAlignment="Center"
+                                             Foreground="#64748B"/>
+                                  <ComboBox Grid.Column="1"
+                                            Classes="property-editor"
+                                            ItemsSource="{Binding #RootWindow.DataContext.AvailableLayoutDefinitionSizeKinds}"
+                                            SelectedItem="{Binding SizeKind, Mode=TwoWay}"/>
+                                  <TextBox Grid.Column="2"
+                                           Classes="property-editor"
+                                           Text="{Binding Value, Mode=TwoWay}"/>
+                                  <TextBlock Grid.Column="3"
+                                             Text="{Binding Preview}"
+                                             VerticalAlignment="Center"
+                                             Foreground="#1D4ED8"
+                                             FontWeight="SemiBold"/>
+                                  <Button Grid.Column="4"
+                                          Content="↑"
+                                          Classes="property-action"
+                                          Command="{Binding #RootWindow.DataContext.MoveLayoutGridRowUpCommand}"
+                                          CommandParameter="{Binding}"
+                                          Padding="5,1"/>
+                                  <Button Grid.Column="5"
+                                          Content="↓"
+                                          Classes="property-action"
+                                          Command="{Binding #RootWindow.DataContext.MoveLayoutGridRowDownCommand}"
+                                          CommandParameter="{Binding}"
+                                          Padding="5,1"/>
+                                  <Button Grid.Column="6"
+                                          Content="×"
+                                          Classes="property-action"
+                                          Command="{Binding #RootWindow.DataContext.DeleteLayoutGridRowCommand}"
+                                          CommandParameter="{Binding}"
+                                          Padding="5,1"/>
+                                </Grid>
+                              </Border>
+                            </DataTemplate>
+                          </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                      </StackPanel>
+
+                      <StackPanel Spacing="4">
+                        <TextBlock Text="Columns"
+                                   FontWeight="SemiBold"
+                                   FontSize="12"/>
+                        <ItemsControl ItemsSource="{Binding LayoutGridColumns}">
+                          <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:LayoutDefinitionEditorItem">
+                              <Border BorderBrush="#E5E7EB"
+                                      BorderThickness="0,0,0,1"
+                                      Padding="0,2">
+                                <Grid ColumnDefinitions="28,86,58,*,Auto,Auto,Auto"
+                                      ColumnSpacing="4">
+                                  <TextBlock Text="{Binding Index}"
+                                             VerticalAlignment="Center"
+                                             Foreground="#64748B"/>
+                                  <ComboBox Grid.Column="1"
+                                            Classes="property-editor"
+                                            ItemsSource="{Binding #RootWindow.DataContext.AvailableLayoutDefinitionSizeKinds}"
+                                            SelectedItem="{Binding SizeKind, Mode=TwoWay}"/>
+                                  <TextBox Grid.Column="2"
+                                           Classes="property-editor"
+                                           Text="{Binding Value, Mode=TwoWay}"/>
+                                  <TextBlock Grid.Column="3"
+                                             Text="{Binding Preview}"
+                                             VerticalAlignment="Center"
+                                             Foreground="#1D4ED8"
+                                             FontWeight="SemiBold"/>
+                                  <Button Grid.Column="4"
+                                          Content="←"
+                                          Classes="property-action"
+                                          Command="{Binding #RootWindow.DataContext.MoveLayoutGridColumnUpCommand}"
+                                          CommandParameter="{Binding}"
+                                          Padding="5,1"/>
+                                  <Button Grid.Column="5"
+                                          Content="→"
+                                          Classes="property-action"
+                                          Command="{Binding #RootWindow.DataContext.MoveLayoutGridColumnDownCommand}"
+                                          CommandParameter="{Binding}"
+                                          Padding="5,1"/>
+                                  <Button Grid.Column="6"
+                                          Content="×"
+                                          Classes="property-action"
+                                          Command="{Binding #RootWindow.DataContext.DeleteLayoutGridColumnCommand}"
+                                          CommandParameter="{Binding}"
+                                          Padding="5,1"/>
+                                </Grid>
+                              </Border>
+                            </DataTemplate>
+                          </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                      </StackPanel>
+                    </StackPanel>
+                  </Border>
+
+                  <Border Background="#FFFFFF"
+                          BorderBrush="#CBD5E1"
+                          BorderThickness="1"
+                          CornerRadius="6"
+                          Padding="8"
+                          IsVisible="{Binding IsActiveLayoutStack}">
+                    <StackPanel Spacing="8">
+                      <TextBlock Text="StackPanel workflow"
+                                 FontWeight="Bold"
+                                 FontSize="13"/>
+                      <Grid ColumnDefinitions="*,*"
+                            ColumnSpacing="8">
+                        <StackPanel Spacing="3">
+                          <TextBlock Text="Orientation"
+                                     FontSize="11"
+                                     Foreground="#64748B"/>
+                          <ComboBox Classes="property-editor"
+                                    ItemsSource="{Binding AvailableLayoutOrientations}"
+                                    SelectedItem="{Binding ActiveStackOrientation, Mode=TwoWay}"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="1"
+                                    Spacing="3">
+                          <TextBlock Text="Spacing"
+                                     FontSize="11"
+                                     Foreground="#64748B"/>
+                          <TextBox Classes="property-editor"
+                                   Text="{Binding ActiveStackSpacing, Mode=TwoWay}"/>
+                        </StackPanel>
+                      </Grid>
+                      <StackPanel Orientation="Horizontal"
+                                  Spacing="6">
+                        <Button Content="Move Up"
+                                Classes="data-action-button"
+                                Command="{Binding MoveSelectedStackChildUpCommand}"
+                                IsEnabled="{Binding IsSelectedControlManagedByLayout}"
+                                Padding="8,4"/>
+                        <Button Content="Move Down"
+                                Classes="data-action-button"
+                                Command="{Binding MoveSelectedStackChildDownCommand}"
+                                IsEnabled="{Binding IsSelectedControlManagedByLayout}"
+                                Padding="8,4"/>
+                      </StackPanel>
+                    </StackPanel>
+                  </Border>
+
                   <Border Classes="property-grid-table"
                           IsVisible="{Binding HasPropertyGridRows}">
                     <ItemsControl ItemsSource="{Binding PropertyGridCategories}">
@@ -2460,7 +2692,7 @@
                                 <DataTemplate x:DataType="vm:PropertyGridRowViewModel">
                                   <Border Classes="property-row"
                                           ToolTip.Tip="{Binding Description}">
-                                    <Grid ColumnDefinitions="18,112,*,Auto"
+                                    <Grid ColumnDefinitions="18,112,*,Auto,Auto"
                                           MinHeight="28">
                                       <Button Classes="property-star"
                                               Content="{Binding FavoriteGlyph}"
@@ -2469,11 +2701,17 @@
                                               ToolTip.Tip="Toggle favorite"/>
 
                                       <TextBlock Grid.Column="1"
-                                                 Text="{Binding Label}"
                                                  FontSize="12"
                                                  Foreground="#334155"
                                                  VerticalAlignment="Center"
-                                                 TextTrimming="CharacterEllipsis"/>
+                                                 TextTrimming="CharacterEllipsis">
+                                        <TextBlock.Text>
+                                          <MultiBinding StringFormat="{}{0}{1}">
+                                            <Binding Path="ModifiedGlyph"/>
+                                            <Binding Path="Label"/>
+                                          </MultiBinding>
+                                        </TextBlock.Text>
+                                      </TextBlock>
 
                                       <Border Grid.Column="2"
                                               BorderBrush="#E5E7EB"
@@ -2536,7 +2774,14 @@
                                         </Grid>
                                       </Border>
 
-                                      <TextBlock Grid.Column="3"
+                                      <Button Grid.Column="3"
+                                              Classes="property-action"
+                                              Content="↺"
+                                              IsVisible="{Binding CanResetToDefault}"
+                                              Click="PropertyGridResetButton_Click"
+                                              ToolTip.Tip="{Binding DefaultTooltip}"/>
+
+                                      <TextBlock Grid.Column="4"
                                                  Text="!"
                                                  FontWeight="Bold"
                                                  Foreground="#DC2626"
@@ -4944,6 +5189,104 @@
             <ScrollViewer Margin="0,12,0,0"
                           VerticalScrollBarVisibility="Auto">
               <StackPanel Spacing="12">
+                <Border Background="#FFFFFF"
+                        BorderBrush="#BFDBFE"
+                        BorderThickness="1"
+                        CornerRadius="8"
+                        Padding="10"
+                        IsVisible="{Binding CanShowDataGridDataSetup}">
+                  <StackPanel Spacing="8">
+                    <Grid ColumnDefinitions="*,Auto"
+                          ColumnSpacing="8">
+                      <StackPanel Spacing="1">
+                        <TextBlock Text="DataGrid data setup"
+                                   FontWeight="Bold"
+                                   FontSize="13"
+                                   Foreground="#0F172A"/>
+                        <TextBlock Text="{Binding DataGridDataSetupSummary}"
+                                   Foreground="#64748B"
+                                   FontSize="11"
+                                   TextTrimming="CharacterEllipsis"/>
+                      </StackPanel>
+                      <Border Grid.Column="1"
+                              Background="#EFF6FF"
+                              BorderBrush="#BFDBFE"
+                              BorderThickness="1"
+                              CornerRadius="999"
+                              Padding="7,2"
+                              VerticalAlignment="Center">
+                        <TextBlock Text="{Binding SelectedDataGridColumnCountText}"
+                                   Foreground="#1D4ED8"
+                                   FontSize="11"
+                                   FontWeight="SemiBold"/>
+                      </Border>
+                    </Grid>
+
+                    <Grid ColumnDefinitions="*,Auto,Auto"
+                          ColumnSpacing="6">
+                      <ComboBox Classes="property-editor"
+                                ItemsSource="{Binding BindingSources}"
+                                SelectedItem="{Binding SelectedBindingSourceForControl, Mode=TwoWay}"
+                                ToolTip.Tip="BindingSource used by selected DataGrid">
+                        <ComboBox.ItemTemplate>
+                          <DataTemplate x:DataType="models:BindingSourceModel">
+                            <TextBlock Text="{Binding Name}"
+                                       TextTrimming="CharacterEllipsis"/>
+                          </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                      </ComboBox>
+                      <Button Grid.Column="1"
+                              Content="Create"
+                              Classes="property-header-action"
+                              Command="{Binding CreateBindingSourceForSelectedControlCommand}"
+                              ToolTip.Tip="Create BindingSource and attach it to this DataGrid"/>
+                      <Button Grid.Column="2"
+                              Content="Fields"
+                              Classes="property-header-action"
+                              Command="{Binding CreateColumnsFromSelectedBindingSourceCommand}"
+                              ToolTip.Tip="Create/normalize columns from the selected BindingSource"/>
+                    </Grid>
+
+                    <Grid ColumnDefinitions="*,Auto"
+                          ColumnSpacing="8">
+                      <CheckBox Content="AutoGenerateColumns"
+                                Tag="AutoGenerateColumns"
+                                IsChecked="{Binding SelectedControl.AutoGenerateColumns, Mode=TwoWay}"
+                                Click="SelectedCheckBox_Click"
+                                VerticalAlignment="Center"/>
+                      <Button Grid.Column="1"
+                              Content="Edit columns..."
+                              Classes="data-action-button"
+                              Padding="8,4"
+                              Click="OpenDataGridColumnEditorButton_Click"/>
+                    </Grid>
+
+                    <Border Background="#FFFBEB"
+                            BorderBrush="#F59E0B"
+                            BorderThickness="1"
+                            CornerRadius="6"
+                            Padding="8"
+                            IsVisible="{Binding HasSelectedDataGridBindingWarning}">
+                      <TextBlock Text="{Binding SelectedDataGridBindingWarning}"
+                                 Foreground="#92400E"
+                                 FontSize="11"
+                                 TextWrapping="Wrap"/>
+                    </Border>
+
+                    <StackPanel Orientation="Horizontal"
+                                Spacing="6">
+                      <Button Content="Open Logic"
+                              Classes="property-header-action"
+                              Command="{Binding OpenLogicForSelectedControlCommand}"
+                              ToolTip.Tip="Open interactions for this DataGrid"/>
+                      <Button Content="Open full data tools"
+                              Classes="property-header-action"
+                              Command="{Binding OpenBindingSourceEditorCommand}"
+                              ToolTip.Tip="Go to the full BindingSource editor"/>
+                    </StackPanel>
+                  </StackPanel>
+                </Border>
+
                 <Border Background="White"
                         BorderBrush="#D7E2EE"
                         BorderThickness="1"
@@ -5481,7 +5824,7 @@
                                 <DataTemplate x:DataType="vm:PropertyGridRowViewModel">
                                   <Border Classes="property-row"
                                           ToolTip.Tip="{Binding Description}">
-                                    <Grid ColumnDefinitions="18,112,*,Auto"
+                                    <Grid ColumnDefinitions="18,112,*,Auto,Auto"
                                           MinHeight="28">
                                       <Button Classes="property-star"
                                               Content="{Binding FavoriteGlyph}"
@@ -5489,11 +5832,17 @@
                                               CommandParameter="{Binding}"
                                               ToolTip.Tip="Toggle favorite"/>
                                       <TextBlock Grid.Column="1"
-                                                 Text="{Binding Label}"
                                                  FontSize="12"
                                                  Foreground="#334155"
                                                  VerticalAlignment="Center"
-                                                 TextTrimming="CharacterEllipsis"/>
+                                                 TextTrimming="CharacterEllipsis">
+                                        <TextBlock.Text>
+                                          <MultiBinding StringFormat="{}{0}{1}">
+                                            <Binding Path="ModifiedGlyph"/>
+                                            <Binding Path="Label"/>
+                                          </MultiBinding>
+                                        </TextBlock.Text>
+                                      </TextBlock>
                                       <Border Grid.Column="2"
                                               BorderBrush="#E5E7EB"
                                               BorderThickness="1,0,0,0"
@@ -5525,7 +5874,14 @@
                                                      TextTrimming="CharacterEllipsis"/>
                                         </Grid>
                                       </Border>
-                                      <TextBlock Grid.Column="3"
+                                      <Button Grid.Column="3"
+                                              Classes="property-action"
+                                              Content="↺"
+                                              IsVisible="{Binding CanResetToDefault}"
+                                              Click="PropertyGridResetButton_Click"
+                                              ToolTip.Tip="{Binding DefaultTooltip}"/>
+
+                                      <TextBlock Grid.Column="4"
                                                  Text="!"
                                                  FontWeight="Bold"
                                                  Foreground="#DC2626"
@@ -6192,25 +6548,16 @@
       </Border>
 
       <Button Grid.Column="6"
-              Width="32"
-              MinHeight="96"
+              Width="28"
+              MinHeight="64"
               Classes="dock-rail"
               Command="{Binding ToggleRightPanelEditorCommand}"
               IsVisible="{Binding IsRightDockRailVisible}"
               ToolTip.Tip="Показать правую панель">
-        <StackPanel Spacing="4"
-                    HorizontalAlignment="Center">
-          <TextBlock Text="‹"
-                     FontSize="18"
-                     FontWeight="Bold"
-                     HorizontalAlignment="Center"/>
-          <TextBlock Text="Свойства"
-                     Width="22"
-                     TextWrapping="Wrap"
-                     TextAlignment="Center"
-                     FontSize="10"
-                     FontWeight="SemiBold"/>
-        </StackPanel>
+        <TextBlock Text="⚙"
+                   FontSize="13"
+                   FontWeight="Bold"
+                   HorizontalAlignment="Center"/>
       </Button>
       </Grid>
 
@@ -6256,6 +6603,11 @@
                         Command="{Binding OpenOutputPanelCommand}"
                         Classes="problem-filter"
                         Padding="8,3"/>
+                <TextBlock Text="Diagnostics"
+                           Foreground="#64748B"
+                           FontWeight="SemiBold"
+                           FontSize="11"
+                           VerticalAlignment="Center"/>
               </StackPanel>
 
               <Border Grid.Column="1"
@@ -6308,17 +6660,17 @@
                         CommandParameter="All"
                         Classes="problem-filter"
                         Margin="0,0,6,0"/>
-                <Button Content="{Binding DiagnosticErrorCount, StringFormat='Errors {0}'}"
+                <Button Content="Errors"
                         Command="{Binding SetProblemsFilterCommand}"
                         CommandParameter="Errors"
                         Classes="problem-filter"
                         Margin="0,0,6,0"/>
-                <Button Content="{Binding DiagnosticWarningCount, StringFormat='Warnings {0}'}"
+                <Button Content="Warnings"
                         Command="{Binding SetProblemsFilterCommand}"
                         CommandParameter="Warnings"
                         Classes="problem-filter"
                         Margin="0,0,6,0"/>
-                <Button Content="{Binding DiagnosticInfoCount, StringFormat='Hints {0}'}"
+                <Button Content="Hints"
                         Command="{Binding SetProblemsFilterCommand}"
                         CommandParameter="Hints"
                         Classes="problem-filter"
@@ -6346,10 +6698,11 @@
                           Spacing="2"
                           VerticalAlignment="Center"
                           IsVisible="{Binding IsProblemsPanelActive}">
-                <TextBlock Text="{Binding ProblemsFilterSummary}"
+                <TextBlock Text="{Binding ProblemsRailSummary}"
                            Foreground="#334155"
                            FontWeight="SemiBold"
-                           TextWrapping="Wrap"/>
+                           MaxLines="1"
+                           TextTrimming="CharacterEllipsis"/>
                 <TextBlock Text="{Binding DiagnosticsStateText}"
                            Foreground="#64748B"
                            FontSize="11"
