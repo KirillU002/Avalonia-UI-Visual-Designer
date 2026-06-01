@@ -56,7 +56,11 @@ public sealed class PropertyGridRowViewModel : ObservableObject
         bool isReadOnly = false,
         string actionText = "Edit...",
         string defaultValue = "",
-        string aliases = "")
+        string aliases = "",
+        string contextDocumentId = "",
+        string contextControlId = "",
+        string contextControlName = "",
+        string contextControlType = "")
     {
         Key = key;
         Label = label;
@@ -73,6 +77,10 @@ public sealed class PropertyGridRowViewModel : ObservableObject
         ActionText = actionText;
         DefaultValue = defaultValue ?? string.Empty;
         Aliases = aliases ?? string.Empty;
+        ContextDocumentId = contextDocumentId ?? string.Empty;
+        ContextControlId = contextControlId ?? string.Empty;
+        ContextControlName = contextControlName ?? string.Empty;
+        ContextControlType = contextControlType ?? string.Empty;
         RefreshModifiedState();
     }
 
@@ -91,6 +99,14 @@ public sealed class PropertyGridRowViewModel : ObservableObject
     public string DefaultValue { get; }
 
     public string Aliases { get; }
+
+    public string ContextDocumentId { get; }
+
+    public string ContextControlId { get; }
+
+    public string ContextControlName { get; }
+
+    public string ContextControlType { get; }
 
     public bool IsAdvanced { get; }
 

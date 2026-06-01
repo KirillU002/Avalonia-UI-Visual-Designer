@@ -15,6 +15,7 @@ public sealed class ExportPipelineService
 {
     private const string AvaloniaVersion = "11.1.1";
     private const string AvaloniaDesktopVersion = "11.1.1";
+    private const int ValidationRunsToKeep = 5;
 
     public ExportResult CreateResult(
         ExportProfile profile,
@@ -47,6 +48,7 @@ public sealed class ExportPipelineService
 
         var projectFile = Directory.GetFiles(runRoot, "*.csproj").Single();
         var process = await RunProcessAsync("dotnet", $"build \"{projectFile}\"", runRoot, logAsync, cancellationToken).ConfigureAwait(false);
+        PruneValidationRuns(artifactsRoot, runRoot);
         return new ExportBuildValidationResult
         {
             Status = process.ExitCode == 0 ? ExportBuildValidationStatus.Passed : ExportBuildValidationStatus.Failed,
@@ -128,6 +130,22 @@ public sealed class ExportPipelineService
         await File.WriteAllTextAsync(Path.Combine(projectPath, "App.axaml.cs"), BuildAppCode(result.Profile.ProjectNamespace), Encoding.UTF8, cancellationToken).ConfigureAwait(false);
         await File.WriteAllTextAsync(Path.Combine(projectPath, "Program.cs"), BuildProgramCode(result.Profile.ProjectNamespace), Encoding.UTF8, cancellationToken).ConfigureAwait(false);
         await File.WriteAllTextAsync(Path.Combine(projectPath, "ExportValidation.csproj"), BuildProjectFile(result.RequiredPackages), Encoding.UTF8, cancellationToken).ConfigureAwait(false);
+        await File.WriteAllTextAsync(Path.Combine(projectPath, "NuGet.config"), BuildNuGetConfig(), Encoding.UTF8, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static string BuildNuGetConfig()
+    {
+        return @"<?xml version=""1.0"" encoding=""utf-8""?>
+<configuration>
+  <packageSources>
+    <clear />
+    <add key=""nuget.org"" value=""https://api.nuget.org/v3/index.json"" protocolVersion=""3"" />
+  </packageSources>
+  <packageSourceMapping>
+    <clear />
+  </packageSourceMapping>
+</configuration>
+";
     }
 
     private static string BuildProjectFile(IEnumerable<RequiredPackageModel> requiredPackages)
@@ -327,6 +345,50 @@ Layout: {result.Profile.LayoutExportMode}
             .Replace("\"", "&quot;", StringComparison.Ordinal)
             .Replace("<", "&lt;", StringComparison.Ordinal)
             .Replace(">", "&gt;", StringComparison.Ordinal);
+    }
+
+    private static void PruneValidationRuns(string artifactsRoot, string currentRunRoot)
+    {
+        var root = new DirectoryInfo(Path.GetFullPath(artifactsRoot));
+        if (!root.Exists)
+            return;
+
+        var current = Path.GetFullPath(currentRunRoot);
+        foreach (var staleRun in root.GetDirectories()
+                     .OrderByDescending(directory => directory.LastWriteTimeUtc)
+                     .ThenByDescending(directory => directory.Name, StringComparer.OrdinalIgnoreCase)
+                     .Skip(ValidationRunsToKeep))
+        {
+            var fullPath = Path.GetFullPath(staleRun.FullName);
+            if (string.Equals(fullPath, current, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            if (!fullPath.StartsWith(root.FullName.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            TryDeleteDirectory(staleRun);
+        }
+    }
+
+    private static void TryDeleteDirectory(DirectoryInfo directory)
+    {
+        const int attempts = 3;
+        for (var attempt = 1; attempt <= attempts; attempt++)
+        {
+            try
+            {
+                directory.Delete(recursive: true);
+                return;
+            }
+            catch (IOException) when (attempt < attempts)
+            {
+                Thread.Sleep(150 * attempt);
+            }
+            catch (UnauthorizedAccessException) when (attempt < attempts)
+            {
+                Thread.Sleep(150 * attempt);
+            }
+        }
     }
 
     private sealed record ProcessResult(int ExitCode, string Output);

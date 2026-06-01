@@ -42,6 +42,7 @@ public partial class MainWindow : Window
     private static readonly double[] SurfaceZoomLevels = { 0.25, 0.5, 0.75, 1.0, 1.5, 2.0 };
     // Avalonia validates application-format identifiers and rejects values with '/'.
     private const string ControlTypeDataFormat = "formdesigner-control-type";
+    private const string ControlSourceDocumentDataFormat = "formdesigner-source-document";
     private static readonly FilePickerFileType DesignerDocumentFileType = new("Документы конструктора форм")
     {
         Patterns = new[] { "*.formdesigner.json", "*.json" }
@@ -1658,6 +1659,8 @@ public partial class MainWindow : Window
     private Point GetDesignHostPosition(Point viewportRootPosition)
     {
         var safeZoom = Math.Max(0.001, _surfaceZoom);
+        // Position is requested relative to DesignViewportRoot, the ScrollViewer content,
+        // so Avalonia has already accounted for the scroll offset.
         return new Point(viewportRootPosition.X / safeZoom, viewportRootPosition.Y / safeZoom);
     }
 
@@ -2165,6 +2168,8 @@ public partial class MainWindow : Window
         // Конкретная модель будет создана уже в момент drop на поверхности.
         var data = new DataObject();
         data.Set(ControlTypeDataFormat, item.Type);
+        if (DataContext is MainWindowViewModel viewModelForDrag)
+            data.Set(ControlSourceDocumentDataFormat, viewModelForDrag.ActiveDocumentId);
 
         await DragDrop.DoDragDrop(e, data, DragDropEffects.Copy);
     }
@@ -2319,11 +2324,28 @@ public partial class MainWindow : Window
         if (string.IsNullOrWhiteSpace(type))
             return;
 
+        var targetDocumentId = e.Data.Contains(ControlSourceDocumentDataFormat)
+            ? e.Data.Get(ControlSourceDocumentDataFormat) as string ?? VM.ActiveDocumentId
+            : VM.ActiveDocumentId;
+
         // При drop ищем самый глубокий контейнер под курсором и уже в его локальных координатах
         // создаем новый контрол. Благодаря этому drag работает и для вложенных Border/Grid.
         var position = GetDesignCanvasPosition(e);
         var targetContainer = VM.FindDeepestContainerAt(position.X, position.Y);
-        VM.CreateControl(type, position.X, position.Y, targetContainer?.Id, bypassGridSnap: IsSnapBypassed(e.KeyModifiers));
+        var created = VM.TryCreateControlFromToolboxDrop(
+            type,
+            position.X,
+            position.Y,
+            targetContainer?.Id,
+            IsSnapBypassed(e.KeyModifiers),
+            targetDocumentId);
+        if (created is null)
+        {
+            e.DragEffects = DragDropEffects.None;
+            ClearGuideOverlay();
+            return;
+        }
+
         ClearGuideOverlay();
     }
 
@@ -2332,6 +2354,7 @@ public partial class MainWindow : Window
         if (_attachedViewModel is null)
             return;
 
+        VM.MarkCanvasRenderedDocument("RenderDesigner");
         RefreshPreviewMetrics();
         _isApplyingTextChanges = true;
 
@@ -8156,21 +8179,31 @@ public partial class MainWindow : Window
 
     private void PropertyGridTextBox_LostFocus(object? sender, RoutedEventArgs e)
     {
-        if (sender is not Control { DataContext: PropertyGridRowViewModel row })
+        if (sender is not TextBox textBox || textBox.DataContext is not PropertyGridRowViewModel row)
             return;
 
+        row.Value = textBox.Text ?? string.Empty;
         row.CommitValue();
         RefreshFromPropertyPanel();
     }
 
     private void PropertyGridTextBox_KeyDown(object? sender, KeyEventArgs e)
     {
-        if (e.Key != Key.Enter || sender is not Control { DataContext: PropertyGridRowViewModel row })
+        if (e.Key != Key.Enter || sender is not TextBox textBox || textBox.DataContext is not PropertyGridRowViewModel row)
             return;
 
+        row.Value = textBox.Text ?? string.Empty;
         row.CommitValue();
         RefreshFromPropertyPanel();
         e.Handled = true;
+    }
+
+    private void PropertyGridTextBox_TextChanged(object? sender, TextChangedEventArgs e)
+    {
+        if (_isApplyingTextChanges || sender is not TextBox textBox || textBox.DataContext is not PropertyGridRowViewModel row)
+            return;
+
+        row.Value = textBox.Text ?? string.Empty;
     }
 
     private async void PropertyGridColorButton_Click(object? sender, RoutedEventArgs e)

@@ -173,6 +173,7 @@ public partial class MainWindowViewModel : ObservableObject
     private readonly WorkspaceTaskService _workspaceTaskService = new();
     private readonly WorkspaceNotificationService _workspaceNotificationService = new();
     private readonly ExportPipelineService _exportPipelineService = new();
+    private readonly ArtifactCleanupService _artifactCleanupService = new();
     private readonly ProjectWorkspaceService _projectWorkspaceService = new();
     private readonly ProjectDocumentService _projectDocumentService = new();
     private readonly ProjectAssetService _projectAssetService = new();
@@ -195,12 +196,19 @@ public partial class MainWindowViewModel : ObservableObject
     private int _propertyGridSettingsVersion;
     private readonly Dictionary<string, StructureTreeItemModel> _structureTreeItemsByControlId = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, List<PropertyGridRowViewModel>> _propertyGridRowsByKey = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, List<PropertyGridRowViewModel>> _propertyGridRowsByContextKey = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, string> _controlDocumentIdsByControlId = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _controlPropertySubscriptions = new(StringComparer.OrdinalIgnoreCase);
     private IReadOnlyList<ExportChecklistItem> _exportChecklistItemsCache = Array.Empty<ExportChecklistItem>();
     private double _lastPropertyGridRebuildMs;
     private double _lastStructureTreeRebuildMs;
     private double _lastDiagnosticsRefreshMs;
     private double _lastExportChecklistRefreshMs;
     private double _lastExportGenerationMs;
+    private long _propertyGridRebuildCount;
+    private string _propertyGridContextDocumentId = "";
+    private string _propertyGridContextControlId = "";
+    private string _canvasRenderedDocumentId = "";
 
     // Toolbox теперь строится из registry дескрипторов, а не из зашитого списка.
     public ObservableCollection<ToolboxItem> ToolboxItems { get; } = new();
@@ -242,6 +250,11 @@ public partial class MainWindowViewModel : ObservableObject
     public WorkspaceModel Workspace { get; private set; } = new();
 
     public DesignerProjectModel CurrentProject => Workspace.Project;
+    public string ActiveDocumentId => ActiveFormDocument?.Id ?? "";
+    public string ActiveDocumentName => ActiveFormDocument?.DisplayName ?? FormTitle;
+    public string PropertyGridContextDocumentId => _propertyGridContextDocumentId;
+    public string PropertyGridContextControlId => _propertyGridContextControlId;
+    public string CanvasRenderedDocumentId => _canvasRenderedDocumentId;
 
     // Плоский список всех контролов документа. Иерархия восстанавливается через ParentId.
     public ObservableCollection<DesignControlModel> Controls { get; } = new();
@@ -1307,6 +1320,7 @@ public partial class MainWindowViewModel : ObservableObject
     public EditorCommand? ToggleOutputPanelEditorCommand => GetEditorCommand(EditorCommandId.ToggleOutputPanel);
     public EditorCommand? OpenOutputPanelEditorCommand => GetEditorCommand(EditorCommandId.OpenOutputPanel);
     public EditorCommand? ClearOutputEditorCommand => GetEditorCommand(EditorCommandId.ClearOutput);
+    public EditorCommand? CleanArtifactsEditorCommand => GetEditorCommand(EditorCommandId.CleanArtifacts);
     public EditorCommand? ResetLayoutEditorCommand => GetEditorCommand(EditorCommandId.ResetLayout);
     public EditorCommand? ToggleDesignFramesEditorCommand => GetEditorCommand(EditorCommandId.ToggleDesignFrames);
     public EditorCommand? AddFormEditorCommand => GetEditorCommand(EditorCommandId.AddForm);
@@ -1988,6 +2002,7 @@ public partial class MainWindowViewModel : ObservableObject
         RegisterEditorCommand(EditorCommandId.OpenOutputPanel, "Open Output", "Open the workspace output panel.", "", "", EditorCommandCategory.View, OpenOutputPanel);
         RegisterEditorCommand(EditorCommandId.ToggleOutputPanel, "Toggle Output", "Show or hide workspace output.", "", "", EditorCommandCategory.View, ToggleOutputPanel);
         RegisterEditorCommand(EditorCommandId.ClearOutput, "Clear Output", "Clear output log entries.", "", "", EditorCommandCategory.View, ClearOutput, () => StateWhen(OutputEntries.Count > 0, "Output is empty."));
+        RegisterEditorCommand(EditorCommandId.CleanArtifacts, "Clean Artifacts", "Remove old smoke/export validation artifacts.", "", "", EditorCommandCategory.Tools, CleanArtifacts);
         RegisterEditorCommand(EditorCommandId.ResetLayout, "Reset Layout", "Restore default dock panel layout.", "", "", EditorCommandCategory.View, ResetEditorShellLayout);
         RegisterEditorCommand(EditorCommandId.ZoomIn, "Zoom In", "Increase canvas zoom.", "", "Ctrl++", EditorCommandCategory.View, () => RequestExternalEditorCommand(EditorCommandId.ZoomIn));
         RegisterEditorCommand(EditorCommandId.ZoomOut, "Zoom Out", "Decrease canvas zoom.", "", "Ctrl+-", EditorCommandCategory.View, () => RequestExternalEditorCommand(EditorCommandId.ZoomOut));
@@ -2258,6 +2273,7 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(ToggleOutputPanelEditorCommand));
         OnPropertyChanged(nameof(OpenOutputPanelEditorCommand));
         OnPropertyChanged(nameof(ClearOutputEditorCommand));
+        OnPropertyChanged(nameof(CleanArtifactsEditorCommand));
         OnPropertyChanged(nameof(ResetLayoutEditorCommand));
         OnPropertyChanged(nameof(ToggleDesignFramesEditorCommand));
         OnPropertyChanged(nameof(AddFormEditorCommand));
@@ -3953,6 +3969,7 @@ public partial class MainWindowViewModel : ObservableObject
         AppendProjectInteractionDiagnostics(diagnostics);
         AppendExportDiagnostics(diagnostics);
         AppendPreviewRuntimeDiagnostics(diagnostics);
+        AppendDocumentIsolationDiagnostics(diagnostics);
 
         if (DiagnosticsMatch(Diagnostics, diagnostics))
         {
@@ -3986,6 +4003,102 @@ public partial class MainWindowViewModel : ObservableObject
             OutputCategoryDiagnostics,
             $"Diagnostics refreshed: errors {DiagnosticErrorCount}, warnings {DiagnosticWarningCount}, hints {DiagnosticInfoCount}.");
         OnPropertyChanged(nameof(PerformanceDiagnosticsSummary));
+    }
+
+    private void AppendDocumentIsolationDiagnostics(List<DocumentDiagnosticModel> diagnostics)
+    {
+        var activeControlIds = Controls.Select(control => control.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (SelectedControl is not null && !activeControlIds.Contains(SelectedControl.Id))
+        {
+            diagnostics.Add(new DocumentDiagnosticModel
+            {
+                Severity = DocumentDiagnosticSeverity.Error,
+                Source = "Document isolation",
+                Category = "Document isolation",
+                Message = "Выделенный элемент не принадлежит активной форме.",
+                Recommendation = "Переключите форму ещё раз или очистите выделение. Это состояние не должно попадать в обычный workflow.",
+                RelatedControlId = SelectedControl.Id,
+                RelatedControlName = SelectedControl.Name
+            });
+        }
+
+        foreach (var staleSelectionId in SelectedControlIds.Where(id => !activeControlIds.Contains(id)).Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            diagnostics.Add(new DocumentDiagnosticModel
+            {
+                Severity = DocumentDiagnosticSeverity.Error,
+                Source = "Document isolation",
+                Category = "Document isolation",
+                Message = $"Selection содержит элемент другой формы: {staleSelectionId}.",
+                Recommendation = "Состояние выделения будет сброшено при следующем переключении формы.",
+                RelatedControlId = staleSelectionId
+            });
+        }
+
+        if (SelectedBindingSource is not null
+            && BindingSources.All(source => !string.Equals(source.Id, SelectedBindingSource.Id, StringComparison.OrdinalIgnoreCase)))
+        {
+            diagnostics.Add(new DocumentDiagnosticModel
+            {
+                Severity = DocumentDiagnosticSeverity.Error,
+                Source = "Document isolation",
+                Category = "Document isolation",
+                Message = "Выбранный BindingSource не принадлежит активной форме.",
+                Recommendation = "Откройте вкладку Data для активной формы и выберите источник заново.",
+                RelatedBindingSourceId = SelectedBindingSource.Id,
+                RelatedBindingSourceName = SelectedBindingSource.Name
+            });
+        }
+
+        if (SelectedInteraction is not null
+            && Interactions.All(interaction => !string.Equals(interaction.Id, SelectedInteraction.Id, StringComparison.OrdinalIgnoreCase)))
+        {
+            diagnostics.Add(new DocumentDiagnosticModel
+            {
+                Severity = DocumentDiagnosticSeverity.Error,
+                Source = "Document isolation",
+                Category = "Document isolation",
+                Message = "Выбранное interaction-правило не принадлежит активной форме.",
+                Recommendation = "Перейдите на вкладку Logic активной формы и выберите правило заново."
+            });
+        }
+
+        foreach (var form in CurrentProject.Forms)
+        {
+            foreach (var duplicateNameGroup in form.Document.Controls
+                         .Where(control => !string.IsNullOrWhiteSpace(control.Name))
+                         .GroupBy(control => control.Name.Trim(), StringComparer.OrdinalIgnoreCase)
+                         .Where(group => group.Count() > 1))
+            {
+                diagnostics.Add(new DocumentDiagnosticModel
+                {
+                    Severity = DocumentDiagnosticSeverity.Error,
+                    Source = "Document isolation",
+                    Category = "Document isolation",
+                    Message = $"Форма {form.DisplayName} содержит дублирующееся имя control: {duplicateNameGroup.Key}.",
+                    Recommendation = "Имена должны быть уникальны внутри одной формы. Одинаковые имена на разных формах допустимы.",
+                    RelatedControlId = duplicateNameGroup.FirstOrDefault()?.Id ?? "",
+                    RelatedControlName = duplicateNameGroup.Key
+                });
+            }
+
+            foreach (var duplicateGroup in form.Document.Controls
+                         .Where(control => !string.IsNullOrWhiteSpace(control.Id))
+                         .GroupBy(control => control.Id, StringComparer.OrdinalIgnoreCase)
+                         .Where(group => group.Count() > 1))
+            {
+                diagnostics.Add(new DocumentDiagnosticModel
+                {
+                    Severity = DocumentDiagnosticSeverity.Error,
+                    Source = "Document isolation",
+                    Category = "Document isolation",
+                    Message = $"Форма {form.DisplayName} содержит дублирующийся ControlId: {duplicateGroup.Key}.",
+                    Recommendation = "Дублируйте или пересоздайте элемент, чтобы получить уникальные id.",
+                    RelatedControlId = duplicateGroup.Key,
+                    RelatedControlName = duplicateGroup.FirstOrDefault()?.Name ?? ""
+                });
+            }
+        }
     }
 
     private static bool DiagnosticsMatch(IReadOnlyCollection<DocumentDiagnosticModel> current, IReadOnlyList<DocumentDiagnosticModel> next)
@@ -4491,6 +4604,26 @@ public partial class MainWindowViewModel : ObservableObject
         StatusText = "Output cleared.";
     }
 
+    private async void CleanArtifacts()
+    {
+        var task = StartWorkspaceTask("Clean Artifacts", "Removing old smoke/export validation projects.");
+        try
+        {
+            var result = await Task.Run(() => _artifactCleanupService.Clean(Directory.GetCurrentDirectory()));
+            CompleteWorkspaceTask(task, result.Summary);
+            StatusText = $"Artifacts cleaned: {result.Summary}";
+            LogWorkspace(WorkspaceLogLevel.Success, OutputCategoryGeneral, StatusText, result.ArtifactsRoot);
+            ShowWorkspaceToast(WorkspaceToastLevel.Success, "Artifacts cleaned", result.Summary);
+        }
+        catch (Exception ex)
+        {
+            FailWorkspaceTask(task, ex.Message);
+            StatusText = $"Artifacts cleanup failed: {ex.Message}";
+            LogWorkspace(WorkspaceLogLevel.Error, OutputCategoryGeneral, StatusText);
+            ShowWorkspaceToast(WorkspaceToastLevel.Error, "Artifacts cleanup failed", ex.Message, isPersistent: true);
+        }
+    }
+
     [RelayCommand]
     private void DismissToast(WorkspaceToastModel? toast)
     {
@@ -4802,7 +4935,34 @@ public partial class MainWindowViewModel : ObservableObject
         StatusText = IsDistanceHintsEnabled ? "Distance hints enabled" : "Distance hints hidden";
     }
 
+    public DesignControlModel? TryCreateControlFromToolboxDrop(
+        string type,
+        double x,
+        double y,
+        string? parentId,
+        bool bypassGridSnap,
+        string targetDocumentId)
+    {
+        if (!IsActiveDocumentTarget(targetDocumentId, out var activeDocumentId))
+        {
+            TraceDocumentDebug(
+                "DropRejected",
+                $"type={type}; targetDocument={targetDocumentId}; activeDocument={activeDocumentId}; x={x:0.##}; y={y:0.##}",
+                toOutput: true,
+                warning: true);
+            StatusText = "Drop отменён: активная форма уже изменилась.";
+            return null;
+        }
+
+        return CreateControlCore(type, x, y, parentId, bypassGridSnap, activeDocumentId, "ToolboxDrop");
+    }
+
     public DesignControlModel CreateControl(string type, double x, double y, string? parentId = null, bool bypassGridSnap = false)
+    {
+        return CreateControlCore(type, x, y, parentId, bypassGridSnap, ActiveDocumentId, "CreateControl");
+    }
+
+    private DesignControlModel CreateControlCore(string type, double x, double y, string? parentId, bool bypassGridSnap, string documentId, string reason)
     {
         // Контрол всегда создается из стартового шаблона,
         // а координаты сразу привязываются к сетке и границам контейнера.
@@ -4836,9 +4996,85 @@ public partial class MainWindowViewModel : ObservableObject
         }
 
         ClampControlToSurface(model);
+        TrackControlDocument(model, documentId);
         Controls.Add(model);
         SelectedControl = model;
+        TraceDocumentDebug(reason, $"created={model.Name}/{model.Id}; type={type}; doc={documentId}; x={model.X:0.##}; y={model.Y:0.##}", toOutput: false);
         return model;
+    }
+
+    private bool IsActiveDocumentTarget(string? targetDocumentId, out string activeDocumentId)
+    {
+        activeDocumentId = ActiveDocumentId;
+        if (string.IsNullOrWhiteSpace(targetDocumentId))
+            return !string.IsNullOrWhiteSpace(activeDocumentId);
+
+        return string.Equals(targetDocumentId, activeDocumentId, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void TrackControlDocument(DesignControlModel? control, string? documentId)
+    {
+        if (control is null || string.IsNullOrWhiteSpace(control.Id) || string.IsNullOrWhiteSpace(documentId))
+            return;
+
+        _controlDocumentIdsByControlId[control.Id] = documentId;
+    }
+
+    private string GetTrackedControlDocumentId(DesignControlModel? control)
+    {
+        if (control is null || string.IsNullOrWhiteSpace(control.Id))
+            return "";
+
+        return _controlDocumentIdsByControlId.TryGetValue(control.Id, out var documentId)
+            ? documentId
+            : "";
+    }
+
+    public void MarkCanvasRenderedDocument(string reason)
+    {
+        _canvasRenderedDocumentId = ActiveDocumentId;
+        OnPropertyChanged(nameof(CanvasRenderedDocumentId));
+        TraceDocumentDebug("RenderCanvas", $"reason={reason}; controls={Controls.Count}", toOutput: false);
+    }
+
+    public void TraceDocumentDebug(string eventName, string details = "", bool toOutput = false, bool warning = false)
+    {
+        var selectedDocumentId = GetTrackedControlDocumentId(SelectedControl);
+        var message =
+            $"[DocumentIsolation] {eventName}: active={ActiveDocumentName}/{ActiveDocumentId}; " +
+            $"selected={SelectedControl?.Name ?? "-"}:{SelectedControl?.Id ?? "-"} doc={selectedDocumentId}; " +
+            $"propertyGrid={_propertyGridContextDocumentId}/{_propertyGridContextControlId}; canvas={_canvasRenderedDocumentId}; {details}";
+
+        Debug.WriteLine(message);
+
+        if (!toOutput)
+            return;
+
+        LogWorkspace(
+            warning ? WorkspaceLogLevel.Warning : WorkspaceLogLevel.Info,
+            OutputCategoryDiagnostics,
+            message);
+    }
+
+    public void TraceDocumentStateSnapshot(string reason, bool toOutput = false)
+    {
+        var selectedDocumentId = GetTrackedControlDocumentId(SelectedControl);
+        var rowContexts = PropertyGridCategories
+            .SelectMany(category => category.Rows)
+            .Select(row => $"{row.ContextDocumentId}/{row.ContextControlId}/{row.Key}")
+            .Take(12);
+        var message =
+            $"[DocumentStateDump] {reason}: active={ActiveDocumentName}/{ActiveDocumentId}; " +
+            $"selected={SelectedControl?.Name ?? "-"}:{SelectedControl?.Id ?? "-"} selectedDoc={selectedDocumentId}; " +
+            $"tabs={DocumentTabs.Count}; selectedTab={SelectedDocumentTab?.DocumentId ?? "-"}; " +
+            $"controls={Controls.Count}; bindings={BindingSources.Count}; interactions={Interactions.Count}; " +
+            $"propertyRows={PropertyGridCategories.Sum(category => category.Rows.Count)}; " +
+            $"propertyContext={PropertyGridContextDocumentId}/{PropertyGridContextControlId}; " +
+            $"rowContexts=[{string.Join(", ", rowContexts)}]; subscriptions={_controlPropertySubscriptions.Count}";
+
+        Debug.WriteLine(message);
+        if (toOutput)
+            LogWorkspace(WorkspaceLogLevel.Info, OutputCategoryDiagnostics, message);
     }
 
     public BindingSourceModel AddBindingSource()
@@ -5490,10 +5726,12 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void AddForm()
     {
+        TraceDocumentStateSnapshot("BeforeAddForm", toOutput: true);
         PersistActiveFormDocumentState(refreshProjectViews: false);
         var form = _projectDocumentService.AddForm(CurrentProject, "Form");
         Workspace.Session.OpenDocumentIds.Add(form.Id);
         ApplyFormDocument(form, persistCurrent: false, restoreSessionSelection: false);
+        TraceDocumentStateSnapshot("AfterAddFormApplyNewForm", toOutput: true);
         MarkWorkspaceStructureChanged();
         StatusText = $"Form added: {form.DisplayName}";
         LogWorkspace(WorkspaceLogLevel.Info, OutputCategoryGeneral, StatusText);
@@ -5765,12 +6003,14 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void OpenFormDocument(DesignerFormDocument form)
     {
+        TraceDocumentStateSnapshot($"BeforeOpenForm:{form.DisplayName}", toOutput: false);
         if (!Workspace.Session.OpenDocumentIds.Contains(form.Id))
             Workspace.Session.OpenDocumentIds.Add(form.Id);
 
         if (!string.Equals(form.Id, ActiveFormDocument?.Id, StringComparison.OrdinalIgnoreCase))
             ApplyFormDocument(form);
 
+        TraceDocumentStateSnapshot($"AfterOpenForm:{form.DisplayName}", toOutput: false);
         StatusText = $"Opened form: {form.DisplayName}";
     }
 
@@ -6371,6 +6611,21 @@ public partial class MainWindowViewModel : ObservableObject
             or nameof(DesignControlModel.Height);
     }
 
+    private static bool ShouldRebuildPropertyGridForControlProperty(string? propertyName)
+    {
+        return string.IsNullOrWhiteSpace(propertyName)
+            || propertyName is nameof(DesignControlModel.Type)
+                or nameof(DesignControlModel.ParentId)
+                or nameof(DesignControlModel.BindingSourceId)
+                or nameof(DesignControlModel.ChildLayoutMode)
+                or nameof(DesignControlModel.LayoutOrientation)
+                or nameof(DesignControlModel.Columns)
+                or nameof(DesignControlModel.Rows)
+                or nameof(DesignControlModel.GridColumnDefinitions)
+                or nameof(DesignControlModel.GridRowDefinitions)
+                or nameof(DesignControlModel.ShowGridLines);
+    }
+
     private void RefreshLivePropertyGridLayoutRows(DateTime? refreshedUtc = null)
     {
         var control = SelectedControl;
@@ -6388,7 +6643,9 @@ public partial class MainWindowViewModel : ObservableObject
 
     private bool TryRefreshPropertyGridRow(string key, string value, bool boolValue = false)
     {
-        if (!_propertyGridRowsByKey.TryGetValue(key, out var rows))
+        var contextKey = CreatePropertyGridRowCacheKey(ActiveDocumentId, SelectedControl?.Id ?? "", key);
+        if (!_propertyGridRowsByContextKey.TryGetValue(contextKey, out var rows)
+            && !_propertyGridRowsByKey.TryGetValue(key, out rows))
             return false;
 
         foreach (var row in rows)
@@ -6399,7 +6656,34 @@ public partial class MainWindowViewModel : ObservableObject
         return true;
     }
 
-    private void RebuildPropertyGrid()
+    private bool TryRefreshSelectedPropertyGridRow(string? propertyName)
+    {
+        var control = SelectedControl;
+        if (control is null || string.IsNullOrWhiteSpace(propertyName))
+            return false;
+
+        var property = typeof(DesignControlModel).GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public);
+        if (property is null)
+            return false;
+
+        var rawValue = property.GetValue(control);
+        var boolValue = rawValue is bool booleanValue && booleanValue;
+        var textValue = rawValue switch
+        {
+            null => "",
+            bool boolean => boolean ? "True" : "False",
+            double number => number.ToString(CultureInfo.InvariantCulture),
+            float number => number.ToString(CultureInfo.InvariantCulture),
+            decimal number => number.ToString(CultureInfo.InvariantCulture),
+            int number => number.ToString(CultureInfo.InvariantCulture),
+            long number => number.ToString(CultureInfo.InvariantCulture),
+            _ => Convert.ToString(rawValue, CultureInfo.InvariantCulture) ?? ""
+        };
+
+        return TryRefreshPropertyGridRow(propertyName, textValue, boolValue);
+    }
+
+    private void RebuildPropertyGrid(string reason = "General")
     {
         if (_isApplyingDocument)
             return;
@@ -6408,6 +6692,9 @@ public partial class MainWindowViewModel : ObservableObject
         _isRebuildingPropertyGrid = true;
         try
         {
+            _propertyGridContextDocumentId = ActiveDocumentId;
+            _propertyGridContextControlId = SelectedControl?.Id ?? "";
+            _propertyGridRebuildCount++;
             var query = PropertyGridSearchText.Trim();
             var hasSearch = !string.IsNullOrWhiteSpace(query);
             var rows = BuildPropertyGridRows().ToList();
@@ -6420,6 +6707,7 @@ public partial class MainWindowViewModel : ObservableObject
 
             PropertyGridCategories.Clear();
             _propertyGridRowsByKey.Clear();
+            _propertyGridRowsByContextKey.Clear();
 
             var favorites = rows.Where(row => row.IsFavorite).ToList();
             if (favorites.Count > 0)
@@ -6439,8 +6727,14 @@ public partial class MainWindowViewModel : ObservableObject
 
         stopwatch.Stop();
         _lastPropertyGridRebuildMs = stopwatch.Elapsed.TotalMilliseconds;
-        ReportPerformanceMetric("PropertyGrid rebuild", _lastPropertyGridRebuildMs);
+        ReportPerformanceMetric($"PropertyGrid rebuild ({reason})", _lastPropertyGridRebuildMs);
+        TraceDocumentDebug(
+            "RebuildPropertyGrid",
+            $"reason={reason}; count={_propertyGridRebuildCount}; rows={PropertyGridCategories.Sum(category => category.Rows.Count)}; elapsed={_lastPropertyGridRebuildMs:0.0}ms",
+            toOutput: false);
         RaisePropertyGridProperties();
+        OnPropertyChanged(nameof(PropertyGridContextDocumentId));
+        OnPropertyChanged(nameof(PropertyGridContextControlId));
         OnPropertyChanged(nameof(PerformanceDiagnosticsSummary));
     }
 
@@ -6458,7 +6752,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     partial void OnPropertyGridSearchTextChanged(string value)
     {
-        RebuildPropertyGrid();
+        RebuildPropertyGrid("SearchTextChanged");
     }
 
     private void AddPropertyGridCategory(string key, string title, IReadOnlyList<PropertyGridRowViewModel> rows, bool forceExpanded)
@@ -6480,10 +6774,25 @@ public partial class MainWindowViewModel : ObservableObject
 
             if (!keyedRows.Contains(row))
                 keyedRows.Add(row);
+
+            var contextKey = CreatePropertyGridRowCacheKey(row.ContextDocumentId, row.ContextControlId, row.Key);
+            if (!_propertyGridRowsByContextKey.TryGetValue(contextKey, out var contextRows))
+            {
+                contextRows = new List<PropertyGridRowViewModel>();
+                _propertyGridRowsByContextKey[contextKey] = contextRows;
+            }
+
+            if (!contextRows.Contains(row))
+                contextRows.Add(row);
         }
 
         category.NotifyRowsChanged();
         PropertyGridCategories.Add(category);
+    }
+
+    private static string CreatePropertyGridRowCacheKey(string documentId, string controlId, string propertyKey)
+    {
+        return $"{documentId ?? ""}|{controlId ?? ""}|{propertyKey ?? ""}";
     }
 
     private IEnumerable<PropertyGridRowViewModel> BuildPropertyGridRows()
@@ -6915,6 +7224,10 @@ public partial class MainWindowViewModel : ObservableObject
         string aliases = "")
     {
         var defaultValue = GetPropertyGridDefaultValue(key);
+        var contextDocumentId = ActiveDocumentId;
+        var contextControlId = SelectedControl?.Id ?? "";
+        var contextControlName = SelectedControl?.Name ?? "";
+        var contextControlType = SelectedControl?.Type ?? "Form";
         return new PropertyGridRowViewModel(
             key,
             label,
@@ -6924,15 +7237,29 @@ public partial class MainWindowViewModel : ObservableObject
             description,
             (row, newValue) =>
             {
+                if (!CanApplyPropertyGridRow(row, newValue))
+                    return;
+
                 applyValue?.Invoke(row, newValue);
                 if (row.HasValidationError)
                     return;
 
+                TraceDocumentDebug(
+                    "EditProperty",
+                    $"document={row.ContextDocumentId}; control={row.ContextControlName}:{row.ContextControlId}; key={row.Key}; new={newValue}",
+                    toOutput: false);
                 RefreshFromPropertyGridEdit();
             },
             (row, newValue) =>
             {
+                if (!CanApplyPropertyGridRow(row, newValue.ToString(CultureInfo.InvariantCulture)))
+                    return;
+
                 applyBool?.Invoke(row, newValue);
+                TraceDocumentDebug(
+                    "EditProperty",
+                    $"document={row.ContextDocumentId}; control={row.ContextControlName}:{row.ContextControlId}; key={row.Key}; new={newValue}",
+                    toOutput: false);
                 RefreshFromPropertyGridEdit();
             },
             boolValue,
@@ -6941,7 +7268,45 @@ public partial class MainWindowViewModel : ObservableObject
             isReadOnly,
             actionText,
             defaultValue,
-            aliases);
+            aliases,
+            contextDocumentId,
+            contextControlId,
+            contextControlName,
+            contextControlType);
+    }
+
+    private bool CanApplyPropertyGridRow(PropertyGridRowViewModel row, string newValue)
+    {
+        if (!string.Equals(row.ContextDocumentId, ActiveDocumentId, StringComparison.OrdinalIgnoreCase))
+        {
+            RejectStalePropertyGridEdit(row, newValue, $"context document '{row.ContextDocumentId}' != active document '{ActiveDocumentId}'");
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(row.ContextControlId))
+        {
+            if (SelectedControl is null
+                || !string.Equals(SelectedControl.Id, row.ContextControlId, StringComparison.OrdinalIgnoreCase)
+                || Controls.All(control => !string.Equals(control.Id, row.ContextControlId, StringComparison.OrdinalIgnoreCase)))
+            {
+                RejectStalePropertyGridEdit(row, newValue, "selected control does not match the row context");
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private void RejectStalePropertyGridEdit(PropertyGridRowViewModel row, string newValue, string reason)
+    {
+        row.ValidationMessage = "Stale PropertyGrid context. Переключите элемент ещё раз.";
+        TraceDocumentDebug(
+            "Rejected stale PropertyGrid edit",
+            $"reason={reason}; rowDocument={row.ContextDocumentId}; activeDocument={ActiveDocumentId}; control={row.ContextControlName}:{row.ContextControlId}; key={row.Key}; attempted={newValue}",
+            toOutput: true,
+            warning: true);
+        StatusText = "PropertyGrid stale context refreshed.";
+        RebuildPropertyGrid("StalePropertyGridContext");
     }
 
     private static string GetPropertyGridDefaultValue(string key)
@@ -6998,7 +7363,7 @@ public partial class MainWindowViewModel : ObservableObject
         RaiseSelectionProperties();
         RaiseBindingEditorProperties();
         RaiseGenerationOptionsProperties();
-        RebuildPropertyGrid();
+        RaisePropertyGridProperties();
     }
 
     public void AddOrUpdateRecentFile(string? filePath)
@@ -14473,6 +14838,8 @@ public partial class MainWindowViewModel : ObservableObject
             SelectedInteraction = null;
             SelectedBindingSource = null;
             Controls.Clear();
+            _controlDocumentIdsByControlId.Clear();
+            _controlPropertySubscriptions.Clear();
             BindingSources.Clear();
             Interactions.Clear();
 
@@ -14557,6 +14924,7 @@ public partial class MainWindowViewModel : ObservableObject
                 runtimeControl.DataGridOuterBorderBrush = string.IsNullOrWhiteSpace(runtimeControl.DataGridOuterBorderBrush)
                     ? runtimeControl.DataGridGlowColor
                     : runtimeControl.DataGridOuterBorderBrush;
+                TrackControlDocument(runtimeControl, ActiveDocumentId);
                 Controls.Add(runtimeControl);
             }
 
@@ -14579,6 +14947,12 @@ public partial class MainWindowViewModel : ObservableObject
             ResetHistory(markAsSaved);
 
         ClearSelection();
+        RebuildStructureTree();
+        RebuildPropertyGrid("ApplyDocument");
+        RaiseBindingEditorProperties();
+        RaiseInteractionDesignerProperties();
+        RaiseInteractionLookupProperties();
+        RaiseWorkspaceStatusProperties();
         NotifyDesignerStateChanged(trackHistory: false);
     }
 
@@ -14605,6 +14979,9 @@ public partial class MainWindowViewModel : ObservableObject
         _isExportChecklistRefreshScheduled = false;
         _scheduledExportChecklistSessionId = "";
         _exportChecklistRefreshTimer.Stop();
+        _propertyGridContextDocumentId = "";
+        _propertyGridContextControlId = "";
+        _canvasRenderedDocumentId = "";
     }
 
     private void RestoreFromSnapshot(string snapshot)
@@ -15552,14 +15929,28 @@ public partial class MainWindowViewModel : ObservableObject
         if (e.OldItems is not null)
         {
             foreach (DesignControlModel control in e.OldItems)
-                control.PropertyChanged -= Control_PropertyChanged;
+            {
+                if (_controlPropertySubscriptions.Remove(control.Id))
+                    control.PropertyChanged -= Control_PropertyChanged;
+                _controlDocumentIdsByControlId.Remove(control.Id);
+            }
         }
 
         if (e.NewItems is not null)
         {
             foreach (DesignControlModel control in e.NewItems)
+            {
+                if (!_controlDocumentIdsByControlId.ContainsKey(control.Id))
+                    TrackControlDocument(control, ActiveDocumentId);
+
+                control.PropertyChanged -= Control_PropertyChanged;
                 control.PropertyChanged += Control_PropertyChanged;
+                _controlPropertySubscriptions.Add(control.Id);
+            }
         }
+
+        if (_isApplyingDocument)
+            return;
 
         if (!_isHistorySuspended)
         {
@@ -15590,7 +15981,11 @@ public partial class MainWindowViewModel : ObservableObject
             else
             {
                 RefreshDescriptorCustomPropertyEditors();
-                RebuildPropertyGrid();
+                if (ShouldRebuildPropertyGridForControlProperty(e.PropertyName))
+                    RebuildPropertyGrid($"ControlPropertyChanged:{e.PropertyName}");
+                else
+                    TryRefreshSelectedPropertyGridRow(e.PropertyName);
+
                 OnPropertyChanged(nameof(SelectedControlSummary));
                 OnPropertyChanged(nameof(SelectedLockStateSummary));
                 OnPropertyChanged(nameof(CanEditText));
@@ -15681,6 +16076,9 @@ public partial class MainWindowViewModel : ObservableObject
                 AttachBindingSource(source);
         }
 
+        if (_isApplyingDocument)
+            return;
+
         RebuildImportedDllCatalog();
         OnPropertyChanged(nameof(HasBindingSources));
         RaiseBindingEditorProperties();
@@ -15708,6 +16106,9 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void BindingSource_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (_isApplyingDocument)
+            return;
+
         RebuildImportedDllCatalog();
         RaiseBindingEditorProperties();
         RaiseInteractionDesignerProperties();
@@ -15732,6 +16133,9 @@ public partial class MainWindowViewModel : ObservableObject
                 field.PropertyChanged += BindingField_PropertyChanged;
         }
 
+        if (_isApplyingDocument)
+            return;
+
         RaiseBindingEditorProperties();
         RaiseInteractionDesignerProperties();
         RaiseInteractionLookupProperties();
@@ -15741,6 +16145,9 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void BindingField_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (_isApplyingDocument)
+            return;
+
         RaiseBindingEditorProperties();
         RaiseInteractionDesignerProperties();
         if (e.PropertyName is nameof(BindingFieldModel.Path))
@@ -15763,6 +16170,9 @@ public partial class MainWindowViewModel : ObservableObject
                 interaction.PropertyChanged += Interaction_PropertyChanged;
         }
 
+        if (_isApplyingDocument)
+            return;
+
         RaiseInteractionDesignerProperties();
         RebuildPropertyGrid();
         NotifyDesignerStateChanged();
@@ -15770,6 +16180,9 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void Interaction_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (_isApplyingDocument)
+            return;
+
         if (sender is InteractionModel interaction
             && e.PropertyName is nameof(InteractionModel.ActionType))
         {
@@ -15814,6 +16227,17 @@ public partial class MainWindowViewModel : ObservableObject
 
     partial void OnSelectedControlChanged(DesignControlModel? value)
     {
+        if (value is not null && Controls.All(control => !string.Equals(control.Id, value.Id, StringComparison.OrdinalIgnoreCase)))
+        {
+            TraceDocumentDebug(
+                "SelectedControlRejected",
+                $"staleControl={value.Name}:{value.Id}; trackedDoc={GetTrackedControlDocumentId(value)}",
+                toOutput: true,
+                warning: true);
+            ClearSelection();
+            return;
+        }
+
         if (!_isUpdatingSelectionState)
         {
             _isUpdatingSelectionState = true;
@@ -15824,7 +16248,7 @@ public partial class MainWindowViewModel : ObservableObject
         }
 
         RebuildDescriptorCustomPropertyEditors();
-        RebuildPropertyGrid();
+        RebuildPropertyGrid("SelectedControlChanged");
         OnPropertyChanged(nameof(HasSelectedControl));
         OnPropertyChanged(nameof(CanEditText));
         OnPropertyChanged(nameof(SelectedTextLabel));
@@ -16192,7 +16616,10 @@ public partial class MainWindowViewModel : ObservableObject
 
     partial void OnActiveFormDocumentChanged(DesignerFormDocument? value)
     {
+        OnPropertyChanged(nameof(ActiveDocumentId));
+        OnPropertyChanged(nameof(ActiveDocumentName));
         OnPropertyChanged(nameof(ActiveDocumentTitle));
+        TraceDocumentDebug("ActiveFormDocumentChanged", $"new={value?.DisplayName ?? "-"}:{value?.Id ?? "-"}", toOutput: false);
         RaiseWorkspaceStatusProperties();
     }
 

@@ -932,6 +932,9 @@
                             <MenuItem Header="Project Settings"
                                       Command="{Binding #RootWindow.DataContext.OpenProjectSettingsEditorCommand}"
                                       IsVisible="{Binding CanOpenProjectSettings}"/>
+                            <MenuItem Header="Clean Artifacts"
+                                      Command="{Binding #RootWindow.DataContext.CleanArtifactsEditorCommand}"
+                                      IsVisible="{Binding CanOpenProjectSettings}"/>
                           </ContextMenu>
                         </Border.ContextMenu>
                       </Border>
@@ -2685,12 +2688,14 @@
                                         <TextBox Classes="property-editor"
                                                  Text="{Binding Value, Mode=TwoWay}"
                                                  IsVisible="{Binding IsTextEditor}"
+                                                 TextChanged="PropertyGridTextBox_TextChanged"
                                                  LostFocus="PropertyGridTextBox_LostFocus"
                                                  KeyDown="PropertyGridTextBox_KeyDown"/>
 
                                         <TextBox Classes="property-editor"
                                                  Text="{Binding Value, Mode=TwoWay}"
                                                  IsVisible="{Binding IsNumberEditor}"
+                                                 TextChanged="PropertyGridTextBox_TextChanged"
                                                  LostFocus="PropertyGridTextBox_LostFocus"
                                                  KeyDown="PropertyGridTextBox_KeyDown"/>
 
@@ -2713,6 +2718,7 @@
                                               ColumnDefinitions="*,Auto">
                                           <TextBox Classes="property-editor"
                                                    Text="{Binding Value, Mode=TwoWay}"
+                                                   TextChanged="PropertyGridTextBox_TextChanged"
                                                    LostFocus="PropertyGridTextBox_LostFocus"
                                                    KeyDown="PropertyGridTextBox_KeyDown"/>
                                           <Button Grid.Column="1"
@@ -5738,11 +5744,13 @@
                                           <TextBox Classes="property-editor"
                                                    Text="{Binding Value, Mode=TwoWay}"
                                                    IsVisible="{Binding IsTextEditor}"
+                                                   TextChanged="PropertyGridTextBox_TextChanged"
                                                    LostFocus="PropertyGridTextBox_LostFocus"
                                                    KeyDown="PropertyGridTextBox_KeyDown"/>
                                           <TextBox Classes="property-editor"
                                                    Text="{Binding Value, Mode=TwoWay}"
                                                    IsVisible="{Binding IsNumberEditor}"
+                                                   TextChanged="PropertyGridTextBox_TextChanged"
                                                    LostFocus="PropertyGridTextBox_LostFocus"
                                                    KeyDown="PropertyGridTextBox_KeyDown"/>
                                           <CheckBox IsVisible="{Binding IsBoolEditor}"

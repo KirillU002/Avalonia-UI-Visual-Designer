@@ -9,5 +9,5 @@ Write-Host "Running FormDesigner export smoke tests..."
 Write-Host "Artifacts: $artifactsRoot"
 
 dotnet build-server shutdown | Out-Null
-dotnet run --project $runnerProject -- $artifactsRoot
+dotnet run -c Release --project $runnerProject -- $artifactsRoot
 exit $LASTEXITCODE

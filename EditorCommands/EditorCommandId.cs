@@ -41,6 +41,7 @@ public enum EditorCommandId
     OpenOutputPanel,
     ToggleOutputPanel,
     ClearOutput,
+    CleanArtifacts,
     ResetLayout,
     ZoomIn,
     ZoomOut,
