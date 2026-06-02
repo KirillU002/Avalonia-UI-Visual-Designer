@@ -30,6 +30,7 @@ internal static class Program
         var scenarios = new SmokeScenario[]
         {
             new("SimpleFormExport", ConfigureSimpleFormExport, AssertSimpleFormExport),
+            new("CanvasBorderBackgroundZOrderExport", ConfigureCanvasBorderBackgroundZOrderExport, AssertCanvasBorderBackgroundZOrderExport),
             new("RealDataGridExport", ConfigureRealDataGridExport, AssertRealDataGridExport, RequiresRealDataGrid: true),
             new("InteractionsExport", ConfigureInteractionsExport, AssertInteractionsExport, RequiresRealDataGrid: true),
             new("MultiFormOpenFormExport", ConfigureMultiFormOpenFormExport, AssertMultiFormOpenFormExport),
@@ -37,6 +38,7 @@ internal static class Program
             new("MultiFormToolboxDropPropertyEdit", ConfigureMultiFormToolboxDropPropertyEdit, AssertMultiFormToolboxDropPropertyEdit, RequiresRealDataGrid: true),
             new("MultiFormSameControlNamesPropertyGridEdit", ConfigureMultiFormSameControlNamesPropertyGridEdit, AssertMultiFormSameControlNamesPropertyGridEdit, RequiresRealDataGrid: true),
             new("AddEmptySecondFormDoesNotBreakFirstFormPropertyGrid", ConfigureAddEmptySecondFormDoesNotBreakFirstFormPropertyGrid, AssertAddEmptySecondFormDoesNotBreakFirstFormPropertyGrid, RequiresRealDataGrid: true),
+            new("AddEmptySecondFormDoesNotBreakFirstFormInspectorAndLogic", ConfigureAddEmptySecondFormDoesNotBreakFirstFormInspectorAndLogic, AssertAddEmptySecondFormDoesNotBreakFirstFormInspectorAndLogic, RequiresRealDataGrid: true),
             new("AlphaEndToEndProjectExport", ConfigureAlphaEndToEndProjectExport, AssertAlphaEndToEndProjectExport, RequiresRealDataGrid: true),
             new("DataGridBindingSourceWorkflow", ConfigureDataGridBindingSourceWorkflow, AssertDataGridBindingSourceWorkflow, RequiresRealDataGrid: true),
             new("OpenFormPreviewAndExport", ConfigureOpenFormPreviewAndExport, AssertOpenFormPreviewAndExport),
@@ -148,6 +150,37 @@ internal static class Program
         RequireContains(context.Xaml, "<Border", "XAML should contain Border.");
         RequireNotContains(context.Xaml, "Avalonia.Controls.DataGrid", "Simple export must not require DataGrid package.");
         RequireContains(context.ChecklistText, "Plugins: none", "Simple export checklist should not require plugins.");
+    }
+
+    private static void ConfigureCanvasBorderBackgroundZOrderExport(MainWindowViewModel vm)
+    {
+        vm.SurfaceLayoutMode = DesignerLayoutModes.Absolute;
+        vm.Controls.Add(Control(DesignerControlTypes.TextBlock, "CardTitle", 54, 46, 220, 30, text: "Customer"));
+        vm.Controls.Add(Control(DesignerControlTypes.TextBox, "CustomerNameTextBox", 54, 92, 260, 38, placeholder: "Name"));
+        vm.Controls.Add(Control(DesignerControlTypes.Border, "BackgroundPanel", 24, 28, 520, 180, background: "#EFF6FF", border: "#93C5FD", radius: 16));
+    }
+
+    private static void AssertCanvasBorderBackgroundZOrderExport(SmokeContext context)
+    {
+        var borderIndex = context.Xaml.IndexOf("x:Name=\"BackgroundPanel\"", StringComparison.Ordinal);
+        var textBlockIndex = context.Xaml.IndexOf("x:Name=\"CardTitle\"", StringComparison.Ordinal);
+        var textBoxIndex = context.Xaml.IndexOf("x:Name=\"CustomerNameTextBox\"", StringComparison.Ordinal);
+        if (borderIndex < 0 || textBlockIndex < 0 || textBoxIndex < 0)
+            throw new InvalidOperationException("Z-order smoke XAML should contain Border, TextBlock and TextBox.");
+
+        if (borderIndex > textBlockIndex || borderIndex > textBoxIndex)
+            throw new InvalidOperationException("Background Border should be exported before foreground text controls.");
+
+        RequireContains(context.Xaml, "x:Name=\"BackgroundPanel\" Width=\"520\" Height=\"180\" Canvas.Left=\"24\" Canvas.Top=\"28\" ZIndex=\"0\"", "Background Border should export ZIndex=0.");
+        RequireContains(context.Xaml, "x:Name=\"CardTitle\" Text=\"Customer\" Width=\"220\" Height=\"30\" Canvas.Left=\"54\" Canvas.Top=\"46\" ZIndex=\"1\"", "TextBlock should export above background Border.");
+        RequireContains(context.Xaml, "x:Name=\"CustomerNameTextBox\"", "TextBox should be exported.");
+        if (context.Xaml.Contains("<Canvas>\r\n      </Canvas>", StringComparison.Ordinal)
+            || context.Xaml.Contains("<Canvas>\n      </Canvas>", StringComparison.Ordinal)
+            || context.Xaml.Contains("<Canvas>\r\n        </Canvas>", StringComparison.Ordinal)
+            || context.Xaml.Contains("<Canvas>\n        </Canvas>", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Export should not generate an empty inner Canvas for a background Border.");
+        }
     }
 
     private static void ConfigureRealDataGridExport(MainWindowViewModel vm)
@@ -600,6 +633,87 @@ internal static class Program
         RequireNotContains(context.DiagnosticsText, "Document isolation", "Empty Form2 workflow should not produce document isolation diagnostics.");
     }
 
+    private static void ConfigureAddEmptySecondFormDoesNotBreakFirstFormInspectorAndLogic(MainWindowViewModel vm)
+    {
+        vm.DataGridExportMode = MainWindowViewModel.DataGridExportModeReal;
+        var form1 = vm.ActiveFormDocument ?? throw new InvalidOperationException("Form1 missing.");
+
+        var button = vm.TryCreateControlFromToolboxDrop(DesignerControlTypes.Button, 32, 42, null, false, form1.Id)
+            ?? throw new InvalidOperationException("Form1 Button was not created.");
+        var border = vm.TryCreateControlFromToolboxDrop(DesignerControlTypes.Border, 32, 104, null, false, form1.Id)
+            ?? throw new InvalidOperationException("Form1 Border was not created.");
+        var grid = vm.TryCreateControlFromToolboxDrop(DesignerControlTypes.DataGrid, 240, 42, null, false, form1.Id)
+            ?? throw new InvalidOperationException("Form1 DataGrid was not created.");
+
+        button.Name = "Button1";
+        button.Text = "Before second form";
+        border.Name = "Border1";
+        grid.Name = "DataGrid1";
+
+        vm.SelectSingleControl(button);
+        RequirePropertyGridContext(vm, form1.Id, button.Id);
+        RequirePropertyGridRowsContext(vm, form1.Id, button.Id);
+
+        vm.AddFormEditorCommand?.Execute(null);
+        var form2 = vm.ActiveFormDocument ?? throw new InvalidOperationException("Form2 missing.");
+        if (form2.Id == form1.Id)
+            throw new InvalidOperationException("AddForm did not switch to a new form.");
+        if (vm.Controls.Count != 0)
+            throw new InvalidOperationException("New Form2 should be empty.");
+
+        vm.SelectedDocumentTab = vm.DocumentTabs.First(tab => tab.DocumentId == form1.Id);
+        if (!string.Equals(vm.ActiveDocumentId, form1.Id, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("ActiveDocumentId did not return to Form1.");
+
+        var restoredButton = vm.Controls.Single(control => control.Name == "Button1");
+        vm.SelectSingleControl(restoredButton);
+        RequireInspectorSelection(vm, form1.Id, restoredButton.Id, "Button1");
+        SetPropertyGridValue(vm, nameof(DesignControlModel.Name), "OpenDetailsButton");
+        if (!string.Equals(restoredButton.Name, "OpenDetailsButton", StringComparison.Ordinal))
+            throw new InvalidOperationException("Button.Name edit did not apply to Form1 selected control.");
+
+        RequireInspectorSelection(vm, form1.Id, restoredButton.Id, "OpenDetailsButton");
+        SetPropertyGridValue(vm, nameof(DesignControlModel.Text), "Open details");
+        if (!string.Equals(restoredButton.Text, "Open details", StringComparison.Ordinal))
+            throw new InvalidOperationException("Button.Text edit did not apply to Form1 selected control.");
+
+        var restoredBorder = vm.Controls.Single(control => control.Name == "Border1");
+        vm.SelectSingleControl(restoredBorder);
+        RequireInspectorSelection(vm, form1.Id, restoredBorder.Id, "Border1");
+        SetPropertyGridValue(vm, nameof(DesignControlModel.Width), "444");
+        if (Math.Abs(restoredBorder.Width - 444) > 0.001)
+            throw new InvalidOperationException("Border.Width edit did not apply to Form1 selected control.");
+
+        vm.SelectSingleControl(restoredButton);
+        RequireInspectorSelection(vm, form1.Id, restoredButton.Id, "OpenDetailsButton");
+        vm.AddShowMessageInteractionForSelectedCommand.Execute(null);
+        if (vm.SelectedInteraction is null)
+            throw new InvalidOperationException("Button Logic quick action did not create an interaction.");
+        if (!string.Equals(vm.WorkspaceMode, MainWindowViewModel.WorkspaceModeLogic, StringComparison.Ordinal))
+            throw new InvalidOperationException("Button Logic quick action should keep the Logic workspace active.");
+        if (!string.Equals(vm.SelectedInteraction.SourceControlName, restoredButton.Name, StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(vm.SelectedInteraction.EventName, InteractionModel.EventButtonClick, StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(vm.SelectedInteraction.ActionType, InteractionModel.ActionShowMessage, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Button Logic interaction was created with an unexpected source/event/action.");
+        }
+
+        if (vm.OutputEntries.Any(entry => entry.Message.Contains("Rejected stale PropertyGrid edit", StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidOperationException("A stale PropertyGrid edit was rejected during the inspector/logic regression.");
+    }
+
+    private static void AssertAddEmptySecondFormDoesNotBreakFirstFormInspectorAndLogic(SmokeContext context)
+    {
+        RequireGeneratedFile(context, "MainWindow.axaml");
+        RequireGeneratedFile(context, "MainWindow.axaml.cs");
+        RequireContains(context.Xaml, "x:Name=\"OpenDetailsButton\"", "Button.Name edit after empty Form2 should be exported.");
+        RequireContains(context.Xaml, "Content=\"Open details\"", "Button.Text edit after empty Form2 should be exported.");
+        RequireContains(context.Xaml, "Click=\"OpenDetailsButtonClick\"", "Button.Click logic should be exported.");
+        RequireContains(context.CSharp, "private async void OpenDetailsButtonClick", "Button.Click ShowMessage handler should be generated.");
+        RequireContains(context.Xaml, "Width=\"444\"", "Border.Width edit after empty Form2 should be exported.");
+        RequireNotContains(context.DiagnosticsText, "Document isolation", "Inspector/Logic regression should not produce document isolation diagnostics.");
+    }
+
     private static void ConfigureAlphaEndToEndProjectExport(MainWindowViewModel vm)
     {
         ConfigureAlphaProject(vm);
@@ -878,6 +992,35 @@ internal static class Program
 
         if (!string.Equals(vm.PropertyGridContextControlId, controlId, StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException($"PropertyGrid context control mismatch. Expected {controlId}, got {vm.PropertyGridContextControlId}.");
+    }
+
+    private static void RequireInspectorSelection(MainWindowViewModel vm, string documentId, string controlId, string expectedTitlePrefix)
+    {
+        RequirePropertyGridContext(vm, documentId, controlId);
+        RequirePropertyGridRowsContext(vm, documentId, controlId);
+
+        if (vm.SelectedControl is null || !string.Equals(vm.SelectedControl.Id, controlId, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("SelectedControl does not match the expected inspector control.");
+
+        if (!vm.PropertyGridSelectionTitle.StartsWith(expectedTitlePrefix, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException($"Inspector header mismatch. Expected prefix '{expectedTitlePrefix}', got '{vm.PropertyGridSelectionTitle}'.");
+    }
+
+    private static void RequirePropertyGridRowsContext(MainWindowViewModel vm, string documentId, string controlId)
+    {
+        var rows = vm.PropertyGridCategories.SelectMany(category => category.Rows).ToList();
+        if (rows.Count == 0)
+            throw new InvalidOperationException("PropertyGrid has no rows.");
+
+        foreach (var row in rows.Where(row => !string.IsNullOrWhiteSpace(row.ContextControlId)))
+        {
+            if (!string.Equals(row.ContextDocumentId, documentId, StringComparison.OrdinalIgnoreCase)
+                || !string.Equals(row.ContextControlId, controlId, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    $"PropertyGrid row context mismatch for {row.Key}. Expected {documentId}/{controlId}, got {row.ContextDocumentId}/{row.ContextControlId}.");
+            }
+        }
     }
 
     private static void RequireActiveControls(MainWindowViewModel vm, params string[] names)

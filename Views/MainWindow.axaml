@@ -2686,15 +2686,17 @@
                                               Padding="6,1,0,1">
                                         <Grid MinWidth="116">
                                         <TextBox Classes="property-editor"
-                                                 Text="{Binding Value, Mode=TwoWay}"
+                                                 Text="{Binding Value, Mode=OneWay}"
                                                  IsVisible="{Binding IsTextEditor}"
+                                                 GotFocus="PropertyGridTextBox_GotFocus"
                                                  TextChanged="PropertyGridTextBox_TextChanged"
                                                  LostFocus="PropertyGridTextBox_LostFocus"
                                                  KeyDown="PropertyGridTextBox_KeyDown"/>
 
                                         <TextBox Classes="property-editor"
-                                                 Text="{Binding Value, Mode=TwoWay}"
+                                                 Text="{Binding Value, Mode=OneWay}"
                                                  IsVisible="{Binding IsNumberEditor}"
+                                                 GotFocus="PropertyGridTextBox_GotFocus"
                                                  TextChanged="PropertyGridTextBox_TextChanged"
                                                  LostFocus="PropertyGridTextBox_LostFocus"
                                                  KeyDown="PropertyGridTextBox_KeyDown"/>
@@ -2717,7 +2719,8 @@
                                         <Grid IsVisible="{Binding IsColorEditor}"
                                               ColumnDefinitions="*,Auto">
                                           <TextBox Classes="property-editor"
-                                                   Text="{Binding Value, Mode=TwoWay}"
+                                                   Text="{Binding Value, Mode=OneWay}"
+                                                   GotFocus="PropertyGridTextBox_GotFocus"
                                                    TextChanged="PropertyGridTextBox_TextChanged"
                                                    LostFocus="PropertyGridTextBox_LostFocus"
                                                    KeyDown="PropertyGridTextBox_KeyDown"/>
@@ -5742,14 +5745,16 @@
                                               Padding="6,1,0,1">
                                         <Grid MinWidth="116">
                                           <TextBox Classes="property-editor"
-                                                   Text="{Binding Value, Mode=TwoWay}"
+                                                   Text="{Binding Value, Mode=OneWay}"
                                                    IsVisible="{Binding IsTextEditor}"
+                                                   GotFocus="PropertyGridTextBox_GotFocus"
                                                    TextChanged="PropertyGridTextBox_TextChanged"
                                                    LostFocus="PropertyGridTextBox_LostFocus"
                                                    KeyDown="PropertyGridTextBox_KeyDown"/>
                                           <TextBox Classes="property-editor"
-                                                   Text="{Binding Value, Mode=TwoWay}"
+                                                   Text="{Binding Value, Mode=OneWay}"
                                                    IsVisible="{Binding IsNumberEditor}"
+                                                   GotFocus="PropertyGridTextBox_GotFocus"
                                                    TextChanged="PropertyGridTextBox_TextChanged"
                                                    LostFocus="PropertyGridTextBox_LostFocus"
                                                    KeyDown="PropertyGridTextBox_KeyDown"/>

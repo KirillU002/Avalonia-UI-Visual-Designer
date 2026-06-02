@@ -228,7 +228,7 @@ public partial class MainWindow : Window
 
     private IEnumerable<DesignControlModel> GetActiveChildControls(string? parentId)
     {
-        return VM.GetChildControls(parentId);
+        return VM.GetChildControlsForDesignerRender(parentId);
     }
 
     private BindingSourceModel? GetActiveBindingSource(string? bindingSourceId)
@@ -2514,6 +2514,7 @@ public partial class MainWindow : Window
         _wrapperByControlId[model.Id] = wrapper;
         Canvas.SetLeft(wrapper, frame.X);
         Canvas.SetTop(wrapper, frame.Y);
+        wrapper.ZIndex = VM.GetCanvasVisualZIndex(model);
         host.Children.Add(wrapper);
     }
 
@@ -6991,7 +6992,10 @@ public partial class MainWindow : Window
     private void Control_PointerPressed(object? sender, PointerPressedEventArgs e)
     {
         if (VM.IsUserPreviewMode || _isPanningViewport)
+        {
+            VM.TraceDocumentDebug("Drag rejected", $"reason=previewOrPan; preview={VM.IsUserPreviewMode}; panning={_isPanningViewport}", toOutput: true, warning: true);
             return;
+        }
 
         if (sender is not Border border || border.Tag is not DesignControlModel model)
             return;
@@ -7022,6 +7026,7 @@ public partial class MainWindow : Window
 
         if (model.IsLocked)
         {
+            VM.TraceDocumentDebug("Drag rejected", $"reason=locked; control={model.Name}:{model.Id}", toOutput: true, warning: true);
             e.Handled = true;
             return;
         }
@@ -7047,6 +7052,7 @@ public partial class MainWindow : Window
 
         _isDragging = true;
         _dragGestureSessionId = VM.DocumentSessionId;
+        VM.TraceDocumentDebug("Drag start", $"control={model.Name}:{model.Id}; session={_dragGestureSessionId}", toOutput: true);
 
         if (VM.IsControlSelected(model) && VM.HasMultipleSelection)
             VM.SelectControls(VM.GetSelectedControls(), model);
@@ -7080,6 +7086,7 @@ public partial class MainWindow : Window
             return;
         if (!string.Equals(_dragGestureSessionId, VM.DocumentSessionId, StringComparison.Ordinal))
         {
+            VM.TraceDocumentDebug("Drag rejected", $"reason=sessionMismatch; dragSession={_dragGestureSessionId}; currentSession={VM.DocumentSessionId}", toOutput: true, warning: true);
             _isDragging = false;
             _dragGestureSessionId = string.Empty;
             _draggedBorder = null;
@@ -7187,6 +7194,7 @@ public partial class MainWindow : Window
 
         if (!string.Equals(_dragGestureSessionId, VM.DocumentSessionId, StringComparison.Ordinal))
         {
+            VM.TraceDocumentDebug("Drag release rejected", $"reason=sessionMismatch; dragSession={_dragGestureSessionId}; currentSession={VM.DocumentSessionId}", toOutput: true, warning: true);
             _isDragging = false;
             _dragGestureSessionId = string.Empty;
             _draggedBorder = null;
@@ -7216,6 +7224,7 @@ public partial class MainWindow : Window
             VM.ReparentControl(draggedRoot, targetContainer?.Id, absolutePosition.X, absolutePosition.Y);
         }
 
+        var committedRootCount = _dragSelectionRoots.Count;
         _isDragging = false;
         _dragGestureSessionId = string.Empty;
         ClearGuideOverlay();
@@ -7226,6 +7235,7 @@ public partial class MainWindow : Window
         ClearSnapCandidateSnapshot();
         VM.EndPropertyGridLiveGesture();
         VM.CommitUndoBatch();
+        VM.TraceDocumentDebug("Drag committed", $"roots={committedRootCount}; session={VM.DocumentSessionId}", toOutput: true);
         RenderDesigner();
     }
 
@@ -8177,13 +8187,20 @@ public partial class MainWindow : Window
         RefreshFromPropertyPanel();
     }
 
+    private void PropertyGridTextBox_GotFocus(object? sender, GotFocusEventArgs e)
+    {
+        if (sender is not TextBox textBox || textBox.DataContext is not PropertyGridRowViewModel row)
+            return;
+
+        VM.BeginPropertyGridTextEdit(row, textBox.Text ?? string.Empty);
+    }
+
     private void PropertyGridTextBox_LostFocus(object? sender, RoutedEventArgs e)
     {
         if (sender is not TextBox textBox || textBox.DataContext is not PropertyGridRowViewModel row)
             return;
 
-        row.Value = textBox.Text ?? string.Empty;
-        row.CommitValue();
+        VM.CommitPropertyGridTextEdit(row, textBox.Text ?? string.Empty);
         RefreshFromPropertyPanel();
     }
 
@@ -8192,18 +8209,20 @@ public partial class MainWindow : Window
         if (e.Key != Key.Enter || sender is not TextBox textBox || textBox.DataContext is not PropertyGridRowViewModel row)
             return;
 
-        row.Value = textBox.Text ?? string.Empty;
-        row.CommitValue();
+        VM.CommitPropertyGridTextEdit(row, textBox.Text ?? string.Empty);
         RefreshFromPropertyPanel();
         e.Handled = true;
     }
 
     private void PropertyGridTextBox_TextChanged(object? sender, TextChangedEventArgs e)
     {
-        if (_isApplyingTextChanges || sender is not TextBox textBox || textBox.DataContext is not PropertyGridRowViewModel row)
+        if (sender is not TextBox textBox || textBox.DataContext is not PropertyGridRowViewModel row)
             return;
 
-        row.Value = textBox.Text ?? string.Empty;
+        if (!textBox.IsFocused)
+            return;
+
+        VM.UpdatePropertyGridTextEdit(row, textBox.Text ?? string.Empty);
     }
 
     private async void PropertyGridColorButton_Click(object? sender, RoutedEventArgs e)

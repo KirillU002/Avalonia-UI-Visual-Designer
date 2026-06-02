@@ -1,6 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using System;
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.Linq;
 
 namespace FormDesigner.ViewModels;
@@ -31,6 +32,8 @@ public enum PropertyGridValidationState
 
 public sealed class PropertyGridRowViewModel : ObservableObject
 {
+    public static Action<PropertyGridRowViewModel, string, string, string>? ValueTrace;
+
     private readonly Action<PropertyGridRowViewModel, string>? _applyValue;
     private readonly Action<PropertyGridRowViewModel, bool>? _applyBool;
     private string _value;
@@ -168,9 +171,12 @@ public sealed class PropertyGridRowViewModel : ObservableObject
         get => _value;
         set
         {
-            if (!SetProperty(ref _value, value ?? string.Empty))
+            var oldValue = _value;
+            var newValue = value ?? string.Empty;
+            if (!SetProperty(ref _value, newValue))
                 return;
 
+            ValueTrace?.Invoke(this, oldValue, newValue, new StackTrace(skipFrames: 1, fNeedFileInfo: false).ToString());
             RefreshModifiedState();
         }
     }
