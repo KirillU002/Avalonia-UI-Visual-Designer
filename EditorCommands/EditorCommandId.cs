@@ -98,5 +98,6 @@ public enum EditorCommandId
     ToggleReopenLastWorkspace,
     OpenStartScreen,
     CancelBackgroundTask,
-    DumpEditorState
+    DumpEditorState,
+    ResetInteractionState
 }

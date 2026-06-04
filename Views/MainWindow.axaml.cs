@@ -508,6 +508,9 @@ public partial class MainWindow : Window
             case EditorCommandId.ReopenLastWorkspace:
                 await TryRestoreLastSessionDocumentAsync(ignoreSetting: true);
                 break;
+            case EditorCommandId.ResetInteractionState:
+                ResetInteractionState("ExternalCommand");
+                break;
         }
     }
 
@@ -952,6 +955,63 @@ public partial class MainWindow : Window
         DesignerCanvas.Children.Clear();
         MiniMapCanvas.Children.Clear();
         ResetInteractiveRuntimePreviewState();
+    }
+
+    private string CaptureViewInteractionState()
+    {
+        return
+            $"viewFlags=drag:{_isDragging}, resizing:{_isResizing}, gridResize:{_isResizingGridColumn}, designResize:{_isResizingDesignSurface}, " +
+            $"marquee:{_isMarqueeSelecting}, marqueeAdd:{_isMarqueeAdditive}, marqueeToggle:{_isMarqueeToggle}, panning:{_isPanningViewport}, miniMap:{_isMiniMapDraggingViewport}, " +
+            $"leftResize:{_isResizingLeftDockPanel}, rightResize:{_isResizingRightDockPanel}, diagnosticsResize:{_isResizingDiagnosticsPane}, " +
+            $"applyingText:{_isApplyingTextChanges}, inlineEditor:{_inlineCanvasEditor is not null}, closingInline:{_isClosingInlineCanvasEditor}, " +
+            $"renderScheduled:{_isDesignerRenderScheduled}, renderSession:{_scheduledDesignerRenderSessionId}, dragSession:{_dragGestureSessionId}, resizeSession:{_resizeGestureSessionId}, " +
+            $"dragged={_draggedModel?.Name ?? "-"}:{_draggedModel?.Id ?? "-"}, resizingModel={_resizingModel?.Name ?? "-"}:{_resizingModel?.Id ?? "-"}, " +
+            $"dragRoots={_dragSelectionRoots.Count}, wrappers={_wrapperByControlId.Count}, highlightedContainer={_highlightedContainerId}";
+    }
+
+    private void DumpInteractionState(string reason)
+    {
+        VM.DumpInteractionState(reason, CaptureViewInteractionState());
+    }
+
+    private void ResetInteractionState(string reason)
+    {
+        DumpInteractionState($"BeforeResetInteractionState:{reason}");
+
+        _designerRenderTimer.Stop();
+        _isDesignerRenderScheduled = false;
+        _scheduledDesignerRenderSessionId = VM.DocumentSessionId;
+        _isDragging = false;
+        _isMarqueeSelecting = false;
+        _isMarqueeAdditive = false;
+        _isMarqueeToggle = false;
+        _isPanningViewport = false;
+        _isMiniMapDraggingViewport = false;
+        _isResizing = false;
+        _isResizingDiagnosticsPane = false;
+        _isResizingLeftDockPanel = false;
+        _isResizingRightDockPanel = false;
+        _isResizingGridColumn = false;
+        _isResizingDesignSurface = false;
+        _isSpacePanGesture = false;
+        _isApplyingTextChanges = false;
+        _dragGestureSessionId = string.Empty;
+        _resizeGestureSessionId = string.Empty;
+        _draggedBorder = null;
+        _draggedModel = null;
+        _resizingModel = null;
+        _dragSelectionRoots.Clear();
+        _dragRootStartPositions.Clear();
+        _marqueeBaseSelection.Clear();
+        ClearSnapCandidateSnapshot();
+        ClearGuideOverlay();
+        ClearSelectionOverlay();
+        CloseInlineCanvasEditor(commitChanges: true);
+
+        VM.ResetInteractionStateFromShell(reason);
+        ResetDocumentVisualState(VM.DocumentSessionId);
+        RenderDesigner();
+        DumpInteractionState($"AfterResetInteractionState:{reason}");
     }
 
     private void UpdateWindowTitle()
@@ -7005,14 +7065,26 @@ public partial class MainWindow : Window
     {
         if (VM.IsUserPreviewMode || _isPanningViewport)
         {
-            VM.TraceDocumentDebug("Drag rejected", $"reason=previewOrPan; preview={VM.IsUserPreviewMode}; panning={_isPanningViewport}", toOutput: true, warning: true);
+            VM.TraceDocumentDebug("DRAG_START_REJECTED", $"reason=previewOrPan; preview={VM.IsUserPreviewMode}; panning={_isPanningViewport}; activeDocument={VM.ActiveDocumentId}; canvas={VM.CanvasRenderedDocumentId}", toOutput: true, warning: true);
             return;
         }
 
         if (sender is not Border border || border.Tag is not DesignControlModel model)
+        {
+            VM.TraceDocumentDebug("DRAG_START_REJECTED", $"reason=invalidSender; sender={sender?.GetType().Name ?? "-"}; activeDocument={VM.ActiveDocumentId}; canvas={VM.CanvasRenderedDocumentId}", toOutput: true, warning: true);
             return;
+        }
 
         var pointerProperties = e.GetCurrentPoint(border).Properties;
+        var wrapperKnown = _wrapperByControlId.ContainsKey(model.Id);
+        VM.TraceDocumentDebug(
+            "DRAG_START_ATTEMPT",
+            $"control={model.Name}:{model.Id}; activeDocument={VM.ActiveDocumentId}; canvas={VM.CanvasRenderedDocumentId}; session={VM.DocumentSessionId}; " +
+            $"selected={VM.SelectedControl?.Name ?? "-"}:{VM.SelectedControl?.Id ?? "-"}; wrapperKnown={wrapperKnown}; " +
+            $"flags=drag:{_isDragging}, resizing:{_isResizing}, designResize:{_isResizingDesignSurface}, marquee:{_isMarqueeSelecting}, propertyEditor:{VM.IsPropertyEditorFocused}; " +
+            $"buttons=left:{pointerProperties.IsLeftButtonPressed}, right:{pointerProperties.IsRightButtonPressed}; locked={model.IsLocked}",
+            toOutput: true);
+        DumpInteractionState($"BeforeDragStart:{model.Name}:{model.Id}");
 
         if (pointerProperties.IsRightButtonPressed)
         {
@@ -7034,11 +7106,14 @@ public partial class MainWindow : Window
             CloseInlineCanvasEditor(commitChanges: true);
 
         if (!pointerProperties.IsLeftButtonPressed)
+        {
+            VM.TraceDocumentDebug("DRAG_START_REJECTED", $"reason=not-left-button; control={model.Name}:{model.Id}; activeDocument={VM.ActiveDocumentId}; canvas={VM.CanvasRenderedDocumentId}", toOutput: true, warning: true);
             return;
+        }
 
         if (model.IsLocked)
         {
-            VM.TraceDocumentDebug("Drag rejected", $"reason=locked; control={model.Name}:{model.Id}", toOutput: true, warning: true);
+            VM.TraceDocumentDebug("DRAG_START_REJECTED", $"reason=locked; control={model.Name}:{model.Id}; activeDocument={VM.ActiveDocumentId}; canvas={VM.CanvasRenderedDocumentId}", toOutput: true, warning: true);
             e.Handled = true;
             return;
         }
@@ -7064,7 +7139,6 @@ public partial class MainWindow : Window
 
         _isDragging = true;
         _dragGestureSessionId = VM.DocumentSessionId;
-        VM.TraceDocumentDebug("Drag start", $"control={model.Name}:{model.Id}; session={_dragGestureSessionId}", toOutput: false);
 
         if (VM.IsControlSelected(model) && VM.HasMultipleSelection)
             VM.SelectControls(VM.GetSelectedControls(), model);
@@ -7073,6 +7147,23 @@ public partial class MainWindow : Window
 
         _dragSelectionRoots.Clear();
         _dragSelectionRoots.AddRange(VM.GetEditableSelectedRootControls());
+        if (_dragSelectionRoots.Count == 0)
+        {
+            VM.TraceDocumentDebug(
+                "DRAG_START_REJECTED",
+                $"reason=no-editable-selected-roots; control={model.Name}:{model.Id}; selected={VM.SelectedControl?.Name ?? "-"}:{VM.SelectedControl?.Id ?? "-"}; activeDocument={VM.ActiveDocumentId}; canvas={VM.CanvasRenderedDocumentId}; session={VM.DocumentSessionId}",
+                toOutput: true,
+                warning: true);
+            _isDragging = false;
+            _dragGestureSessionId = string.Empty;
+            _draggedBorder = null;
+            _draggedModel = null;
+            _dragSelectionRoots.Clear();
+            _dragRootStartPositions.Clear();
+            e.Handled = true;
+            return;
+        }
+
         _dragRootStartPositions.Clear();
 
         foreach (var root in _dragSelectionRoots)
@@ -7082,10 +7173,16 @@ public partial class MainWindow : Window
         _draggedBorder = border;
         _draggedModel = model;
         _dragStartPointerPosition = GetDesignCanvasPosition(e);
+        VM.BeginInspectorInteraction($"CanvasDrag:{model.Name}:{model.Id}");
         VM.BeginUndoBatch();
         VM.BeginPropertyGridLiveGesture();
 
         e.Pointer.Capture(border);
+        VM.TraceDocumentDebug(
+            "DRAG_START_ACCEPTED",
+            $"control={model.Name}:{model.Id}; roots={_dragSelectionRoots.Count}; activeDocument={VM.ActiveDocumentId}; canvas={VM.CanvasRenderedDocumentId}; session={_dragGestureSessionId}",
+            toOutput: true);
+        DumpInteractionState($"AfterDragStartAccepted:{model.Name}:{model.Id}");
         e.Handled = true;
     }
 
@@ -7106,6 +7203,7 @@ public partial class MainWindow : Window
             _dragSelectionRoots.Clear();
             _dragRootStartPositions.Clear();
             ClearGuideOverlay();
+            VM.EndInspectorInteraction("CanvasDrag:sessionMismatch");
             return;
         }
 
@@ -7215,6 +7313,7 @@ public partial class MainWindow : Window
             _dragRootStartPositions.Clear();
             ClearSnapCandidateSnapshot();
             ClearGuideOverlay();
+            VM.EndInspectorInteraction("CanvasDrag:releaseSessionMismatch");
             e.Handled = true;
             return;
         }
@@ -7246,6 +7345,7 @@ public partial class MainWindow : Window
         _dragRootStartPositions.Clear();
         ClearSnapCandidateSnapshot();
         VM.EndPropertyGridLiveGesture();
+        VM.EndInspectorInteraction("CanvasDrag:released");
         VM.CommitUndoBatch();
         VM.TraceDocumentDebug("Drag committed", $"roots={committedRootCount}; session={VM.DocumentSessionId}", toOutput: false);
         RenderDesigner();
@@ -7271,6 +7371,7 @@ public partial class MainWindow : Window
         _startWidth = model.Width;
         _startHeight = model.Height;
         BuildSnapCandidateSnapshot(new[] { model });
+        VM.BeginInspectorInteraction($"CanvasResize:{model.Name}:{model.Id}");
         VM.BeginUndoBatch();
         VM.BeginPropertyGridLiveGesture();
 
@@ -7292,6 +7393,7 @@ public partial class MainWindow : Window
             _resizingModel = null;
             ClearSnapCandidateSnapshot();
             ClearGuideOverlay();
+            VM.EndInspectorInteraction("CanvasResize:sessionMismatch");
             return;
         }
 
@@ -7334,6 +7436,7 @@ public partial class MainWindow : Window
             e.Pointer.Capture(null);
             ClearSnapCandidateSnapshot();
             ClearGuideOverlay();
+            VM.EndInspectorInteraction("CanvasResize:releaseSessionMismatch");
             e.Handled = true;
             return;
         }
@@ -7354,6 +7457,7 @@ public partial class MainWindow : Window
         e.Pointer.Capture(null);
         ClearGuideOverlay();
         VM.EndPropertyGridLiveGesture();
+        VM.EndInspectorInteraction("CanvasResize:released");
         VM.CommitUndoBatch();
         RenderDesigner();
     }
@@ -8204,13 +8308,73 @@ public partial class MainWindow : Window
         if (sender is not Button button || button.DataContext is not PropertyGridRowViewModel row)
             return;
 
-        var selectedColor = await ShowColorPickerFlyoutAsync(button, row.Key, row.Value);
-        if (string.IsNullOrWhiteSpace(selectedColor))
-            return;
+        var reason = $"PropertyGridColor:{row.ContextDocumentId}/{row.ContextControlId}/{row.Key}";
+        VM.BeginInspectorInteraction(reason);
+        try
+        {
+            DumpInteractionState($"BeforeColorPickerOpen:{row.ContextDocumentId}/{row.ContextControlId}/{row.Key}");
+            var selectedColor = await ShowColorPickerFlyoutAsync(button, row.Key, row.Value);
+            if (string.IsNullOrWhiteSpace(selectedColor))
+            {
+                DumpInteractionState($"AfterColorPickerCancelled:{row.ContextDocumentId}/{row.ContextControlId}/{row.Key}");
+                return;
+            }
 
-        row.Value = selectedColor;
-        row.CommitValue();
-        RefreshFromPropertyPanel();
+            row.Value = selectedColor;
+            row.CommitValue();
+            RefreshFromPropertyPanel();
+            DumpInteractionState($"AfterColorPickerCommit:{row.ContextDocumentId}/{row.ContextControlId}/{row.Key}");
+        }
+        finally
+        {
+            VM.EndInspectorInteraction(reason);
+        }
+    }
+
+    private void PropertyGridComboBox_DropDownOpened(object? sender, EventArgs e)
+    {
+        var row = (sender as Control)?.DataContext as PropertyGridRowViewModel;
+        VM.BeginInspectorInteraction(row is null
+            ? "PropertyGridCombo:unknown-row"
+            : $"PropertyGridCombo:{row.ContextDocumentId}/{row.ContextControlId}/{row.Key}:{row.Editor}");
+        DumpInteractionState(row is null
+            ? "BeforePropertyGridComboOpen:unknown-row"
+            : $"BeforePropertyGridComboOpen:{row.ContextDocumentId}/{row.ContextControlId}/{row.Key}:{row.Editor}");
+    }
+
+    private void PropertyGridComboBox_DropDownClosed(object? sender, EventArgs e)
+    {
+        var row = (sender as Control)?.DataContext as PropertyGridRowViewModel;
+        DumpInteractionState(row is null
+            ? "AfterPropertyGridComboClosed:unknown-row"
+            : $"AfterPropertyGridComboClosed:{row.ContextDocumentId}/{row.ContextControlId}/{row.Key}:{row.Editor}");
+        VM.EndInspectorInteraction(row is null
+            ? "PropertyGridCombo:unknown-row"
+            : $"PropertyGridCombo:{row.ContextDocumentId}/{row.ContextControlId}/{row.Key}:{row.Editor}");
+    }
+
+    private void LogicComboBox_DropDownOpened(object? sender, EventArgs e)
+    {
+        VM.BeginInspectorInteraction("LogicCombo");
+        DumpInteractionState("BeforeLogicComboOpen");
+    }
+
+    private void LogicComboBox_DropDownClosed(object? sender, EventArgs e)
+    {
+        DumpInteractionState("AfterLogicComboClosed");
+        VM.EndInspectorInteraction("LogicCombo");
+    }
+
+    private void LogicEditor_GotFocus(object? sender, GotFocusEventArgs e)
+    {
+        VM.BeginInspectorInteraction("LogicEditorText");
+        DumpInteractionState("BeforeLogicEditorTextFocus");
+    }
+
+    private void LogicEditor_LostFocus(object? sender, RoutedEventArgs e)
+    {
+        DumpInteractionState("AfterLogicEditorTextLostFocus");
+        VM.EndInspectorInteraction("LogicEditorText");
     }
 
     private void PropertyGridResetButton_Click(object? sender, RoutedEventArgs e)

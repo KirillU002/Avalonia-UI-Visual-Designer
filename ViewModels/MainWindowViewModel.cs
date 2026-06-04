@@ -154,6 +154,11 @@ public partial class MainWindowViewModel : ObservableObject
     private bool _isStructureTreeRefreshSuspended;
     private bool _isRebuildingPropertyGrid;
     private bool _isEditingPropertyGrid;
+    private bool _isInspectorInteractionActive;
+    private int _inspectorInteractionDepth;
+    private bool _pendingInspectorRebuild;
+    private string _pendingInspectorRebuildReason = "";
+    private string _inspectorInteractionKind = "";
     private bool _isPropertyGridEditUndoBatchOpen;
     private bool _hasDeferredPropertyGridRebuild;
     private string _deferredPropertyGridRebuildReason = "";
@@ -264,6 +269,7 @@ public partial class MainWindowViewModel : ObservableObject
     public string ActiveDocumentId => ActiveFormDocument?.Id ?? "";
     public string ActiveDocumentName => ActiveFormDocument?.DisplayName ?? FormTitle;
     public bool IsPropertyEditorFocused => _isEditingPropertyGrid;
+    public bool IsInspectorInteractionActive => _isInspectorInteractionActive;
     public string PropertyGridContextDocumentId => _propertyGridContextDocumentId;
     public string PropertyGridContextControlId => _propertyGridContextControlId;
     public string CanvasRenderedDocumentId => _canvasRenderedDocumentId;
@@ -1334,6 +1340,7 @@ public partial class MainWindowViewModel : ObservableObject
     public EditorCommand? ClearOutputEditorCommand => GetEditorCommand(EditorCommandId.ClearOutput);
     public EditorCommand? CleanArtifactsEditorCommand => GetEditorCommand(EditorCommandId.CleanArtifacts);
     public EditorCommand? ResetLayoutEditorCommand => GetEditorCommand(EditorCommandId.ResetLayout);
+    public EditorCommand? ResetInteractionStateEditorCommand => GetEditorCommand(EditorCommandId.ResetInteractionState);
     public EditorCommand? ToggleDesignFramesEditorCommand => GetEditorCommand(EditorCommandId.ToggleDesignFrames);
     public EditorCommand? AddFormEditorCommand => GetEditorCommand(EditorCommandId.AddForm);
     public EditorCommand? AddAssetEditorCommand => GetEditorCommand(EditorCommandId.AddAsset);
@@ -2081,6 +2088,7 @@ public partial class MainWindowViewModel : ObservableObject
         RegisterEditorCommand(EditorCommandId.OpenStartScreen, "Open Start Screen", "Show the welcome screen with recent files and templates.", "", "", EditorCommandCategory.View, OpenStartScreen);
         RegisterEditorCommand(EditorCommandId.CancelBackgroundTask, "Cancel Background Task", "Cancel the current background task when possible.", "", "", EditorCommandCategory.Tools, CancelActiveWorkspaceTask, () => StateWhen(_workspaceTaskService.ActiveTask is not null, "No background task is running."));
         RegisterEditorCommand(EditorCommandId.DumpEditorState, "Dump Editor State", "Write active document, inspector and edit flags to Output.", "", "", EditorCommandCategory.Tools, () => DumpEditorState("CommandPalette"));
+        RegisterEditorCommand(EditorCommandId.ResetInteractionState, "Reset Interaction State", "Reset stuck editor interaction flags without changing the document.", "", "", EditorCommandCategory.Tools, () => RequestExternalEditorCommand(EditorCommandId.ResetInteractionState));
     }
 
     private EditorCommand RegisterEditorCommand(
@@ -2301,6 +2309,7 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(ClearOutputEditorCommand));
         OnPropertyChanged(nameof(CleanArtifactsEditorCommand));
         OnPropertyChanged(nameof(ResetLayoutEditorCommand));
+        OnPropertyChanged(nameof(ResetInteractionStateEditorCommand));
         OnPropertyChanged(nameof(ToggleDesignFramesEditorCommand));
         OnPropertyChanged(nameof(AddFormEditorCommand));
         OnPropertyChanged(nameof(AddAssetEditorCommand));
@@ -5217,12 +5226,192 @@ public partial class MainWindowViewModel : ObservableObject
     public void DumpEditorState(string reason = "Manual")
     {
         TraceDocumentStateSnapshot(reason, toOutput: true);
+        DumpInteractionState(reason);
+    }
+
+    public void DumpInteractionState(string reason = "Manual", string viewState = "")
+    {
+        var selectedDocumentId = GetTrackedControlDocumentId(SelectedControl);
+        var rowContexts = PropertyGridCategories
+            .SelectMany(category => category.Rows)
+            .Select(row => $"{row.ContextDocumentId}/{row.ContextControlId}/{row.Key}:{row.Editor}")
+            .Take(16);
+        var selectedRows = SelectedControlIds.Take(8);
+        var message =
+            $"[InteractionState] reason={reason}; active={ActiveDocumentName}/{ActiveDocumentId}; " +
+            $"session={DocumentSessionId}; canvas={CanvasRenderedDocumentId}; openedTab={SelectedDocumentTab?.DocumentId ?? "-"}; " +
+            $"selected={SelectedControl?.Name ?? "-"}:{SelectedControl?.Id ?? "-"} selectedDoc={selectedDocumentId}; selectedIds=[{string.Join(",", selectedRows)}]; " +
+            $"inspector={PropertyGridContextDocumentId}/{PropertyGridContextControlId}; rows={PropertyGridCategories.Sum(category => category.Rows.Count)}; rowContexts=[{string.Join(", ", rowContexts)}]; " +
+            $"mode={WorkspaceMode}; preview={IsUserPreviewMode}; busy={IsBusy}; " +
+            $"flags=propertyEditor:{IsPropertyEditorFocused}, editingGrid:{_isEditingPropertyGrid}, applyingDocument:{_isApplyingDocument}, switchingForm:{_isSwitchingActiveForm}, " +
+            $"inspectorInteraction:{_isInspectorInteractionActive}:{_inspectorInteractionKind}:depth={_inspectorInteractionDepth}, pendingInspectorRebuild:{_pendingInspectorRebuild}:{_pendingInspectorRebuildReason}, " +
+            $"rebuildingGrid:{_isRebuildingPropertyGrid}, liveGrid:{_isPropertyGridLiveGesture}, pendingLiveGrid:{_hasPendingPropertyGridLiveRefresh}, " +
+            $"deferredGrid:{_hasDeferredPropertyGridRebuild}:{_deferredPropertyGridRebuildReason}, " +
+            $"selectionUpdate:{_isUpdatingSelectionState}, structureUpdate:{_isUpdatingStructureSelection}, projectExplorerUpdate:{_isUpdatingProjectExplorerSelection}, " +
+            $"structureSuspended:{_isStructureTreeRefreshSuspended}, diagnosticsScheduled:{_isDiagnosticsRefreshScheduled}, exportScheduled:{_isExportChecklistRefreshScheduled}, " +
+            $"undoBatch:{_undoBatchDepth}, historySuspended:{_isHistorySuspended}; " +
+            $"editingRow={_editingPropertyGridDocumentId}/{_editingPropertyGridControlId}/{_editingPropertyGridKey}; selectedInteraction={SelectedInteraction?.SourceControlName ?? "-"}:{SelectedInteraction?.ActionType ?? "-"}; " +
+            $"{viewState}";
+
+        Debug.WriteLine(message);
+        LogWorkspace(WorkspaceLogLevel.Info, OutputCategoryDiagnostics, message);
+    }
+
+    public void BeginInspectorInteraction(string reason)
+    {
+        _inspectorInteractionDepth++;
+        if (_isInspectorInteractionActive)
+        {
+            TraceDocumentDebug(
+                "INSPECTOR_INTERACTION_NESTED_START",
+                $"reason={reason}; depth={_inspectorInteractionDepth}; activeKind={_inspectorInteractionKind}",
+                toOutput: false);
+            return;
+        }
+
+        _isInspectorInteractionActive = true;
+        _inspectorInteractionKind = reason;
+        TraceDocumentDebug(
+            "INSPECTOR_INTERACTION_START",
+            $"reason={reason}; active={ActiveDocumentId}; selected={SelectedControl?.Name ?? "-"}:{SelectedControl?.Id ?? "-"}",
+            toOutput: true);
+        OnPropertyChanged(nameof(IsInspectorInteractionActive));
+        DumpInteractionState($"INSPECTOR_INTERACTION_START:{reason}");
+    }
+
+    public void EndInspectorInteraction(string reason)
+    {
+        if (_inspectorInteractionDepth > 0)
+            _inspectorInteractionDepth--;
+
+        if (_inspectorInteractionDepth > 0)
+        {
+            TraceDocumentDebug(
+                "INSPECTOR_INTERACTION_NESTED_END",
+                $"reason={reason}; depth={_inspectorInteractionDepth}; activeKind={_inspectorInteractionKind}",
+                toOutput: false);
+            return;
+        }
+
+        if (!_isInspectorInteractionActive)
+            return;
+
+        var endedKind = _inspectorInteractionKind;
+        _isInspectorInteractionActive = false;
+        _inspectorInteractionDepth = 0;
+        _inspectorInteractionKind = "";
+        TraceDocumentDebug(
+            "INSPECTOR_INTERACTION_END",
+            $"reason={reason}; endedKind={endedKind}; pendingRebuild={_pendingInspectorRebuild}:{_pendingInspectorRebuildReason}",
+            toOutput: true);
+        OnPropertyChanged(nameof(IsInspectorInteractionActive));
+        DumpInteractionState($"INSPECTOR_INTERACTION_END:{reason}");
+
+        if (!_pendingInspectorRebuild)
+            return;
+
+        var rebuildReason = string.IsNullOrWhiteSpace(_pendingInspectorRebuildReason)
+            ? $"DeferredInspectorInteraction:{endedKind}"
+            : _pendingInspectorRebuildReason;
+        _pendingInspectorRebuild = false;
+        _pendingInspectorRebuildReason = "";
+        RebuildPropertyGrid(rebuildReason);
+    }
+
+    private bool DeferInspectorRebuildIfNeeded(string operation, string reason)
+    {
+        if (!_isInspectorInteractionActive)
+            return false;
+
+        _pendingInspectorRebuild = true;
+        var request = $"{operation}:{reason}";
+        _pendingInspectorRebuildReason = string.IsNullOrWhiteSpace(_pendingInspectorRebuildReason)
+            ? request
+            : $"{_pendingInspectorRebuildReason}; {request}";
+
+        var stack = TrimStackTrace(new StackTrace(skipFrames: 2, fNeedFileInfo: false).ToString());
+        var message =
+            $"PROPERTYGRID_REBUILD_DURING_INTERACTION operation={operation}; reason={reason}; " +
+            $"callStack={stack}; activeDocument={ActiveDocumentId}; openedTab={SelectedDocumentTab?.DocumentId ?? "-"}; " +
+            $"selectedControl={SelectedControl?.Name ?? "-"}:{SelectedControl?.Id ?? "-"}; " +
+            $"inspector={PropertyGridContextDocumentId}/{PropertyGridContextControlId}; " +
+            $"isTextEditorFocused={IsPropertyEditorFocused}; isInspectorInteractionActive={_isInspectorInteractionActive}; " +
+            $"interactionKind={_inspectorInteractionKind}; isComboDropDownOpen={_inspectorInteractionKind.Contains("Combo", StringComparison.OrdinalIgnoreCase)}; " +
+            $"isColorPickerOpen={_inspectorInteractionKind.Contains("Color", StringComparison.OrdinalIgnoreCase)}; " +
+            $"isLogicEditing={_inspectorInteractionKind.Contains("Logic", StringComparison.OrdinalIgnoreCase)}; " +
+            $"isDragging={_inspectorInteractionKind.Contains("Drag", StringComparison.OrdinalIgnoreCase) || _isPropertyGridLiveGesture}; " +
+            $"isRefreshingPropertyGrid={_isRebuildingPropertyGrid}; pendingReason={_pendingInspectorRebuildReason}";
+
+        Debug.WriteLine(message);
+        LogWorkspace(WorkspaceLogLevel.Warning, OutputCategoryDiagnostics, message);
+        TraceDocumentDebug(
+            "PROPERTYGRID_REBUILD_DEFERRED",
+            $"operation={operation}; reason={reason}; pending={_pendingInspectorRebuildReason}",
+            toOutput: true,
+            warning: true);
+        return true;
+    }
+
+    public void ResetInteractionStateFromShell(string reason = "ManualReset")
+    {
+        DumpInteractionState($"BeforeResetInteractionState:{reason}");
+
+        if (_isEditingPropertyGrid)
+            EndPropertyGridTextEdit();
+
+        _isEditingPropertyGrid = false;
+        _isPropertyGridEditUndoBatchOpen = false;
+        _hasDeferredPropertyGridRebuild = false;
+        _deferredPropertyGridRebuildReason = "";
+        _editingPropertyGridDocumentId = "";
+        _editingPropertyGridControlId = "";
+        _editingPropertyGridKey = "";
+        _editingPropertyGridText = "";
+        _isPropertyGridLiveGesture = false;
+        _hasPendingPropertyGridLiveRefresh = false;
+        _propertyGridLiveGestureSessionId = "";
+        _propertyGridLiveRefreshTimer.Stop();
+        _isInspectorInteractionActive = false;
+        _inspectorInteractionDepth = 0;
+        _pendingInspectorRebuild = false;
+        _pendingInspectorRebuildReason = "";
+        _inspectorInteractionKind = "";
+
+        _isUpdatingSelectionState = false;
+        _isUpdatingStructureSelection = false;
+        _isUpdatingProjectExplorerSelection = false;
+        _isStructureTreeRefreshSuspended = false;
+        _isRebuildingPropertyGrid = false;
+        _isSwitchingActiveForm = false;
+
+        SelectedInteraction = null;
+        SelectedBindingSource = null;
+        SelectedLayoutGridRow = null;
+        SelectedLayoutGridColumn = null;
+        ClearSelection();
+
+        RebuildPropertyGrid($"ResetInteractionState:{reason}");
+        RebuildStructureTree();
+        RaiseBindingEditorProperties();
+        RaiseInteractionDesignerProperties();
+        RaiseInteractionLookupProperties();
+        RaiseActiveLayoutProperties();
+        NotifyDesignerStateChanged(trackHistory: false);
+        OnPropertyChanged(nameof(IsPropertyEditorFocused));
+        OnPropertyChanged(nameof(IsInspectorInteractionActive));
+
+        StatusText = "Interaction state reset.";
+        DumpInteractionState($"AfterResetInteractionState:{reason}");
     }
 
     public void BeginPropertyGridTextEdit(PropertyGridRowViewModel row, string text)
     {
+        DumpInteractionState($"BeforePropertyEdit:{row.ContextDocumentId}/{row.ContextControlId}/{row.Key}");
+
         if (_isEditingPropertyGrid && !IsEditingPropertyGridRow(row))
             EndPropertyGridTextEdit();
+
+        BeginInspectorInteraction($"PropertyTextEdit:{row.ContextDocumentId}/{row.ContextControlId}/{row.Key}");
 
         if (!_isEditingPropertyGrid && !_isPropertyGridEditUndoBatchOpen)
         {
@@ -5280,12 +5469,43 @@ public partial class MainWindowViewModel : ObservableObject
 
     public void CommitPropertyGridEdit(PropertyGridRowViewModel? row, string value)
     {
-        if (row is null || row.IsReadOnly)
+        if (row is null)
+        {
+            DumpInteractionState("AfterPropertyEditRejected:row-null");
+            TraceDocumentDebug(
+                "EDIT_REJECTED",
+                $"reason=row-null; activeDocument={ActiveDocumentId}; selected={SelectedControl?.Name ?? "-"}:{SelectedControl?.Id ?? "-"}; attempted={value ?? ""}",
+                toOutput: true,
+                warning: true);
             return;
+        }
+
+        TracePropertyGridEdit(
+            "EDIT_ATTEMPT",
+            row,
+            $"property={row.Key}; editor={row.Editor}; attempted={value ?? ""}; isReadOnly={row.IsReadOnly}; active={ActiveDocumentId}; selected={SelectedControl?.Name ?? "-"}:{SelectedControl?.Id ?? "-"}");
+
+        if (row.IsReadOnly)
+        {
+            TracePropertyGridEdit(
+                "EDIT_REJECTED",
+                row,
+                $"reason=readonly; property={row.Key}; attempted={value ?? ""}");
+            DumpInteractionState($"AfterPropertyEditRejected:readonly:{row.Key}");
+            return;
+        }
 
         var newValue = value ?? string.Empty;
         if (!CanApplyPropertyGridRow(row, newValue))
+        {
+            DumpInteractionState($"AfterPropertyEditRejected:CanApply:{row.Key}");
             return;
+        }
+
+        TracePropertyGridEdit(
+            "EDIT_ACCEPTED",
+            row,
+            $"property={row.Key}; newValue={newValue}");
 
         var ownsUndoBatch = !_isPropertyGridEditUndoBatchOpen;
         if (ownsUndoBatch)
@@ -5306,6 +5526,7 @@ public partial class MainWindowViewModel : ObservableObject
                 "PG_DIRECT_COMMIT_END",
                 row,
                 $"property={row.Key}; modelValue={GetPropertyGridTargetValue(row)}; validation={row.ValidationMessage}");
+            DumpInteractionState($"AfterPropertyEditAccepted:{row.Key}");
         }
         catch (Exception ex)
         {
@@ -5347,8 +5568,15 @@ public partial class MainWindowViewModel : ObservableObject
 
         if (shouldRunDeferredRebuild)
         {
-            RebuildPropertyGrid(deferredRebuildReason);
+            _pendingInspectorRebuild = true;
+            _pendingInspectorRebuildReason = string.IsNullOrWhiteSpace(_pendingInspectorRebuildReason)
+                ? deferredRebuildReason
+                : $"{_pendingInspectorRebuildReason}; {deferredRebuildReason}";
         }
+
+        EndInspectorInteraction(row is null
+            ? "PropertyTextEdit"
+            : $"PropertyTextEdit:{row.ContextDocumentId}/{row.ContextControlId}/{row.Key}");
     }
 
     public void CancelPropertyGridTextEdit(PropertyGridRowViewModel? row = null)
@@ -5372,6 +5600,9 @@ public partial class MainWindowViewModel : ObservableObject
         _editingPropertyGridKey = "";
         _editingPropertyGridText = "";
         OnPropertyChanged(nameof(IsPropertyEditorFocused));
+        EndInspectorInteraction(row is null
+            ? "PropertyTextEditCancel"
+            : $"PropertyTextEditCancel:{row.ContextDocumentId}/{row.ContextControlId}/{row.Key}");
     }
 
     private bool IsEditingPropertyGridRow(PropertyGridRowViewModel row)
@@ -5406,11 +5637,16 @@ public partial class MainWindowViewModel : ObservableObject
             $"isApplyingDocument={_isApplyingDocument}; isRefreshingPropertyGrid={_isRebuildingPropertyGrid}; {details}";
         Debug.WriteLine(message);
 
-        if (eventName.Contains("EXCEPTION", StringComparison.OrdinalIgnoreCase)
+        if (eventName.StartsWith("EDIT_", StringComparison.OrdinalIgnoreCase)
+            || eventName.Contains("EXCEPTION", StringComparison.OrdinalIgnoreCase)
             || eventName.Contains("REJECT", StringComparison.OrdinalIgnoreCase)
             || eventName.Contains("MISSING", StringComparison.OrdinalIgnoreCase))
         {
-            LogWorkspace(WorkspaceLogLevel.Warning, OutputCategoryDiagnostics, message);
+            var level = eventName.Contains("REJECT", StringComparison.OrdinalIgnoreCase)
+                || eventName.Contains("EXCEPTION", StringComparison.OrdinalIgnoreCase)
+                ? WorkspaceLogLevel.Warning
+                : WorkspaceLogLevel.Info;
+            LogWorkspace(level, OutputCategoryDiagnostics, message);
         }
     }
 
@@ -5858,24 +6094,44 @@ public partial class MainWindowViewModel : ObservableObject
 
     public bool SetActiveForm(string? documentId, string reason, bool persistCurrent = true)
     {
+        DumpInteractionState($"BeforeSetActiveForm:{reason}");
+
+        if (_isInspectorInteractionActive)
+        {
+            TraceDocumentDebug(
+                "INSPECTOR_INTERACTION_FORCED_END_BEFORE_FORM_SWITCH",
+                $"operation=SetActiveForm; reason={reason}; target={documentId}; interaction={_inspectorInteractionKind}; depth={_inspectorInteractionDepth}",
+                toOutput: true,
+                warning: true);
+            _isInspectorInteractionActive = false;
+            _inspectorInteractionDepth = 0;
+            _pendingInspectorRebuild = false;
+            _pendingInspectorRebuildReason = "";
+            _inspectorInteractionKind = "";
+            OnPropertyChanged(nameof(IsInspectorInteractionActive));
+        }
+
         if (_isEditingPropertyGrid)
         {
             TraceDocumentDebug(
-                "SKIPPED_DURING_PROPERTY_EDIT",
+                "EDIT_FORCED_END_BEFORE_FORM_SWITCH",
                 $"operation=SetActiveForm; reason={reason}; target={documentId}; editing={_editingPropertyGridDocumentId}/{_editingPropertyGridControlId}/{_editingPropertyGridKey}",
                 toOutput: true,
                 warning: true);
-            return false;
+            EndPropertyGridTextEdit();
         }
 
         if (persistCurrent)
             SaveActiveFormState(reason);
 
-        return LoadActiveFormState(documentId, reason);
+        var result = LoadActiveFormState(documentId, reason);
+        DumpInteractionState($"AfterSetActiveForm:{reason}:result={result}");
+        return result;
     }
 
     public DesignerFormDocument CreateNewForm()
     {
+        DumpInteractionState("BeforeAddForm");
         TraceDocumentStateSnapshot("BeforeCreateNewForm", toOutput: false);
         SaveActiveFormState("CreateNewForm");
         var form = _projectDocumentService.AddForm(CurrentProject, "Form");
@@ -5890,6 +6146,7 @@ public partial class MainWindowViewModel : ObservableObject
         RaiseProjectWorkspaceProperties();
         StatusText = $"Form added: {form.DisplayName}";
         LogWorkspace(WorkspaceLogLevel.Info, OutputCategoryGeneral, StatusText);
+        DumpInteractionState("AfterAddForm");
         return form;
     }
 
@@ -5935,6 +6192,11 @@ public partial class MainWindowViewModel : ObservableObject
         _propertyGridLiveRefreshTimer.Stop();
         _hasDeferredPropertyGridRebuild = false;
         _deferredPropertyGridRebuildReason = "";
+        _isInspectorInteractionActive = false;
+        _inspectorInteractionDepth = 0;
+        _pendingInspectorRebuild = false;
+        _pendingInspectorRebuildReason = "";
+        _inspectorInteractionKind = "";
         _propertyGridContextDocumentId = "";
         _propertyGridContextControlId = "";
         _propertyGridRowsByKey.Clear();
@@ -6035,6 +6297,9 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void RebuildInspectorForActiveForm(string reason)
     {
+        if (DeferInspectorRebuildIfNeeded("RebuildInspectorForActiveForm", reason))
+            return;
+
         TraceDocumentDebug("RebuildInspectorForActiveForm", $"reason={reason}; active={ActiveDocumentName}:{ActiveDocumentId}", toOutput: false);
         RebuildPropertyGrid($"ActiveForm:{reason}");
         RaiseBindingEditorProperties();
@@ -7268,6 +7533,9 @@ public partial class MainWindowViewModel : ObservableObject
         if (_isApplyingDocument)
             return;
 
+        if (DeferInspectorRebuildIfNeeded("RebuildPropertyGrid", reason))
+            return;
+
         if (_isEditingPropertyGrid)
         {
             _hasDeferredPropertyGridRebuild = true;
@@ -7906,11 +8174,16 @@ public partial class MainWindowViewModel : ObservableObject
     private void RejectStalePropertyGridEdit(PropertyGridRowViewModel row, string newValue, string reason)
     {
         row.ValidationMessage = "Stale PropertyGrid context. Переключите элемент ещё раз.";
+        TracePropertyGridEdit(
+            "EDIT_REJECTED",
+            row,
+            $"reason={reason}; attempted={newValue}; activeDocument={ActiveDocumentId}; selected={SelectedControl?.Name ?? "-"}:{SelectedControl?.Id ?? "-"}");
         TraceDocumentDebug(
             "Rejected stale PropertyGrid edit",
             $"reason={reason}; rowDocument={row.ContextDocumentId}; activeDocument={ActiveDocumentId}; control={row.ContextControlName}:{row.ContextControlId}; key={row.Key}; attempted={newValue}",
             toOutput: true,
             warning: true);
+        DumpInteractionState($"AfterPropertyEditRejected:stale:{reason}");
         StatusText = "PropertyGrid stale context rejected. Select the control again.";
     }
 
@@ -8172,6 +8445,8 @@ public partial class MainWindowViewModel : ObservableObject
     [RelayCommand]
     private void AddInteractionForSelectedDataGrid()
     {
+        DumpInteractionState("BeforeLogicAdd:DataGridSelection");
+
         if (SelectedControl?.Type != DesignerControlTypes.DataGrid)
         {
             StatusText = "Выберите DataGrid, чтобы добавить действие выбора строки.";
@@ -8208,6 +8483,8 @@ public partial class MainWindowViewModel : ObservableObject
     [RelayCommand]
     private void AddInteraction()
     {
+        DumpInteractionState("BeforeLogicAdd:Generic");
+
         var source = SelectedControl is not null && IsSupportedInteractionSource(SelectedControl)
             ? SelectedControl
             : Controls.FirstOrDefault(IsSupportedInteractionSource);
@@ -8231,6 +8508,7 @@ public partial class MainWindowViewModel : ObservableObject
         SelectedInteraction = interaction;
         WorkspaceMode = WorkspaceModeLogic;
         StatusText = "Добавлено правило логики формы.";
+        DumpInteractionState("AfterLogicAdd:Generic");
     }
 
     [RelayCommand]
@@ -8260,6 +8538,8 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void AddPresetInteraction(string actionType)
     {
+        DumpInteractionState($"BeforeLogicAdd:Preset:{actionType}");
+
         var source = SelectedControl is not null && IsSupportedInteractionSource(SelectedControl)
             ? SelectedControl
             : Controls.FirstOrDefault(IsSupportedInteractionSource);
@@ -8285,6 +8565,7 @@ public partial class MainWindowViewModel : ObservableObject
         SelectedInteraction = interaction;
         WorkspaceMode = WorkspaceModeLogic;
         StatusText = "Interaction added.";
+        DumpInteractionState($"AfterLogicAdd:Preset:{actionType}");
     }
 
     private void ApplyInteractionActionDefaults(InteractionModel interaction, DesignControlModel? source)
@@ -15443,13 +15724,14 @@ public partial class MainWindowViewModel : ObservableObject
         bool resetHistory = true,
         bool refreshEditorSurfaces = true)
     {
-        if (_isEditingPropertyGrid && !_isSwitchingActiveForm)
+        if ((_isEditingPropertyGrid || _isInspectorInteractionActive) && !_isSwitchingActiveForm)
         {
             TraceDocumentDebug(
-                "SKIPPED_DURING_PROPERTY_EDIT",
-                $"operation=ApplyDocument; source={sourcePath ?? ""}; refresh={refreshEditorSurfaces}",
+                "SKIPPED_DURING_INSPECTOR_INTERACTION",
+                $"operation=ApplyDocument; source={sourcePath ?? ""}; refresh={refreshEditorSurfaces}; interaction={_inspectorInteractionKind}; editing={_editingPropertyGridDocumentId}/{_editingPropertyGridControlId}/{_editingPropertyGridKey}",
                 toOutput: true,
                 warning: true);
+            DeferInspectorRebuildIfNeeded("ApplyDocument", sourcePath ?? "Document");
             return;
         }
 
@@ -15596,6 +15878,11 @@ public partial class MainWindowViewModel : ObservableObject
         _editingPropertyGridText = "";
         _hasDeferredPropertyGridRebuild = false;
         _deferredPropertyGridRebuildReason = "";
+        _isInspectorInteractionActive = false;
+        _inspectorInteractionDepth = 0;
+        _pendingInspectorRebuild = false;
+        _pendingInspectorRebuildReason = "";
+        _inspectorInteractionKind = "";
 
         _isPropertyGridLiveGesture = false;
         _hasPendingPropertyGridLiveRefresh = false;

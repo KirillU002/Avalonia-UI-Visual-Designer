@@ -659,6 +659,11 @@
                           Classes="data-action-button"
                           Click="RestoreBackupButton_Click"
                           HorizontalAlignment="Stretch"/>
+                  <Button Content="Reset Interaction State"
+                          Classes="data-action-button"
+                          Command="{Binding ResetInteractionStateEditorCommand}"
+                          HorizontalAlignment="Stretch"
+                          ToolTip.Tip="Diagnostic reset for stuck PropertyGrid/Canvas interaction state."/>
 
                   <Border Height="1"
                           Background="#E2E8F0"
@@ -2637,7 +2642,7 @@
                         <StackPanel>
                           <ToggleButton Classes="property-category-header"
                                         IsChecked="{Binding IsExpanded, Mode=TwoWay}">
-                            <Grid ColumnDefinitions="14,*,Auto">
+                            <Grid ColumnDefinitions="14,*">
                               <TextBlock Text="{Binding ExpandGlyph}"
                                          FontSize="10"
                                          HorizontalAlignment="Center"
@@ -2646,11 +2651,6 @@
                                          Text="{Binding HeaderText}"
                                          VerticalAlignment="Center"
                                          TextTrimming="CharacterEllipsis"/>
-                              <TextBlock Grid.Column="2"
-                                         Text="{Binding Count}"
-                                         Foreground="#64748B"
-                                         FontWeight="Normal"
-                                         VerticalAlignment="Center"/>
                             </Grid>
                           </ToggleButton>
 
@@ -2708,11 +2708,15 @@
                                         <ComboBox Classes="property-editor"
                                                   IsVisible="{Binding IsEnumEditor}"
                                                   ItemsSource="{Binding Options}"
+                                                  DropDownOpened="PropertyGridComboBox_DropDownOpened"
+                                                  DropDownClosed="PropertyGridComboBox_DropDownClosed"
                                                   SelectedItem="{Binding SelectedOption, Mode=TwoWay}"/>
 
                                         <ComboBox Classes="property-editor"
                                                   IsVisible="{Binding IsBindingSourceEditor}"
                                                   ItemsSource="{Binding Options}"
+                                                  DropDownOpened="PropertyGridComboBox_DropDownOpened"
+                                                  DropDownClosed="PropertyGridComboBox_DropDownClosed"
                                                   SelectedItem="{Binding SelectedOption, Mode=TwoWay}"/>
 
                                         <Grid IsVisible="{Binding IsColorEditor}"
@@ -5695,7 +5699,7 @@
                           <StackPanel>
                             <ToggleButton Classes="property-category-header"
                                           IsChecked="{Binding IsExpanded, Mode=TwoWay}">
-                              <Grid ColumnDefinitions="14,*,Auto">
+                              <Grid ColumnDefinitions="14,*">
                                 <TextBlock Text="{Binding ExpandGlyph}"
                                            FontSize="10"
                                            HorizontalAlignment="Center"
@@ -5704,11 +5708,6 @@
                                            Text="{Binding HeaderText}"
                                            VerticalAlignment="Center"
                                            TextTrimming="CharacterEllipsis"/>
-                                <TextBlock Grid.Column="2"
-                                           Text="{Binding Count}"
-                                           Foreground="#64748B"
-                                           FontWeight="Normal"
-                                           VerticalAlignment="Center"/>
                               </Grid>
                             </ToggleButton>
 
@@ -5761,6 +5760,8 @@
                                           <ComboBox Classes="property-editor"
                                                     IsVisible="{Binding IsEnumEditor}"
                                                     ItemsSource="{Binding Options}"
+                                                    DropDownOpened="PropertyGridComboBox_DropDownOpened"
+                                                    DropDownClosed="PropertyGridComboBox_DropDownClosed"
                                                     SelectedItem="{Binding SelectedOption, Mode=TwoWay}"/>
                                           <TextBlock Text="{Binding Value}"
                                                      IsVisible="{Binding IsReadOnlyEditor}"
@@ -6287,6 +6288,8 @@
                         <TextBlock Text="Источник"
                                    FontWeight="SemiBold"/>
                         <ComboBox ItemsSource="{Binding InteractionSourceControlNames}"
+                                  DropDownOpened="LogicComboBox_DropDownOpened"
+                                  DropDownClosed="LogicComboBox_DropDownClosed"
                                   SelectedItem="{Binding SelectedInteraction.SourceControlName, Mode=TwoWay}"/>
                         <TextBlock Text="Элемент, который запускает правило."
                                    Foreground="#64748B"
@@ -6299,6 +6302,8 @@
                                    FontWeight="SemiBold"/>
                         <ComboBox ItemsSource="{Binding AvailableInteractionEventOptions}"
                                   SelectedValue="{Binding SelectedInteraction.EventName, Mode=TwoWay}"
+                                  DropDownOpened="LogicComboBox_DropDownOpened"
+                                  DropDownClosed="LogicComboBox_DropDownClosed"
                                   SelectedValueBinding="{Binding Value}">
                           <ComboBox.ItemTemplate>
                             <DataTemplate x:DataType="models:InteractionOptionModel">
@@ -6318,6 +6323,8 @@
                                    FontWeight="SemiBold"/>
                         <ComboBox ItemsSource="{Binding AvailableInteractionActionOptions}"
                                   SelectedValue="{Binding SelectedInteraction.ActionType, Mode=TwoWay}"
+                                  DropDownOpened="LogicComboBox_DropDownOpened"
+                                  DropDownClosed="LogicComboBox_DropDownClosed"
                                   SelectedValueBinding="{Binding Value}">
                           <ComboBox.ItemTemplate>
                             <DataTemplate x:DataType="models:InteractionOptionModel">
@@ -6337,6 +6344,8 @@
                         <TextBlock Text="Цель"
                                    FontWeight="SemiBold"/>
                         <ComboBox ItemsSource="{Binding InteractionTargetControlNames}"
+                                  DropDownOpened="LogicComboBox_DropDownOpened"
+                                  DropDownClosed="LogicComboBox_DropDownClosed"
                                   SelectedItem="{Binding SelectedInteraction.TargetControlName, Mode=TwoWay}"/>
                         <TextBlock Text="Элемент, который изменится после события."
                                    Foreground="#64748B"
@@ -6351,6 +6360,8 @@
                                    FontWeight="SemiBold"/>
                         <ComboBox ItemsSource="{Binding AvailableInteractionTargetPropertyOptions}"
                                   SelectedValue="{Binding SelectedInteraction.TargetProperty, Mode=TwoWay}"
+                                  DropDownOpened="LogicComboBox_DropDownOpened"
+                                  DropDownClosed="LogicComboBox_DropDownClosed"
                                   SelectedValueBinding="{Binding Value}">
                           <ComboBox.ItemTemplate>
                             <DataTemplate x:DataType="models:InteractionOptionModel">
@@ -6370,6 +6381,8 @@
                         <TextBlock Text="Значение / поле"
                                    FontWeight="SemiBold"/>
                         <ComboBox ItemsSource="{Binding InteractionValuePathHints}"
+                                  DropDownOpened="LogicComboBox_DropDownOpened"
+                                  DropDownClosed="LogicComboBox_DropDownClosed"
                                   SelectedItem="{Binding SelectedInteraction.SourcePath, Mode=TwoWay}"/>
                         <TextBlock Text="Поле из источника или текущее значение события."
                                    Foreground="#64748B"
@@ -6384,8 +6397,12 @@
                         <TextBlock Text="Шаблон текста"
                                    FontWeight="SemiBold"/>
                         <TextBox Text="{Binding SelectedInteraction.MessageTitle, Mode=TwoWay}"
+                                 GotFocus="LogicEditor_GotFocus"
+                                 LostFocus="LogicEditor_LostFocus"
                                  Watermark="Заголовок сообщения, например: Готово"/>
                         <TextBox Text="{Binding SelectedInteraction.TextTemplate, Mode=TwoWay}"
+                                 GotFocus="LogicEditor_GotFocus"
+                                 LostFocus="LogicEditor_LostFocus"
                                  Watermark="Например: Клиент: {Name}, Email: {Email}"/>
                         <TextBlock Text="Если шаблон заполнен, он используется вместо одиночного поля. Пример: Клиент: {Name}, Email: {Email}."
                                    Foreground="#64748B"
@@ -6402,6 +6419,8 @@
                         <Grid ColumnDefinitions="*,Auto,Auto">
                           <ComboBox ItemsSource="{Binding OpenFormTargetForms}"
                                     SelectedValue="{Binding SelectedInteraction.TargetFormId, Mode=TwoWay}"
+                                    DropDownOpened="LogicComboBox_DropDownOpened"
+                                    DropDownClosed="LogicComboBox_DropDownClosed"
                                     SelectedValueBinding="{Binding Id}">
                             <ComboBox.ItemTemplate>
                               <DataTemplate x:DataType="models:DesignerFormDocument">
@@ -6412,6 +6431,8 @@
                           <ComboBox Grid.Column="1"
                                     MinWidth="120"
                                     ItemsSource="{Binding AvailableOpenFormModes}"
+                                    DropDownOpened="LogicComboBox_DropDownOpened"
+                                    DropDownClosed="LogicComboBox_DropDownClosed"
                                     SelectedItem="{Binding SelectedInteraction.OpenMode, Mode=TwoWay}"/>
                           <CheckBox Grid.Column="2"
                                     Content="Close current"
