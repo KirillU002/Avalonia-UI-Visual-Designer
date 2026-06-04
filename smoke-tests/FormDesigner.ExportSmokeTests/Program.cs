@@ -37,6 +37,11 @@ internal static class Program
             new("MultiFormDocumentStateIsolation", ConfigureMultiFormDocumentStateIsolation, AssertMultiFormDocumentStateIsolation),
             new("MultiFormToolboxDropPropertyEdit", ConfigureMultiFormToolboxDropPropertyEdit, AssertMultiFormToolboxDropPropertyEdit, RequiresRealDataGrid: true),
             new("MultiFormSameControlNamesPropertyGridEdit", ConfigureMultiFormSameControlNamesPropertyGridEdit, AssertMultiFormSameControlNamesPropertyGridEdit, RequiresRealDataGrid: true),
+            new("AddFormSimpleIsolation", ConfigureAddFormSimpleIsolation, AssertAddFormSimpleIsolation),
+            new("SwitchFormsClearsInspector", ConfigureSwitchFormsClearsInspector, AssertSwitchFormsClearsInspector),
+            new("PropertyGridTextEditUsesLocalBuffer", ConfigurePropertyGridTextEditUsesLocalBuffer, AssertPropertyGridTextEditUsesLocalBuffer),
+            new("EditAfterAddFormWorks", ConfigureEditAfterAddFormWorks, AssertEditAfterAddFormWorks),
+            new("DragAfterAddFormWorks", ConfigureDragAfterAddFormWorks, AssertDragAfterAddFormWorks),
             new("AddEmptySecondFormDoesNotBreakFirstFormPropertyGrid", ConfigureAddEmptySecondFormDoesNotBreakFirstFormPropertyGrid, AssertAddEmptySecondFormDoesNotBreakFirstFormPropertyGrid, RequiresRealDataGrid: true),
             new("AddEmptySecondFormDoesNotBreakFirstFormInspectorAndLogic", ConfigureAddEmptySecondFormDoesNotBreakFirstFormInspectorAndLogic, AssertAddEmptySecondFormDoesNotBreakFirstFormInspectorAndLogic, RequiresRealDataGrid: true),
             new("AlphaEndToEndProjectExport", ConfigureAlphaEndToEndProjectExport, AssertAlphaEndToEndProjectExport, RequiresRealDataGrid: true),
@@ -287,20 +292,19 @@ internal static class Program
         vm.FormTitle = "Form3";
         vm.Controls.Add(Control(DesignerControlTypes.TextBox, "Form3TextBox", 36, 84, 260, 40, placeholder: "Form3 text"));
 
-        var form1Tab = vm.DocumentTabs.First(tab => tab.DocumentId == form1.Id);
-        vm.SelectedDocumentTab = form1Tab;
+        SwitchToForm(vm, form1.Id);
         RequireActiveControls(vm, "Form1Title", "OpenForm2Button");
         RequireNoActiveControls(vm, "Form2Title", "Form3TextBox");
 
-        vm.SelectedDocumentTab = vm.DocumentTabs.First(tab => tab.DocumentId == form2.Id);
+        SwitchToForm(vm, form2.Id);
         RequireActiveControls(vm, "Form2Title");
         RequireNoActiveControls(vm, "Form1Title", "OpenForm2Button", "Form3TextBox");
 
-        vm.SelectedDocumentTab = vm.DocumentTabs.First(tab => tab.DocumentId == form3.Id);
+        SwitchToForm(vm, form3.Id);
         RequireActiveControls(vm, "Form3TextBox");
         RequireNoActiveControls(vm, "Form1Title", "OpenForm2Button", "Form2Title");
 
-        vm.SelectedDocumentTab = form1Tab;
+        SwitchToForm(vm, form1.Id);
         vm.Interactions.Add(new InteractionModel
         {
             SourceControlName = "OpenForm2Button",
@@ -339,35 +343,35 @@ internal static class Program
         vm.FormTitle = "Form2";
         vm.Controls.Add(Control(DesignerControlTypes.TextBox, "Form2TextBox", 24, 48, 240, 36, placeholder: "Form2 original"));
 
-        vm.SelectedDocumentTab = vm.DocumentTabs.First(tab => tab.DocumentId == form1.Id);
+        SwitchToForm(vm, form1.Id);
         RequireActiveControls(vm, "Form1Button");
         RequireNoActiveControls(vm, "Form2TextBox");
         var form1Button = vm.Controls.Single(control => control.Name == "Form1Button");
         form1Button.Text = "Form1 edited";
         form1Button.Width = 210;
 
-        vm.SelectedDocumentTab = vm.DocumentTabs.First(tab => tab.DocumentId == form2.Id);
+        SwitchToForm(vm, form2.Id);
         RequireActiveControls(vm, "Form2TextBox");
         RequireNoActiveControls(vm, "Form1Button");
         var form2TextBox = vm.Controls.Single(control => control.Name == "Form2TextBox");
         form2TextBox.PlaceholderText = "Form2 edited";
         form2TextBox.Width = 280;
 
-        vm.SelectedDocumentTab = vm.DocumentTabs.First(tab => tab.DocumentId == form1.Id);
+        SwitchToForm(vm, form1.Id);
         RequireActiveControls(vm, "Form1Button");
         RequireNoActiveControls(vm, "Form2TextBox");
         var restoredForm1Button = vm.Controls.Single(control => control.Name == "Form1Button");
         if (restoredForm1Button.Text != "Form1 edited" || Math.Abs(restoredForm1Button.Width - 210) > 0.001)
             throw new InvalidOperationException("Form1 edited properties were not preserved after switching documents.");
 
-        vm.SelectedDocumentTab = vm.DocumentTabs.First(tab => tab.DocumentId == form2.Id);
+        SwitchToForm(vm, form2.Id);
         RequireActiveControls(vm, "Form2TextBox");
         RequireNoActiveControls(vm, "Form1Button");
         var restoredForm2TextBox = vm.Controls.Single(control => control.Name == "Form2TextBox");
         if (restoredForm2TextBox.PlaceholderText != "Form2 edited" || Math.Abs(restoredForm2TextBox.Width - 280) > 0.001)
             throw new InvalidOperationException("Form2 edited properties were not preserved after switching documents.");
 
-        vm.SelectedDocumentTab = vm.DocumentTabs.First(tab => tab.DocumentId == form1.Id);
+        SwitchToForm(vm, form1.Id);
     }
 
     private static void AssertMultiFormDocumentStateIsolation(SmokeContext context)
@@ -431,14 +435,14 @@ internal static class Program
         SetPropertyGridValue(vm, nameof(DesignControlModel.Width), "204");
         RequirePropertyGridContext(vm, form2.Id, form2Button.Id);
 
-        vm.SelectedDocumentTab = vm.DocumentTabs.First(tab => tab.DocumentId == form1.Id);
+        SwitchToForm(vm, form1.Id);
         RequireActiveControls(vm, "Form1Button", "Form1Border", "Form1Grid");
         RequireNoActiveControls(vm, "Form2Button", "Form2Border", "Form2Grid");
         var restoredForm1Button = vm.Controls.Single(control => control.Name == "Form1Button");
         if (restoredForm1Button.Text != "Form1 inspector text" || Math.Abs(restoredForm1Button.Width - 188) > 0.001)
             throw new InvalidOperationException("Form1 PropertyGrid edits were not preserved after creating/editing Form2.");
 
-        vm.SelectedDocumentTab = vm.DocumentTabs.First(tab => tab.DocumentId == form2.Id);
+        SwitchToForm(vm, form2.Id);
         RequireActiveControls(vm, "Form2Button", "Form2Border", "Form2Grid");
         RequireNoActiveControls(vm, "Form1Button", "Form1Border", "Form1Grid");
         var restoredForm2Button = vm.Controls.Single(control => control.Name == "Form2Button");
@@ -450,7 +454,7 @@ internal static class Program
         if (form1Ids.Overlaps(form2Ids))
             throw new InvalidOperationException("Form documents share control ids after toolbox drop workflow.");
 
-        vm.SelectedDocumentTab = vm.DocumentTabs.First(tab => tab.DocumentId == form1.Id);
+        SwitchToForm(vm, form1.Id);
     }
 
     private static void AssertMultiFormToolboxDropPropertyEdit(SmokeContext context)
@@ -519,7 +523,7 @@ internal static class Program
         SetPropertyGridValue(vm, nameof(DesignControlModel.Width), "600");
         RequirePropertyGridContext(vm, form2.Id, form2Grid.Id);
 
-        vm.SelectedDocumentTab = vm.DocumentTabs.First(tab => tab.DocumentId == form1.Id);
+        SwitchToForm(vm, form1.Id);
         RequireActiveControls(vm, "Button1", "Border1", "DataGrid1");
         var restoredForm1Button = vm.Controls.Single(control => control.Name == "Button1");
         var restoredForm1Border = vm.Controls.Single(control => control.Name == "Border1");
@@ -531,7 +535,7 @@ internal static class Program
         if (Math.Abs(restoredForm1Grid.Width - 400) > 0.001)
             throw new InvalidOperationException("Form1.DataGrid1 width was overwritten by Form2.DataGrid1.");
 
-        vm.SelectedDocumentTab = vm.DocumentTabs.First(tab => tab.DocumentId == form2.Id);
+        SwitchToForm(vm, form2.Id);
         RequireActiveControls(vm, "Button1", "Border1", "DataGrid1");
         var restoredForm2Button = vm.Controls.Single(control => control.Name == "Button1");
         var restoredForm2Border = vm.Controls.Single(control => control.Name == "Border1");
@@ -548,7 +552,7 @@ internal static class Program
             || ReferenceEquals(restoredForm1Grid, restoredForm2Grid))
             throw new InvalidOperationException("Forms share runtime control instances.");
 
-        vm.SelectedDocumentTab = vm.DocumentTabs.First(tab => tab.DocumentId == form1.Id);
+        SwitchToForm(vm, form1.Id);
     }
 
     private static void AssertMultiFormSameControlNamesPropertyGridEdit(SmokeContext context)
@@ -569,6 +573,174 @@ internal static class Program
     {
         if (button.Name != "Button1" || border.Name != "Border1" || grid.Name != "DataGrid1")
             throw new InvalidOperationException($"Expected default per-form names Button1/Border1/DataGrid1, got {button.Name}/{border.Name}/{grid.Name}.");
+    }
+
+    private static void ConfigureAddFormSimpleIsolation(MainWindowViewModel vm)
+    {
+        var form1 = vm.ActiveFormDocument ?? throw new InvalidOperationException("Form1 missing.");
+        var button = vm.TryCreateControlFromToolboxDrop(DesignerControlTypes.Button, 40, 40, null, false, form1.Id)
+            ?? throw new InvalidOperationException("Form1 Button was not created.");
+        button.Text = "111";
+        vm.SelectSingleControl(button);
+        vm.MoveSelectedControl(12, 8);
+
+        vm.AddFormEditorCommand?.Execute(null);
+        var form2 = vm.ActiveFormDocument ?? throw new InvalidOperationException("Form2 missing.");
+        if (string.Equals(form2.Id, form1.Id, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("AddForm did not activate a new document.");
+        if (vm.Controls.Count != 0)
+            throw new InvalidOperationException("New Form2 must be empty.");
+        if (vm.SelectedControl is not null || vm.SelectedControlIds.Count != 0)
+            throw new InvalidOperationException("AddForm must clear selected control.");
+        RequirePropertyGridContext(vm, form2.Id, "");
+
+        vm.SetActiveForm(form1.Id, "AddFormSimpleIsolation");
+        if (!string.Equals(vm.ActiveDocumentId, form1.Id, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("SetActiveForm did not return to Form1.");
+        if (vm.SelectedControl is not null || vm.SelectedControlIds.Count != 0)
+            throw new InvalidOperationException("Switching forms must not restore stale selection.");
+
+        var restored = vm.Controls.Single(control => control.Id == button.Id);
+        if (!string.Equals(restored.Text, "111", StringComparison.Ordinal))
+            throw new InvalidOperationException("Form1 Button text was lost after AddForm.");
+        if (Math.Abs(restored.X - 52) > 0.001 || Math.Abs(restored.Y - 48) > 0.001)
+            throw new InvalidOperationException("Form1 Button position was lost after AddForm.");
+    }
+
+    private static void AssertAddFormSimpleIsolation(SmokeContext context)
+    {
+        RequireContains(context.Xaml, "Content=\"111\"", "Form1 Button text should survive AddForm.");
+        RequireContains(context.Xaml, "Canvas.Left=\"52\"", "Form1 Button X should survive AddForm.");
+    }
+
+    private static void ConfigureSwitchFormsClearsInspector(MainWindowViewModel vm)
+    {
+        var form1 = vm.ActiveFormDocument ?? throw new InvalidOperationException("Form1 missing.");
+        var button = vm.TryCreateControlFromToolboxDrop(DesignerControlTypes.Button, 40, 40, null, false, form1.Id)
+            ?? throw new InvalidOperationException("Form1 Button was not created.");
+        vm.SelectSingleControl(button);
+        RequirePropertyGridContext(vm, form1.Id, button.Id);
+
+        vm.AddFormEditorCommand?.Execute(null);
+        var form2 = vm.ActiveFormDocument ?? throw new InvalidOperationException("Form2 missing.");
+        RequirePropertyGridContext(vm, form2.Id, "");
+        if (vm.PropertyGridCategories.SelectMany(category => category.Rows).Any(row => !string.IsNullOrWhiteSpace(row.ContextControlId)))
+            throw new InvalidOperationException("Form-level inspector should not keep control rows after AddForm.");
+
+        vm.SetActiveForm(form1.Id, "SwitchFormsClearsInspector");
+        RequirePropertyGridContext(vm, form1.Id, "");
+        if (vm.SelectedControl is not null || vm.SelectedInteraction is not null)
+            throw new InvalidOperationException("Switching forms must clear selected control and logic selection.");
+    }
+
+    private static void AssertSwitchFormsClearsInspector(SmokeContext context)
+    {
+        RequireGeneratedFile(context, "MainWindow.axaml");
+        RequireNotContains(context.DiagnosticsText, "Stale PropertyGrid", "SwitchFormsClearsInspector should not produce stale PropertyGrid diagnostics.");
+    }
+
+    private static void ConfigurePropertyGridTextEditUsesLocalBuffer(MainWindowViewModel vm)
+    {
+        var form1 = vm.ActiveFormDocument ?? throw new InvalidOperationException("Form1 missing.");
+        var button = vm.TryCreateControlFromToolboxDrop(DesignerControlTypes.Button, 40, 40, null, false, form1.Id)
+            ?? throw new InvalidOperationException("Form1 Button was not created.");
+        button.Text = "Initial";
+        vm.SelectSingleControl(button);
+
+        var row = GetPropertyGridRow(vm, nameof(DesignControlModel.Text));
+        vm.BeginPropertyGridTextEdit(row, row.Value);
+        vm.UpdatePropertyGridTextEdit(row, "1");
+        vm.UpdatePropertyGridTextEdit(row, "12");
+        vm.UpdatePropertyGridTextEdit(row, "123456");
+
+        if (!string.Equals(row.Value, "Initial", StringComparison.Ordinal))
+            throw new InvalidOperationException("PropertyGrid row.Value changed during live typing before commit.");
+        if (!string.Equals(button.Text, "Initial", StringComparison.Ordinal))
+            throw new InvalidOperationException("Button.Text changed during live typing before commit.");
+
+        vm.CommitPropertyGridTextEdit(row, "123456");
+        if (!string.Equals(button.Text, "123456", StringComparison.Ordinal))
+            throw new InvalidOperationException("Button.Text was not committed after local-buffer edit.");
+
+        vm.AddFormEditorCommand?.Execute(null);
+        SwitchToForm(vm, form1.Id);
+        button = vm.Controls.Single(control => control.Name == "Button1");
+        vm.SelectSingleControl(button);
+        row = GetPropertyGridRow(vm, nameof(DesignControlModel.Text));
+        vm.BeginPropertyGridTextEdit(row, row.Value);
+        vm.UpdatePropertyGridTextEdit(row, "222222");
+
+        if (!string.Equals(row.Value, "123456", StringComparison.Ordinal))
+            throw new InvalidOperationException("PropertyGrid row.Value changed during live typing after AddForm.");
+        if (!string.Equals(button.Text, "123456", StringComparison.Ordinal))
+            throw new InvalidOperationException("Button.Text changed during live typing after AddForm.");
+
+        vm.CommitPropertyGridTextEdit(row, "222222");
+        if (!string.Equals(button.Text, "222222", StringComparison.Ordinal))
+            throw new InvalidOperationException("Button.Text was not committed after AddForm local-buffer edit.");
+    }
+
+    private static void AssertPropertyGridTextEditUsesLocalBuffer(SmokeContext context)
+    {
+        RequireContains(context.Xaml, "Content=\"222222\"", "PropertyGrid local-buffer edit should commit final Button text.");
+    }
+
+    private static void ConfigureEditAfterAddFormWorks(MainWindowViewModel vm)
+    {
+        var form1 = vm.ActiveFormDocument ?? throw new InvalidOperationException("Form1 missing.");
+        var button = vm.TryCreateControlFromToolboxDrop(DesignerControlTypes.Button, 40, 40, null, false, form1.Id)
+            ?? throw new InvalidOperationException("Form1 Button was not created.");
+        button.Text = "111";
+
+        vm.AddFormEditorCommand?.Execute(null);
+        vm.SetActiveForm(form1.Id, "EditAfterAddFormWorks");
+        var restored = vm.Controls.Single(control => control.Id == button.Id);
+        vm.SelectSingleControl(restored);
+        EditPropertyGridTextLikeUi(vm, nameof(DesignControlModel.Text), "222");
+
+        if (!string.Equals(restored.Text, "222", StringComparison.Ordinal))
+            throw new InvalidOperationException("PropertyGrid edit after AddForm did not apply.");
+
+        vm.SetActiveForm(vm.CurrentProject.Forms.Single(form => !string.Equals(form.Id, form1.Id, StringComparison.OrdinalIgnoreCase)).Id, "EditAfterAddFormWorks verify Form2");
+        if (vm.Controls.Any())
+            throw new InvalidOperationException("Form2 should stay empty after editing Form1.");
+        vm.SetActiveForm(form1.Id, "EditAfterAddFormWorks export Form1");
+    }
+
+    private static void AssertEditAfterAddFormWorks(SmokeContext context)
+    {
+        RequireContains(context.Xaml, "Content=\"222\"", "Edited Form1 Button text should be exported.");
+        var form2File = context.GeneratedFiles.FirstOrDefault(file => string.Equals(file.Path, "Form2.axaml", StringComparison.OrdinalIgnoreCase));
+        if (form2File is not null)
+            RequireNotContains(form2File.Content, "222", "Form2 should not contain Form1 edited Button text.");
+    }
+
+    private static void ConfigureDragAfterAddFormWorks(MainWindowViewModel vm)
+    {
+        var form1 = vm.ActiveFormDocument ?? throw new InvalidOperationException("Form1 missing.");
+        var button = vm.TryCreateControlFromToolboxDrop(DesignerControlTypes.Button, 40, 40, null, false, form1.Id)
+            ?? throw new InvalidOperationException("Form1 Button was not created.");
+
+        vm.AddFormEditorCommand?.Execute(null);
+        vm.SetActiveForm(form1.Id, "DragAfterAddFormWorks");
+        var restored = vm.Controls.Single(control => control.Id == button.Id);
+        vm.SelectSingleControl(restored);
+        vm.MoveSelectedControl(25, 15);
+
+        if (Math.Abs(restored.X - 65) > 0.001 || Math.Abs(restored.Y - 55) > 0.001)
+            throw new InvalidOperationException($"Move after AddForm did not apply. Got {restored.X}/{restored.Y}.");
+
+        vm.SetActiveForm(vm.CurrentProject.Forms.Single(form => !string.Equals(form.Id, form1.Id, StringComparison.OrdinalIgnoreCase)).Id, "DragAfterAddFormWorks verify Form2");
+        vm.SetActiveForm(form1.Id, "DragAfterAddFormWorks verify Form1");
+        restored = vm.Controls.Single(control => control.Id == button.Id);
+        if (Math.Abs(restored.X - 65) > 0.001 || Math.Abs(restored.Y - 55) > 0.001)
+            throw new InvalidOperationException("Moved position was lost after switching forms.");
+    }
+
+    private static void AssertDragAfterAddFormWorks(SmokeContext context)
+    {
+        RequireContains(context.Xaml, "Canvas.Left=\"65\"", "Moved Button X should be exported after AddForm.");
+        RequireContains(context.Xaml, "Canvas.Top=\"55\"", "Moved Button Y should be exported after AddForm.");
     }
 
     private static void ConfigureAddEmptySecondFormDoesNotBreakFirstFormPropertyGrid(MainWindowViewModel vm)
@@ -598,7 +770,7 @@ internal static class Program
         if (vm.Controls.Count != 0)
             throw new InvalidOperationException("New Form2 should be empty in this regression scenario.");
 
-        vm.SelectedDocumentTab = vm.DocumentTabs.First(tab => tab.DocumentId == form1.Id);
+        SwitchToForm(vm, form1.Id);
         if (vm.ActiveDocumentId != form1.Id)
             throw new InvalidOperationException("ActiveDocumentId did not return to Form1.");
 
@@ -661,26 +833,26 @@ internal static class Program
         if (vm.Controls.Count != 0)
             throw new InvalidOperationException("New Form2 should be empty.");
 
-        vm.SelectedDocumentTab = vm.DocumentTabs.First(tab => tab.DocumentId == form1.Id);
+        SwitchToForm(vm, form1.Id);
         if (!string.Equals(vm.ActiveDocumentId, form1.Id, StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("ActiveDocumentId did not return to Form1.");
 
         var restoredButton = vm.Controls.Single(control => control.Name == "Button1");
         vm.SelectSingleControl(restoredButton);
         RequireInspectorSelection(vm, form1.Id, restoredButton.Id, "Button1");
-        SetPropertyGridValue(vm, nameof(DesignControlModel.Name), "OpenDetailsButton");
+        EditPropertyGridTextLikeUi(vm, nameof(DesignControlModel.Name), "OpenDetailsButton");
         if (!string.Equals(restoredButton.Name, "OpenDetailsButton", StringComparison.Ordinal))
             throw new InvalidOperationException("Button.Name edit did not apply to Form1 selected control.");
 
         RequireInspectorSelection(vm, form1.Id, restoredButton.Id, "OpenDetailsButton");
-        SetPropertyGridValue(vm, nameof(DesignControlModel.Text), "Open details");
+        EditPropertyGridTextLikeUi(vm, nameof(DesignControlModel.Text), "Open details");
         if (!string.Equals(restoredButton.Text, "Open details", StringComparison.Ordinal))
             throw new InvalidOperationException("Button.Text edit did not apply to Form1 selected control.");
 
         var restoredBorder = vm.Controls.Single(control => control.Name == "Border1");
         vm.SelectSingleControl(restoredBorder);
         RequireInspectorSelection(vm, form1.Id, restoredBorder.Id, "Border1");
-        SetPropertyGridValue(vm, nameof(DesignControlModel.Width), "444");
+        EditPropertyGridTextLikeUi(vm, nameof(DesignControlModel.Width), "444");
         if (Math.Abs(restoredBorder.Width - 444) > 0.001)
             throw new InvalidOperationException("Border.Width edit did not apply to Form1 selected control.");
 
@@ -807,10 +979,10 @@ internal static class Program
     {
         ConfigureAlphaProject(vm);
 
-        var form2Tab = vm.DocumentTabs.First(tab => string.Equals(tab.Title.Replace(" *", ""), "Form2", StringComparison.OrdinalIgnoreCase));
-        vm.SelectedDocumentTab = form2Tab;
-        var form1Tab = vm.DocumentTabs.First(tab => tab.Title.StartsWith("Form1", StringComparison.OrdinalIgnoreCase));
-        vm.SelectedDocumentTab = form1Tab;
+        var form2Document = vm.CurrentProject.Forms.First(form => string.Equals(form.DisplayName, "Form2", StringComparison.OrdinalIgnoreCase));
+        SwitchToForm(vm, form2Document.Id);
+        var form1Document = vm.CurrentProject.Forms.First(form => form.DisplayName.StartsWith("Form1", StringComparison.OrdinalIgnoreCase));
+        SwitchToForm(vm, form1Document.Id);
 
         var json = JsonSerializer.Serialize(vm.Workspace, new JsonSerializerOptions { WriteIndented = true });
         var restored = JsonSerializer.Deserialize<WorkspaceModel>(json) ?? throw new InvalidOperationException("Workspace round-trip returned null.");
@@ -882,7 +1054,7 @@ internal static class Program
         vm.Controls.Add(Control(DesignerControlTypes.TextBlock, "Form2Title", 40, 40, 360, 32, text: "Form2"));
         vm.Controls.Add(Control(DesignerControlTypes.TextBox, "Form2Input", 40, 96, 280, 40, placeholder: "Form2 input"));
 
-        vm.SelectedDocumentTab = vm.DocumentTabs.First(tab => tab.DocumentId == form1.Id);
+        SwitchToForm(vm, form1.Id);
         RequireActiveControls(vm, "OpenForm2Button", "CustomersGrid", "SelectedNameTextBox", "DetailsCheckBox", "DetailsPanel");
         RequireNoActiveControls(vm, "Form2Title", "Form2Input");
 
@@ -933,7 +1105,7 @@ internal static class Program
         form2.Document.FormTitle = "Form2";
         vm.FormTitle = "Form2";
         vm.Controls.Add(Control(DesignerControlTypes.TextBlock, "Form2Title", 36, 34, 340, 30, text: "Form2 window"));
-        vm.SelectedDocumentTab = vm.DocumentTabs.First(tab => tab.DocumentId == form1.Id);
+        SwitchToForm(vm, form1.Id);
         vm.Interactions.Add(new InteractionModel
         {
             SourceControlName = "OpenForm2Button",
@@ -962,6 +1134,15 @@ internal static class Program
         return source;
     }
 
+    private static void SwitchToForm(MainWindowViewModel vm, string formId)
+    {
+        if (!vm.SetActiveForm(formId, "SmokeSwitchToForm"))
+            throw new InvalidOperationException($"Could not switch to form {formId}.");
+
+        if (!string.Equals(vm.ActiveDocumentId, formId, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException($"ActiveDocumentId mismatch after switch. Expected {formId}, got {vm.ActiveDocumentId}.");
+    }
+
     private static void RequirePropertyGridRow(MainWindowViewModel vm, string label)
     {
         var hasRow = vm.PropertyGridCategories
@@ -974,15 +1155,32 @@ internal static class Program
 
     private static void SetPropertyGridValue(MainWindowViewModel vm, string key, string value)
     {
-        var row = vm.PropertyGridCategories
-            .SelectMany(category => category.Rows)
-            .FirstOrDefault(row => string.Equals(row.Key, key, StringComparison.OrdinalIgnoreCase));
-
-        if (row is null)
-            throw new InvalidOperationException($"PropertyGrid row missing: {key}");
-
+        var row = GetPropertyGridRow(vm, key);
         row.Value = value;
         row.CommitValue();
+    }
+
+    private static void EditPropertyGridTextLikeUi(MainWindowViewModel vm, string key, string value)
+    {
+        var row = GetPropertyGridRow(vm, key);
+
+        vm.BeginPropertyGridTextEdit(row, row.Value);
+        var text = "";
+        foreach (var character in value)
+        {
+            text += character;
+            vm.UpdatePropertyGridTextEdit(row, text);
+        }
+
+        vm.CommitPropertyGridTextEdit(row, value);
+    }
+
+    private static PropertyGridRowViewModel GetPropertyGridRow(MainWindowViewModel vm, string key)
+    {
+        return vm.PropertyGridCategories
+            .SelectMany(category => category.Rows)
+            .FirstOrDefault(row => string.Equals(row.Key, key, StringComparison.OrdinalIgnoreCase))
+            ?? throw new InvalidOperationException($"PropertyGrid row missing: {key}");
     }
 
     private static void RequirePropertyGridContext(MainWindowViewModel vm, string documentId, string controlId)

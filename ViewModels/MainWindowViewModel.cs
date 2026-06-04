@@ -148,11 +148,15 @@ public partial class MainWindowViewModel : ObservableObject
     private string _activeFormTheme = DesignerThemeCatalog.Light;
     private bool _isApplyingThemePalette;
     private bool _isApplyingDocument;
+    private bool _isSwitchingActiveForm;
     private bool _isUpdatingStructureSelection;
     private bool _isUpdatingProjectExplorerSelection;
     private bool _isStructureTreeRefreshSuspended;
     private bool _isRebuildingPropertyGrid;
     private bool _isEditingPropertyGrid;
+    private bool _isPropertyGridEditUndoBatchOpen;
+    private bool _hasDeferredPropertyGridRebuild;
+    private string _deferredPropertyGridRebuildReason = "";
     private string _editingPropertyGridDocumentId = "";
     private string _editingPropertyGridControlId = "";
     private string _editingPropertyGridKey = "";
@@ -236,6 +240,7 @@ public partial class MainWindowViewModel : ObservableObject
     public ObservableCollection<WorkspaceTaskModel> WorkspaceTasks => _workspaceTaskService.Tasks;
     public ObservableCollection<WorkspaceToastModel> WorkspaceToasts => _workspaceNotificationService.Toasts;
     public ObservableCollection<DesignerDocumentTabModel> DocumentTabs { get; } = new();
+    public ObservableCollection<DesignerFormDocument> Forms { get; } = new();
     public ObservableCollection<ProjectExplorerItemModel> ProjectExplorerItems { get; } = new();
     public ObservableCollection<GeneratedFileModel> GeneratedFiles { get; } = new();
     public ObservableCollection<GeneratedFileTreeNodeModel> GeneratedFileTreeNodes { get; } = new();
@@ -258,6 +263,7 @@ public partial class MainWindowViewModel : ObservableObject
     public DesignerProjectModel CurrentProject => Workspace.Project;
     public string ActiveDocumentId => ActiveFormDocument?.Id ?? "";
     public string ActiveDocumentName => ActiveFormDocument?.DisplayName ?? FormTitle;
+    public bool IsPropertyEditorFocused => _isEditingPropertyGrid;
     public string PropertyGridContextDocumentId => _propertyGridContextDocumentId;
     public string PropertyGridContextControlId => _propertyGridContextControlId;
     public string CanvasRenderedDocumentId => _canvasRenderedDocumentId;
@@ -2254,6 +2260,13 @@ public partial class MainWindowViewModel : ObservableObject
             return;
 
         _isEditorCommandRefreshScheduled = false;
+        if (IsPropertyEditorFocused)
+        {
+            _isEditorCommandRefreshScheduled = true;
+            _editorCommandRefreshTimer.Start();
+            return;
+        }
+
         RefreshEditorCommands();
     }
 
@@ -4060,6 +4073,13 @@ public partial class MainWindowViewModel : ObservableObject
             return;
 
         _isDiagnosticsRefreshScheduled = false;
+        if (IsPropertyEditorFocused)
+        {
+            _isDiagnosticsRefreshScheduled = true;
+            _diagnosticsRefreshTimer.Start();
+            return;
+        }
+
         if (!string.Equals(_scheduledDiagnosticsSessionId, DocumentSessionId, StringComparison.Ordinal))
             return;
 
@@ -5201,11 +5221,21 @@ public partial class MainWindowViewModel : ObservableObject
 
     public void BeginPropertyGridTextEdit(PropertyGridRowViewModel row, string text)
     {
+        if (_isEditingPropertyGrid && !IsEditingPropertyGridRow(row))
+            EndPropertyGridTextEdit();
+
+        if (!_isEditingPropertyGrid && !_isPropertyGridEditUndoBatchOpen)
+        {
+            BeginUndoBatch();
+            _isPropertyGridEditUndoBatchOpen = true;
+        }
+
         _isEditingPropertyGrid = true;
         _editingPropertyGridDocumentId = row.ContextDocumentId;
         _editingPropertyGridControlId = row.ContextControlId;
         _editingPropertyGridKey = row.Key;
         _editingPropertyGridText = text ?? string.Empty;
+        OnPropertyChanged(nameof(IsPropertyEditorFocused));
         TracePropertyGridEdit(
             "PG_EDIT_BEGIN",
             row,
@@ -5214,13 +5244,15 @@ public partial class MainWindowViewModel : ObservableObject
 
     public void UpdatePropertyGridTextEdit(PropertyGridRowViewModel row, string text)
     {
+        if (!IsEditingPropertyGridRow(row))
+            BeginPropertyGridTextEdit(row, text);
+
         var previous = row.Value;
         _editingPropertyGridText = text ?? string.Empty;
         TracePropertyGridEdit(
             "PG_UI_TEXT_CHANGED",
             row,
             $"rowValueBefore={previous}; textBoxText={_editingPropertyGridText}; isApplyingDocument={_isApplyingDocument}; isRefreshingPropertyGrid={_isRebuildingPropertyGrid}");
-        row.Value = _editingPropertyGridText;
     }
 
     public void CommitPropertyGridTextEdit(PropertyGridRowViewModel row, string text)
@@ -5228,19 +5260,66 @@ public partial class MainWindowViewModel : ObservableObject
         if (!IsEditingPropertyGridRow(row))
             BeginPropertyGridTextEdit(row, text);
 
-        _editingPropertyGridText = text ?? string.Empty;
-        var oldModelValue = GetPropertyGridTargetValue(row);
-        TracePropertyGridEdit(
-            "PG_APPLY_START",
-            row,
-            $"property={row.Key}; oldModelValue={oldModelValue}; newValue={_editingPropertyGridText}");
-        row.Value = _editingPropertyGridText;
-        row.CommitValue();
-        TracePropertyGridEdit(
-            "PG_APPLY_END",
-            row,
-            $"property={row.Key}; modelValue={GetPropertyGridTargetValue(row)}; validation={row.ValidationMessage}");
-        EndPropertyGridTextEdit(row);
+        try
+        {
+            CommitPropertyGridEdit(row, text);
+        }
+        catch (Exception ex)
+        {
+            TracePropertyGridEdit(
+                "PG_APPLY_EXCEPTION",
+                row,
+                $"property={row.Key}; exception={ex.GetType().Name}; message={ex.Message}");
+            throw;
+        }
+        finally
+        {
+            EndPropertyGridTextEdit(row);
+        }
+    }
+
+    public void CommitPropertyGridEdit(PropertyGridRowViewModel? row, string value)
+    {
+        if (row is null || row.IsReadOnly)
+            return;
+
+        var newValue = value ?? string.Empty;
+        if (!CanApplyPropertyGridRow(row, newValue))
+            return;
+
+        var ownsUndoBatch = !_isPropertyGridEditUndoBatchOpen;
+        if (ownsUndoBatch)
+            BeginUndoBatch();
+
+        try
+        {
+            var oldModelValue = GetPropertyGridTargetValue(row);
+            TracePropertyGridEdit(
+                "PG_DIRECT_COMMIT_START",
+                row,
+                $"property={row.Key}; oldModelValue={oldModelValue}; newValue={newValue}");
+
+            row.Value = newValue;
+            row.CommitValue();
+
+            TracePropertyGridEdit(
+                "PG_DIRECT_COMMIT_END",
+                row,
+                $"property={row.Key}; modelValue={GetPropertyGridTargetValue(row)}; validation={row.ValidationMessage}");
+        }
+        catch (Exception ex)
+        {
+            row.ValidationMessage = ex.Message;
+            TracePropertyGridEdit(
+                "PG_DIRECT_COMMIT_EXCEPTION",
+                row,
+                $"property={row.Key}; exception={ex.GetType().Name}; message={ex.Message}");
+        }
+        finally
+        {
+            if (ownsUndoBatch)
+                CommitUndoBatch();
+        }
     }
 
     public void EndPropertyGridTextEdit(PropertyGridRowViewModel? row = null)
@@ -5248,11 +5327,51 @@ public partial class MainWindowViewModel : ObservableObject
         if (row is not null && !IsEditingPropertyGridRow(row))
             return;
 
+        var shouldCommitBatch = _isPropertyGridEditUndoBatchOpen;
+        var shouldRunDeferredRebuild = _hasDeferredPropertyGridRebuild;
+        var deferredRebuildReason = string.IsNullOrWhiteSpace(_deferredPropertyGridRebuildReason)
+            ? "DeferredAfterPropertyEditor"
+            : _deferredPropertyGridRebuildReason;
         _isEditingPropertyGrid = false;
+        _isPropertyGridEditUndoBatchOpen = false;
+        _hasDeferredPropertyGridRebuild = false;
+        _deferredPropertyGridRebuildReason = "";
         _editingPropertyGridDocumentId = "";
         _editingPropertyGridControlId = "";
         _editingPropertyGridKey = "";
         _editingPropertyGridText = "";
+        OnPropertyChanged(nameof(IsPropertyEditorFocused));
+
+        if (shouldCommitBatch)
+            CommitUndoBatch();
+
+        if (shouldRunDeferredRebuild)
+        {
+            RebuildPropertyGrid(deferredRebuildReason);
+        }
+    }
+
+    public void CancelPropertyGridTextEdit(PropertyGridRowViewModel? row = null)
+    {
+        if (row is not null && !IsEditingPropertyGridRow(row))
+            return;
+
+        _isEditingPropertyGrid = false;
+        if (_isPropertyGridEditUndoBatchOpen && _undoBatchDepth > 0)
+        {
+            _undoBatchDepth--;
+            if (_undoBatchDepth == 0)
+                _undoBatchTrackHistory = false;
+        }
+
+        _isPropertyGridEditUndoBatchOpen = false;
+        _hasDeferredPropertyGridRebuild = false;
+        _deferredPropertyGridRebuildReason = "";
+        _editingPropertyGridDocumentId = "";
+        _editingPropertyGridControlId = "";
+        _editingPropertyGridKey = "";
+        _editingPropertyGridText = "";
+        OnPropertyChanged(nameof(IsPropertyEditorFocused));
     }
 
     private bool IsEditingPropertyGridRow(PropertyGridRowViewModel row)
@@ -5286,7 +5405,13 @@ public partial class MainWindowViewModel : ObservableObject
             $"rowDocument={row.ContextDocumentId}; rowControl={row.ContextControlName}:{row.ContextControlId}; " +
             $"isApplyingDocument={_isApplyingDocument}; isRefreshingPropertyGrid={_isRebuildingPropertyGrid}; {details}";
         Debug.WriteLine(message);
-        LogWorkspace(WorkspaceLogLevel.Info, OutputCategoryDiagnostics, message);
+
+        if (eventName.Contains("EXCEPTION", StringComparison.OrdinalIgnoreCase)
+            || eventName.Contains("REJECT", StringComparison.OrdinalIgnoreCase)
+            || eventName.Contains("MISSING", StringComparison.OrdinalIgnoreCase))
+        {
+            LogWorkspace(WorkspaceLogLevel.Warning, OutputCategoryDiagnostics, message);
+        }
     }
 
     private string GetPropertyGridTargetValue(PropertyGridRowViewModel row)
@@ -5294,8 +5419,28 @@ public partial class MainWindowViewModel : ObservableObject
         if (!string.IsNullOrWhiteSpace(row.ContextControlId))
         {
             var control = Controls.FirstOrDefault(item => string.Equals(item.Id, row.ContextControlId, StringComparison.OrdinalIgnoreCase));
+            if (control is null)
+            {
+                TraceDocumentDebug(
+                    "PG_TARGET_VALUE_MISSING_CONTROL",
+                    $"rowDocument={row.ContextDocumentId}; rowControl={row.ContextControlName}:{row.ContextControlId}; key={row.Key}",
+                    toOutput: true,
+                    warning: true);
+                return "";
+            }
+
             var property = typeof(DesignControlModel).GetProperty(row.Key, BindingFlags.Instance | BindingFlags.Public);
-            return property?.GetValue(control)?.ToString() ?? "";
+            if (property is null)
+            {
+                TraceDocumentDebug(
+                    "PG_TARGET_VALUE_MISSING_PROPERTY",
+                    $"rowDocument={row.ContextDocumentId}; rowControl={row.ContextControlName}:{row.ContextControlId}; key={row.Key}",
+                    toOutput: true,
+                    warning: true);
+                return "";
+            }
+
+            return property.GetValue(control)?.ToString() ?? "";
         }
 
         return row.Key switch
@@ -5701,56 +5846,206 @@ public partial class MainWindowViewModel : ObservableObject
         if (!Workspace.Session.OpenDocumentIds.Contains(activeForm.Id))
             Workspace.Session.OpenDocumentIds.Insert(0, activeForm.Id);
 
-        ApplyFormDocument(activeForm, persistCurrent: false, restoreSessionSelection: true);
-        RefreshDocumentTabs();
-        RebuildProjectExplorer();
-        RaiseProjectWorkspaceProperties();
+        SetActiveForm(activeForm.Id, "ApplyWorkspace", persistCurrent: false);
         StatusText = $"Workspace loaded: {CurrentProjectDisplayName}";
         LogWorkspace(WorkspaceLogLevel.Info, OutputCategoryGeneral, StatusText, sourcePath ?? "");
     }
 
     private void ApplyFormDocument(DesignerFormDocument form, bool persistCurrent = true, bool restoreSessionSelection = true)
     {
+        SetActiveForm(form.Id, "LegacyApplyFormDocument", persistCurrent);
+    }
+
+    public bool SetActiveForm(string? documentId, string reason, bool persistCurrent = true)
+    {
+        if (_isEditingPropertyGrid)
+        {
+            TraceDocumentDebug(
+                "SKIPPED_DURING_PROPERTY_EDIT",
+                $"operation=SetActiveForm; reason={reason}; target={documentId}; editing={_editingPropertyGridDocumentId}/{_editingPropertyGridControlId}/{_editingPropertyGridKey}",
+                toOutput: true,
+                warning: true);
+            return false;
+        }
+
         if (persistCurrent)
-            PersistActiveFormDocumentState(refreshProjectViews: false);
+            SaveActiveFormState(reason);
 
-        ActiveFormDocument = form;
-        Workspace.Session.ActiveDocumentId = form.Id;
-        if (!Workspace.Session.OpenDocumentIds.Contains(form.Id))
-            Workspace.Session.OpenDocumentIds.Add(form.Id);
+        return LoadActiveFormState(documentId, reason);
+    }
 
-        var document = form.Document ?? new DesignerDocumentFileModel { FormTitle = form.DisplayName };
-        ApplyDocument(document, CurrentProjectPath, markAsSaved: !form.IsDirty, resetDocumentSession: true, resetHistory: false);
-
-        _undoStack.Clear();
-        foreach (var snapshot in form.UndoSnapshots)
-            _undoStack.Push(snapshot);
-
-        _redoStack.Clear();
-        foreach (var snapshot in form.RedoSnapshots)
-            _redoStack.Push(snapshot);
-
-        _currentSnapshot = string.IsNullOrWhiteSpace(form.CurrentSnapshot)
-            ? JsonSerializer.Serialize(CreateDocumentFileModel(), JsonOptions)
-            : form.CurrentSnapshot;
-        _savedSnapshot = string.IsNullOrWhiteSpace(form.SavedSnapshot) && !form.IsDirty
-            ? _currentSnapshot
-            : form.SavedSnapshot;
-        _lastHistoryMutationUtc = DateTime.UtcNow;
-
-        if (restoreSessionSelection && !string.IsNullOrWhiteSpace(form.SelectedControlId))
-            TrySelectControlById(form.SelectedControlId);
-
-        RefreshDocumentTabs();
-        RebuildProjectExplorer();
-        RaiseProjectWorkspaceProperties();
+    public DesignerFormDocument CreateNewForm()
+    {
+        TraceDocumentStateSnapshot("BeforeCreateNewForm", toOutput: false);
+        SaveActiveFormState("CreateNewForm");
+        var form = _projectDocumentService.AddForm(CurrentProject, "Form");
+        Workspace.Session.OpenDocumentIds.RemoveAll(id => string.Equals(id, form.Id, StringComparison.OrdinalIgnoreCase));
+        Workspace.Session.OpenDocumentIds.Add(form.Id);
+        form.SavedSnapshot = "";
+        form.IsDirty = true;
+        RefreshFormsCollection();
+        LoadActiveFormState(form.Id, "CreateNewForm");
+        MarkExportCacheStale();
         RaiseDocumentStateProperties();
-        RefreshDiagnostics();
-        if (IsCodeMode)
-            GenerateXaml();
-        else
-            MarkExportCacheStale();
-        StatusText = $"Active form: {form.DisplayName}";
+        RaiseProjectWorkspaceProperties();
+        StatusText = $"Form added: {form.DisplayName}";
+        LogWorkspace(WorkspaceLogLevel.Info, OutputCategoryGeneral, StatusText);
+        return form;
+    }
+
+    public bool OpenFormDocument(string formId)
+    {
+        return SetActiveForm(formId, "OpenFormDocument");
+    }
+
+    public void CloseFormDocument(string formId)
+    {
+        if (string.IsNullOrWhiteSpace(formId))
+            return;
+
+        if (string.Equals(formId, ActiveDocumentId, StringComparison.OrdinalIgnoreCase))
+        {
+            CloseActiveDocument();
+            return;
+        }
+
+        Workspace.Session.OpenDocumentIds.RemoveAll(id => string.Equals(id, formId, StringComparison.OrdinalIgnoreCase));
+        Workspace.Session.RecentlyClosedDocumentIds.RemoveAll(id => string.Equals(id, formId, StringComparison.OrdinalIgnoreCase));
+        Workspace.Session.RecentlyClosedDocumentIds.Insert(0, formId);
+        RefreshDocumentTabs();
+        StatusText = "Document tab closed.";
+    }
+
+    private void SaveActiveFormState(string reason)
+    {
+        TraceDocumentDebug("SaveActiveFormState", $"reason={reason}", toOutput: false);
+        PersistActiveFormDocumentState(refreshProjectViews: false);
+    }
+
+    private void ClearActiveDocumentTransientState(string reason)
+    {
+        TraceDocumentDebug("ClearActiveDocumentTransientState", $"reason={reason}; active={ActiveDocumentName}:{ActiveDocumentId}", toOutput: false);
+
+        if (_isEditingPropertyGrid)
+            EndPropertyGridTextEdit();
+
+        _isPropertyGridLiveGesture = false;
+        _hasPendingPropertyGridLiveRefresh = false;
+        _propertyGridLiveGestureSessionId = "";
+        _propertyGridLiveRefreshTimer.Stop();
+        _hasDeferredPropertyGridRebuild = false;
+        _deferredPropertyGridRebuildReason = "";
+        _propertyGridContextDocumentId = "";
+        _propertyGridContextControlId = "";
+        _propertyGridRowsByKey.Clear();
+        _propertyGridRowsByContextKey.Clear();
+        PropertyGridCategories.Clear();
+        DescriptorCustomPropertyEditors.Clear();
+        SelectedInteraction = null;
+        SelectedBindingSource = null;
+        SelectedLayoutGridRow = null;
+        SelectedLayoutGridColumn = null;
+
+        _isUpdatingStructureSelection = true;
+        try
+        {
+            SelectedStructureItem = null;
+        }
+        finally
+        {
+            _isUpdatingStructureSelection = false;
+        }
+
+        ClearSelection();
+        _canvasRenderedDocumentId = "";
+        OnPropertyChanged(nameof(HasPropertyGridRows));
+        OnPropertyChanged(nameof(HasNoPropertyGridRows));
+    }
+
+    private bool LoadActiveFormState(string? documentId, string reason)
+    {
+        if (string.IsNullOrWhiteSpace(documentId))
+            return false;
+
+        var form = CurrentProject.Forms.FirstOrDefault(item => string.Equals(item.Id, documentId, StringComparison.OrdinalIgnoreCase));
+        if (form is null)
+        {
+            TraceDocumentDebug("LoadActiveFormState rejected", $"reason={reason}; missingDocument={documentId}", toOutput: true, warning: true);
+            return false;
+        }
+
+        TraceDocumentDebug("SetActiveForm", $"reason={reason}; target={form.DisplayName}:{form.Id}; previous={ActiveFormDocument?.DisplayName ?? "-"}:{ActiveDocumentId}", toOutput: false);
+
+        _isSwitchingActiveForm = true;
+        try
+        {
+            ClearActiveDocumentTransientState($"BeforeLoadActiveForm:{reason}");
+            ActiveFormDocument = form;
+            Workspace.Session.ActiveDocumentId = form.Id;
+            if (!Workspace.Session.OpenDocumentIds.Contains(form.Id))
+                Workspace.Session.OpenDocumentIds.Add(form.Id);
+
+            var document = form.Document ?? new DesignerDocumentFileModel { FormTitle = form.DisplayName };
+            ApplyDocument(
+                document,
+                CurrentProjectPath,
+                markAsSaved: !form.IsDirty,
+                resetDocumentSession: true,
+                resetHistory: false,
+                refreshEditorSurfaces: false);
+
+            _undoStack.Clear();
+            foreach (var snapshot in form.UndoSnapshots)
+                _undoStack.Push(snapshot);
+
+            _redoStack.Clear();
+            foreach (var snapshot in form.RedoSnapshots)
+                _redoStack.Push(snapshot);
+
+            _currentSnapshot = string.IsNullOrWhiteSpace(form.CurrentSnapshot)
+                ? JsonSerializer.Serialize(CreateDocumentFileModel(), JsonOptions)
+                : form.CurrentSnapshot;
+            _savedSnapshot = string.IsNullOrWhiteSpace(form.SavedSnapshot) && !form.IsDirty
+                ? _currentSnapshot
+                : form.SavedSnapshot;
+            _lastHistoryMutationUtc = DateTime.UtcNow;
+
+            ClearActiveDocumentTransientState($"AfterLoadActiveForm:{reason}");
+            RefreshFormsCollection();
+            RefreshDocumentTabs();
+            RebuildProjectExplorer();
+            RaiseProjectWorkspaceProperties();
+            RaiseDocumentStateProperties();
+            RebuildStructureTree();
+            RebuildInspectorForActiveForm(reason);
+            RebuildCanvasForActiveForm(reason);
+            RefreshDiagnostics();
+            if (IsCodeMode)
+                GenerateXaml();
+            else
+                MarkExportCacheStale();
+            StatusText = $"Active form: {form.DisplayName}";
+            return true;
+        }
+        finally
+        {
+            _isSwitchingActiveForm = false;
+        }
+    }
+
+    private void RebuildInspectorForActiveForm(string reason)
+    {
+        TraceDocumentDebug("RebuildInspectorForActiveForm", $"reason={reason}; active={ActiveDocumentName}:{ActiveDocumentId}", toOutput: false);
+        RebuildPropertyGrid($"ActiveForm:{reason}");
+        RaiseBindingEditorProperties();
+        RaiseInteractionDesignerProperties();
+        RaiseInteractionLookupProperties();
+        RaiseActiveLayoutProperties();
+    }
+
+    private void RebuildCanvasForActiveForm(string reason)
+    {
+        TraceDocumentDebug("RebuildCanvasForActiveForm", $"reason={reason}; active={ActiveDocumentName}:{ActiveDocumentId}; controls={Controls.Count}", toOutput: false);
         DesignerChanged?.Invoke(this, EventArgs.Empty);
     }
 
@@ -5770,7 +6065,7 @@ public partial class MainWindowViewModel : ObservableObject
         form.UndoSnapshots = _undoStack.Reverse().ToList();
         form.RedoSnapshots = _redoStack.Reverse().ToList();
         form.Zoom = EditorZoom;
-        form.SelectedControlId = SelectedControl?.Id ?? "";
+        form.SelectedControlId = "";
         form.UpdatedUtc = DateTime.UtcNow;
 
         if (refreshProjectViews)
@@ -5783,6 +6078,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void RefreshDocumentTabs()
     {
+        RefreshFormsCollection();
         _isSwitchingDocumentTabs = true;
         try
         {
@@ -5823,8 +6119,25 @@ public partial class MainWindowViewModel : ObservableObject
         ScheduleEditorCommandRefresh();
     }
 
+    private void RefreshFormsCollection()
+    {
+        Forms.Clear();
+        foreach (var form in CurrentProject.Forms)
+            Forms.Add(form);
+    }
+
     private void RebuildProjectExplorer()
     {
+        if (_isEditingPropertyGrid)
+        {
+            TraceDocumentDebug(
+                "SKIPPED_DURING_PROPERTY_EDIT",
+                "operation=RebuildProjectExplorer",
+                toOutput: true,
+                warning: true);
+            return;
+        }
+
         _isUpdatingProjectExplorerSelection = true;
         try
         {
@@ -5875,10 +6188,8 @@ public partial class MainWindowViewModel : ObservableObject
             ProjectExplorerItems.Add(forms);
             ProjectExplorerItems.Add(assets);
             ProjectExplorerItems.Add(export);
-            SelectedProjectExplorerItem = FindProjectExplorerItemById(ActiveDocumentId)
-                ?? FindProjectExplorerItemById(SelectedProjectExplorerItem?.TargetId)
-                ?? SelectedProjectExplorerItem;
-            SetProjectExplorerSelectionState(SelectedProjectExplorerItem);
+            SelectedProjectExplorerItem = null;
+            SetProjectExplorerSelectionState(null);
         }
         finally
         {
@@ -5989,25 +6300,14 @@ public partial class MainWindowViewModel : ObservableObject
         Workspace = _projectWorkspaceService.CreateWorkspace("Avalonia UI Project");
         CurrentProjectPath = "";
         var activeForm = CurrentProject.Forms[0];
-        ApplyFormDocument(activeForm, persistCurrent: false, restoreSessionSelection: false);
+        SetActiveForm(activeForm.Id, "NewProject", persistCurrent: false);
         StatusText = "New project created.";
         LogWorkspace(WorkspaceLogLevel.Info, OutputCategoryGeneral, StatusText);
     }
 
     private void AddForm()
     {
-        TraceDocumentStateSnapshot("BeforeAddForm", toOutput: true);
-        PersistActiveFormDocumentState(refreshProjectViews: false);
-        TraceDocumentStateSnapshot("AfterAddFormPersistActive", toOutput: true);
-        var form = _projectDocumentService.AddForm(CurrentProject, "Form");
-        Workspace.Session.OpenDocumentIds.Add(form.Id);
-        TraceDocumentStateSnapshot($"AfterAddFormModelCreated:{form.DisplayName}", toOutput: true);
-        ApplyFormDocument(form, persistCurrent: false, restoreSessionSelection: false);
-        TraceDocumentStateSnapshot("AfterAddFormApplyNewForm", toOutput: true);
-        MarkWorkspaceStructureChanged();
-        TraceDocumentStateSnapshot("AfterAddFormMarkWorkspaceChanged", toOutput: true);
-        StatusText = $"Form added: {form.DisplayName}";
-        LogWorkspace(WorkspaceLogLevel.Info, OutputCategoryGeneral, StatusText);
+        CreateNewForm();
     }
 
     private void AddResource()
@@ -6049,7 +6349,7 @@ public partial class MainWindowViewModel : ObservableObject
         var next = CurrentProject.Forms.FirstOrDefault(form => string.Equals(form.Id, nextId, StringComparison.OrdinalIgnoreCase))
             ?? CurrentProject.Forms.FirstOrDefault(form => !string.Equals(form.Id, closingId, StringComparison.OrdinalIgnoreCase));
         if (next is not null)
-            ApplyFormDocument(next, persistCurrent: false);
+            SetActiveForm(next.Id, "CloseActiveDocument", persistCurrent: false);
 
         StatusText = "Document tab closed.";
     }
@@ -6070,7 +6370,7 @@ public partial class MainWindowViewModel : ObservableObject
         Workspace.Session.RecentlyClosedDocumentIds.RemoveAt(0);
         if (!Workspace.Session.OpenDocumentIds.Contains(form.Id))
             Workspace.Session.OpenDocumentIds.Add(form.Id);
-        ApplyFormDocument(form);
+        SetActiveForm(form.Id, "ReopenClosedDocument");
         StatusText = $"Reopened: {form.DisplayName}";
     }
 
@@ -6099,7 +6399,7 @@ public partial class MainWindowViewModel : ObservableObject
         if (form is null || string.Equals(form.Id, ActiveFormDocument?.Id, StringComparison.OrdinalIgnoreCase))
             return;
 
-        ApplyFormDocument(form);
+        SetActiveForm(form.Id, "SwitchDocument");
     }
 
     [RelayCommand]
@@ -6172,7 +6472,7 @@ public partial class MainWindowViewModel : ObservableObject
         PersistActiveFormDocumentState(refreshProjectViews: false);
         var duplicate = _projectDocumentService.DuplicateForm(CurrentProject, form);
         Workspace.Session.OpenDocumentIds.Add(duplicate.Id);
-        ApplyFormDocument(duplicate, persistCurrent: false);
+        SetActiveForm(duplicate.Id, "DuplicateForm", persistCurrent: false);
         MarkWorkspaceStructureChanged();
         StatusText = $"Form duplicated: {duplicate.DisplayName}";
     }
@@ -6204,7 +6504,7 @@ public partial class MainWindowViewModel : ObservableObject
         {
             if (!Workspace.Session.OpenDocumentIds.Contains(next.Id))
                 Workspace.Session.OpenDocumentIds.Add(next.Id);
-            ApplyFormDocument(next, persistCurrent: false);
+            SetActiveForm(next.Id, "DeleteForm", persistCurrent: false);
         }
 
         MarkWorkspaceStructureChanged();
@@ -6277,12 +6577,7 @@ public partial class MainWindowViewModel : ObservableObject
     private void OpenFormDocument(DesignerFormDocument form)
     {
         TraceDocumentStateSnapshot($"BeforeOpenForm:{form.DisplayName}", toOutput: false);
-        if (!Workspace.Session.OpenDocumentIds.Contains(form.Id))
-            Workspace.Session.OpenDocumentIds.Add(form.Id);
-
-        if (!string.Equals(form.Id, ActiveFormDocument?.Id, StringComparison.OrdinalIgnoreCase))
-            ApplyFormDocument(form);
-
+        OpenFormDocument(form.Id);
         TraceDocumentStateSnapshot($"AfterOpenForm:{form.DisplayName}", toOutput: false);
         StatusText = $"Opened form: {form.DisplayName}";
     }
@@ -6924,7 +7219,7 @@ public partial class MainWindowViewModel : ObservableObject
             TraceDocumentDebug(
                 "PG_ROW_REFRESH_SKIPPED",
                 $"key={key}; value={value}; editingText={_editingPropertyGridText}",
-                toOutput: true,
+                toOutput: false,
                 warning: true);
             return false;
         }
@@ -6975,10 +7270,12 @@ public partial class MainWindowViewModel : ObservableObject
 
         if (_isEditingPropertyGrid)
         {
+            _hasDeferredPropertyGridRebuild = true;
+            _deferredPropertyGridRebuildReason = reason;
             TraceDocumentDebug(
                 "REBUILD_PROPERTY_GRID_SKIPPED",
                 $"reason={reason}; editing={_editingPropertyGridDocumentId}/{_editingPropertyGridControlId}/{_editingPropertyGridKey}; stack={TrimStackTrace(new StackTrace(skipFrames: 1, fNeedFileInfo: false).ToString())}",
-                toOutput: true,
+                toOutput: false,
                 warning: true);
             return;
         }
@@ -7538,7 +7835,7 @@ public partial class MainWindowViewModel : ObservableObject
                 TraceDocumentDebug(
                     "PropertyGrid edit accepted",
                     $"target={row.ContextControlType}:{row.ContextControlName}:{row.ContextControlId}; rowDocument={row.ContextDocumentId}; key={row.Key}; value={newValue}",
-                    toOutput: true);
+                    toOutput: false);
                 applyValue?.Invoke(row, newValue);
                 if (row.HasValidationError)
                     return;
@@ -7546,7 +7843,7 @@ public partial class MainWindowViewModel : ObservableObject
                 TraceDocumentDebug(
                     "EditProperty",
                     $"document={row.ContextDocumentId}; control={row.ContextControlName}:{row.ContextControlId}; key={row.Key}; new={newValue}",
-                    toOutput: true);
+                    toOutput: false);
                 RefreshFromPropertyGridEdit();
             },
             (row, newValue) =>
@@ -7557,12 +7854,12 @@ public partial class MainWindowViewModel : ObservableObject
                 TraceDocumentDebug(
                     "PropertyGrid edit accepted",
                     $"target={row.ContextControlType}:{row.ContextControlName}:{row.ContextControlId}; rowDocument={row.ContextDocumentId}; key={row.Key}; value={newValue}",
-                    toOutput: true);
+                    toOutput: false);
                 applyBool?.Invoke(row, newValue);
                 TraceDocumentDebug(
                     "EditProperty",
                     $"document={row.ContextDocumentId}; control={row.ContextControlName}:{row.ContextControlId}; key={row.Key}; new={newValue}",
-                    toOutput: true);
+                    toOutput: false);
                 RefreshFromPropertyGridEdit();
             },
             boolValue,
@@ -7614,8 +7911,7 @@ public partial class MainWindowViewModel : ObservableObject
             $"reason={reason}; rowDocument={row.ContextDocumentId}; activeDocument={ActiveDocumentId}; control={row.ContextControlName}:{row.ContextControlId}; key={row.Key}; attempted={newValue}",
             toOutput: true,
             warning: true);
-        StatusText = "PropertyGrid stale context refreshed.";
-        RebuildPropertyGrid("StalePropertyGridContext");
+        StatusText = "PropertyGrid stale context rejected. Select the control again.";
     }
 
     private static string GetPropertyGridDefaultValue(string key)
@@ -10033,6 +10329,13 @@ public partial class MainWindowViewModel : ObservableObject
             return;
 
         _isExportChecklistRefreshScheduled = false;
+        if (IsPropertyEditorFocused)
+        {
+            _isExportChecklistRefreshScheduled = true;
+            _exportChecklistRefreshTimer.Start();
+            return;
+        }
+
         if (!string.Equals(_scheduledExportChecklistSessionId, DocumentSessionId, StringComparison.Ordinal))
             return;
 
@@ -15137,8 +15440,19 @@ public partial class MainWindowViewModel : ObservableObject
         string? sourcePath,
         bool markAsSaved,
         bool resetDocumentSession = true,
-        bool resetHistory = true)
+        bool resetHistory = true,
+        bool refreshEditorSurfaces = true)
     {
+        if (_isEditingPropertyGrid && !_isSwitchingActiveForm)
+        {
+            TraceDocumentDebug(
+                "SKIPPED_DURING_PROPERTY_EDIT",
+                $"operation=ApplyDocument; source={sourcePath ?? ""}; refresh={refreshEditorSurfaces}",
+                toOutput: true,
+                warning: true);
+            return;
+        }
+
         _isHistorySuspended = true;
         _isApplyingDocument = true;
         ResetDocumentScopedRefreshState();
@@ -15257,20 +15571,31 @@ public partial class MainWindowViewModel : ObservableObject
         if (resetHistory)
             ResetHistory(markAsSaved);
 
-        ClearSelection();
-        RebuildStructureTree();
-        RebuildPropertyGrid("ApplyDocument");
-        RaiseBindingEditorProperties();
-        RaiseInteractionDesignerProperties();
-        RaiseInteractionLookupProperties();
-        RaiseWorkspaceStatusProperties();
-        NotifyDesignerStateChanged(trackHistory: false);
+        if (refreshEditorSurfaces)
+        {
+            ClearSelection();
+            RebuildStructureTree();
+            RebuildPropertyGrid("ApplyDocument");
+            RaiseBindingEditorProperties();
+            RaiseInteractionDesignerProperties();
+            RaiseInteractionLookupProperties();
+            RaiseWorkspaceStatusProperties();
+            NotifyDesignerStateChanged(trackHistory: false);
+        }
     }
 
     private void ResetDocumentScopedRefreshState()
     {
         _undoBatchDepth = 0;
         _undoBatchTrackHistory = false;
+        _isEditingPropertyGrid = false;
+        _isPropertyGridEditUndoBatchOpen = false;
+        _editingPropertyGridDocumentId = "";
+        _editingPropertyGridControlId = "";
+        _editingPropertyGridKey = "";
+        _editingPropertyGridText = "";
+        _hasDeferredPropertyGridRebuild = false;
+        _deferredPropertyGridRebuildReason = "";
 
         _isPropertyGridLiveGesture = false;
         _hasPendingPropertyGridLiveRefresh = false;
@@ -15292,6 +15617,24 @@ public partial class MainWindowViewModel : ObservableObject
         _exportChecklistRefreshTimer.Stop();
         _propertyGridContextDocumentId = "";
         _propertyGridContextControlId = "";
+        PropertyGridCategories.Clear();
+        _propertyGridRowsByKey.Clear();
+        _propertyGridRowsByContextKey.Clear();
+        DescriptorCustomPropertyEditors.Clear();
+        SelectedInteraction = null;
+        SelectedBindingSource = null;
+        SelectedLayoutGridRow = null;
+        SelectedLayoutGridColumn = null;
+        _isUpdatingStructureSelection = true;
+        try
+        {
+            SelectedStructureItem = null;
+        }
+        finally
+        {
+            _isUpdatingStructureSelection = false;
+        }
+
         _canvasRenderedDocumentId = "";
     }
 
@@ -16571,6 +16914,12 @@ public partial class MainWindowViewModel : ObservableObject
             }
         }
 
+        if (_isSwitchingActiveForm)
+        {
+            TraceDocumentDebug("SelectedControlChanged suppressed", $"reason=SwitchingActiveForm; selected={value?.Name ?? "-"}:{value?.Id ?? "-"}", toOutput: false);
+            return;
+        }
+
         RebuildDescriptorCustomPropertyEditors();
         RebuildPropertyGrid("SelectedControlChanged");
         OnPropertyChanged(nameof(HasSelectedControl));
@@ -16952,7 +17301,7 @@ public partial class MainWindowViewModel : ObservableObject
         if (_isSwitchingDocumentTabs || value is null)
             return;
 
-        SwitchDocument(value);
+        StatusText = $"Вкладка выбрана: {value.Title}. Форма открывается только явной командой таба.";
     }
 
     partial void OnSelectedProjectExplorerItemChanged(ProjectExplorerItemModel? value)
@@ -16966,7 +17315,7 @@ public partial class MainWindowViewModel : ObservableObject
         Workspace.Session.SelectedProjectItemId = value.TargetId;
         SetProjectExplorerSelectionState(value);
         if (value.Source is DesignerFormDocument form)
-            OpenFormDocument(form);
+            StatusText = $"Форма выбрана в Explorer: {form.DisplayName}. Двойной клик или Enter открывает вкладку.";
         else if (value.IsEmptyPlaceholder)
             StatusText = "This virtual project folder is empty.";
 

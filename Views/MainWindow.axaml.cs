@@ -1270,8 +1270,15 @@ public partial class MainWindow : Window
 
     private void ViewModel_DesignerChanged(object? sender, EventArgs e)
     {
-        if (_isDragging || _isMarqueeSelecting || _isResizing || _isResizingGridColumn || _isResizingDesignSurface)
+        if (VM.IsPropertyEditorFocused)
+        {
             return;
+        }
+
+        if (_isDragging || _isMarqueeSelecting || _isResizing || _isResizingGridColumn || _isResizingDesignSurface)
+        {
+            return;
+        }
 
         ScheduleDesignerRender();
     }
@@ -1291,6 +1298,11 @@ public partial class MainWindow : Window
             return;
 
         _isDesignerRenderScheduled = false;
+        if (VM.IsPropertyEditorFocused || _isDragging || _isMarqueeSelecting || _isResizing || _isResizingGridColumn || _isResizingDesignSurface)
+        {
+            return;
+        }
+
         if (!string.Equals(_scheduledDesignerRenderSessionId, VM.DocumentSessionId, StringComparison.Ordinal))
             return;
 
@@ -7052,7 +7064,7 @@ public partial class MainWindow : Window
 
         _isDragging = true;
         _dragGestureSessionId = VM.DocumentSessionId;
-        VM.TraceDocumentDebug("Drag start", $"control={model.Name}:{model.Id}; session={_dragGestureSessionId}", toOutput: true);
+        VM.TraceDocumentDebug("Drag start", $"control={model.Name}:{model.Id}; session={_dragGestureSessionId}", toOutput: false);
 
         if (VM.IsControlSelected(model) && VM.HasMultipleSelection)
             VM.SelectControls(VM.GetSelectedControls(), model);
@@ -7235,7 +7247,7 @@ public partial class MainWindow : Window
         ClearSnapCandidateSnapshot();
         VM.EndPropertyGridLiveGesture();
         VM.CommitUndoBatch();
-        VM.TraceDocumentDebug("Drag committed", $"roots={committedRootCount}; session={VM.DocumentSessionId}", toOutput: true);
+        VM.TraceDocumentDebug("Drag committed", $"roots={committedRootCount}; session={VM.DocumentSessionId}", toOutput: false);
         RenderDesigner();
     }
 
@@ -8185,44 +8197,6 @@ public partial class MainWindow : Window
 
         ApplyBoolPropertyToSelection(propertyName, checkBox.IsChecked == true);
         RefreshFromPropertyPanel();
-    }
-
-    private void PropertyGridTextBox_GotFocus(object? sender, GotFocusEventArgs e)
-    {
-        if (sender is not TextBox textBox || textBox.DataContext is not PropertyGridRowViewModel row)
-            return;
-
-        VM.BeginPropertyGridTextEdit(row, textBox.Text ?? string.Empty);
-    }
-
-    private void PropertyGridTextBox_LostFocus(object? sender, RoutedEventArgs e)
-    {
-        if (sender is not TextBox textBox || textBox.DataContext is not PropertyGridRowViewModel row)
-            return;
-
-        VM.CommitPropertyGridTextEdit(row, textBox.Text ?? string.Empty);
-        RefreshFromPropertyPanel();
-    }
-
-    private void PropertyGridTextBox_KeyDown(object? sender, KeyEventArgs e)
-    {
-        if (e.Key != Key.Enter || sender is not TextBox textBox || textBox.DataContext is not PropertyGridRowViewModel row)
-            return;
-
-        VM.CommitPropertyGridTextEdit(row, textBox.Text ?? string.Empty);
-        RefreshFromPropertyPanel();
-        e.Handled = true;
-    }
-
-    private void PropertyGridTextBox_TextChanged(object? sender, TextChangedEventArgs e)
-    {
-        if (sender is not TextBox textBox || textBox.DataContext is not PropertyGridRowViewModel row)
-            return;
-
-        if (!textBox.IsFocused)
-            return;
-
-        VM.UpdatePropertyGridTextEdit(row, textBox.Text ?? string.Empty);
     }
 
     private async void PropertyGridColorButton_Click(object? sender, RoutedEventArgs e)
