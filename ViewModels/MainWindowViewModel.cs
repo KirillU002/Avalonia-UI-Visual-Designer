@@ -20,6 +20,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Runtime.Loader;
 using System.Security.Cryptography;
 using System.Text;
@@ -66,6 +67,7 @@ public partial class MainWindowViewModel : ObservableObject
     public const string ProblemsFilterHints = "Hints";
     public const string BottomDockTabProblems = "Problems";
     public const string BottomDockTabOutput = "Output";
+    public const string BottomDockTabInteractionTrace = "Interaction Trace";
     public const string OutputCategoryAll = "All";
     public const string OutputCategoryGeneral = "General";
     public const string OutputCategoryExport = "Export";
@@ -137,6 +139,8 @@ public partial class MainWindowViewModel : ObservableObject
     private int _undoBatchDepth;
     private bool _undoBatchTrackHistory;
     private bool _isUpdatingSelectionState;
+    private bool _suppressNextSelectedControlChangedForSameSelection;
+    private string _suppressNextSelectedControlChangedReason = "";
     private string _currentSnapshot = "";
     private string _savedSnapshot = "";
     private string _exportCacheDocumentSnapshotHash = "";
@@ -157,6 +161,7 @@ public partial class MainWindowViewModel : ObservableObject
     private bool _isInspectorInteractionActive;
     private int _inspectorInteractionDepth;
     private bool _pendingInspectorRebuild;
+    private bool _isPendingInspectorRebuildScheduled;
     private string _pendingInspectorRebuildReason = "";
     private string _inspectorInteractionKind = "";
     private bool _isPropertyGridEditUndoBatchOpen;
@@ -242,6 +247,7 @@ public partial class MainWindowViewModel : ObservableObject
     public ObservableCollection<RecentFileModel> RecentFiles { get; } = new();
     public ObservableCollection<WorkspaceLogEntryModel> OutputEntries { get; } = new();
     public ObservableCollection<WorkspaceLogEntryModel> FilteredOutputEntries { get; } = new();
+    public ObservableCollection<InteractionTraceEntryModel> InteractionTraceEntries { get; } = new();
     public ObservableCollection<WorkspaceTaskModel> WorkspaceTasks => _workspaceTaskService.Tasks;
     public ObservableCollection<WorkspaceToastModel> WorkspaceToasts => _workspaceNotificationService.Toasts;
     public ObservableCollection<DesignerDocumentTabModel> DocumentTabs { get; } = new();
@@ -865,8 +871,10 @@ public partial class MainWindowViewModel : ObservableObject
     public bool IsBottomDockRailVisible => IsDesignerSidePanelsVisible && !IsBottomDockOpen;
     public bool IsProblemsPanelActive => string.Equals(ActiveBottomDockTab, BottomDockTabProblems, StringComparison.Ordinal);
     public bool IsOutputPanelActive => string.Equals(ActiveBottomDockTab, BottomDockTabOutput, StringComparison.Ordinal);
+    public bool IsInteractionTracePanelActive => string.Equals(ActiveBottomDockTab, BottomDockTabInteractionTrace, StringComparison.Ordinal);
     public bool IsOutputPanelBodyVisible => IsDiagnosticsPaneExpanded && IsOutputPanelActive;
-    public string BottomDockPanelTitle => IsOutputPanelActive ? OutputPanelTitle : ProblemsPanelTitle;
+    public bool IsInteractionTracePanelBodyVisible => IsDiagnosticsPaneExpanded && IsInteractionTracePanelActive;
+    public string BottomDockPanelTitle => IsInteractionTracePanelActive ? InteractionTracePanelTitle : IsOutputPanelActive ? OutputPanelTitle : ProblemsPanelTitle;
     public bool IsLeftRailVisible => IsLeftDockPanelVisible;
     public bool IsRightInspectorVisible => IsRightDockPanelVisible;
     public bool IsDesignModePanelVisible => IsDesignerSidePanelsVisible;
@@ -893,6 +901,17 @@ public partial class MainWindowViewModel : ObservableObject
     public bool HasOutputEntries => OutputEntries.Count > 0;
     public bool HasFilteredOutputEntries => FilteredOutputEntries.Count > 0;
     public bool HasNoFilteredOutputEntries => !HasFilteredOutputEntries;
+    public string InteractionTraceDockButtonText => InteractionTraceEntries.Count > 0
+        ? $"Trace {InteractionTraceEntries.Count}"
+        : "Trace";
+    public string InteractionTracePanelTitle => InteractionTraceEntries.Count > 0
+        ? $"Interaction Trace ({InteractionTraceEntries.Count})"
+        : "Interaction Trace";
+    public bool HasInteractionTraceEntries => InteractionTraceEntries.Count > 0;
+    public bool HasNoInteractionTraceEntries => !HasInteractionTraceEntries;
+    public string InteractionTraceSummary => InteractionTraceEntries.Count > 0
+        ? $"Last {InteractionTraceEntries.Count} events"
+        : "Trace is empty";
     public string OutputFilterSummary => SelectedOutputCategory == OutputCategoryAll
         ? $"Entries: {OutputEntries.Count}"
         : $"{SelectedOutputCategory}: {FilteredOutputEntries.Count}";
@@ -996,6 +1015,7 @@ public partial class MainWindowViewModel : ObservableObject
         $"Controls: {Controls.Count}; PropertyGrid: {_lastPropertyGridRebuildMs:0.0} ms; Structure: {_lastStructureTreeRebuildMs:0.0} ms; Diagnostics: {_lastDiagnosticsRefreshMs:0.0} ms; Export checklist: {_lastExportChecklistRefreshMs:0.0} ms; Export: {_lastExportGenerationMs:0.0} ms";
 
     public bool HasSelectedControl => SelectedControlIds.Count > 0;
+    public bool HasNoSelectedControl => !HasSelectedControl;
     public bool HasSelectedBindingSource => SelectedBindingSource is not null;
     public bool HasNoSelectedBindingSource => SelectedBindingSource is null;
     public bool HasDiagnostics => Diagnostics.Count > 0;
@@ -1956,6 +1976,7 @@ public partial class MainWindowViewModel : ObservableObject
         SelectedControlIds.CollectionChanged += SelectedControlIds_CollectionChanged;
         RecentFiles.CollectionChanged += RecentFiles_CollectionChanged;
         OutputEntries.CollectionChanged += OutputEntries_CollectionChanged;
+        InteractionTraceEntries.CollectionChanged += InteractionTraceEntries_CollectionChanged;
         _workspaceLogService.EntryAdded += WorkspaceLogService_EntryAdded;
         _workspaceTaskService.TasksChanged += WorkspaceTaskService_TasksChanged;
 
@@ -2156,6 +2177,72 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(BottomDockPanelTitle));
         OnPropertyChanged(nameof(OutputFilterSummary));
         ScheduleEditorCommandRefresh();
+    }
+
+    private void InteractionTraceEntries_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        OnPropertyChanged(nameof(InteractionTraceDockButtonText));
+        OnPropertyChanged(nameof(InteractionTracePanelTitle));
+        OnPropertyChanged(nameof(InteractionTraceSummary));
+        OnPropertyChanged(nameof(HasInteractionTraceEntries));
+        OnPropertyChanged(nameof(HasNoInteractionTraceEntries));
+        OnPropertyChanged(nameof(BottomDockPanelTitle));
+    }
+
+    public void AddInteractionTrace(string eventName, string details = "", string focusedElement = "", string viewFlags = "")
+    {
+        if (!Dispatcher.UIThread.CheckAccess())
+        {
+            Dispatcher.UIThread.Post(() => AddInteractionTrace(eventName, details, focusedElement, viewFlags));
+            return;
+        }
+
+        var selectedDocumentId = GetTrackedControlDocumentId(SelectedControl);
+        var vmFlags =
+            $"isEditingProperty={IsPropertyEditorFocused}; " +
+            $"isInspectorInteractionActive={_isInspectorInteractionActive}; " +
+            $"isApplyingDocument={_isApplyingDocument}; " +
+            $"isDragging={ExtractTraceFlag(viewFlags, "drag")}; " +
+            $"switchingForm={_isSwitchingActiveForm}; rebuildingGrid={_isRebuildingPropertyGrid}; " +
+            $"pendingInspectorRebuild={_pendingInspectorRebuild}";
+
+        if (!string.IsNullOrWhiteSpace(viewFlags))
+            vmFlags += $"; view={viewFlags}";
+
+        InteractionTraceEntries.Insert(0, new InteractionTraceEntryModel
+        {
+            EventName = eventName,
+            ActiveForm = $"{ActiveDocumentName}/{ActiveDocumentId}",
+            SelectedControl = $"{SelectedControl?.Name ?? "-"}:{SelectedControl?.Id ?? "-"} doc={selectedDocumentId}",
+            FocusedElement = string.IsNullOrWhiteSpace(focusedElement) ? "-" : focusedElement,
+            Flags = vmFlags,
+            Details = details
+        });
+
+        while (InteractionTraceEntries.Count > 200)
+            InteractionTraceEntries.RemoveAt(InteractionTraceEntries.Count - 1);
+    }
+
+    private static string ExtractTraceFlag(string viewFlags, string key)
+    {
+        if (string.IsNullOrWhiteSpace(viewFlags))
+            return "-";
+
+        var prefix = $"{key}:";
+        var value = viewFlags
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .FirstOrDefault(part => part.Contains(prefix, StringComparison.OrdinalIgnoreCase));
+
+        if (value is null)
+            return "-";
+
+        var start = value.IndexOf(prefix, StringComparison.OrdinalIgnoreCase);
+        return start < 0 ? "-" : value[(start + prefix.Length)..].Trim();
+    }
+
+    public string BuildInteractionTraceText()
+    {
+        return string.Join(Environment.NewLine, InteractionTraceEntries.Select(entry => entry.Summary));
     }
 
     public void LogWorkspace(WorkspaceLogLevel level, string category, string message, string details = "")
@@ -3773,6 +3860,10 @@ public partial class MainWindowViewModel : ObservableObject
 
     public void ClearSelection()
     {
+        TraceDocumentDebug(
+            "ClearSelection",
+            $"old={SelectedControl?.Name ?? "-"}:{SelectedControl?.Id ?? "-"}; active={ActiveDocumentId}; canvas={CanvasRenderedDocumentId}",
+            toOutput: false);
         SetSelection(Array.Empty<DesignControlModel>(), null);
     }
 
@@ -4699,6 +4790,15 @@ public partial class MainWindowViewModel : ObservableObject
     }
 
     [RelayCommand]
+    private void OpenInteractionTracePanel()
+    {
+        ActiveBottomDockTab = BottomDockTabInteractionTrace;
+        IsBottomDockOpen = true;
+        IsDiagnosticsPaneExpanded = true;
+        DiagnosticsPaneHeight = Math.Max(DiagnosticsPaneHeight, 260);
+    }
+
+    [RelayCommand]
     private void ToggleOutputPanel()
     {
         if (IsBottomDockOpen && IsOutputPanelActive)
@@ -4738,6 +4838,13 @@ public partial class MainWindowViewModel : ObservableObject
         OutputEntries.Clear();
         FilterOutputEntries();
         StatusText = "Output cleared.";
+    }
+
+    [RelayCommand]
+    private void ClearInteractionTrace()
+    {
+        InteractionTraceEntries.Clear();
+        StatusText = "Interaction Trace cleared.";
     }
 
     private async void CleanArtifacts()
@@ -5183,6 +5290,7 @@ public partial class MainWindowViewModel : ObservableObject
             $"inspector={_propertyGridContextDocumentId}/{_propertyGridContextControlId}; canvas={_canvasRenderedDocumentId}; {details}";
 
         Debug.WriteLine(message);
+        AddInteractionTrace(eventName, $"{details}; openedTab={SelectedDocumentTab?.DocumentId ?? "-"}; inspector={_propertyGridContextDocumentId}/{_propertyGridContextControlId}; canvas={_canvasRenderedDocumentId}");
 
         if (!toOutput)
             return;
@@ -5254,10 +5362,11 @@ public partial class MainWindowViewModel : ObservableObject
             $"{viewState}";
 
         Debug.WriteLine(message);
+        AddInteractionTrace("DumpInteractionState", $"reason={reason}; {viewState}");
         LogWorkspace(WorkspaceLogLevel.Info, OutputCategoryDiagnostics, message);
     }
 
-    public void BeginInspectorInteraction(string reason)
+    public void BeginInspectorInteraction(string reason, bool logToOutput = true, bool dumpState = true)
     {
         _inspectorInteractionDepth++;
         if (_isInspectorInteractionActive)
@@ -5274,12 +5383,13 @@ public partial class MainWindowViewModel : ObservableObject
         TraceDocumentDebug(
             "INSPECTOR_INTERACTION_START",
             $"reason={reason}; active={ActiveDocumentId}; selected={SelectedControl?.Name ?? "-"}:{SelectedControl?.Id ?? "-"}",
-            toOutput: true);
+            toOutput: logToOutput);
         OnPropertyChanged(nameof(IsInspectorInteractionActive));
-        DumpInteractionState($"INSPECTOR_INTERACTION_START:{reason}");
+        if (dumpState)
+            DumpInteractionState($"INSPECTOR_INTERACTION_START:{reason}");
     }
 
-    public void EndInspectorInteraction(string reason)
+    public void EndInspectorInteraction(string reason, bool logToOutput = true, bool dumpState = true)
     {
         if (_inspectorInteractionDepth > 0)
             _inspectorInteractionDepth--;
@@ -5303,9 +5413,10 @@ public partial class MainWindowViewModel : ObservableObject
         TraceDocumentDebug(
             "INSPECTOR_INTERACTION_END",
             $"reason={reason}; endedKind={endedKind}; pendingRebuild={_pendingInspectorRebuild}:{_pendingInspectorRebuildReason}",
-            toOutput: true);
+            toOutput: logToOutput);
         OnPropertyChanged(nameof(IsInspectorInteractionActive));
-        DumpInteractionState($"INSPECTOR_INTERACTION_END:{reason}");
+        if (dumpState)
+            DumpInteractionState($"INSPECTOR_INTERACTION_END:{reason}");
 
         if (!_pendingInspectorRebuild)
             return;
@@ -5313,9 +5424,47 @@ public partial class MainWindowViewModel : ObservableObject
         var rebuildReason = string.IsNullOrWhiteSpace(_pendingInspectorRebuildReason)
             ? $"DeferredInspectorInteraction:{endedKind}"
             : _pendingInspectorRebuildReason;
-        _pendingInspectorRebuild = false;
-        _pendingInspectorRebuildReason = "";
-        RebuildPropertyGrid(rebuildReason);
+        SchedulePendingInspectorRebuild(rebuildReason);
+    }
+
+    private void SchedulePendingInspectorRebuild(string reason)
+    {
+        _pendingInspectorRebuild = true;
+        _pendingInspectorRebuildReason = string.IsNullOrWhiteSpace(_pendingInspectorRebuildReason)
+            ? reason
+            : _pendingInspectorRebuildReason;
+
+        if (_isPendingInspectorRebuildScheduled)
+            return;
+
+        _isPendingInspectorRebuildScheduled = true;
+        Dispatcher.UIThread.Post(
+            () =>
+            {
+                _isPendingInspectorRebuildScheduled = false;
+
+                if (!_pendingInspectorRebuild)
+                    return;
+
+                if (_isInspectorInteractionActive)
+                {
+                    TraceDocumentDebug(
+                        "PROPERTYGRID_REBUILD_DEFERRED_STILL_INTERACTING",
+                        $"reason={_pendingInspectorRebuildReason}; activeInteraction={_inspectorInteractionKind}",
+                        toOutput: false,
+                        warning: true);
+                    SchedulePendingInspectorRebuild(_pendingInspectorRebuildReason);
+                    return;
+                }
+
+                var pendingReason = string.IsNullOrWhiteSpace(_pendingInspectorRebuildReason)
+                    ? reason
+                    : _pendingInspectorRebuildReason;
+                _pendingInspectorRebuild = false;
+                _pendingInspectorRebuildReason = "";
+                RebuildPropertyGrid(pendingReason);
+            },
+            DispatcherPriority.Background);
     }
 
     private bool DeferInspectorRebuildIfNeeded(string operation, string reason)
@@ -5343,11 +5492,10 @@ public partial class MainWindowViewModel : ObservableObject
             $"isRefreshingPropertyGrid={_isRebuildingPropertyGrid}; pendingReason={_pendingInspectorRebuildReason}";
 
         Debug.WriteLine(message);
-        LogWorkspace(WorkspaceLogLevel.Warning, OutputCategoryDiagnostics, message);
         TraceDocumentDebug(
             "PROPERTYGRID_REBUILD_DEFERRED",
             $"operation={operation}; reason={reason}; pending={_pendingInspectorRebuildReason}",
-            toOutput: true,
+            toOutput: false,
             warning: true);
         return true;
     }
@@ -5374,6 +5522,7 @@ public partial class MainWindowViewModel : ObservableObject
         _isInspectorInteractionActive = false;
         _inspectorInteractionDepth = 0;
         _pendingInspectorRebuild = false;
+        _isPendingInspectorRebuildScheduled = false;
         _pendingInspectorRebuildReason = "";
         _inspectorInteractionKind = "";
 
@@ -5406,12 +5555,13 @@ public partial class MainWindowViewModel : ObservableObject
 
     public void BeginPropertyGridTextEdit(PropertyGridRowViewModel row, string text)
     {
-        DumpInteractionState($"BeforePropertyEdit:{row.ContextDocumentId}/{row.ContextControlId}/{row.Key}");
-
         if (_isEditingPropertyGrid && !IsEditingPropertyGridRow(row))
             EndPropertyGridTextEdit();
 
-        BeginInspectorInteraction($"PropertyTextEdit:{row.ContextDocumentId}/{row.ContextControlId}/{row.Key}");
+        BeginInspectorInteraction(
+            $"PropertyTextEdit:{row.ContextDocumentId}/{row.ContextControlId}/{row.Key}",
+            logToOutput: false,
+            dumpState: false);
 
         if (!_isEditingPropertyGrid && !_isPropertyGridEditUndoBatchOpen)
         {
@@ -5526,7 +5676,6 @@ public partial class MainWindowViewModel : ObservableObject
                 "PG_DIRECT_COMMIT_END",
                 row,
                 $"property={row.Key}; modelValue={GetPropertyGridTargetValue(row)}; validation={row.ValidationMessage}");
-            DumpInteractionState($"AfterPropertyEditAccepted:{row.Key}");
         }
         catch (Exception ex)
         {
@@ -5576,7 +5725,9 @@ public partial class MainWindowViewModel : ObservableObject
 
         EndInspectorInteraction(row is null
             ? "PropertyTextEdit"
-            : $"PropertyTextEdit:{row.ContextDocumentId}/{row.ContextControlId}/{row.Key}");
+            : $"PropertyTextEdit:{row.ContextDocumentId}/{row.ContextControlId}/{row.Key}",
+            logToOutput: false,
+            dumpState: false);
     }
 
     public void CancelPropertyGridTextEdit(PropertyGridRowViewModel? row = null)
@@ -5602,7 +5753,9 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(IsPropertyEditorFocused));
         EndInspectorInteraction(row is null
             ? "PropertyTextEditCancel"
-            : $"PropertyTextEditCancel:{row.ContextDocumentId}/{row.ContextControlId}/{row.Key}");
+            : $"PropertyTextEditCancel:{row.ContextDocumentId}/{row.ContextControlId}/{row.Key}",
+            logToOutput: false,
+            dumpState: false);
     }
 
     private bool IsEditingPropertyGridRow(PropertyGridRowViewModel row)
@@ -5637,8 +5790,7 @@ public partial class MainWindowViewModel : ObservableObject
             $"isApplyingDocument={_isApplyingDocument}; isRefreshingPropertyGrid={_isRebuildingPropertyGrid}; {details}";
         Debug.WriteLine(message);
 
-        if (eventName.StartsWith("EDIT_", StringComparison.OrdinalIgnoreCase)
-            || eventName.Contains("EXCEPTION", StringComparison.OrdinalIgnoreCase)
+        if (eventName.Contains("EXCEPTION", StringComparison.OrdinalIgnoreCase)
             || eventName.Contains("REJECT", StringComparison.OrdinalIgnoreCase)
             || eventName.Contains("MISSING", StringComparison.OrdinalIgnoreCase))
         {
@@ -6106,6 +6258,7 @@ public partial class MainWindowViewModel : ObservableObject
             _isInspectorInteractionActive = false;
             _inspectorInteractionDepth = 0;
             _pendingInspectorRebuild = false;
+            _isPendingInspectorRebuildScheduled = false;
             _pendingInspectorRebuildReason = "";
             _inspectorInteractionKind = "";
             OnPropertyChanged(nameof(IsInspectorInteractionActive));
@@ -6195,6 +6348,7 @@ public partial class MainWindowViewModel : ObservableObject
         _isInspectorInteractionActive = false;
         _inspectorInteractionDepth = 0;
         _pendingInspectorRebuild = false;
+        _isPendingInspectorRebuildScheduled = false;
         _pendingInspectorRebuildReason = "";
         _inspectorInteractionKind = "";
         _propertyGridContextDocumentId = "";
@@ -6248,6 +6402,28 @@ public partial class MainWindowViewModel : ObservableObject
                 Workspace.Session.OpenDocumentIds.Add(form.Id);
 
             var document = form.Document ?? new DesignerDocumentFileModel { FormTitle = form.DisplayName };
+            if (!string.IsNullOrWhiteSpace(form.CurrentSnapshot))
+            {
+                try
+                {
+                    document = JsonSerializer.Deserialize<DesignerDocumentFileModel>(form.CurrentSnapshot, JsonOptions)
+                        ?? document;
+                    form.Document = document;
+                    TraceDocumentDebug(
+                        "LoadActiveFormStateSnapshot",
+                        $"reason={reason}; source=CurrentSnapshot; form={form.DisplayName}:{form.Id}; controls={document.Controls.Count}",
+                        toOutput: false);
+                }
+                catch (Exception ex)
+                {
+                    TraceDocumentDebug(
+                        "LoadActiveFormStateSnapshotFailed",
+                        $"reason={reason}; form={form.DisplayName}:{form.Id}; error={ex.GetType().Name}: {ex.Message}; fallback=Document",
+                        toOutput: true,
+                        warning: true);
+                }
+            }
+
             ApplyDocument(
                 document,
                 CurrentProjectPath,
@@ -10411,7 +10587,13 @@ public partial class MainWindowViewModel : ObservableObject
             _exportWindowClassNameOverride = className;
             _exportViewModelClassNameOverride = $"{className}ViewModel";
             _exportActiveFormIdOverride = form.Id;
-            ApplyDocument(CloneDocumentFileModel(form.Document), CurrentProjectPath, markAsSaved: true, resetDocumentSession: false, resetHistory: false);
+            ApplyDocument(
+                CloneDocumentFileModel(form.Document),
+                CurrentProjectPath,
+                markAsSaved: true,
+                resetDocumentSession: false,
+                resetHistory: false,
+                refreshEditorSurfaces: false);
             GenerateXaml();
             return (GeneratedXaml, GeneratedCSharp);
         }
@@ -10423,7 +10605,13 @@ public partial class MainWindowViewModel : ObservableObject
             _exportViewModelClassNameOverride = previousViewModelClassNameOverride;
             _exportActiveFormIdOverride = previousActiveFormIdOverride;
 
-            ApplyDocument(savedDocument, savedCurrentPath, markAsSaved: false, resetDocumentSession: false, resetHistory: false);
+            ApplyDocument(
+                savedDocument,
+                savedCurrentPath,
+                markAsSaved: false,
+                resetDocumentSession: false,
+                resetHistory: false,
+                refreshEditorSurfaces: false);
             GeneratedXaml = savedGeneratedXaml;
             GeneratedCSharp = savedGeneratedCSharp;
             GeneratedBindingGuide = savedGeneratedBindingGuide;
@@ -10610,8 +10798,12 @@ public partial class MainWindowViewModel : ObservableObject
             return;
 
         _isExportChecklistRefreshScheduled = false;
-        if (IsPropertyEditorFocused)
+        if (IsPropertyEditorFocused || IsInspectorInteractionActive)
         {
+            TraceDocumentDebug(
+                "EXPORT_CHECKLIST_REFRESH_SUPPRESSED_DURING_TEXT_EDIT",
+                $"reason=TimerTick; propertyEditor={IsPropertyEditorFocused}; inspectorInteraction={IsInspectorInteractionActive}:{_inspectorInteractionKind}; session={DocumentSessionId}",
+                toOutput: false);
             _isExportChecklistRefreshScheduled = true;
             _exportChecklistRefreshTimer.Start();
             return;
@@ -10625,6 +10817,19 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void RefreshExportChecklistNow()
     {
+        if (IsPropertyEditorFocused || IsInspectorInteractionActive)
+        {
+            TraceDocumentDebug(
+                "EXPORT_PIPELINE_REFRESH_SUPPRESSED_DURING_TEXT_EDIT",
+                $"propertyEditor={IsPropertyEditorFocused}; inspectorInteraction={IsInspectorInteractionActive}:{_inspectorInteractionKind}; session={DocumentSessionId}",
+                toOutput: false);
+            _isExportChecklistRefreshScheduled = true;
+            _scheduledExportChecklistSessionId = DocumentSessionId;
+            _exportChecklistRefreshTimer.Stop();
+            _exportChecklistRefreshTimer.Start();
+            return;
+        }
+
         var stopwatch = Stopwatch.StartNew();
         _exportChecklistItemsCache = BuildExportChecklist();
         stopwatch.Stop();
@@ -15722,18 +15927,31 @@ public partial class MainWindowViewModel : ObservableObject
         bool markAsSaved,
         bool resetDocumentSession = true,
         bool resetHistory = true,
-        bool refreshEditorSurfaces = true)
+        bool refreshEditorSurfaces = true,
+        [CallerMemberName] string caller = "")
     {
+        var preservedActiveDocumentId = ActiveDocumentId;
+        var preservedSelectedControlId = SelectedControl?.Id ?? "";
+        var preservedSelectedControlName = SelectedControl?.Name ?? "";
+        var documentName = string.IsNullOrWhiteSpace(document.FormTitle) ? "-" : document.FormTitle;
+        var applyStack = TrimStackTrace(new StackTrace(skipFrames: 1, fNeedFileInfo: false).ToString());
         if ((_isEditingPropertyGrid || _isInspectorInteractionActive) && !_isSwitchingActiveForm)
         {
             TraceDocumentDebug(
-                "SKIPPED_DURING_INSPECTOR_INTERACTION",
-                $"operation=ApplyDocument; source={sourcePath ?? ""}; refresh={refreshEditorSurfaces}; interaction={_inspectorInteractionKind}; editing={_editingPropertyGridDocumentId}/{_editingPropertyGridControlId}/{_editingPropertyGridKey}",
-                toOutput: true,
+                "APPLY_DOCUMENT_SUPPRESSED_DURING_TEXT_EDIT",
+                $"caller={caller}; source={sourcePath ?? ""}; document={documentName}; controls={document.Controls.Count}; refresh={refreshEditorSurfaces}; " +
+                $"interaction={_inspectorInteractionKind}; editing={_editingPropertyGridDocumentId}/{_editingPropertyGridControlId}/{_editingPropertyGridKey}; stack={applyStack}",
+                toOutput: false,
                 warning: true);
-            DeferInspectorRebuildIfNeeded("ApplyDocument", sourcePath ?? "Document");
+            DeferInspectorRebuildIfNeeded("ApplyDocument", string.IsNullOrWhiteSpace(sourcePath) ? caller : sourcePath);
             return;
         }
+
+        TraceDocumentDebug(
+            "APPLY_DOCUMENT_START",
+            $"caller={caller}; source={sourcePath ?? ""}; document={documentName}; documentControls={document.Controls.Count}; resetSession={resetDocumentSession}; resetHistory={resetHistory}; refresh={refreshEditorSurfaces}; " +
+            $"preservedSelectedControlId={preservedSelectedControlId}; preservedSelectedControlName={preservedSelectedControlName}; preservedActiveDocumentId={preservedActiveDocumentId}; stack={applyStack}",
+            toOutput: false);
 
         _isHistorySuspended = true;
         _isApplyingDocument = true;
@@ -15741,7 +15959,6 @@ public partial class MainWindowViewModel : ObservableObject
 
         try
         {
-            SetSelection(Array.Empty<DesignControlModel>(), null);
             SelectedInteraction = null;
             SelectedBindingSource = null;
             Controls.Clear();
@@ -15853,9 +16070,15 @@ public partial class MainWindowViewModel : ObservableObject
         if (resetHistory)
             ResetHistory(markAsSaved);
 
+        var restoredSelectedControlId = RestoreSelectionAfterApplyDocument(
+            preservedSelectedControlId,
+            preservedSelectedControlName,
+            preservedActiveDocumentId,
+            allowClearSelection: refreshEditorSurfaces,
+            reason: sourcePath ?? "Document");
+
         if (refreshEditorSurfaces)
         {
-            ClearSelection();
             RebuildStructureTree();
             RebuildPropertyGrid("ApplyDocument");
             RaiseBindingEditorProperties();
@@ -15864,6 +16087,72 @@ public partial class MainWindowViewModel : ObservableObject
             RaiseWorkspaceStatusProperties();
             NotifyDesignerStateChanged(trackHistory: false);
         }
+
+        TraceDocumentDebug(
+            "APPLY_DOCUMENT_END",
+            $"caller={caller}; source={sourcePath ?? ""}; document={documentName}; documentControls={document.Controls.Count}; preservedSelectedControlId={preservedSelectedControlId}; restoredSelectedControlId={restoredSelectedControlId}; " +
+            $"clearSelectionReason={(string.IsNullOrWhiteSpace(restoredSelectedControlId) && !string.IsNullOrWhiteSpace(preservedSelectedControlId) ? "missing-control" : "none")}; controls={Controls.Count}; refresh={refreshEditorSurfaces}",
+            toOutput: false);
+    }
+
+    private string RestoreSelectionAfterApplyDocument(
+        string preservedSelectedControlId,
+        string preservedSelectedControlName,
+        string preservedActiveDocumentId,
+        bool allowClearSelection,
+        string reason)
+    {
+        if (string.IsNullOrWhiteSpace(preservedSelectedControlId))
+        {
+            TraceDocumentDebug(
+                "APPLY_DOCUMENT_SELECTION_NONE",
+                $"reason={reason}; preservedActiveDocumentId={preservedActiveDocumentId}; active={ActiveDocumentId}",
+                toOutput: false);
+            return "";
+        }
+
+        if (!string.Equals(preservedActiveDocumentId, ActiveDocumentId, StringComparison.OrdinalIgnoreCase))
+        {
+            if (allowClearSelection)
+                SetSelection(Array.Empty<DesignControlModel>(), null);
+
+            TraceDocumentDebug(
+                "APPLY_DOCUMENT_SELECTION_NOT_RESTORED",
+                $"reason=active-document-changed; applyReason={reason}; preserved={preservedSelectedControlName}:{preservedSelectedControlId}; preservedDoc={preservedActiveDocumentId}; active={ActiveDocumentId}; cleared={allowClearSelection}",
+                toOutput: false,
+                warning: allowClearSelection);
+            return "";
+        }
+
+        var restored = Controls.FirstOrDefault(control => string.Equals(control.Id, preservedSelectedControlId, StringComparison.OrdinalIgnoreCase));
+        if (restored is not null)
+        {
+            if (ReferenceEquals(SelectedControl, restored))
+            {
+                TraceDocumentDebug(
+                    "SELECTED_CONTROL_SAME_SUPPRESSED",
+                    $"reason=RestoreSelectionAfterApplyDocument; applyReason={reason}; selected={SelectedControl.Name}:{SelectedControl.Id}; restored={restored.Name}:{restored.Id}; active={ActiveDocumentId}",
+                    toOutput: false);
+                return restored.Id;
+            }
+
+            SetSelection(new[] { restored }, restored);
+            TraceDocumentDebug(
+                "APPLY_DOCUMENT_SELECTION_RESTORED",
+                $"reason={reason}; preserved={preservedSelectedControlName}:{preservedSelectedControlId}; restored={restored.Name}:{restored.Id}; active={ActiveDocumentId}",
+                toOutput: false);
+            return restored.Id;
+        }
+
+        if (allowClearSelection)
+            SetSelection(Array.Empty<DesignControlModel>(), null);
+
+        TraceDocumentDebug(
+            "APPLY_DOCUMENT_SELECTION_NOT_RESTORED",
+            $"reason=control-missing; applyReason={reason}; preserved={preservedSelectedControlName}:{preservedSelectedControlId}; active={ActiveDocumentId}; cleared={allowClearSelection}",
+            toOutput: false,
+            warning: allowClearSelection);
+        return "";
     }
 
     private void ResetDocumentScopedRefreshState()
@@ -15881,6 +16170,7 @@ public partial class MainWindowViewModel : ObservableObject
         _isInspectorInteractionActive = false;
         _inspectorInteractionDepth = 0;
         _pendingInspectorRebuild = false;
+        _isPendingInspectorRebuildScheduled = false;
         _pendingInspectorRebuildReason = "";
         _inspectorInteractionKind = "";
 
@@ -16446,6 +16736,7 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(IsDiagnosticsPaneCollapsed));
         OnPropertyChanged(nameof(IsDiagnosticsPaneBodyVisible));
         OnPropertyChanged(nameof(IsOutputPanelBodyVisible));
+        OnPropertyChanged(nameof(IsInteractionTracePanelBodyVisible));
         OnPropertyChanged(nameof(HasDiagnosticErrors));
         OnPropertyChanged(nameof(HasDiagnosticWarnings));
         OnPropertyChanged(nameof(DiagnosticErrorCount));
@@ -16477,6 +16768,7 @@ public partial class MainWindowViewModel : ObservableObject
     private void RaiseSelectionProperties()
     {
         OnPropertyChanged(nameof(HasSelectedControl));
+        OnPropertyChanged(nameof(HasNoSelectedControl));
         OnPropertyChanged(nameof(IsContextualToolbarVisible));
         OnPropertyChanged(nameof(HasMultipleSelection));
         OnPropertyChanged(nameof(SelectionCount));
@@ -17173,8 +17465,57 @@ public partial class MainWindowViewModel : ObservableObject
         RaiseInteractionDesignerProperties();
     }
 
+    partial void OnSelectedControlChanging(DesignControlModel? oldValue, DesignControlModel? newValue)
+    {
+        var oldDocumentId = GetTrackedControlDocumentId(oldValue);
+        var newDocumentId = GetTrackedControlDocumentId(newValue);
+        var isSameSelection =
+            ReferenceEquals(oldValue, newValue)
+            || (oldValue is not null
+                && newValue is not null
+                && string.Equals(oldValue.Id, newValue.Id, StringComparison.OrdinalIgnoreCase)
+                && (string.Equals(oldDocumentId, newDocumentId, StringComparison.OrdinalIgnoreCase)
+                    || string.IsNullOrWhiteSpace(oldDocumentId)
+                    || string.IsNullOrWhiteSpace(newDocumentId)));
+
+        if (isSameSelection)
+        {
+            _suppressNextSelectedControlChangedForSameSelection = true;
+            _suppressNextSelectedControlChangedReason =
+                $"old={oldValue?.Name ?? "-"}:{oldValue?.Id ?? "-"} doc={oldDocumentId}; new={newValue?.Name ?? "-"}:{newValue?.Id ?? "-"} doc={newDocumentId}; active={ActiveDocumentId}";
+            TraceDocumentDebug(
+                "SELECTED_CONTROL_SAME_SUPPRESSED",
+                $"{_suppressNextSelectedControlChangedReason}; switching={_isSwitchingActiveForm}; applying={_isApplyingDocument}",
+                toOutput: false);
+            return;
+        }
+
+        _suppressNextSelectedControlChangedForSameSelection = false;
+        _suppressNextSelectedControlChangedReason = "";
+        TraceDocumentDebug(
+            "SelectedControlChanging",
+            $"old={oldValue?.Name ?? "-"}:{oldValue?.Id ?? "-"} doc={oldDocumentId}; new={newValue?.Name ?? "-"}:{newValue?.Id ?? "-"} doc={newDocumentId}; active={ActiveDocumentId}; switching={_isSwitchingActiveForm}; applying={_isApplyingDocument}",
+            toOutput: false);
+    }
+
     partial void OnSelectedControlChanged(DesignControlModel? value)
     {
+        if (_suppressNextSelectedControlChangedForSameSelection)
+        {
+            TraceDocumentDebug(
+                "REBUILD_PROPERTY_GRID_SUPPRESSED_SAME_SELECTION",
+                _suppressNextSelectedControlChangedReason,
+                toOutput: false);
+            _suppressNextSelectedControlChangedForSameSelection = false;
+            _suppressNextSelectedControlChangedReason = "";
+            OnPropertyChanged(nameof(HasSelectedControl));
+            OnPropertyChanged(nameof(HasNoSelectedControl));
+            OnPropertyChanged(nameof(SelectedControlSummary));
+            RaiseSelectionProperties();
+            RefreshStructureSelection();
+            return;
+        }
+
         if (value is not null && Controls.All(control => !string.Equals(control.Id, value.Id, StringComparison.OrdinalIgnoreCase)))
         {
             TraceDocumentDebug(
@@ -17210,6 +17551,7 @@ public partial class MainWindowViewModel : ObservableObject
         RebuildDescriptorCustomPropertyEditors();
         RebuildPropertyGrid("SelectedControlChanged");
         OnPropertyChanged(nameof(HasSelectedControl));
+        OnPropertyChanged(nameof(HasNoSelectedControl));
         OnPropertyChanged(nameof(CanEditText));
         OnPropertyChanged(nameof(SelectedTextLabel));
         OnPropertyChanged(nameof(CanEditPlaceholder));
@@ -17632,7 +17974,8 @@ public partial class MainWindowViewModel : ObservableObject
     partial void OnActiveBottomDockTabChanged(string value)
     {
         if (!string.Equals(value, BottomDockTabProblems, StringComparison.Ordinal)
-            && !string.Equals(value, BottomDockTabOutput, StringComparison.Ordinal))
+            && !string.Equals(value, BottomDockTabOutput, StringComparison.Ordinal)
+            && !string.Equals(value, BottomDockTabInteractionTrace, StringComparison.Ordinal))
         {
             ActiveBottomDockTab = BottomDockTabProblems;
             return;
@@ -17640,8 +17983,10 @@ public partial class MainWindowViewModel : ObservableObject
 
         OnPropertyChanged(nameof(IsProblemsPanelActive));
         OnPropertyChanged(nameof(IsOutputPanelActive));
+        OnPropertyChanged(nameof(IsInteractionTracePanelActive));
         OnPropertyChanged(nameof(IsDiagnosticsPaneBodyVisible));
         OnPropertyChanged(nameof(IsOutputPanelBodyVisible));
+        OnPropertyChanged(nameof(IsInteractionTracePanelBodyVisible));
         OnPropertyChanged(nameof(BottomDockPanelTitle));
     }
 
@@ -17714,6 +18059,7 @@ public partial class MainWindowViewModel : ObservableObject
     {
         RaiseDiagnosticsProperties();
         OnPropertyChanged(nameof(IsOutputPanelBodyVisible));
+        OnPropertyChanged(nameof(IsInteractionTracePanelBodyVisible));
         RaiseEditorShellLayoutProperties();
     }
 
@@ -17743,6 +18089,9 @@ public partial class MainWindowViewModel : ObservableObject
 
     partial void OnIsBottomDockOpenChanged(bool value)
     {
+        OnPropertyChanged(nameof(IsDiagnosticsPaneBodyVisible));
+        OnPropertyChanged(nameof(IsOutputPanelBodyVisible));
+        OnPropertyChanged(nameof(IsInteractionTracePanelBodyVisible));
         RaiseEditorShellLayoutProperties();
     }
 
@@ -17896,6 +18245,8 @@ public partial class MainWindowViewModel : ObservableObject
 
         RebuildPropertyGrid();
         RaiseWorkspaceModeProperties();
+        if (IsCodeMode)
+            GenerateXaml();
     }
 
     partial void OnGenerationModeChanged(string value)
@@ -18094,8 +18445,10 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(IsBottomDockRailVisible));
         OnPropertyChanged(nameof(IsProblemsPanelActive));
         OnPropertyChanged(nameof(IsOutputPanelActive));
+        OnPropertyChanged(nameof(IsInteractionTracePanelActive));
         OnPropertyChanged(nameof(IsDiagnosticsPaneBodyVisible));
         OnPropertyChanged(nameof(IsOutputPanelBodyVisible));
+        OnPropertyChanged(nameof(IsInteractionTracePanelBodyVisible));
         OnPropertyChanged(nameof(BottomDockPanelTitle));
         OnPropertyChanged(nameof(IsLeftRailVisible));
         OnPropertyChanged(nameof(IsRightInspectorVisible));

@@ -664,6 +664,11 @@
                           Command="{Binding ResetInteractionStateEditorCommand}"
                           HorizontalAlignment="Stretch"
                           ToolTip.Tip="Diagnostic reset for stuck PropertyGrid/Canvas interaction state."/>
+                  <Button Content="Open Interaction Trace"
+                          Classes="data-action-button"
+                          Command="{Binding OpenInteractionTracePanelCommand}"
+                          HorizontalAlignment="Stretch"
+                          ToolTip.Tip="Показать последние события фокуса, selection, PropertyGrid и canvas."/>
 
                   <Border Height="1"
                           Background="#E2E8F0"
@@ -2433,7 +2438,8 @@
               </Border>
 
               <Grid Grid.Row="0"
-                    ColumnDefinitions="*,Auto">
+                    ColumnDefinitions="*,Auto"
+                    IsVisible="False">
                 <TextBox Classes="property-editor"
                          Watermark="Search properties..."
                          Text="{Binding PropertyGridSearchText, Mode=TwoWay}"/>
@@ -2444,6 +2450,148 @@
               </Grid>
 
               <ScrollViewer Grid.Row="1"
+                            VerticalScrollBarVisibility="Auto">
+                <StackPanel Spacing="8"
+                            Margin="0,6,0,0">
+                  <Border Background="#EFF6FF"
+                          BorderBrush="#BFDBFE"
+                          BorderThickness="1"
+                          CornerRadius="6"
+                          Padding="8">
+                    <StackPanel Spacing="2">
+                      <TextBlock Text="Simple Inspector"
+                                 FontWeight="SemiBold"
+                                 Foreground="#1D4ED8"/>
+                      <TextBlock Text="Diagnostic mode: direct controls, no PropertyGrid templates."
+                                 FontSize="11"
+                                 Foreground="#475569"
+                                 TextWrapping="Wrap"/>
+                    </StackPanel>
+                  </Border>
+
+                  <Border Background="#FFFFFF"
+                          BorderBrush="#D7E2EE"
+                          BorderThickness="1"
+                          CornerRadius="6"
+                          Padding="10"
+                          IsVisible="{Binding HasNoSelectedControl}">
+                    <StackPanel Spacing="6">
+                      <TextBlock Text="No control selected"
+                                 FontWeight="SemiBold"/>
+                      <TextBlock Text="Select a control on the canvas to edit Name, Text, size and colors."
+                                 FontSize="12"
+                                 Foreground="#64748B"
+                                 TextWrapping="Wrap"/>
+                    </StackPanel>
+                  </Border>
+
+                  <StackPanel Spacing="8"
+                              IsVisible="{Binding HasSelectedControl}">
+                    <StackPanel Spacing="3">
+                      <TextBlock Text="Name"
+                                 FontSize="11"
+                                 Foreground="#64748B"/>
+                      <TextBox x:Name="SimpleInspectorNameTextBox"
+                               Classes="property-editor"
+                               Tag="Name"
+                               PointerPressed="SimpleInspectorTextBox_PointerPressed"
+                               GotFocus="SimpleInspectorTextBox_GotFocus"
+                               KeyDown="SimpleInspectorTextBox_KeyDown"
+                               LostFocus="SimpleInspectorTextBox_LostFocus"/>
+                    </StackPanel>
+
+                    <StackPanel Spacing="3">
+                      <TextBlock Text="Text / Content"
+                                 FontSize="11"
+                                 Foreground="#64748B"/>
+                      <TextBox x:Name="SimpleInspectorTextTextBox"
+                               Classes="property-editor"
+                               Tag="Text"
+                               PointerPressed="SimpleInspectorTextBox_PointerPressed"
+                               GotFocus="SimpleInspectorTextBox_GotFocus"
+                               KeyDown="SimpleInspectorTextBox_KeyDown"
+                               LostFocus="SimpleInspectorTextBox_LostFocus"/>
+                    </StackPanel>
+
+                    <Grid ColumnDefinitions="*,*">
+                      <StackPanel Spacing="3">
+                        <TextBlock Text="Width"
+                                   FontSize="11"
+                                   Foreground="#64748B"/>
+                        <TextBox x:Name="SimpleInspectorWidthTextBox"
+                                 Classes="property-editor"
+                                 Tag="Width"
+                                 PointerPressed="SimpleInspectorTextBox_PointerPressed"
+                                 GotFocus="SimpleInspectorTextBox_GotFocus"
+                                 KeyDown="SimpleInspectorTextBox_KeyDown"
+                                 LostFocus="SimpleInspectorTextBox_LostFocus"/>
+                      </StackPanel>
+                      <StackPanel Grid.Column="1"
+                                  Margin="8,0,0,0"
+                                  Spacing="3">
+                        <TextBlock Text="Height"
+                                   FontSize="11"
+                                   Foreground="#64748B"/>
+                        <TextBox x:Name="SimpleInspectorHeightTextBox"
+                                 Classes="property-editor"
+                                 Tag="Height"
+                                 PointerPressed="SimpleInspectorTextBox_PointerPressed"
+                                 GotFocus="SimpleInspectorTextBox_GotFocus"
+                                 KeyDown="SimpleInspectorTextBox_KeyDown"
+                                 LostFocus="SimpleInspectorTextBox_LostFocus"/>
+                      </StackPanel>
+                    </Grid>
+
+                    <Grid ColumnDefinitions="*,*">
+                      <CheckBox x:Name="SimpleInspectorIsVisibleCheckBox"
+                                Content="IsVisible"
+                                Tag="IsVisible"
+                                Click="SimpleInspectorCheckBox_Click"/>
+                      <CheckBox Grid.Column="1"
+                                x:Name="SimpleInspectorIsLockedCheckBox"
+                                Margin="8,0,0,0"
+                                Content="IsLocked"
+                                Tag="IsLocked"
+                                Click="SimpleInspectorCheckBox_Click"/>
+                    </Grid>
+
+                    <Grid ColumnDefinitions="*,Auto">
+                      <StackPanel Spacing="2">
+                        <TextBlock Text="Background"
+                                   FontSize="11"
+                                   Foreground="#64748B"/>
+                        <TextBlock x:Name="SimpleInspectorBackgroundTextBlock"
+                                   TextTrimming="CharacterEllipsis"/>
+                      </StackPanel>
+                      <Button Grid.Column="1"
+                              Margin="8,0,0,0"
+                              Content="Background..."
+                              Tag="Background"
+                              Classes="property-header-action"
+                              Click="SimpleInspectorColorButton_Click"/>
+                    </Grid>
+
+                    <Grid ColumnDefinitions="*,Auto">
+                      <StackPanel Spacing="2">
+                        <TextBlock Text="Foreground"
+                                   FontSize="11"
+                                   Foreground="#64748B"/>
+                        <TextBlock x:Name="SimpleInspectorForegroundTextBlock"
+                                   TextTrimming="CharacterEllipsis"/>
+                      </StackPanel>
+                      <Button Grid.Column="1"
+                              Margin="8,0,0,0"
+                              Content="Foreground..."
+                              Tag="Foreground"
+                              Classes="property-header-action"
+                              Click="SimpleInspectorColorButton_Click"/>
+                    </Grid>
+                  </StackPanel>
+                </StackPanel>
+              </ScrollViewer>
+
+              <ScrollViewer Grid.Row="1"
+                            IsVisible="False"
                             VerticalScrollBarVisibility="Auto">
                 <StackPanel Spacing="4">
                   <Border Background="#F8FAFC"
@@ -2646,11 +2794,13 @@
                               <TextBlock Text="{Binding ExpandGlyph}"
                                          FontSize="10"
                                          HorizontalAlignment="Center"
-                                         VerticalAlignment="Center"/>
+                                         VerticalAlignment="Center"
+                                         IsHitTestVisible="False"/>
                               <TextBlock Grid.Column="1"
                                          Text="{Binding HeaderText}"
                                          VerticalAlignment="Center"
-                                         TextTrimming="CharacterEllipsis"/>
+                                         TextTrimming="CharacterEllipsis"
+                                         IsHitTestVisible="False"/>
                             </Grid>
                           </ToggleButton>
 
@@ -2672,7 +2822,8 @@
                                                  FontSize="12"
                                                  Foreground="#334155"
                                                  VerticalAlignment="Center"
-                                                 TextTrimming="CharacterEllipsis">
+                                                 TextTrimming="CharacterEllipsis"
+                                                 IsHitTestVisible="False">
                                         <TextBlock.Text>
                                           <MultiBinding StringFormat="{}{0}{1}">
                                             <Binding Path="ModifiedGlyph"/>
@@ -2705,28 +2856,55 @@
                                                   HorizontalAlignment="Left"
                                                   VerticalAlignment="Center"/>
 
-                                        <ComboBox Classes="property-editor"
-                                                  IsVisible="{Binding IsEnumEditor}"
-                                                  ItemsSource="{Binding Options}"
-                                                  DropDownOpened="PropertyGridComboBox_DropDownOpened"
-                                                  DropDownClosed="PropertyGridComboBox_DropDownClosed"
-                                                  SelectedItem="{Binding SelectedOption, Mode=TwoWay}"/>
+                                        <Grid IsVisible="{Binding IsEnumEditor}"
+                                              ColumnDefinitions="*,Auto">
+                                          <TextBlock Text="{Binding Value}"
+                                                     Foreground="#334155"
+                                                     FontSize="12"
+                                                     VerticalAlignment="Center"
+                                                     TextTrimming="CharacterEllipsis"
+                                                     IsHitTestVisible="False"/>
+                                          <Button Grid.Column="1"
+                                                  Classes="property-action"
+                                                  Content="..."
+                                                  Click="PropertyGridOptionButton_Click"
+                                                  ToolTip.Tip="Select value"/>
+                                        </Grid>
 
-                                        <ComboBox Classes="property-editor"
-                                                  IsVisible="{Binding IsBindingSourceEditor}"
-                                                  ItemsSource="{Binding Options}"
-                                                  DropDownOpened="PropertyGridComboBox_DropDownOpened"
-                                                  DropDownClosed="PropertyGridComboBox_DropDownClosed"
-                                                  SelectedItem="{Binding SelectedOption, Mode=TwoWay}"/>
+                                        <Grid IsVisible="{Binding IsBindingSourceEditor}"
+                                              ColumnDefinitions="*,Auto">
+                                          <TextBlock Text="{Binding Value}"
+                                                     Foreground="#334155"
+                                                     FontSize="12"
+                                                     VerticalAlignment="Center"
+                                                     TextTrimming="CharacterEllipsis"
+                                                     IsHitTestVisible="False"/>
+                                          <Button Grid.Column="1"
+                                                  Classes="property-action"
+                                                  Content="..."
+                                                  Click="PropertyGridOptionButton_Click"
+                                                  ToolTip.Tip="Select BindingSource"/>
+                                        </Grid>
 
                                         <Grid IsVisible="{Binding IsColorEditor}"
-                                              ColumnDefinitions="*,Auto">
-                                          <controls:PropertyGridTextEditor Classes="property-editor"
-                                                                           Row="{Binding}"
-                                                                           MinWidth="80"
-                                                                           HorizontalAlignment="Stretch"
-                                                                           VerticalAlignment="Center"/>
-                                          <Button Grid.Column="1"
+                                              ColumnDefinitions="Auto,*,Auto">
+                                          <Border Width="14"
+                                                  Height="14"
+                                                  Margin="0,0,6,0"
+                                                  Background="{Binding Value}"
+                                                  BorderBrush="#94A3B8"
+                                                  BorderThickness="1"
+                                                  CornerRadius="3"
+                                                  VerticalAlignment="Center"
+                                                  IsHitTestVisible="False"/>
+                                          <TextBlock Grid.Column="1"
+                                                     Text="{Binding Value}"
+                                                     Foreground="#334155"
+                                                     FontSize="12"
+                                                     VerticalAlignment="Center"
+                                                     TextTrimming="CharacterEllipsis"
+                                                     IsHitTestVisible="False"/>
+                                          <Button Grid.Column="2"
                                                   Classes="property-action"
                                                   Content="..."
                                                   Click="PropertyGridColorButton_Click"
@@ -2744,7 +2922,8 @@
                                                    Foreground="#475569"
                                                    FontSize="12"
                                                    VerticalAlignment="Center"
-                                                   TextTrimming="CharacterEllipsis"/>
+                                                   TextTrimming="CharacterEllipsis"
+                                                   IsHitTestVisible="False"/>
                                         </Grid>
                                       </Border>
 
@@ -2761,7 +2940,8 @@
                                                  Foreground="#DC2626"
                                                  IsVisible="{Binding HasValidationError}"
                                                  ToolTip.Tip="{Binding ValidationMessage}"
-                                                 VerticalAlignment="Center"/>
+                                                 VerticalAlignment="Center"
+                                                 IsHitTestVisible="False"/>
                                     </Grid>
                                   </Border>
                                 </DataTemplate>
@@ -4629,21 +4809,19 @@
                                               Content="Включено"
                                               IsChecked="{Binding BoolValue, Mode=TwoWay}"/>
 
-                                    <ComboBox IsVisible="{Binding IsEnumEditor}"
-                                              ItemsSource="{Binding Options}"
-                                              SelectedItem="{Binding SelectedOption, Mode=TwoWay}">
-                                      <ComboBox.ItemTemplate>
-                                        <DataTemplate x:DataType="contracts:PropertyOption">
-                                          <StackPanel Spacing="2">
-                                            <TextBlock Text="{Binding Title}"
-                                                       FontWeight="SemiBold"/>
-                                            <TextBlock Text="{Binding Value}"
-                                                       Foreground="#64748B"
-                                                       FontSize="12"/>
-                                          </StackPanel>
-                                        </DataTemplate>
-                                      </ComboBox.ItemTemplate>
-                                    </ComboBox>
+                                    <Grid IsVisible="{Binding IsEnumEditor}"
+                                          ColumnDefinitions="*,Auto">
+                                      <TextBlock Text="{Binding StringValue}"
+                                                 Foreground="#334155"
+                                                 VerticalAlignment="Center"
+                                                 TextTrimming="CharacterEllipsis"
+                                                 IsHitTestVisible="False"/>
+                                      <Button Grid.Column="1"
+                                              Classes="property-action"
+                                              Content="..."
+                                              Click="OpenDescriptorEnumButton_Click"
+                                              ToolTip.Tip="Выбрать значение"/>
+                                    </Grid>
                                   </StackPanel>
                                 </Border>
                               </DataTemplate>
@@ -5703,11 +5881,13 @@
                                 <TextBlock Text="{Binding ExpandGlyph}"
                                            FontSize="10"
                                            HorizontalAlignment="Center"
-                                           VerticalAlignment="Center"/>
+                                           VerticalAlignment="Center"
+                                           IsHitTestVisible="False"/>
                                 <TextBlock Grid.Column="1"
                                            Text="{Binding HeaderText}"
                                            VerticalAlignment="Center"
-                                           TextTrimming="CharacterEllipsis"/>
+                                           TextTrimming="CharacterEllipsis"
+                                           IsHitTestVisible="False"/>
                               </Grid>
                             </ToggleButton>
 
@@ -5728,7 +5908,8 @@
                                                  FontSize="12"
                                                  Foreground="#334155"
                                                  VerticalAlignment="Center"
-                                                 TextTrimming="CharacterEllipsis">
+                                                 TextTrimming="CharacterEllipsis"
+                                                 IsHitTestVisible="False">
                                         <TextBlock.Text>
                                           <MultiBinding StringFormat="{}{0}{1}">
                                             <Binding Path="ModifiedGlyph"/>
@@ -5757,18 +5938,27 @@
                                                     IsChecked="{Binding BoolValue, Mode=TwoWay}"
                                                     HorizontalAlignment="Left"
                                                     VerticalAlignment="Center"/>
-                                          <ComboBox Classes="property-editor"
-                                                    IsVisible="{Binding IsEnumEditor}"
-                                                    ItemsSource="{Binding Options}"
-                                                    DropDownOpened="PropertyGridComboBox_DropDownOpened"
-                                                    DropDownClosed="PropertyGridComboBox_DropDownClosed"
-                                                    SelectedItem="{Binding SelectedOption, Mode=TwoWay}"/>
+                                          <Grid IsVisible="{Binding IsEnumEditor}"
+                                                ColumnDefinitions="*,Auto">
+                                            <TextBlock Text="{Binding Value}"
+                                                       Foreground="#334155"
+                                                       FontSize="12"
+                                                       VerticalAlignment="Center"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       IsHitTestVisible="False"/>
+                                            <Button Grid.Column="1"
+                                                    Classes="property-action"
+                                                    Content="..."
+                                                    Click="PropertyGridOptionButton_Click"
+                                                    ToolTip.Tip="Select value"/>
+                                          </Grid>
                                           <TextBlock Text="{Binding Value}"
                                                      IsVisible="{Binding IsReadOnlyEditor}"
                                                      Foreground="#475569"
                                                      FontSize="12"
                                                      VerticalAlignment="Center"
-                                                     TextTrimming="CharacterEllipsis"/>
+                                                     TextTrimming="CharacterEllipsis"
+                                                     IsHitTestVisible="False"/>
                                         </Grid>
                                       </Border>
                                       <Button Grid.Column="3"
@@ -5784,7 +5974,8 @@
                                                  Foreground="#DC2626"
                                                  IsVisible="{Binding HasValidationError}"
                                                  ToolTip.Tip="{Binding ValidationMessage}"
-                                                 VerticalAlignment="Center"/>
+                                                 VerticalAlignment="Center"
+                                                 IsHitTestVisible="False"/>
                                     </Grid>
                                   </Border>
                                 </DataTemplate>
@@ -6509,6 +6700,10 @@
                         Command="{Binding OpenOutputPanelCommand}"
                         Classes="problem-filter"
                         Padding="8,3"/>
+                <Button Content="{Binding InteractionTraceDockButtonText}"
+                        Command="{Binding OpenInteractionTracePanelCommand}"
+                        Classes="problem-filter"
+                        Padding="8,3"/>
                 <TextBlock Text="Diagnostics"
                            Foreground="#64748B"
                            FontWeight="SemiBold"
@@ -6600,6 +6795,21 @@
                         Padding="8,3"/>
               </StackPanel>
 
+              <StackPanel Grid.Column="4"
+                          Orientation="Horizontal"
+                          Spacing="8"
+                          VerticalAlignment="Center"
+                          IsVisible="{Binding IsInteractionTracePanelActive}">
+                <Button Content="Clear Trace"
+                        Command="{Binding ClearInteractionTraceCommand}"
+                        Classes="problem-filter"
+                        Padding="8,3"/>
+                <Button Content="Copy Trace"
+                        Click="CopyInteractionTraceButton_Click"
+                        Classes="problem-filter"
+                        Padding="8,3"/>
+              </StackPanel>
+
               <StackPanel Grid.Column="5"
                           Spacing="2"
                           VerticalAlignment="Center"
@@ -6625,6 +6835,22 @@
                            FontWeight="SemiBold"
                            TextWrapping="Wrap"/>
                 <TextBlock Text="{Binding WorkspaceTaskStatusText}"
+                           Foreground="#64748B"
+                           FontSize="11"
+                           MaxLines="1"
+                           TextTrimming="CharacterEllipsis"/>
+              </StackPanel>
+
+              <StackPanel Grid.Column="5"
+                          Spacing="2"
+                          VerticalAlignment="Center"
+                          IsVisible="{Binding IsInteractionTracePanelActive}">
+                <TextBlock Text="{Binding InteractionTraceSummary}"
+                           Foreground="#334155"
+                           FontWeight="SemiBold"
+                           MaxLines="1"
+                           TextTrimming="CharacterEllipsis"/>
+                <TextBlock Text="Focus, selection, document switching, inspector and drag trace"
                            Foreground="#64748B"
                            FontSize="11"
                            MaxLines="1"
@@ -6820,6 +7046,94 @@
               </ItemsControl>
             </ScrollViewer>
           </Grid>
+
+          <Grid Grid.Row="2"
+                Margin="6"
+                IsVisible="{Binding IsInteractionTracePanelBodyVisible}">
+            <Border Background="#0B1220"
+                    BorderBrush="#334155"
+                    BorderThickness="1"
+                    CornerRadius="8"
+                    Padding="0"
+                    ClipToBounds="True"
+                    IsVisible="{Binding HasNoInteractionTraceEntries}">
+              <StackPanel Spacing="6"
+                          HorizontalAlignment="Center"
+                          VerticalAlignment="Center">
+                <TextBlock Text="Interaction Trace is empty"
+                           Foreground="#E2E8F0"
+                           FontSize="14"
+                           FontWeight="Bold"
+                           HorizontalAlignment="Center"/>
+                <TextBlock Text="Reproduce the Inspector/AddForm bug, then press Copy Trace."
+                           Foreground="#94A3B8"
+                           TextWrapping="Wrap"
+                           TextAlignment="Center"/>
+              </StackPanel>
+            </Border>
+
+            <ScrollViewer VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Auto"
+                          IsVisible="{Binding HasInteractionTraceEntries}">
+              <ItemsControl ItemsSource="{Binding InteractionTraceEntries}">
+                <ItemsControl.ItemTemplate>
+                  <DataTemplate x:DataType="models:InteractionTraceEntryModel">
+                    <Grid ColumnDefinitions="82,210,190,210,*"
+                          MinHeight="28"
+                          Margin="8,0"
+                          VerticalAlignment="Center">
+                      <TextBlock Text="{Binding TimestampText}"
+                                 Foreground="#94A3B8"
+                                 FontFamily="Consolas"
+                                 FontSize="12"
+                                 VerticalAlignment="Center"/>
+                      <TextBlock Grid.Column="1"
+                                 Text="{Binding EventName}"
+                                 Foreground="#BFDBFE"
+                                 FontFamily="Consolas"
+                                 FontWeight="SemiBold"
+                                 TextTrimming="CharacterEllipsis"
+                                 VerticalAlignment="Center"/>
+                      <TextBlock Grid.Column="2"
+                                 Text="{Binding ActiveForm}"
+                                 Foreground="#CBD5E1"
+                                 FontFamily="Consolas"
+                                 FontSize="12"
+                                 TextTrimming="CharacterEllipsis"
+                                 VerticalAlignment="Center"/>
+                      <TextBlock Grid.Column="3"
+                                 Text="{Binding FocusedElement}"
+                                 Foreground="#FDE68A"
+                                 FontFamily="Consolas"
+                                 FontSize="12"
+                                 TextTrimming="CharacterEllipsis"
+                                 VerticalAlignment="Center"/>
+                      <StackPanel Grid.Column="4"
+                                  Spacing="1"
+                                  VerticalAlignment="Center">
+                        <TextBlock Text="{Binding SelectedControl}"
+                                   Foreground="#E2E8F0"
+                                   FontFamily="Consolas"
+                                   FontSize="12"
+                                   TextWrapping="NoWrap"/>
+                        <TextBlock Text="{Binding Flags}"
+                                   Foreground="#A7F3D0"
+                                   FontFamily="Consolas"
+                                   FontSize="11"
+                                   TextWrapping="NoWrap"/>
+                        <TextBlock Text="{Binding Details}"
+                                   Foreground="#94A3B8"
+                                   FontFamily="Consolas"
+                                   FontSize="11"
+                                   TextWrapping="NoWrap"
+                                   IsVisible="{Binding HasDetails}"/>
+                      </StackPanel>
+                    </Grid>
+                  </DataTemplate>
+                </ItemsControl.ItemTemplate>
+              </ItemsControl>
+            </ScrollViewer>
+          </Grid>
         </Grid>
       </Border>
 
@@ -6845,6 +7159,14 @@
                   Padding="8,3"
                   MinHeight="26"
                   ToolTip.Tip="Open Output"/>
+
+          <Button Grid.Column="2"
+                  Content="{Binding InteractionTraceDockButtonText}"
+                  Command="{Binding OpenInteractionTracePanelCommand}"
+                  Classes="dock-rail"
+                  Padding="8,3"
+                  MinHeight="26"
+                  ToolTip.Tip="Open Interaction Trace"/>
 
           <Border Grid.Column="2"
                   Background="#FEE2E2"

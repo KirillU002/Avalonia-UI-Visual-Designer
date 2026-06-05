@@ -11,6 +11,7 @@ using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using FormDesigner.DesignerSystem.Binding;
 using FormDesigner.DesignerSystem.BuiltIn;
 using FormDesigner.DesignerSystem.Infrastructure;
@@ -63,6 +64,7 @@ public partial class MainWindow : Window
     private readonly Dictionary<string, Point> _dragRootStartPositions = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, (string Signature, IReadOnlyList<Dictionary<string, string>> Rows)> _sqlPreviewRowsBySourceId = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _sqlPreviewRowsLoading = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<TextBox, SimpleInspectorEditContext> _simpleInspectorEditContexts = new();
     private readonly List<DesignControlModel> _dragSelectionRoots = new();
     private readonly List<DesignControlModel> _marqueeBaseSelection = new();
     private readonly List<CanvasSnapCandidate> _snapCandidates = new();
@@ -122,7 +124,6 @@ public partial class MainWindow : Window
     private MainWindowViewModel? _attachedViewModel;
     private PreviewWindow? _launchPreviewWindow;
     private HelpWindow? _helpWindow;
-    private Flyout? _activeColorFlyout;
     private TextBox? _inlineCanvasEditor;
     private DesignControlModel? _inlineCanvasEditingModel;
     private string? _inlineCanvasEditingProperty;
@@ -148,6 +149,8 @@ public partial class MainWindow : Window
     private string _lastObservedDocumentSessionId = string.Empty;
     private int _responsiveShellBreakpoint = -1;
 
+    private sealed record SimpleInspectorEditContext(string ControlId, string PropertyName, string InitialText);
+
     /// <summary>
     /// Подключает обработчики окна и запускает первичную синхронизацию предпросмотра.
     /// </summary>
@@ -161,6 +164,8 @@ public partial class MainWindow : Window
         DesignerViewportScrollViewer.AddHandler(InputElement.PointerPressedEvent, DesignerViewport_PointerPressed, RoutingStrategies.Tunnel, true);
         DesignerViewportScrollViewer.AddHandler(InputElement.PointerMovedEvent, DesignerViewport_PointerMoved, RoutingStrategies.Tunnel, true);
         DesignerViewportScrollViewer.AddHandler(InputElement.PointerReleasedEvent, DesignerViewport_PointerReleased, RoutingStrategies.Tunnel, true);
+        RightDockPanel.AddHandler(InputElement.PointerPressedEvent, RightInspector_PointerPressed, RoutingStrategies.Bubble, true);
+        RightDockPanel.AddHandler(InputElement.PointerReleasedEvent, RightInspector_PointerReleased, RoutingStrategies.Bubble, true);
         DesignerCanvas.AddHandler(DragDrop.DragOverEvent, DesignerCanvas_DragOver);
         DesignerCanvas.AddHandler(DragDrop.DropEvent, DesignerCanvas_Drop);
         DesignerViewportScrollViewer.SizeChanged += (_, _) => RenderMiniMap();
@@ -267,6 +272,7 @@ public partial class MainWindow : Window
             ApplyAppSettingsToViewModel(_attachedViewModel);
             _lastObservedDocumentSessionId = _attachedViewModel.DocumentSessionId;
             UpdateWindowTitle();
+            RefreshSimpleInspectorFields(force: true);
         }
 
         RefreshPreviewMetrics();
@@ -392,6 +398,16 @@ public partial class MainWindow : Window
             || e.PropertyName == nameof(MainWindowViewModel.HasUnsavedChanges))
         {
             UpdateWindowTitle();
+        }
+
+        if (e.PropertyName == nameof(MainWindowViewModel.SelectedControl)
+            || e.PropertyName == nameof(MainWindowViewModel.DocumentSessionId))
+        {
+            RefreshSimpleInspectorFields(force: true);
+        }
+        else if (e.PropertyName == nameof(MainWindowViewModel.SelectedControlSummary))
+        {
+            RefreshSimpleInspectorFields(force: false);
         }
 
         if (e.PropertyName == nameof(MainWindowViewModel.IsCommandPaletteOpen)
@@ -972,6 +988,79 @@ public partial class MainWindow : Window
     private void DumpInteractionState(string reason)
     {
         VM.DumpInteractionState(reason, CaptureViewInteractionState());
+    }
+
+    private string GetFocusedElementDebugName()
+    {
+        try
+        {
+            var focused = TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement();
+            return focused is Control control
+                ? $"{control.GetType().Name}:{control.Name ?? "-"}"
+                : focused?.GetType().Name ?? "-";
+        }
+        catch
+        {
+            return "-";
+        }
+    }
+
+    private static string DescribeInputElement(object? value)
+    {
+        return value switch
+        {
+            Control control => $"{control.GetType().Name}:{control.Name ?? "-"}:{control.DataContext?.GetType().Name ?? "-"}",
+            null => "-",
+            _ => value.GetType().Name
+        };
+    }
+
+    private void TraceInspectorInput(string eventName, object? sender, RoutedEventArgs e)
+    {
+        var details =
+            $"sender={DescribeInputElement(sender)}; source={DescribeInputElement(e.Source)}; " +
+            $"handled={e.Handled}; activeDocument={VM.ActiveDocumentId}; selected={VM.SelectedControl?.Name ?? "-"}:{VM.SelectedControl?.Id ?? "-"}";
+        Debug.WriteLine($"[InspectorInput] {eventName}; {details}; focused={GetFocusedElementDebugName()}; {CaptureViewInteractionState()}");
+        VM.AddInteractionTrace(eventName, details, GetFocusedElementDebugName(), CaptureViewInteractionState());
+    }
+
+    private void TraceInspectorInput(string eventName, object? sender, EventArgs e)
+    {
+        var details =
+            $"sender={DescribeInputElement(sender)}; event={e.GetType().Name}; " +
+            $"activeDocument={VM.ActiveDocumentId}; selected={VM.SelectedControl?.Name ?? "-"}:{VM.SelectedControl?.Id ?? "-"}";
+        Debug.WriteLine($"[InspectorInput] {eventName}; {details}; focused={GetFocusedElementDebugName()}; {CaptureViewInteractionState()}");
+        VM.AddInteractionTrace(eventName, details, GetFocusedElementDebugName(), CaptureViewInteractionState());
+    }
+
+    private bool IsInsideRightInspector(object? source)
+    {
+        if (source is not Visual visual)
+            return false;
+
+        return ReferenceEquals(visual, RightDockPanel)
+            || visual.GetVisualAncestors().Any(ancestor => ReferenceEquals(ancestor, RightDockPanel));
+    }
+
+    private void RightInspector_PointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (!IsInsideRightInspector(e.Source))
+            return;
+
+        TraceInspectorInput("RIGHT_INSPECTOR_POINTER_PRESSED_STOP_BUBBLE", sender, e);
+        _isMarqueeSelecting = false;
+        _isMarqueeAdditive = false;
+        _isMarqueeToggle = false;
+        e.Handled = true;
+    }
+
+    private void RightInspector_PointerReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        if (!IsInsideRightInspector(e.Source))
+            return;
+
+        TraceInspectorInput("RIGHT_INSPECTOR_POINTER_RELEASED_STOP_BUBBLE", sender, e);
+        e.Handled = true;
     }
 
     private void ResetInteractionState(string reason)
@@ -1798,6 +1887,13 @@ public partial class MainWindow : Window
 
     private void DesignerViewport_PointerPressed(object? sender, PointerPressedEventArgs e)
     {
+        TraceInspectorInput("DESIGNER_VIEWPORT_POINTER_PRESSED", sender, e);
+        if (IsInsideRightInspector(e.Source))
+        {
+            TraceInspectorInput("DESIGNER_VIEWPORT_POINTER_IGNORED_INSPECTOR", sender, e);
+            return;
+        }
+
         var point = e.GetCurrentPoint(DesignerViewportScrollViewer);
         if (point.Properties.IsMiddleButtonPressed)
         {
@@ -2248,6 +2344,13 @@ public partial class MainWindow : Window
 
     private void DesignerCanvas_PointerPressed(object? sender, PointerPressedEventArgs e)
     {
+        TraceInspectorInput("DESIGNER_CANVAS_POINTER_PRESSED", sender, e);
+        if (IsInsideRightInspector(e.Source))
+        {
+            TraceInspectorInput("DESIGNER_CANVAS_POINTER_IGNORED_INSPECTOR", sender, e);
+            return;
+        }
+
         if (_isDragging || _isResizing || _isResizingDesignSurface || _isPanningViewport || DataContext is not MainWindowViewModel)
             return;
 
@@ -2299,6 +2402,12 @@ public partial class MainWindow : Window
 
     private void DesignerCanvas_PointerReleased(object? sender, PointerReleasedEventArgs e)
     {
+        if (IsInsideRightInspector(e.Source))
+        {
+            TraceInspectorInput("DESIGNER_CANVAS_RELEASE_IGNORED_INSPECTOR", sender, e);
+            return;
+        }
+
         if (VM.IsUserPreviewMode || _isPanningViewport)
             return;
 
@@ -8001,6 +8110,9 @@ public partial class MainWindow : Window
                 case nameof(DesignControlModel.IsVisible):
                     control.IsVisible = value;
                     break;
+                case nameof(DesignControlModel.IsLocked):
+                    control.IsLocked = value;
+                    break;
                 case nameof(DesignControlModel.AutoGenerateColumns):
                     control.AutoGenerateColumns = value;
                     break;
@@ -8042,6 +8154,281 @@ public partial class MainWindow : Window
     {
         return int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out value)
             || int.TryParse(text, NumberStyles.Integer, CultureInfo.CurrentCulture, out value);
+    }
+
+    private bool IsSimpleInspectorTextEditing =>
+        SimpleInspectorNameTextBox?.IsFocused == true
+        || SimpleInspectorTextTextBox?.IsFocused == true
+        || SimpleInspectorWidthTextBox?.IsFocused == true
+        || SimpleInspectorHeightTextBox?.IsFocused == true;
+
+    private void RefreshSimpleInspectorFields(bool force)
+    {
+        var details =
+            $"force={force}; textEditing={IsSimpleInspectorTextEditing}; " +
+            $"activeDocument={VM.ActiveDocumentId}; selected={VM.SelectedControl?.Name ?? "-"}:{VM.SelectedControl?.Id ?? "-"}";
+        Debug.WriteLine($"[InspectorInput] REFRESH_SIMPLE_INSPECTOR; {details}; focused={GetFocusedElementDebugName()}; {CaptureViewInteractionState()}");
+        VM.AddInteractionTrace("REFRESH_SIMPLE_INSPECTOR", details, GetFocusedElementDebugName(), CaptureViewInteractionState());
+
+        if (IsSimpleInspectorTextEditing)
+        {
+            VM.AddInteractionTrace(
+                "REFRESH_SIMPLE_INSPECTOR_SUPPRESSED_DURING_TEXT_EDIT",
+                details,
+                GetFocusedElementDebugName(),
+                CaptureViewInteractionState());
+            return;
+        }
+
+        _simpleInspectorEditContexts.Clear();
+        var control = VM.SelectedControl;
+        var hasControl = control is not null;
+
+        SimpleInspectorNameTextBox.Text = control?.Name ?? "";
+        SimpleInspectorTextTextBox.Text = control?.Text ?? "";
+        SimpleInspectorWidthTextBox.Text = control?.Width.ToString(CultureInfo.InvariantCulture) ?? "";
+        SimpleInspectorHeightTextBox.Text = control?.Height.ToString(CultureInfo.InvariantCulture) ?? "";
+        SimpleInspectorIsVisibleCheckBox.IsChecked = control?.IsVisible == true;
+        SimpleInspectorIsLockedCheckBox.IsChecked = control?.IsLocked == true;
+        SimpleInspectorBackgroundTextBlock.Text = control?.Background ?? "";
+        SimpleInspectorForegroundTextBlock.Text = control?.Foreground ?? "";
+
+        SimpleInspectorNameTextBox.IsEnabled = hasControl;
+        SimpleInspectorTextTextBox.IsEnabled = hasControl;
+        SimpleInspectorWidthTextBox.IsEnabled = hasControl;
+        SimpleInspectorHeightTextBox.IsEnabled = hasControl;
+        SimpleInspectorIsVisibleCheckBox.IsEnabled = hasControl;
+        SimpleInspectorIsLockedCheckBox.IsEnabled = hasControl;
+    }
+
+    private void SimpleInspectorTextBox_PointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        TraceInspectorInput("SIMPLE_INSPECTOR_TEXTBOX_POINTER_PRESSED", sender, e);
+    }
+
+    private void SimpleInspectorTextBox_GotFocus(object? sender, GotFocusEventArgs e)
+    {
+        TraceInspectorInput("SIMPLE_INSPECTOR_TEXTBOX_GOT_FOCUS", sender, e);
+        if (sender is not TextBox textBox || textBox.Tag is not string propertyName || VM.SelectedControl is null)
+            return;
+
+        VM.BeginInspectorInteraction(
+            $"SimpleInspectorText:{VM.ActiveDocumentId}/{VM.SelectedControl.Id}/{propertyName}",
+            logToOutput: false,
+            dumpState: false);
+        _simpleInspectorEditContexts[textBox] = new SimpleInspectorEditContext(
+            VM.SelectedControl.Id,
+            propertyName,
+            textBox.Text ?? string.Empty);
+        VM.TraceDocumentDebug(
+            "SIMPLE_INSPECTOR_EDIT_BEGIN",
+            $"property={propertyName}; active={VM.ActiveDocumentId}; selected={VM.SelectedControl.Name}:{VM.SelectedControl.Id}; text={textBox.Text ?? ""}",
+            toOutput: false);
+    }
+
+    private void SimpleInspectorTextBox_KeyDown(object? sender, KeyEventArgs e)
+    {
+        if (sender is not TextBox textBox)
+            return;
+
+        if (e.Key == Key.Enter)
+        {
+            CommitSimpleInspectorTextBox(textBox);
+            e.Handled = true;
+            return;
+        }
+
+        if (e.Key == Key.Escape)
+        {
+            ResetSimpleInspectorTextBox(textBox);
+            VM.EndInspectorInteraction("SimpleInspectorTextCancel", logToOutput: false, dumpState: false);
+            e.Handled = true;
+        }
+    }
+
+    private void SimpleInspectorTextBox_LostFocus(object? sender, RoutedEventArgs e)
+    {
+        TraceInspectorInput("SIMPLE_INSPECTOR_TEXTBOX_LOST_FOCUS", sender, e);
+        if (sender is TextBox textBox)
+            CommitSimpleInspectorTextBox(textBox);
+    }
+
+    private void CommitSimpleInspectorTextBox(TextBox textBox)
+    {
+        var context = _simpleInspectorEditContexts.TryGetValue(textBox, out var captured)
+            ? captured
+            : textBox.Tag is string fallbackProperty && VM.SelectedControl is not null
+                ? new SimpleInspectorEditContext(VM.SelectedControl.Id, fallbackProperty, textBox.Text ?? string.Empty)
+                : null;
+        var interactionEndReason = context is null
+            ? "SimpleInspectorText"
+            : $"SimpleInspectorText:{VM.ActiveDocumentId}/{context.ControlId}/{context.PropertyName}";
+        try
+        {
+        if (context is null)
+        {
+            VM.TraceDocumentDebug(
+                "SIMPLE_INSPECTOR_EDIT_REJECTED",
+                $"reason=missing-target; tag={textBox.Tag}; selected={VM.SelectedControl?.Name ?? "-"}:{VM.SelectedControl?.Id ?? "-"}",
+                toOutput: true,
+                warning: true);
+            return;
+        }
+
+        var propertyName = context.PropertyName;
+        var target = VM.GetControl(context.ControlId);
+        if (target is null)
+        {
+            VM.TraceDocumentDebug(
+                "SIMPLE_INSPECTOR_EDIT_REJECTED",
+                $"reason=target-not-in-active-document; property={propertyName}; capturedControl={context.ControlId}; active={VM.ActiveDocumentId}; selected={VM.SelectedControl?.Name ?? "-"}:{VM.SelectedControl?.Id ?? "-"}",
+                toOutput: true,
+                warning: true);
+            return;
+        }
+
+        var value = textBox.Text ?? string.Empty;
+        var referenceEqualsSelected = ReferenceEquals(VM.SelectedControl, target);
+        VM.TraceDocumentDebug(
+            "SIMPLE_INSPECTOR_EDIT_ATTEMPT",
+            $"property={propertyName}; old={GetSimpleInspectorTargetValue(target, propertyName)}; new={value}; active={VM.ActiveDocumentId}; target={target.Name}:{target.Id}; selected={VM.SelectedControl?.Name ?? "-"}:{VM.SelectedControl?.Id ?? "-"}; referenceEqualsSelected={referenceEqualsSelected}",
+            toOutput: false);
+
+        switch (propertyName)
+        {
+            case nameof(DesignControlModel.Name):
+                if (string.IsNullOrWhiteSpace(value))
+                {
+                    VM.StatusText = "Name cannot be empty.";
+                    ResetSimpleInspectorTextBox(textBox);
+                    return;
+                }
+
+                target.Name = value.Trim();
+                break;
+            case nameof(DesignControlModel.Text):
+                target.Text = value;
+                break;
+            case nameof(DesignControlModel.Width):
+            case nameof(DesignControlModel.Height):
+                if (!TryParseDouble(value, out var number))
+                {
+                    VM.StatusText = $"Invalid number for {propertyName}: {value}";
+                    ResetSimpleInspectorTextBox(textBox);
+                    return;
+                }
+
+                if (propertyName == nameof(DesignControlModel.Width))
+                    target.Width = Math.Max(40, number);
+                else
+                    target.Height = Math.Max(24, number);
+                VM.ClampControlToSurface(target);
+                break;
+            default:
+                VM.TraceDocumentDebug(
+                    "SIMPLE_INSPECTOR_EDIT_REJECTED",
+                    $"reason=unsupported-property; property={propertyName}; target={target.Name}:{target.Id}",
+                    toOutput: true,
+                    warning: true);
+                return;
+        }
+
+        RefreshFromPropertyPanel();
+        VM.TraceDocumentDebug(
+            "SIMPLE_INSPECTOR_EDIT_ACCEPTED",
+            $"property={propertyName}; value={GetSimpleInspectorTargetValue(target, propertyName)}; active={VM.ActiveDocumentId}; target={target.Name}:{target.Id}; referenceEqualsSelected={ReferenceEquals(VM.SelectedControl, target)}",
+            toOutput: false);
+        }
+        finally
+        {
+        _simpleInspectorEditContexts.Remove(textBox);
+            VM.EndInspectorInteraction(interactionEndReason, logToOutput: false, dumpState: false);
+        }
+        RefreshSimpleInspectorFields(force: false);
+    }
+
+    private void ResetSimpleInspectorTextBox(TextBox textBox)
+    {
+        var context = _simpleInspectorEditContexts.TryGetValue(textBox, out var captured)
+            ? captured
+            : null;
+        var target = context is not null ? VM.GetControl(context.ControlId) : VM.SelectedControl;
+        if (target is null || textBox.Tag is not string propertyName)
+            return;
+
+        textBox.Text = propertyName switch
+        {
+            nameof(DesignControlModel.Name) => target.Name,
+            nameof(DesignControlModel.Text) => target.Text,
+            nameof(DesignControlModel.Width) => target.Width.ToString(CultureInfo.InvariantCulture),
+            nameof(DesignControlModel.Height) => target.Height.ToString(CultureInfo.InvariantCulture),
+            _ => textBox.Text
+        };
+    }
+
+    private static string GetSimpleInspectorTargetValue(DesignControlModel target, string propertyName)
+    {
+        return propertyName switch
+        {
+            nameof(DesignControlModel.Name) => target.Name,
+            nameof(DesignControlModel.Text) => target.Text,
+            nameof(DesignControlModel.Width) => target.Width.ToString(CultureInfo.InvariantCulture),
+            nameof(DesignControlModel.Height) => target.Height.ToString(CultureInfo.InvariantCulture),
+            _ => ""
+        };
+    }
+
+    private void SimpleInspectorCheckBox_Click(object? sender, RoutedEventArgs e)
+    {
+        if (VM.SelectedControl is null || sender is not CheckBox checkBox || checkBox.Tag is not string propertyName)
+        {
+            VM.TraceDocumentDebug(
+                "SIMPLE_INSPECTOR_BOOL_REJECTED",
+                $"reason=missing-target; tag={(sender as CheckBox)?.Tag}; selected={VM.SelectedControl?.Name ?? "-"}:{VM.SelectedControl?.Id ?? "-"}",
+                toOutput: true,
+                warning: true);
+            return;
+        }
+
+        ApplyBoolPropertyToSelection(propertyName, checkBox.IsChecked == true);
+        RefreshFromPropertyPanel();
+        VM.TraceDocumentDebug(
+            "SIMPLE_INSPECTOR_BOOL_ACCEPTED",
+            $"property={propertyName}; value={checkBox.IsChecked == true}; active={VM.ActiveDocumentId}; selected={VM.SelectedControl.Name}:{VM.SelectedControl.Id}",
+            toOutput: false);
+    }
+
+    private async void SimpleInspectorColorButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if (VM.SelectedControl is null || sender is not Button button || button.Tag is not string propertyName)
+        {
+            VM.TraceDocumentDebug(
+                "SIMPLE_INSPECTOR_COLOR_REJECTED",
+                $"reason=missing-target; tag={(sender as Button)?.Tag}; selected={VM.SelectedControl?.Name ?? "-"}:{VM.SelectedControl?.Id ?? "-"}",
+                toOutput: true,
+                warning: true);
+            return;
+        }
+
+        var initialValue = GetCurrentColorValue(propertyName) ?? GetColorFallback(propertyName);
+        VM.TraceDocumentDebug(
+            "SIMPLE_INSPECTOR_COLOR_ATTEMPT",
+            $"property={propertyName}; active={VM.ActiveDocumentId}; selected={VM.SelectedControl.Name}:{VM.SelectedControl.Id}",
+            toOutput: false);
+        var selectedColor = await ShowColorPickerDialogAsync(button, propertyName, initialValue);
+        if (string.IsNullOrWhiteSpace(selectedColor))
+        {
+            VM.AddInteractionTrace("COLOR_DIALOG_REJECTED", $"property={propertyName}; source=SimpleInspector", GetFocusedElementDebugName(), CaptureViewInteractionState());
+            return;
+        }
+
+        ApplyColorValue(propertyName, selectedColor);
+        RefreshFromPropertyPanel();
+        VM.AddInteractionTrace("COLOR_DIALOG_APPLIED", $"property={propertyName}; value={selectedColor}; source=SimpleInspector", GetFocusedElementDebugName(), CaptureViewInteractionState());
+        VM.TraceDocumentDebug(
+            "SIMPLE_INSPECTOR_COLOR_ACCEPTED",
+            $"property={propertyName}; value={selectedColor}; active={VM.ActiveDocumentId}; selected={VM.SelectedControl.Name}:{VM.SelectedControl.Id}",
+            toOutput: false);
     }
 
     private string? GetCurrentColorValue(string propertyName)
@@ -8130,10 +8517,8 @@ public partial class MainWindow : Window
         return $"#{color.R:X2}{color.G:X2}{color.B:X2}";
     }
 
-    private async Task<string?> ShowColorPickerFlyoutAsync(Control target, string propertyName, string initialValue)
+    private async Task<string?> ShowColorPickerDialogAsync(Control target, string propertyName, string initialValue)
     {
-        _activeColorFlyout?.Hide();
-
         var colorView = new ColorView
         {
             Color = ParseColor(initialValue, GetColorFallback(propertyName)),
@@ -8158,63 +8543,252 @@ public partial class MainWindow : Window
             IsCancel = true
         };
 
-        var buttonsPanel = new StackPanel
+        var dialog = new Window
         {
-            Orientation = Orientation.Horizontal,
-            Spacing = 8,
-            HorizontalAlignment = HorizontalAlignment.Right,
-            Children =
-            {
-                cancelButton,
-                applyButton
-            }
+            Title = $"Choose color: {propertyName}",
+            Width = 430,
+            Height = 520,
+            CanResize = false,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner
         };
 
-        var flyout = new Flyout
+        applyButton.Click += (_, _) => dialog.Close(FormatSolidColor(colorView.Color));
+        cancelButton.Click += (_, _) => dialog.Close(null);
+
+        dialog.Content = new Border
         {
-            Placement = PlacementMode.BottomEdgeAlignedLeft,
-            Content = new Border
+            Padding = new Thickness(16),
+            Background = Brushes.White,
+            Child = new Grid
             {
-                Width = 392,
-                Padding = new Thickness(16),
-                Background = Brush.Parse("#FFFFFF"),
-                BorderBrush = Brush.Parse("#D7E2EE"),
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(12),
-                Child = new StackPanel
+                RowDefinitions = new RowDefinitions("Auto,*,Auto"),
+                Children =
                 {
-                    Spacing = 12,
-                    Children =
+                    new StackPanel
                     {
-                        colorView,
-                        buttonsPanel
+                        Spacing = 4,
+                        Children =
+                        {
+                            new TextBlock
+                            {
+                                Text = propertyName,
+                                FontWeight = FontWeight.SemiBold,
+                                FontSize = 14
+                            },
+                            new TextBlock
+                            {
+                                Text = "Select color and press Apply.",
+                                Foreground = Brushes.SlateGray,
+                                FontSize = 12
+                            }
+                        }
+                    },
+                    new Border
+                    {
+                        [Grid.RowProperty] = 1,
+                        Margin = new Thickness(0, 12, 0, 12),
+                        Child = colorView
+                    },
+                    new StackPanel
+                    {
+                        [Grid.RowProperty] = 2,
+                        Orientation = Orientation.Horizontal,
+                        Spacing = 8,
+                        HorizontalAlignment = HorizontalAlignment.Right,
+                        Children = { cancelButton, applyButton }
                     }
                 }
             }
         };
 
-        _activeColorFlyout = flyout;
+        var openDetails = $"target={DescribeInputElement(target)}; property={propertyName}; initial={initialValue}";
+        Debug.WriteLine($"[InspectorInput] COLOR_PICKER_OPENED; {openDetails}; focused={GetFocusedElementDebugName()}");
+        VM.AddInteractionTrace("COLOR_DIALOG_OPENED", openDetails, GetFocusedElementDebugName(), CaptureViewInteractionState());
 
-        var completion = new TaskCompletionSource<string?>();
+        var result = await dialog.ShowDialog<string?>(this);
+        var closeEvent = string.IsNullOrWhiteSpace(result)
+            ? "COLOR_DIALOG_REJECTED"
+            : "COLOR_DIALOG_CLOSED";
+        VM.AddInteractionTrace(closeEvent, $"property={propertyName}; result={result ?? "-"}", GetFocusedElementDebugName(), CaptureViewInteractionState());
+        return result;
+    }
 
-        void Complete(string? value)
+    private async Task<PropertyGridOptionViewModel?> ShowPropertyGridOptionDialogAsync(PropertyGridRowViewModel row)
+    {
+        if (row.Options.Count == 0)
+            return null;
+
+        var listBox = new ListBox
         {
-            completion.TrySetResult(value);
-            flyout.Hide();
-        }
-
-        applyButton.Click += (_, _) => Complete(FormatSolidColor(colorView.Color));
-        cancelButton.Click += (_, _) => Complete(null);
-        flyout.Closed += (_, _) =>
-        {
-            if (ReferenceEquals(_activeColorFlyout, flyout))
-                _activeColorFlyout = null;
-
-            completion.TrySetResult(null);
+            ItemsSource = row.Options,
+            SelectedItem = row.Options.FirstOrDefault(option => string.Equals(option.Value, row.Value, StringComparison.OrdinalIgnoreCase)),
+            MinHeight = 180
         };
 
-        flyout.ShowAt(target);
-        return await completion.Task;
+        var dialog = new Window
+        {
+            Title = $"Select {row.Label}",
+            Width = 360,
+            Height = Math.Clamp(160 + row.Options.Count * 32, 260, 560),
+            CanResize = true,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner
+        };
+
+        var selectButton = new Button
+        {
+            Content = "Select",
+            MinWidth = 96,
+            IsDefault = true
+        };
+        var cancelButton = new Button
+        {
+            Content = "Cancel",
+            MinWidth = 96,
+            IsCancel = true
+        };
+
+        void SelectCurrent()
+        {
+            dialog.Close(listBox.SelectedItem as PropertyGridOptionViewModel);
+        }
+
+        listBox.DoubleTapped += (_, _) => SelectCurrent();
+        selectButton.Click += (_, _) => SelectCurrent();
+        cancelButton.Click += (_, _) => dialog.Close(null);
+
+        dialog.Content = new Border
+        {
+            Padding = new Thickness(14),
+            Background = Brushes.White,
+            Child = new Grid
+            {
+                RowDefinitions = new RowDefinitions("Auto,*,Auto"),
+                Children =
+                {
+                    new StackPanel
+                    {
+                        Spacing = 3,
+                        Children =
+                        {
+                            new TextBlock
+                            {
+                                Text = row.Label,
+                                FontWeight = FontWeight.SemiBold,
+                                FontSize = 14
+                            },
+                            new TextBlock
+                            {
+                                Text = row.Value,
+                                Foreground = Brushes.SlateGray,
+                                FontSize = 12,
+                                TextTrimming = TextTrimming.CharacterEllipsis
+                            }
+                        }
+                    },
+                    new Border
+                    {
+                        [Grid.RowProperty] = 1,
+                        Margin = new Thickness(0, 12, 0, 12),
+                        BorderBrush = new SolidColorBrush(Color.Parse("#D7E2EE")),
+                        BorderThickness = new Thickness(1),
+                        Child = listBox
+                    },
+                    new StackPanel
+                    {
+                        [Grid.RowProperty] = 2,
+                        Orientation = Orientation.Horizontal,
+                        Spacing = 8,
+                        HorizontalAlignment = HorizontalAlignment.Right,
+                        Children = { cancelButton, selectButton }
+                    }
+                }
+            }
+        };
+
+        Debug.WriteLine($"[InspectorInput] OPTION_DIALOG_OPENED; row={row.ContextDocumentId}/{row.ContextControlId}/{row.Key}; options={row.Options.Count}; focused={GetFocusedElementDebugName()}");
+        return await dialog.ShowDialog<PropertyGridOptionViewModel?>(this);
+    }
+
+    private async Task<PropertyOption?> ShowDescriptorOptionDialogAsync(DescriptorPropertyEditorViewModel editor)
+    {
+        if (editor.Options.Count == 0)
+            return null;
+
+        var listBox = new ListBox
+        {
+            ItemsSource = editor.Options,
+            SelectedItem = editor.Options.FirstOrDefault(option => string.Equals(option.Value, editor.StringValue, StringComparison.OrdinalIgnoreCase)),
+            MinHeight = 180
+        };
+
+        var dialog = new Window
+        {
+            Title = $"Select {editor.Title}",
+            Width = 360,
+            Height = Math.Clamp(160 + editor.Options.Count * 32, 260, 560),
+            CanResize = true,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner
+        };
+
+        var selectButton = new Button
+        {
+            Content = "Select",
+            MinWidth = 96,
+            IsDefault = true
+        };
+        var cancelButton = new Button
+        {
+            Content = "Cancel",
+            MinWidth = 96,
+            IsCancel = true
+        };
+
+        void SelectCurrent()
+        {
+            dialog.Close(listBox.SelectedItem as PropertyOption);
+        }
+
+        listBox.DoubleTapped += (_, _) => SelectCurrent();
+        selectButton.Click += (_, _) => SelectCurrent();
+        cancelButton.Click += (_, _) => dialog.Close(null);
+
+        dialog.Content = new Border
+        {
+            Padding = new Thickness(14),
+            Background = Brushes.White,
+            Child = new Grid
+            {
+                RowDefinitions = new RowDefinitions("Auto,*,Auto"),
+                Children =
+                {
+                    new TextBlock
+                    {
+                        Text = editor.Title,
+                        FontWeight = FontWeight.SemiBold,
+                        FontSize = 14
+                    },
+                    new Border
+                    {
+                        [Grid.RowProperty] = 1,
+                        Margin = new Thickness(0, 12, 0, 12),
+                        BorderBrush = new SolidColorBrush(Color.Parse("#D7E2EE")),
+                        BorderThickness = new Thickness(1),
+                        Child = listBox
+                    },
+                    new StackPanel
+                    {
+                        [Grid.RowProperty] = 2,
+                        Orientation = Orientation.Horizontal,
+                        Spacing = 8,
+                        HorizontalAlignment = HorizontalAlignment.Right,
+                        Children = { cancelButton, selectButton }
+                    }
+                }
+            }
+        };
+
+        Debug.WriteLine($"[InspectorInput] DESCRIPTOR_OPTION_DIALOG_OPENED; key={editor.Key}; options={editor.Options.Count}; focused={GetFocusedElementDebugName()}");
+        return await dialog.ShowDialog<PropertyOption?>(this);
     }
 
     private void SelectedNumericTextBox_TextChanged(object? sender, TextChangedEventArgs e)
@@ -8308,73 +8882,78 @@ public partial class MainWindow : Window
         if (sender is not Button button || button.DataContext is not PropertyGridRowViewModel row)
             return;
 
+        TraceInspectorInput("COLOR_BUTTON_CLICKED", sender, e);
         var reason = $"PropertyGridColor:{row.ContextDocumentId}/{row.ContextControlId}/{row.Key}";
-        VM.BeginInspectorInteraction(reason);
+        VM.BeginInspectorInteraction(reason, logToOutput: false, dumpState: false);
         try
         {
-            DumpInteractionState($"BeforeColorPickerOpen:{row.ContextDocumentId}/{row.ContextControlId}/{row.Key}");
-            var selectedColor = await ShowColorPickerFlyoutAsync(button, row.Key, row.Value);
+            TraceInspectorInput("COLOR_PICKER_OPEN_REQUEST", sender, e);
+            var selectedColor = await ShowColorPickerDialogAsync(button, row.Key, row.Value);
             if (string.IsNullOrWhiteSpace(selectedColor))
             {
-                DumpInteractionState($"AfterColorPickerCancelled:{row.ContextDocumentId}/{row.ContextControlId}/{row.Key}");
+                TraceInspectorInput("COLOR_PICKER_CANCELLED", sender, e);
                 return;
             }
 
-            row.Value = selectedColor;
-            row.CommitValue();
+            VM.CommitPropertyGridEdit(row, selectedColor);
             RefreshFromPropertyPanel();
-            DumpInteractionState($"AfterColorPickerCommit:{row.ContextDocumentId}/{row.ContextControlId}/{row.Key}");
+            TraceInspectorInput("COLOR_PICKER_COMMITTED", sender, e);
         }
         finally
         {
-            VM.EndInspectorInteraction(reason);
+            VM.EndInspectorInteraction(reason, logToOutput: false, dumpState: false);
         }
     }
 
-    private void PropertyGridComboBox_DropDownOpened(object? sender, EventArgs e)
+    private async void PropertyGridOptionButton_Click(object? sender, RoutedEventArgs e)
     {
-        var row = (sender as Control)?.DataContext as PropertyGridRowViewModel;
-        VM.BeginInspectorInteraction(row is null
-            ? "PropertyGridCombo:unknown-row"
-            : $"PropertyGridCombo:{row.ContextDocumentId}/{row.ContextControlId}/{row.Key}:{row.Editor}");
-        DumpInteractionState(row is null
-            ? "BeforePropertyGridComboOpen:unknown-row"
-            : $"BeforePropertyGridComboOpen:{row.ContextDocumentId}/{row.ContextControlId}/{row.Key}:{row.Editor}");
-    }
+        if (sender is not Button button || button.DataContext is not PropertyGridRowViewModel row)
+            return;
 
-    private void PropertyGridComboBox_DropDownClosed(object? sender, EventArgs e)
-    {
-        var row = (sender as Control)?.DataContext as PropertyGridRowViewModel;
-        DumpInteractionState(row is null
-            ? "AfterPropertyGridComboClosed:unknown-row"
-            : $"AfterPropertyGridComboClosed:{row.ContextDocumentId}/{row.ContextControlId}/{row.Key}:{row.Editor}");
-        VM.EndInspectorInteraction(row is null
-            ? "PropertyGridCombo:unknown-row"
-            : $"PropertyGridCombo:{row.ContextDocumentId}/{row.ContextControlId}/{row.Key}:{row.Editor}");
+        TraceInspectorInput("PROPERTY_OPTION_BUTTON_CLICKED", sender, e);
+        var reason = $"PropertyGridOption:{row.ContextDocumentId}/{row.ContextControlId}/{row.Key}:{row.Editor}";
+        VM.BeginInspectorInteraction(reason, logToOutput: false, dumpState: false);
+        try
+        {
+            var option = await ShowPropertyGridOptionDialogAsync(row);
+            if (option is null)
+            {
+                TraceInspectorInput("PROPERTY_OPTION_DIALOG_CANCELLED", sender, e);
+                return;
+            }
+
+            VM.CommitPropertyGridEdit(row, option.Value);
+            RefreshFromPropertyPanel();
+            TraceInspectorInput("PROPERTY_OPTION_DIALOG_COMMITTED", sender, e);
+        }
+        finally
+        {
+            VM.EndInspectorInteraction(reason, logToOutput: false, dumpState: false);
+        }
     }
 
     private void LogicComboBox_DropDownOpened(object? sender, EventArgs e)
     {
-        VM.BeginInspectorInteraction("LogicCombo");
-        DumpInteractionState("BeforeLogicComboOpen");
+        TraceInspectorInput("LOGIC_COMBO_DROPDOWN_OPENED", sender, e);
+        VM.BeginInspectorInteraction("LogicCombo", logToOutput: false, dumpState: false);
     }
 
     private void LogicComboBox_DropDownClosed(object? sender, EventArgs e)
     {
-        DumpInteractionState("AfterLogicComboClosed");
-        VM.EndInspectorInteraction("LogicCombo");
+        TraceInspectorInput("LOGIC_COMBO_DROPDOWN_CLOSED", sender, e);
+        VM.EndInspectorInteraction("LogicCombo", logToOutput: false, dumpState: false);
     }
 
     private void LogicEditor_GotFocus(object? sender, GotFocusEventArgs e)
     {
-        VM.BeginInspectorInteraction("LogicEditorText");
-        DumpInteractionState("BeforeLogicEditorTextFocus");
+        TraceInspectorInput("LOGIC_EDITOR_TEXT_GOT_FOCUS", sender, e);
+        VM.BeginInspectorInteraction("LogicEditorText", logToOutput: false, dumpState: false);
     }
 
     private void LogicEditor_LostFocus(object? sender, RoutedEventArgs e)
     {
-        DumpInteractionState("AfterLogicEditorTextLostFocus");
-        VM.EndInspectorInteraction("LogicEditorText");
+        TraceInspectorInput("LOGIC_EDITOR_TEXT_LOST_FOCUS", sender, e);
+        VM.EndInspectorInteraction("LogicEditorText", logToOutput: false, dumpState: false);
     }
 
     private void PropertyGridResetButton_Click(object? sender, RoutedEventArgs e)
@@ -8894,6 +9473,13 @@ public partial class MainWindow : Window
         VM.StatusText = successStatus;
     }
 
+    private async void CopyInteractionTraceButton_Click(object? sender, RoutedEventArgs e)
+    {
+        await CopyTextToClipboardAsync(
+            VM.BuildInteractionTraceText(),
+            $"Interaction Trace copied: {VM.InteractionTraceEntries.Count} events.");
+    }
+
     private async Task<bool> EnsureUnsavedChangesHandledAsync()
     {
         if (DataContext is not MainWindowViewModel || !VM.HasUnsavedChanges)
@@ -9063,12 +9649,36 @@ public partial class MainWindow : Window
         if (string.IsNullOrWhiteSpace(initialValue))
             return;
 
-        var selectedColor = await ShowColorPickerFlyoutAsync(button, propertyName, initialValue);
+        var selectedColor = await ShowColorPickerDialogAsync(button, propertyName, initialValue);
         if (string.IsNullOrWhiteSpace(selectedColor))
             return;
 
         ApplyColorValue(propertyName, selectedColor);
         RefreshFromPropertyPanel();
+    }
+
+    private async void OpenDescriptorEnumButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { DataContext: DescriptorPropertyEditorViewModel editor })
+            return;
+
+        TraceInspectorInput("DESCRIPTOR_OPTION_BUTTON_CLICKED", sender, e);
+        var reason = $"DescriptorOption:{editor.Key}";
+        VM.BeginInspectorInteraction(reason, logToOutput: false, dumpState: false);
+        try
+        {
+            var option = await ShowDescriptorOptionDialogAsync(editor);
+            if (option is null)
+                return;
+
+            editor.SelectedOption = option;
+            RefreshFromPropertyPanel();
+            TraceInspectorInput("DESCRIPTOR_OPTION_DIALOG_COMMITTED", sender, e);
+        }
+        finally
+        {
+            VM.EndInspectorInteraction(reason, logToOutput: false, dumpState: false);
+        }
     }
 
     private void ApplyColorPresetButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
