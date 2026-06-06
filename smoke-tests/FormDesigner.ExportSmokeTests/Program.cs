@@ -48,6 +48,9 @@ internal static class Program
             new("ForegroundAppearsInExportedXaml", ConfigureForegroundAppearsInExportedXaml, AssertForegroundAppearsInExportedXaml),
             new("SameSelectionDoesNotRebuildPropertyGrid", ConfigureSameSelectionDoesNotRebuildPropertyGrid, AssertSameSelectionDoesNotRebuildPropertyGrid),
             new("PropertiesPanelVisibleAfterAddFormAndSelectControl", ConfigurePropertiesPanelVisibleAfterAddFormAndSelectControl, AssertPropertiesPanelVisibleAfterAddFormAndSelectControl),
+            new("NewProjectClearsPreviousFormsAndState", ConfigureNewProjectClearsPreviousFormsAndState, AssertNewProjectClearsPreviousFormsAndState),
+            new("NewProjectAfterSavedMultiFormProjectClearsAllOldForms", ConfigureNewProjectAfterSavedMultiFormProjectClearsAllOldForms, AssertNewProjectAfterSavedMultiFormProjectClearsAllOldForms),
+            new("NewProjectDoesNotReuseOldFormNamesOrIds", ConfigureNewProjectDoesNotReuseOldFormNamesOrIds, AssertNewProjectDoesNotReuseOldFormNamesOrIds),
             new("DragAfterAddFormWorks", ConfigureDragAfterAddFormWorks, AssertDragAfterAddFormWorks),
             new("AddEmptySecondFormDoesNotBreakFirstFormPropertyGrid", ConfigureAddEmptySecondFormDoesNotBreakFirstFormPropertyGrid, AssertAddEmptySecondFormDoesNotBreakFirstFormPropertyGrid, RequiresRealDataGrid: true),
             new("AddEmptySecondFormDoesNotBreakFirstFormInspectorAndLogic", ConfigureAddEmptySecondFormDoesNotBreakFirstFormInspectorAndLogic, AssertAddEmptySecondFormDoesNotBreakFirstFormInspectorAndLogic, RequiresRealDataGrid: true),
@@ -907,6 +910,219 @@ internal static class Program
         RequireContains(context.Xaml, "Button1", "Properties visibility scenario should keep Button exportable.");
     }
 
+    private static void ConfigureNewProjectClearsPreviousFormsAndState(MainWindowViewModel vm)
+    {
+        var form1 = vm.ActiveFormDocument ?? throw new InvalidOperationException("Form1 missing.");
+        var form1Button = vm.TryCreateControlFromToolboxDrop(DesignerControlTypes.Button, 40, 40, null, false, form1.Id)
+            ?? throw new InvalidOperationException("Form1 Button was not created.");
+        form1Button.Text = "Old project Button";
+        vm.SelectSingleControl(form1Button);
+        RequirePropertyGridRowsContext(vm, form1.Id, form1Button.Id);
+
+        var source = CustomersSource();
+        vm.BindingSources.Add(source);
+        vm.SelectedBindingSource = source;
+        vm.ImportedDllCatalog.Add(new ImportedDllInfoModel
+        {
+            FileName = "OldProject.dll",
+            AssemblyPath = @"C:\Temp\OldProject.dll",
+            SourceCount = 1,
+            SourceNames = source.Name,
+            TypeNames = source.ItemTypeName,
+            Summary = "Fake smoke metadata"
+        });
+        vm.FilteredImportedDllCatalog.Add(vm.ImportedDllCatalog[0]);
+
+        vm.GenerateXaml();
+        var form2 = vm.CreateNewForm();
+        var form2TextBox = vm.TryCreateControlFromToolboxDrop(DesignerControlTypes.TextBox, 70, 80, null, false, form2.Id)
+            ?? throw new InvalidOperationException("Form2 TextBox was not created.");
+        form2TextBox.PlaceholderText = "Old Form2";
+        vm.SelectSingleControl(form2TextBox);
+
+        var form3 = vm.CreateNewForm();
+        var form3Border = vm.TryCreateControlFromToolboxDrop(DesignerControlTypes.Border, 80, 90, null, false, form3.Id)
+            ?? throw new InvalidOperationException("Form3 Border was not created.");
+        vm.SelectSingleControl(form3Border);
+
+        var oldFormIds = vm.CurrentProject.Forms.Select(form => form.Id).ToList();
+        var oldControlIds = vm.CurrentProject.Forms
+            .SelectMany(form => form.Document.Controls)
+            .Select(control => control.Id)
+            .Concat(vm.Controls.Select(control => control.Id))
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (oldFormIds.Count < 3 || oldControlIds.Count < 3)
+            throw new InvalidOperationException("NewProject reset smoke did not prepare old multi-form state.");
+
+        vm.NewDocumentCommand.Execute(null);
+
+        AssertCleanNewProjectViewModelState(vm, oldFormIds, oldControlIds);
+    }
+
+    private static void AssertCleanNewProjectViewModelState(
+        MainWindowViewModel vm,
+        IReadOnlyList<string> oldFormIds,
+        IReadOnlyList<string> oldControlIds)
+    {
+        if (vm.CurrentProject.Forms.Count != 1 || vm.Forms.Count != 1)
+            throw new InvalidOperationException($"New Project should leave one form. Project={vm.CurrentProject.Forms.Count}, VM={vm.Forms.Count}.");
+
+        var newForm = vm.ActiveFormDocument ?? throw new InvalidOperationException("New Project did not create an active Form1.");
+        if (!string.Equals(newForm.DisplayName, "Form1", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException($"New Project active form should be Form1. Got {newForm.DisplayName}.");
+
+        if (oldFormIds.Any(oldId => string.Equals(newForm.Id, oldId, StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidOperationException("New Project reused an old Form id.");
+
+        if (newForm.Document.Controls.Count != 0)
+            throw new InvalidOperationException($"New Project Form1 document should be empty. Controls={newForm.Document.Controls.Count}.");
+
+        if (vm.Controls.Count != 0)
+            throw new InvalidOperationException($"New Project canvas should be empty. Controls={vm.Controls.Count}.");
+
+        if (vm.SelectedControl is not null || vm.SelectedControlIds.Count != 0)
+            throw new InvalidOperationException("New Project should clear selected control.");
+
+        if (vm.DocumentTabs.Count != 1 || !string.Equals(vm.DocumentTabs[0].DocumentId, newForm.Id, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("New Project should leave exactly one tab for the new Form1.");
+
+        var explorerFormIds = GetProjectExplorerFormIds(vm).ToList();
+        if (explorerFormIds.Count != 1 || !string.Equals(explorerFormIds[0], newForm.Id, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException($"Project Explorer should show exactly the new Form1. Explorer forms: {string.Join(", ", explorerFormIds)}.");
+
+        var formsFolder = FlattenExplorerItems(vm.ProjectExplorerItems).FirstOrDefault(item => string.Equals(item.TargetId, "Forms", StringComparison.OrdinalIgnoreCase));
+        if (formsFolder is null || formsFolder.Count != 1)
+            throw new InvalidOperationException($"Project Explorer Forms folder should show count 1. Got {formsFolder?.Count.ToString() ?? "missing"}.");
+
+        if (vm.BindingSources.Count != 0 || vm.ImportedDllCatalog.Count != 0 || vm.FilteredImportedDllCatalog.Count != 0)
+            throw new InvalidOperationException("New Project should clear data sources and imported DLL metadata.");
+
+        if (vm.HasUndo || vm.HasRedo)
+            throw new InvalidOperationException("New Project should clear undo/redo state.");
+
+        if (vm.UndoRedoHistoryItems.Any(item =>
+            oldFormIds.Any(oldId => item.Snapshot.Contains(oldId, StringComparison.OrdinalIgnoreCase))
+            || oldControlIds.Any(oldId => item.Snapshot.Contains(oldId, StringComparison.OrdinalIgnoreCase))))
+        {
+            throw new InvalidOperationException("New Project history snapshots still contain old form/control ids.");
+        }
+
+        if (vm.GeneratedFiles.Count != 0 || vm.RequiredPackages.Count != 0 || vm.ExportDiagnostics.Count != 0)
+            throw new InvalidOperationException("New Project should clear generated export pipeline state.");
+
+        var leakedFormIds = oldFormIds.Where(oldId =>
+            vm.CurrentProject.Forms.Any(form => string.Equals(form.Id, oldId, StringComparison.OrdinalIgnoreCase))
+            || vm.Forms.Any(form => string.Equals(form.Id, oldId, StringComparison.OrdinalIgnoreCase))
+            || vm.DocumentTabs.Any(tab => string.Equals(tab.DocumentId, oldId, StringComparison.OrdinalIgnoreCase))
+            || vm.Workspace.Session.OpenDocumentIds.Any(id => string.Equals(id, oldId, StringComparison.OrdinalIgnoreCase))
+            || string.Equals(vm.Workspace.Session.ActiveDocumentId, oldId, StringComparison.OrdinalIgnoreCase)).ToList();
+        if (leakedFormIds.Count > 0)
+            throw new InvalidOperationException($"Old form ids leaked after New Project: {string.Join(", ", leakedFormIds)}.");
+
+        var leakedControlIds = oldControlIds.Where(oldId =>
+            vm.Controls.Any(control => string.Equals(control.Id, oldId, StringComparison.OrdinalIgnoreCase))
+            || vm.SelectedControlIds.Any(id => string.Equals(id, oldId, StringComparison.OrdinalIgnoreCase))
+            || string.Equals(vm.SelectedControl?.Id, oldId, StringComparison.OrdinalIgnoreCase)
+            || vm.PropertyGridCategories.SelectMany(category => category.Rows).Any(row => string.Equals(row.ContextControlId, oldId, StringComparison.OrdinalIgnoreCase))).ToList();
+        if (leakedControlIds.Count > 0)
+            throw new InvalidOperationException($"Old control ids leaked after New Project: {string.Join(", ", leakedControlIds)}.");
+
+        if (vm.InteractionTraceEntries.Any(entry => entry.EventName == "NEW_PROJECT_LEAKED_OLD_STATE"))
+        {
+            var leakTrace = string.Join(" | ", vm.InteractionTraceEntries
+                .Where(entry => entry.EventName == "NEW_PROJECT_LEAKED_OLD_STATE")
+                .Select(entry => entry.Details));
+            throw new InvalidOperationException($"New Project leak trace was emitted: {leakTrace}");
+        }
+    }
+
+    private static void AssertNewProjectClearsPreviousFormsAndState(SmokeContext context)
+    {
+        RequireContains(context.Xaml, "<Canvas", "New Project should still export a clean empty Form1 canvas.");
+        RequireNotContains(context.Xaml, "Old project Button", "Old project controls must not appear in new project export.");
+        RequireNotContains(context.Xaml, "Old Form2", "Old Form2 controls must not appear in new project export.");
+        if (context.ViewModel.CurrentProject.Forms.Count != 1 || context.ViewModel.Controls.Count != 0)
+            throw new InvalidOperationException("NewProjectClearsPreviousFormsAndState should finish with one empty Form1.");
+    }
+
+    private static void ConfigureNewProjectAfterSavedMultiFormProjectClearsAllOldForms(MainWindowViewModel vm)
+    {
+        var state = PrepareSavedTwoFormProjectForNewCommand(vm);
+        vm.NewDocumentCommand.Execute(null);
+        AssertCleanNewProjectViewModelState(vm, state.OldFormIds, state.OldControlIds);
+    }
+
+    private static void AssertNewProjectAfterSavedMultiFormProjectClearsAllOldForms(SmokeContext context)
+    {
+        RequireContains(context.Xaml, "<Canvas", "New Project after saved multi-form project should export clean Form1.");
+        RequireNotContains(context.Xaml, "OldForm1Button", "Old Form1 Button must not be exported after New.");
+        RequireNotContains(context.Xaml, "OldForm2Button", "Old Form2 Button must not be exported after New.");
+        if (GetProjectExplorerFormIds(context.ViewModel).Count() != 1)
+            throw new InvalidOperationException("Project Explorer should contain one form node after New.");
+    }
+
+    private static void ConfigureNewProjectDoesNotReuseOldFormNamesOrIds(MainWindowViewModel vm)
+    {
+        var state = PrepareSavedTwoFormProjectForNewCommand(vm);
+        vm.NewDocumentCommand.Execute(null);
+
+        AssertCleanNewProjectViewModelState(vm, state.OldFormIds, state.OldControlIds);
+
+        var forms = vm.CurrentProject.Forms.ToList();
+        if (forms.Count(form => string.Equals(form.DisplayName, "Form1", StringComparison.OrdinalIgnoreCase)) != 1)
+            throw new InvalidOperationException($"New Project should have exactly one Form1. Forms: {string.Join(", ", forms.Select(form => $"{form.DisplayName}:{form.Id}"))}");
+
+        var newForm = forms[0];
+        if (state.OldFormIds.Any(oldId => string.Equals(newForm.Id, oldId, StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidOperationException("New Project reused an old form id.");
+        if (state.OldControlIds.Any(oldId => newForm.Document.Controls.Any(control => string.Equals(control.Id, oldId, StringComparison.OrdinalIgnoreCase))))
+            throw new InvalidOperationException("New Project reused old controls inside the new Form1 document.");
+    }
+
+    private static void AssertNewProjectDoesNotReuseOldFormNamesOrIds(SmokeContext context)
+    {
+        if (context.ViewModel.CurrentProject.Forms.Count != 1)
+            throw new InvalidOperationException("NewProjectDoesNotReuseOldFormNamesOrIds should finish with one form.");
+        RequireNotContains(context.Xaml, "OldForm1Button", "Old Form1 Button should not remain after New.");
+        RequireNotContains(context.Xaml, "OldForm2Button", "Old Form2 Button should not remain after New.");
+    }
+
+    private static NewProjectOldState PrepareSavedTwoFormProjectForNewCommand(MainWindowViewModel vm)
+    {
+        var form1 = vm.ActiveFormDocument ?? throw new InvalidOperationException("Form1 missing.");
+        var form1Button = vm.TryCreateControlFromToolboxDrop(DesignerControlTypes.Button, 42, 42, null, false, form1.Id)
+            ?? throw new InvalidOperationException("Old Form1 Button was not created.");
+        form1Button.Name = "OldForm1Button";
+        form1Button.Text = "Old Form1 Button";
+
+        var form2 = vm.CreateNewForm();
+        var form2Button = vm.TryCreateControlFromToolboxDrop(DesignerControlTypes.Button, 82, 88, null, false, form2.Id)
+            ?? throw new InvalidOperationException("Old Form2 Button was not created.");
+        form2Button.Name = "OldForm2Button";
+        form2Button.Text = "Old Form2 Button";
+
+        var oldJson = vm.ExportWorkspaceJson();
+        if (!oldJson.Contains("OldForm1Button", StringComparison.Ordinal) || !oldJson.Contains("OldForm2Button", StringComparison.Ordinal))
+            throw new InvalidOperationException("Saved multi-form smoke workspace did not contain both old buttons.");
+        vm.MarkDocumentSaved(Path.Combine(Path.GetTempPath(), $"old-project-{Guid.NewGuid():N}.formdesigner.json"));
+
+        var oldFormIds = vm.CurrentProject.Forms.Select(form => form.Id).Where(id => !string.IsNullOrWhiteSpace(id)).ToList();
+        var oldControlIds = vm.CurrentProject.Forms
+            .SelectMany(form => form.Document.Controls)
+            .Select(control => control.Id)
+            .Concat(vm.Controls.Select(control => control.Id))
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (oldFormIds.Count != 2 || oldControlIds.Count < 2)
+            throw new InvalidOperationException("Saved multi-form smoke setup did not prepare two old forms and controls.");
+
+        return new NewProjectOldState(oldFormIds, oldControlIds);
+    }
+
     private static void ConfigureDragAfterAddFormWorks(MainWindowViewModel vm)
     {
         var form1 = vm.ActiveFormDocument ?? throw new InvalidOperationException("Form1 missing.");
@@ -1678,6 +1894,24 @@ internal static class Program
         };
     }
 
+    private static IEnumerable<ProjectExplorerItemModel> FlattenExplorerItems(IEnumerable<ProjectExplorerItemModel> items)
+    {
+        foreach (var item in items)
+        {
+            yield return item;
+            foreach (var child in FlattenExplorerItems(item.Children))
+                yield return child;
+        }
+    }
+
+    private static IEnumerable<string> GetProjectExplorerFormIds(MainWindowViewModel vm)
+    {
+        return FlattenExplorerItems(vm.ProjectExplorerItems)
+            .Where(item => string.Equals(item.ItemType, "Form", StringComparison.OrdinalIgnoreCase))
+            .Select(item => item.TargetId)
+            .Where(id => !string.IsNullOrWhiteSpace(id));
+    }
+
     private static void WriteAvaloniaProject(SmokeContext context)
     {
         Directory.CreateDirectory(context.ProjectPath);
@@ -1946,6 +2180,10 @@ Diagnostics:
             DeleteWithRetry(() => staleRun.Delete(recursive: true), staleRun.FullName);
         }
     }
+
+    private sealed record NewProjectOldState(
+        IReadOnlyList<string> OldFormIds,
+        IReadOnlyList<string> OldControlIds);
 
     private sealed record SmokeScenario(
         string Name,

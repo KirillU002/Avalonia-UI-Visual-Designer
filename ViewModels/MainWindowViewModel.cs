@@ -6744,12 +6744,376 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void NewProject()
     {
+        var oldFormIds = CurrentProject.Forms.Select(form => form.Id).Where(id => !string.IsNullOrWhiteSpace(id)).ToList();
+        var oldControlIds = CurrentProject.Forms
+            .SelectMany(form => form.Document?.Controls ?? new List<DesignerControlFileModel>())
+            .Select(control => control.Id)
+            .Concat(Controls.Select(control => control.Id))
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var oldProjectExplorerFormIds = GetProjectExplorerFormIds().ToList();
+        var oldOpenedTabs = DocumentTabs.Select(tab => tab.DocumentId).Where(id => !string.IsNullOrWhiteSpace(id)).ToList();
+        var oldProjectId = CurrentProject.Id;
+
+        TraceDocumentDebug(
+            "NEW_PROJECT_START",
+            $"oldProjectId={oldProjectId}; oldProjectName={CurrentProjectDisplayName}; oldFormsCount={CurrentProject.Forms.Count}; oldFormIds={string.Join(",", oldFormIds)}; oldProjectExplorerFormIds={string.Join(",", oldProjectExplorerFormIds)}; oldOpenedTabs={string.Join(",", oldOpenedTabs)}; oldActiveFormId={ActiveDocumentId}; oldCanvasDocumentId={CanvasRenderedDocumentId}; oldSelectedControlId={SelectedControl?.Id ?? ""}; controls={CurrentProject.Forms.Sum(form => form.Document?.Controls.Count ?? 0) + Controls.Count}; dll={ImportedDllCatalog.Count}; dataSources={BindingSources.Count}",
+            toOutput: true);
+
+        var memoryBefore = GC.GetTotalMemory(forceFullCollection: false);
+        ResetApplicationStateForNewProject(oldFormIds, oldControlIds, "NewProject");
+
         Workspace = _projectWorkspaceService.CreateWorkspace("Avalonia UI Project");
         CurrentProjectPath = "";
         var activeForm = CurrentProject.Forms[0];
+        activeForm.Document = CreateDefaultDocumentFileModel("Form1");
+        activeForm.Name = activeForm.Document.FormTitle;
+        activeForm.RelativePath = $"Forms/{activeForm.DisplayName}.formdesigner.json";
+        CurrentProject.DefaultNamespace = ResolveExportNamespace();
+        CurrentProject.Settings.ReopenDocumentsOnStartup = ReopenLastWorkspaceOnStartup;
+        CurrentProject.ExportProfiles[0].Namespace = ResolveExportNamespace();
+        TraceDocumentDebug(
+            "NEW_PROJECT_CREATE_NEW_FORM",
+            $"newProjectId={CurrentProject.Id}; newFormId={activeForm.Id}; newFormName={activeForm.DisplayName}",
+            toOutput: true);
         SetActiveForm(activeForm.Id, "NewProject", persistCurrent: false);
+        AssertCleanNewProjectState(oldFormIds, oldControlIds, "NewProject");
+#if DEBUG
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+        var memoryAfter = GC.GetTotalMemory(forceFullCollection: false);
+        TraceDocumentDebug(
+            "NEW_PROJECT_MEMORY_SNAPSHOT",
+            $"before={memoryBefore}; after={memoryAfter}; delta={memoryAfter - memoryBefore}",
+            toOutput: true);
+#endif
+        TraceDocumentDebug(
+            "NEW_PROJECT_CREATED",
+            $"newProjectName={CurrentProjectDisplayName}; forms={CurrentProject.Forms.Count}; active={ActiveDocumentName}:{ActiveDocumentId}; selected={SelectedControl?.Name ?? "-"}:{SelectedControl?.Id ?? "-"}",
+            toOutput: true);
+        TraceDocumentDebug(
+            "NEW_PROJECT_END",
+            $"formsCount={CurrentProject.Forms.Count}; formIds={string.Join(",", CurrentProject.Forms.Select(form => form.Id))}; explorerFormIds={string.Join(",", GetProjectExplorerFormIds())}; openedTabs={string.Join(",", DocumentTabs.Select(tab => tab.DocumentId))}; activeFormId={ActiveDocumentId}; canvasDocumentId={CanvasRenderedDocumentId}; selectedControlId={SelectedControl?.Id ?? ""}",
+            toOutput: true);
         StatusText = "New project created.";
         LogWorkspace(WorkspaceLogLevel.Info, OutputCategoryGeneral, StatusText);
+    }
+
+    private void ResetApplicationStateForNewProject(
+        IReadOnlyCollection<string> oldFormIds,
+        IReadOnlyCollection<string> oldControlIds,
+        string reason)
+    {
+        TraceDocumentDebug(
+            "NEW_PROJECT_RESET_STATE_START",
+            $"reason={reason}; forms={CurrentProject.Forms.Count}; active={ActiveDocumentName}:{ActiveDocumentId}; selected={SelectedControl?.Name ?? "-"}:{SelectedControl?.Id ?? "-"}",
+            toOutput: true);
+
+        var previousApplyingDocument = _isApplyingDocument;
+        var previousHistorySuspended = _isHistorySuspended;
+        var previousSwitchingActiveForm = _isSwitchingActiveForm;
+        var previousStructureTreeSuspended = _isStructureTreeRefreshSuspended;
+
+        _isApplyingDocument = true;
+        _isHistorySuspended = true;
+        _isSwitchingActiveForm = true;
+        _isStructureTreeRefreshSuspended = true;
+
+        try
+        {
+            UnsubscribeDocumentEventHandlersForNewProject();
+            ResetDocumentScopedRefreshState();
+            StopDocumentRefreshTimersForNewProject();
+            TraceDocumentDebug("NEW_PROJECT_CLEAR_STATE_START", $"reason={reason}", toOutput: true);
+
+            var oldProjectFormIds = CurrentProject.Forms.Select(form => form.Id).Where(id => !string.IsNullOrWhiteSpace(id)).ToList();
+            TraceDocumentDebug(
+                "NEW_PROJECT_CLEAR_FORMS",
+                $"beforeCount={CurrentProject.Forms.Count}; ids={string.Join(",", oldProjectFormIds)}",
+                toOutput: true);
+            CurrentProject.Forms.Clear();
+            TraceDocumentDebug(
+                "NEW_PROJECT_CLEAR_FORMS",
+                $"afterCount={CurrentProject.Forms.Count}; ids={string.Join(",", CurrentProject.Forms.Select(form => form.Id))}",
+                toOutput: true);
+
+            TraceDocumentDebug(
+                "NEW_PROJECT_CLEAR_DOCUMENT_SNAPSHOTS",
+                $"beforeCount={oldProjectFormIds.Count}; ids={string.Join(",", oldProjectFormIds)}",
+                toOutput: true);
+            TraceDocumentDebug(
+                "NEW_PROJECT_CLEAR_DOCUMENT_SNAPSHOTS",
+                "afterCount=0; ids=",
+                toOutput: true);
+
+            ClearCollectionForNewProject(Controls, nameof(Controls));
+            ClearCollectionForNewProject(BindingSources, nameof(BindingSources));
+            ClearCollectionForNewProject(Interactions, nameof(Interactions));
+            ClearCollectionForNewProject(SelectedControlIds, nameof(SelectedControlIds));
+            ClearCollectionForNewProject(StructureTreeItems, nameof(StructureTreeItems));
+            ClearCollectionForNewProject(PropertyGridCategories, nameof(PropertyGridCategories));
+            ClearCollectionForNewProject(UndoRedoHistoryItems, nameof(UndoRedoHistoryItems));
+            TraceDocumentDebug(
+                "NEW_PROJECT_CLEAR_OPENED_TABS",
+                $"beforeCount={DocumentTabs.Count}; ids={string.Join(",", DocumentTabs.Select(tab => tab.DocumentId))}",
+                toOutput: true);
+            ClearCollectionForNewProject(DocumentTabs, nameof(DocumentTabs));
+            TraceDocumentDebug(
+                "NEW_PROJECT_CLEAR_OPENED_TABS",
+                $"afterCount={DocumentTabs.Count}; ids={string.Join(",", DocumentTabs.Select(tab => tab.DocumentId))}",
+                toOutput: true);
+            ClearCollectionForNewProject(Forms, nameof(Forms));
+            TraceDocumentDebug(
+                "NEW_PROJECT_CLEAR_PROJECT_EXPLORER",
+                $"beforeFormNodeCount={GetProjectExplorerFormIds().Count()}; ids={string.Join(",", GetProjectExplorerFormIds())}",
+                toOutput: true);
+            ClearCollectionForNewProject(ProjectExplorerItems, nameof(ProjectExplorerItems));
+            TraceDocumentDebug(
+                "NEW_PROJECT_CLEAR_PROJECT_EXPLORER",
+                $"afterFormNodeCount={GetProjectExplorerFormIds().Count()}; ids={string.Join(",", GetProjectExplorerFormIds())}",
+                toOutput: true);
+            ClearCollectionForNewProject(GeneratedFiles, nameof(GeneratedFiles));
+            ClearCollectionForNewProject(GeneratedFileTreeNodes, nameof(GeneratedFileTreeNodes));
+            ClearCollectionForNewProject(RequiredPackages, nameof(RequiredPackages));
+            ClearCollectionForNewProject(ExportDiagnostics, nameof(ExportDiagnostics));
+            ClearCollectionForNewProject(ImportedDllCatalog, nameof(ImportedDllCatalog));
+            ClearCollectionForNewProject(FilteredImportedDllCatalog, nameof(FilteredImportedDllCatalog));
+            ClearCollectionForNewProject(DescriptorCustomPropertyEditors, nameof(DescriptorCustomPropertyEditors));
+            ClearCollectionForNewProject(LayoutGridRows, nameof(LayoutGridRows));
+            ClearCollectionForNewProject(LayoutGridColumns, nameof(LayoutGridColumns));
+            ClearCollectionForNewProject(Diagnostics, nameof(Diagnostics));
+
+            SelectedControl = null;
+            SelectedDocumentTab = null;
+            SelectedProjectExplorerItem = null;
+            SelectedStructureItem = null;
+            SelectedInteraction = null;
+            SelectedBindingSource = null;
+            SelectedLayoutGridRow = null;
+            SelectedLayoutGridColumn = null;
+            SelectedGeneratedFile = null;
+            SelectedGeneratedFileNode = null;
+            ActiveFormDocument = null;
+
+            _undoStack.Clear();
+            _redoStack.Clear();
+            _currentSnapshot = "";
+            _savedSnapshot = "";
+            _lastHistoryMutationUtc = DateTime.UtcNow;
+            _clipboardDocument = null;
+            _styleClipboard = null;
+            _activeXamlWriter = null;
+            _activeXamlExportContext = null;
+            _activeXamlControlNodes = null;
+            _activeXamlControlNameMap = null;
+            _activeLayoutExportPlan = null;
+            _exportNamespaceOverride = null;
+            _exportWindowClassNameOverride = null;
+            _exportViewModelClassNameOverride = null;
+            _exportActiveFormIdOverride = null;
+            _exportCacheDocumentSnapshotHash = "";
+            _exportCacheSettingsSignature = "";
+            _exportCacheGeneratedUtc = DateTime.MinValue;
+            _exportChecklistItemsCache = Array.Empty<ExportChecklistItem>();
+            CurrentExportResult = new ExportResult();
+            CurrentExportBuildValidation = new ExportBuildValidationResult();
+            GeneratedXaml = "";
+            GeneratedCSharp = "";
+            GeneratedBindingGuide = "";
+            CurrentDocumentPath = "";
+            CurrentProjectPath = "";
+            ImportedDllSearchText = "";
+            StructureSearchText = "";
+            PropertyGridSearchText = "";
+            _openFormTargetFormsSignature = "";
+            OpenFormTargetForms = new ObservableCollection<DesignerFormDocument>();
+            _controlDocumentIdsByControlId.Clear();
+            _controlPropertySubscriptions.Clear();
+            _structureTreeItemsByControlId.Clear();
+            _propertyGridRowsByKey.Clear();
+            _propertyGridRowsByContextKey.Clear();
+            _previewRuntimeDiagnostics.Clear();
+            _canvasRenderedDocumentId = "";
+            DocumentSessionId = Guid.NewGuid().ToString("N");
+
+            Workspace.Session.OpenDocumentIds.Clear();
+            Workspace.Session.RecentlyClosedDocumentIds.Clear();
+            Workspace.Session.ActiveDocumentId = "";
+            Workspace.Session.SelectedProjectItemId = "";
+
+            TraceDocumentDebug(
+                "NEW_PROJECT_RESET_STATE_END",
+                $"reason={reason}; forms={Forms.Count}; selected={SelectedControl?.Name ?? "-"}:{SelectedControl?.Id ?? "-"}; active={ActiveDocumentName}:{ActiveDocumentId}; inspector={PropertyGridContextDocumentId}/{PropertyGridContextControlId}; dll={ImportedDllCatalog.Count}; dataSources={BindingSources.Count}; oldFormsTracked={oldFormIds.Count}; oldControlsTracked={oldControlIds.Count}",
+                toOutput: true);
+        }
+        finally
+        {
+            _isStructureTreeRefreshSuspended = previousStructureTreeSuspended;
+            _isSwitchingActiveForm = previousSwitchingActiveForm;
+            _isHistorySuspended = previousHistorySuspended;
+            _isApplyingDocument = previousApplyingDocument;
+        }
+    }
+
+    private void UnsubscribeDocumentEventHandlersForNewProject()
+    {
+        var unsubscribedControls = 0;
+        foreach (var control in Controls.ToList())
+        {
+            control.PropertyChanged -= Control_PropertyChanged;
+            unsubscribedControls++;
+        }
+
+        var detachedSources = 0;
+        foreach (var source in BindingSources.ToList())
+        {
+            DetachBindingSource(source);
+            detachedSources++;
+        }
+
+        var detachedInteractions = 0;
+        foreach (var interaction in Interactions.ToList())
+        {
+            interaction.PropertyChanged -= Interaction_PropertyChanged;
+            detachedInteractions++;
+        }
+
+        TraceDocumentDebug(
+            "NEW_PROJECT_UNSUBSCRIBE_HANDLERS",
+            $"controls={unsubscribedControls}; bindingSources={detachedSources}; interactions={detachedInteractions}",
+            toOutput: true);
+    }
+
+    private void StopDocumentRefreshTimersForNewProject()
+    {
+        _propertyGridLiveRefreshTimer.Stop();
+        _diagnosticsRefreshTimer.Stop();
+        _exportChecklistRefreshTimer.Stop();
+        _structureTreeSearchRefreshTimer.Stop();
+        _editorCommandRefreshTimer.Stop();
+        _isDiagnosticsRefreshScheduled = false;
+        _isExportChecklistRefreshScheduled = false;
+        _isStructureTreeSearchRefreshScheduled = false;
+        _isEditorCommandRefreshScheduled = false;
+        _scheduledDiagnosticsSessionId = "";
+        _scheduledExportChecklistSessionId = "";
+        _scheduledStructureSearchSessionId = "";
+    }
+
+    private void ClearCollectionForNewProject<T>(ICollection<T> collection, string name)
+    {
+        var oldCount = collection.Count;
+        collection.Clear();
+        TraceDocumentDebug(
+            "NEW_PROJECT_CLEAR_COLLECTION",
+            $"collection={name}; oldCount={oldCount}; newCount={collection.Count}",
+            toOutput: false);
+    }
+
+    private void AssertCleanNewProjectState(
+        IReadOnlyCollection<string> oldFormIds,
+        IReadOnlyCollection<string> oldControlIds,
+        string reason)
+    {
+        if (Forms.Count != 1
+            || CurrentProject.Forms.Count != 1
+            || ActiveFormDocument is null
+            || !string.Equals(ActiveFormDocument.DisplayName, "Form1", StringComparison.OrdinalIgnoreCase)
+            || SelectedControl is not null
+            || SelectedControlIds.Count != 0
+            || DocumentTabs.Count != 1
+            || BindingSources.Count != 0
+            || ImportedDllCatalog.Count != 0
+            || FilteredImportedDllCatalog.Count != 0
+            || _undoStack.Count != 0
+            || _redoStack.Count != 0
+            || Controls.Count != 0)
+        {
+            TraceDocumentDebug(
+                "NEW_PROJECT_LEAKED_OLD_STATE",
+                $"reason={reason}; location=post-state-shape; forms={Forms.Count}/{CurrentProject.Forms.Count}; active={ActiveDocumentName}:{ActiveDocumentId}; selected={SelectedControl?.Name ?? "-"}:{SelectedControl?.Id ?? "-"}; tabs={DocumentTabs.Count}; controls={Controls.Count}; dataSources={BindingSources.Count}; dll={ImportedDllCatalog.Count}; undo={_undoStack.Count}; redo={_redoStack.Count}",
+                toOutput: true,
+                warning: true);
+        }
+
+        var leakedFormIds = oldFormIds
+            .Where(id => CurrentProject.Forms.Any(form => string.Equals(form.Id, id, StringComparison.OrdinalIgnoreCase))
+                || Forms.Any(form => string.Equals(form.Id, id, StringComparison.OrdinalIgnoreCase))
+                || DocumentTabs.Any(tab => string.Equals(tab.DocumentId, id, StringComparison.OrdinalIgnoreCase))
+                || Workspace.Session.OpenDocumentIds.Any(openId => string.Equals(openId, id, StringComparison.OrdinalIgnoreCase))
+                || string.Equals(Workspace.Session.ActiveDocumentId, id, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(ActiveDocumentId, id, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        foreach (var oldFormId in leakedFormIds)
+        {
+            TraceDocumentDebug(
+                "NEW_PROJECT_LEAKED_OLD_STATE",
+                $"reason={reason}; oldFormId={oldFormId}; location=forms/tabs/session/active",
+                toOutput: true,
+                warning: true);
+        }
+
+        foreach (var oldFormId in oldFormIds)
+        {
+            var foundIn = new List<string>();
+            if (CurrentProject.Forms.Any(form => string.Equals(form.Id, oldFormId, StringComparison.OrdinalIgnoreCase)))
+                foundIn.Add(nameof(CurrentProject.Forms));
+            if (Forms.Any(form => string.Equals(form.Id, oldFormId, StringComparison.OrdinalIgnoreCase)))
+                foundIn.Add(nameof(Forms));
+            if (DocumentTabs.Any(tab => string.Equals(tab.DocumentId, oldFormId, StringComparison.OrdinalIgnoreCase)))
+                foundIn.Add(nameof(DocumentTabs));
+            if (Workspace.Session.OpenDocumentIds.Any(openId => string.Equals(openId, oldFormId, StringComparison.OrdinalIgnoreCase)))
+                foundIn.Add(nameof(Workspace.Session.OpenDocumentIds));
+            if (string.Equals(Workspace.Session.ActiveDocumentId, oldFormId, StringComparison.OrdinalIgnoreCase))
+                foundIn.Add(nameof(Workspace.Session.ActiveDocumentId));
+            if (string.Equals(ActiveDocumentId, oldFormId, StringComparison.OrdinalIgnoreCase))
+                foundIn.Add(nameof(ActiveDocumentId));
+            if (GetProjectExplorerFormIds().Any(id => string.Equals(id, oldFormId, StringComparison.OrdinalIgnoreCase)))
+                foundIn.Add(nameof(ProjectExplorerItems));
+
+            TraceDocumentDebug(
+                "NEW_PROJECT_LEAK_CHECK",
+                $"oldFormId={oldFormId}; foundIn={string.Join(",", foundIn)}; result={(foundIn.Count == 0 ? "clean" : "leaked")}",
+                toOutput: false,
+                warning: foundIn.Count > 0);
+            if (foundIn.Count > 0)
+            {
+                TraceDocumentDebug(
+                    "NEW_PROJECT_LEAKED_OLD_FORM_STATE",
+                    $"reason={reason}; oldFormId={oldFormId}; foundIn={string.Join(",", foundIn)}",
+                    toOutput: true,
+                    warning: true);
+            }
+        }
+
+        var leakedControlIds = oldControlIds
+            .Where(id => Controls.Any(control => string.Equals(control.Id, id, StringComparison.OrdinalIgnoreCase))
+                || SelectedControlIds.Any(selectedId => string.Equals(selectedId, id, StringComparison.OrdinalIgnoreCase))
+                || string.Equals(SelectedControl?.Id, id, StringComparison.OrdinalIgnoreCase)
+                || PropertyGridCategories.SelectMany(category => category.Rows).Any(row => string.Equals(row.ContextControlId, id, StringComparison.OrdinalIgnoreCase))
+                || _controlDocumentIdsByControlId.ContainsKey(id)
+                || _controlPropertySubscriptions.Contains(id))
+            .ToList();
+
+        foreach (var oldControlId in leakedControlIds)
+        {
+            TraceDocumentDebug(
+                "NEW_PROJECT_LEAKED_OLD_STATE",
+                $"reason={reason}; oldControlId={oldControlId}; location=controls/selection/property-grid/subscriptions",
+                toOutput: true,
+                warning: true);
+        }
+    }
+
+    private IEnumerable<string> GetProjectExplorerFormIds()
+    {
+        return FlattenProjectExplorerItems(ProjectExplorerItems)
+            .Where(item => string.Equals(item.ItemType, "Form", StringComparison.OrdinalIgnoreCase))
+            .Select(item => item.TargetId)
+            .Where(id => !string.IsNullOrWhiteSpace(id));
     }
 
     private void AddForm()
@@ -8902,8 +9266,7 @@ public partial class MainWindowViewModel : ObservableObject
     [RelayCommand]
     private void NewDocument()
     {
-        CreateNewDocumentCore(markAsSaved: true);
-        StatusText = "Создан новый документ";
+        NewProject();
     }
 
     [RelayCommand]
@@ -15928,9 +16291,14 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void CreateNewDocumentCore(bool markAsSaved, bool resetDocumentSession = true)
     {
+        ApplyDocument(CreateDefaultDocumentFileModel("Form1"), "", markAsSaved, resetDocumentSession);
+    }
+
+    private DesignerDocumentFileModel CreateDefaultDocumentFileModel(string formTitle)
+    {
         var normalizedTheme = DesignerThemeCatalog.NormalizeThemeName(FormTheme);
         var palette = DesignerThemeCatalog.Get(normalizedTheme);
-        var emptyDocument = new DesignerDocumentFileModel
+        return new DesignerDocumentFileModel
         {
             DesignWidth = 1200,
             DesignHeight = 800,
@@ -15954,7 +16322,7 @@ public partial class MainWindowViewModel : ObservableObject
             SurfaceLayoutRows = 3,
             SurfaceGridColumnDefinitions = "",
             SurfaceGridRowDefinitions = "",
-            FormTitle = "Form1",
+            FormTitle = string.IsNullOrWhiteSpace(formTitle) ? "Form1" : formTitle,
             FormTheme = normalizedTheme,
             FormWindowState = WindowStateNormal,
             FormStartupLocation = StartupLocationCenterScreen,
@@ -15963,8 +16331,6 @@ public partial class MainWindowViewModel : ObservableObject
             FormTopmost = false,
             FormHasSystemDecorations = true
         };
-
-        ApplyDocument(emptyDocument, "", markAsSaved, resetDocumentSession);
     }
 
     private void ApplyDocument(
