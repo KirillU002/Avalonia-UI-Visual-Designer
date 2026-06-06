@@ -2449,7 +2449,9 @@
                         Command="{Binding ClearPropertyGridSearchCommand}"/>
               </Grid>
 
-              <ScrollViewer Grid.Row="1"
+              <ScrollViewer x:Name="SimpleInspectorScrollViewer"
+                            Grid.Row="1"
+                            IsVisible="False"
                             VerticalScrollBarVisibility="Auto">
                 <StackPanel Spacing="8"
                             Margin="0,6,0,0">
@@ -2515,6 +2517,35 @@
 
                     <Grid ColumnDefinitions="*,*">
                       <StackPanel Spacing="3">
+                        <TextBlock Text="X / Canvas.Left"
+                                   FontSize="11"
+                                   Foreground="#64748B"/>
+                        <TextBox x:Name="SimpleInspectorXTextBox"
+                                 Classes="property-editor"
+                                 Tag="X"
+                                 PointerPressed="SimpleInspectorTextBox_PointerPressed"
+                                 GotFocus="SimpleInspectorTextBox_GotFocus"
+                                 KeyDown="SimpleInspectorTextBox_KeyDown"
+                                 LostFocus="SimpleInspectorTextBox_LostFocus"/>
+                      </StackPanel>
+                      <StackPanel Grid.Column="1"
+                                  Margin="8,0,0,0"
+                                  Spacing="3">
+                        <TextBlock Text="Y / Canvas.Top"
+                                   FontSize="11"
+                                   Foreground="#64748B"/>
+                        <TextBox x:Name="SimpleInspectorYTextBox"
+                                 Classes="property-editor"
+                                 Tag="Y"
+                                 PointerPressed="SimpleInspectorTextBox_PointerPressed"
+                                 GotFocus="SimpleInspectorTextBox_GotFocus"
+                                 KeyDown="SimpleInspectorTextBox_KeyDown"
+                                 LostFocus="SimpleInspectorTextBox_LostFocus"/>
+                      </StackPanel>
+                    </Grid>
+
+                    <Grid ColumnDefinitions="*,*">
+                      <StackPanel Spacing="3">
                         <TextBlock Text="Width"
                                    FontSize="11"
                                    Foreground="#64748B"/>
@@ -2556,42 +2587,201 @@
                     </Grid>
 
                     <Grid ColumnDefinitions="*,Auto">
-                      <StackPanel Spacing="2">
+                      <StackPanel Spacing="3">
                         <TextBlock Text="Background"
                                    FontSize="11"
                                    Foreground="#64748B"/>
-                        <TextBlock x:Name="SimpleInspectorBackgroundTextBlock"
-                                   TextTrimming="CharacterEllipsis"/>
+                        <TextBox x:Name="SimpleInspectorBackgroundTextBox"
+                                 Classes="property-editor"
+                                 Tag="Background"
+                                 PointerPressed="SimpleInspectorTextBox_PointerPressed"
+                                 GotFocus="SimpleInspectorTextBox_GotFocus"
+                                 KeyDown="SimpleInspectorTextBox_KeyDown"
+                                 LostFocus="SimpleInspectorTextBox_LostFocus"/>
                       </StackPanel>
                       <Button Grid.Column="1"
                               Margin="8,0,0,0"
-                              Content="Background..."
+                              Content="..."
                               Tag="Background"
                               Classes="property-header-action"
                               Click="SimpleInspectorColorButton_Click"/>
                     </Grid>
 
                     <Grid ColumnDefinitions="*,Auto">
-                      <StackPanel Spacing="2">
+                      <StackPanel Spacing="3">
                         <TextBlock Text="Foreground"
                                    FontSize="11"
                                    Foreground="#64748B"/>
-                        <TextBlock x:Name="SimpleInspectorForegroundTextBlock"
-                                   TextTrimming="CharacterEllipsis"/>
+                        <TextBox x:Name="SimpleInspectorForegroundTextBox"
+                                 Classes="property-editor"
+                                 Tag="Foreground"
+                                 PointerPressed="SimpleInspectorTextBox_PointerPressed"
+                                 GotFocus="SimpleInspectorTextBox_GotFocus"
+                                 KeyDown="SimpleInspectorTextBox_KeyDown"
+                                 LostFocus="SimpleInspectorTextBox_LostFocus"/>
                       </StackPanel>
                       <Button Grid.Column="1"
                               Margin="8,0,0,0"
-                              Content="Foreground..."
+                              Content="..."
                               Tag="Foreground"
                               Classes="property-header-action"
                               Click="SimpleInspectorColorButton_Click"/>
+                    </Grid>
+
+                    <Grid ColumnDefinitions="*,Auto">
+                      <StackPanel Spacing="3">
+                        <TextBlock Text="BorderBrush"
+                                   FontSize="11"
+                                   Foreground="#64748B"/>
+                        <TextBox x:Name="SimpleInspectorBorderBrushTextBox"
+                                 Classes="property-editor"
+                                 Tag="BorderBrush"
+                                 PointerPressed="SimpleInspectorTextBox_PointerPressed"
+                                 GotFocus="SimpleInspectorTextBox_GotFocus"
+                                 KeyDown="SimpleInspectorTextBox_KeyDown"
+                                 LostFocus="SimpleInspectorTextBox_LostFocus"/>
+                      </StackPanel>
+                      <Button Grid.Column="1"
+                              Margin="8,0,0,0"
+                              Content="..."
+                              Tag="BorderBrush"
+                              Classes="property-header-action"
+                              Click="SimpleInspectorColorButton_Click"/>
+                    </Grid>
+
+                    <Grid ColumnDefinitions="*,*">
+                      <StackPanel Spacing="3">
+                        <TextBlock Text="BorderThickness"
+                                   FontSize="11"
+                                   Foreground="#64748B"/>
+                        <TextBox x:Name="SimpleInspectorBorderThicknessTextBox"
+                                 Classes="property-editor"
+                                 Tag="BorderThickness"
+                                 PointerPressed="SimpleInspectorTextBox_PointerPressed"
+                                 GotFocus="SimpleInspectorTextBox_GotFocus"
+                                 KeyDown="SimpleInspectorTextBox_KeyDown"
+                                 LostFocus="SimpleInspectorTextBox_LostFocus"/>
+                      </StackPanel>
+                      <StackPanel Grid.Column="1"
+                                  Margin="8,0,0,0"
+                                  Spacing="3">
+                        <TextBlock Text="CornerRadius"
+                                   FontSize="11"
+                                   Foreground="#64748B"/>
+                        <TextBox x:Name="SimpleInspectorCornerRadiusTextBox"
+                                 Classes="property-editor"
+                                 Tag="CornerRadius"
+                                 PointerPressed="SimpleInspectorTextBox_PointerPressed"
+                                 GotFocus="SimpleInspectorTextBox_GotFocus"
+                                 KeyDown="SimpleInspectorTextBox_KeyDown"
+                                 LostFocus="SimpleInspectorTextBox_LostFocus"/>
+                      </StackPanel>
+                    </Grid>
+
+                    <Grid ColumnDefinitions="*,*">
+                      <StackPanel Spacing="3">
+                        <TextBlock Text="Opacity"
+                                   FontSize="11"
+                                   Foreground="#64748B"/>
+                        <TextBox x:Name="SimpleInspectorOpacityTextBox"
+                                 Classes="property-editor"
+                                 Tag="Opacity"
+                                 PointerPressed="SimpleInspectorTextBox_PointerPressed"
+                                 GotFocus="SimpleInspectorTextBox_GotFocus"
+                                 KeyDown="SimpleInspectorTextBox_KeyDown"
+                                 LostFocus="SimpleInspectorTextBox_LostFocus"/>
+                      </StackPanel>
+                      <StackPanel Grid.Column="1"
+                                  Margin="8,0,0,0"
+                                  Spacing="3">
+                        <TextBlock Text="FontSize"
+                                   FontSize="11"
+                                   Foreground="#64748B"/>
+                        <TextBox x:Name="SimpleInspectorFontSizeTextBox"
+                                 Classes="property-editor"
+                                 Tag="FontSize"
+                                 PointerPressed="SimpleInspectorTextBox_PointerPressed"
+                                 GotFocus="SimpleInspectorTextBox_GotFocus"
+                                 KeyDown="SimpleInspectorTextBox_KeyDown"
+                                 LostFocus="SimpleInspectorTextBox_LostFocus"/>
+                      </StackPanel>
+                    </Grid>
+
+                    <StackPanel Spacing="3">
+                      <TextBlock Text="FontWeight"
+                                 FontSize="11"
+                                 Foreground="#64748B"/>
+                      <TextBox x:Name="SimpleInspectorFontWeightTextBox"
+                               Classes="property-editor"
+                               Tag="FontWeight"
+                               PointerPressed="SimpleInspectorTextBox_PointerPressed"
+                               GotFocus="SimpleInspectorTextBox_GotFocus"
+                               KeyDown="SimpleInspectorTextBox_KeyDown"
+                               LostFocus="SimpleInspectorTextBox_LostFocus"/>
+                    </StackPanel>
+
+                    <Grid ColumnDefinitions="*,*">
+                      <StackPanel Spacing="3">
+                        <TextBlock Text="HorizontalAlignment"
+                                   FontSize="11"
+                                   Foreground="#64748B"/>
+                        <TextBox x:Name="SimpleInspectorHorizontalAlignmentTextBox"
+                                 Classes="property-editor"
+                                 Tag="HorizontalAlignment"
+                                 PointerPressed="SimpleInspectorTextBox_PointerPressed"
+                                 GotFocus="SimpleInspectorTextBox_GotFocus"
+                                 KeyDown="SimpleInspectorTextBox_KeyDown"
+                                 LostFocus="SimpleInspectorTextBox_LostFocus"/>
+                      </StackPanel>
+                      <StackPanel Grid.Column="1"
+                                  Margin="8,0,0,0"
+                                  Spacing="3">
+                        <TextBlock Text="VerticalAlignment"
+                                   FontSize="11"
+                                   Foreground="#64748B"/>
+                        <TextBox x:Name="SimpleInspectorVerticalAlignmentTextBox"
+                                 Classes="property-editor"
+                                 Tag="VerticalAlignment"
+                                 PointerPressed="SimpleInspectorTextBox_PointerPressed"
+                                 GotFocus="SimpleInspectorTextBox_GotFocus"
+                                 KeyDown="SimpleInspectorTextBox_KeyDown"
+                                 LostFocus="SimpleInspectorTextBox_LostFocus"/>
+                      </StackPanel>
+                    </Grid>
+
+                    <Grid ColumnDefinitions="*,*">
+                      <StackPanel Spacing="3">
+                        <TextBlock Text="Margin"
+                                   FontSize="11"
+                                   Foreground="#64748B"/>
+                        <TextBox x:Name="SimpleInspectorMarginTextBox"
+                                 Classes="property-editor"
+                                 Tag="Margin"
+                                 PointerPressed="SimpleInspectorTextBox_PointerPressed"
+                                 GotFocus="SimpleInspectorTextBox_GotFocus"
+                                 KeyDown="SimpleInspectorTextBox_KeyDown"
+                                 LostFocus="SimpleInspectorTextBox_LostFocus"/>
+                      </StackPanel>
+                      <StackPanel Grid.Column="1"
+                                  Margin="8,0,0,0"
+                                  Spacing="3">
+                        <TextBlock Text="Padding"
+                                   FontSize="11"
+                                   Foreground="#64748B"/>
+                        <TextBox x:Name="SimpleInspectorPaddingTextBox"
+                                 Classes="property-editor"
+                                 Tag="Padding"
+                                 PointerPressed="SimpleInspectorTextBox_PointerPressed"
+                                 GotFocus="SimpleInspectorTextBox_GotFocus"
+                                 KeyDown="SimpleInspectorTextBox_KeyDown"
+                                 LostFocus="SimpleInspectorTextBox_LostFocus"/>
+                      </StackPanel>
                     </Grid>
                   </StackPanel>
                 </StackPanel>
               </ScrollViewer>
 
               <ScrollViewer Grid.Row="1"
-                            IsVisible="False"
                             VerticalScrollBarVisibility="Auto">
                 <StackPanel Spacing="4">
                   <Border Background="#F8FAFC"
@@ -2782,9 +2972,11 @@
                     </StackPanel>
                   </Border>
 
-                  <Border Classes="property-grid-table"
+                  <Border x:Name="PropertyGridTableHost"
+                          Classes="property-grid-table"
                           IsVisible="{Binding HasPropertyGridRows}">
-                    <ItemsControl ItemsSource="{Binding PropertyGridCategories}">
+                    <ItemsControl x:Name="PropertyGridCategoriesItemsControl"
+                                  ItemsSource="{Binding PropertyGridCategories}">
                     <ItemsControl.ItemTemplate>
                       <DataTemplate x:DataType="vm:PropertyGridCategoryViewModel">
                         <StackPanel>

@@ -229,6 +229,7 @@ public partial class MainWindowViewModel : ObservableObject
     private string _propertyGridContextDocumentId = "";
     private string _propertyGridContextControlId = "";
     private string _canvasRenderedDocumentId = "";
+    private int _propertiesTabRefreshVersion;
 
     // Toolbox теперь строится из registry дескрипторов, а не из зашитого списка.
     public ObservableCollection<ToolboxItem> ToolboxItems { get; } = new();
@@ -279,6 +280,11 @@ public partial class MainWindowViewModel : ObservableObject
     public string PropertyGridContextDocumentId => _propertyGridContextDocumentId;
     public string PropertyGridContextControlId => _propertyGridContextControlId;
     public string CanvasRenderedDocumentId => _canvasRenderedDocumentId;
+    public int PropertiesTabRefreshVersion
+    {
+        get => _propertiesTabRefreshVersion;
+        private set => SetProperty(ref _propertiesTabRefreshVersion, value);
+    }
 
     // Плоский список всех контролов документа. Иерархия восстанавливается через ParentId.
     public ObservableCollection<DesignControlModel> Controls { get; } = new();
@@ -7772,6 +7778,37 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(PropertyGridContextDocumentId));
         OnPropertyChanged(nameof(PropertyGridContextControlId));
         OnPropertyChanged(nameof(PerformanceDiagnosticsSummary));
+        EnsurePropertiesTabContent($"RebuildPropertyGrid:{reason}");
+    }
+
+    private void EnsurePropertiesTabContent(string reason)
+    {
+        var rowsCount = PropertyGridCategories.Sum(category => category.Rows.Count);
+        TraceDocumentDebug(
+            "PROPERTIES_TAB_REFRESH_REQUESTED",
+            $"reason={reason}; activeTab={RightInspectorSelectedIndex}; selected={SelectedControl?.Name ?? "-"}:{SelectedControl?.Id ?? "-"}:{SelectedControl?.Type ?? "-"}; rows={rowsCount}; inspectorDocumentId={PropertyGridContextDocumentId}; inspectorControlId={PropertyGridContextControlId}",
+            toOutput: false);
+
+        if (RightInspectorSelectedIndex != 0 || rowsCount <= 0)
+            return;
+
+        if (SelectedControl is not null && string.IsNullOrWhiteSpace(PropertyGridContextControlId))
+        {
+            TraceDocumentDebug(
+                "PROPERTIES_TAB_EMPTY_AFTER_REBUILD",
+                $"reason={reason}; selected={SelectedControl.Name}:{SelectedControl.Id}:{SelectedControl.Type}; rows={rowsCount}; activeTab={RightInspectorSelectedIndex}; inspectorDocumentId={PropertyGridContextDocumentId}; inspectorControlId={PropertyGridContextControlId}",
+                toOutput: false,
+                warning: true);
+        }
+
+        PropertiesTabRefreshVersion++;
+        OnPropertyChanged(nameof(PropertyGridCategories));
+        OnPropertyChanged(nameof(HasPropertyGridRows));
+        OnPropertyChanged(nameof(HasNoPropertyGridRows));
+        TraceDocumentDebug(
+            "PROPERTIES_TAB_CONTENT_REBUILT",
+            $"reason={reason}; rows={rowsCount}; activeTab={RightInspectorSelectedIndex}; version={PropertiesTabRefreshVersion}",
+            toOutput: false);
     }
 
     private void RaisePropertyGridProperties()
@@ -10561,70 +10598,73 @@ public partial class MainWindowViewModel : ObservableObject
 
     private (string Xaml, string CSharp) BuildSecondaryFormGeneratedFiles(DesignerFormDocument form, string className)
     {
-        var savedDocument = CreateDocumentFileModel();
-        var savedGeneratedXaml = GeneratedXaml;
-        var savedGeneratedCSharp = GeneratedCSharp;
-        var savedGeneratedBindingGuide = GeneratedBindingGuide;
-        var savedCurrentPath = CurrentDocumentPath;
-        var savedCurrentSnapshot = _currentSnapshot;
-        var savedSavedSnapshot = _savedSnapshot;
-        var undoSnapshots = _undoStack.Reverse().ToList();
-        var redoSnapshots = _redoStack.Reverse().ToList();
-        var selectedControlIds = SelectedControlIds.ToList();
-        var primaryControlId = SelectedControl?.Id ?? "";
-        var selectedBindingSourceId = SelectedBindingSource?.Id ?? "";
-        var selectedInteractionId = SelectedInteraction?.Id ?? "";
-        var previousGeneratingSecondary = _isGeneratingSecondaryFormExport;
-        var previousNamespaceOverride = _exportNamespaceOverride;
-        var previousWindowClassNameOverride = _exportWindowClassNameOverride;
-        var previousViewModelClassNameOverride = _exportViewModelClassNameOverride;
-        var previousActiveFormIdOverride = _exportActiveFormIdOverride;
+        TraceDocumentDebug(
+            "EXPORT_PIPELINE_EDITOR_SURFACE_MUTATION_SUPPRESSED",
+            $"caller={nameof(BuildSecondaryFormGeneratedFiles)}; document={form.DisplayName}:{form.Id}; activeDocument={ActiveDocumentName}:{ActiveDocumentId}; selected={SelectedControl?.Name ?? "-"}:{SelectedControl?.Id ?? "-"}; reason=secondary export uses isolated VM",
+            toOutput: false);
 
+        var exportViewModel = new MainWindowViewModel(_registry);
         try
         {
-            _isGeneratingSecondaryFormExport = true;
-            _exportNamespaceOverride = ResolveExportNamespace();
-            _exportWindowClassNameOverride = className;
-            _exportViewModelClassNameOverride = $"{className}ViewModel";
-            _exportActiveFormIdOverride = form.Id;
-            ApplyDocument(
-                CloneDocumentFileModel(form.Document),
+            CopyExportSettingsTo(exportViewModel, className, form.Id);
+            exportViewModel.Workspace = CloneWorkspaceForExport();
+            exportViewModel.CurrentProjectPath = CurrentProjectPath;
+            exportViewModel.Workspace.Session.ActiveDocumentId = form.Id;
+            exportViewModel.ActiveFormDocument = exportViewModel.CurrentProject.Forms.FirstOrDefault(item =>
+                    string.Equals(item.Id, form.Id, StringComparison.OrdinalIgnoreCase))
+                ?? CloneFormDocumentForPreview(form);
+            exportViewModel._isGeneratingSecondaryFormExport = true;
+            exportViewModel.ApplyDocument(
+                CloneDocumentFileModel(exportViewModel.ActiveFormDocument.Document),
                 CurrentProjectPath,
                 markAsSaved: true,
                 resetDocumentSession: false,
                 resetHistory: false,
                 refreshEditorSurfaces: false);
-            GenerateXaml();
-            return (GeneratedXaml, GeneratedCSharp);
+            exportViewModel.GenerateXaml();
+            return (exportViewModel.GeneratedXaml, exportViewModel.GeneratedCSharp);
         }
         finally
         {
-            _isGeneratingSecondaryFormExport = previousGeneratingSecondary;
-            _exportNamespaceOverride = previousNamespaceOverride;
-            _exportWindowClassNameOverride = previousWindowClassNameOverride;
-            _exportViewModelClassNameOverride = previousViewModelClassNameOverride;
-            _exportActiveFormIdOverride = previousActiveFormIdOverride;
-
-            ApplyDocument(
-                savedDocument,
-                savedCurrentPath,
-                markAsSaved: false,
-                resetDocumentSession: false,
-                resetHistory: false,
-                refreshEditorSurfaces: false);
-            GeneratedXaml = savedGeneratedXaml;
-            GeneratedCSharp = savedGeneratedCSharp;
-            GeneratedBindingGuide = savedGeneratedBindingGuide;
-            _currentSnapshot = savedCurrentSnapshot;
-            _savedSnapshot = savedSavedSnapshot;
-            _undoStack.Clear();
-            foreach (var snapshot in undoSnapshots)
-                _undoStack.Push(snapshot);
-            _redoStack.Clear();
-            foreach (var snapshot in redoSnapshots)
-                _redoStack.Push(snapshot);
-            RestoreSelectionContextAfterSnapshot(selectedControlIds, primaryControlId, selectedBindingSourceId, selectedInteractionId);
+            exportViewModel.DisposeExportOnlyViewModel();
         }
+    }
+
+    private WorkspaceModel CloneWorkspaceForExport()
+    {
+        var json = JsonSerializer.Serialize(Workspace, JsonOptions);
+        return JsonSerializer.Deserialize<WorkspaceModel>(json, JsonOptions) ?? new WorkspaceModel();
+    }
+
+    private void CopyExportSettingsTo(MainWindowViewModel target, string className, string formId)
+    {
+        target.GenerationMode = GenerationMode;
+        target.DataGridExportMode = DataGridExportMode;
+        target.ExportTarget = ExportTarget;
+        target.ExportProjectNamespace = ExportProjectNamespace;
+        target.XamlVerbosity = XamlVerbosity;
+        target.LayoutExportMode = LayoutExportMode;
+        target.IncludeExportComments = IncludeExportComments;
+        target.IncludeSampleData = IncludeSampleData;
+        target.IncludeCrudSkeleton = IncludeCrudSkeleton;
+        target.IncludeCommunityToolkitAttributes = IncludeCommunityToolkitAttributes;
+        target.IncludePluginRuntimeReferences = IncludePluginRuntimeReferences;
+        target._exportNamespaceOverride = ResolveExportNamespace();
+        target._exportWindowClassNameOverride = className;
+        target._exportViewModelClassNameOverride = $"{className}ViewModel";
+        target._exportActiveFormIdOverride = formId;
+    }
+
+    private void DisposeExportOnlyViewModel()
+    {
+        _propertyGridLiveRefreshTimer.Stop();
+        _diagnosticsRefreshTimer.Stop();
+        _exportChecklistRefreshTimer.Stop();
+        _structureTreeSearchRefreshTimer.Stop();
+        _editorCommandRefreshTimer.Stop();
+        PropertyGridRowViewModel.ValueTrace -= PropertyGridRow_ValueTrace;
+        _workspaceLogService.EntryAdded -= WorkspaceLogService_EntryAdded;
+        _workspaceTaskService.TasksChanged -= WorkspaceTaskService_TasksChanged;
     }
 
     private static DesignerDocumentFileModel CloneDocumentFileModel(DesignerDocumentFileModel document)
@@ -13477,8 +13517,14 @@ public partial class MainWindowViewModel : ObservableObject
     private string BackgroundAttribute(DesignControlModel control) =>
         BrushAttribute(control, "Background", control.Background, defaults => defaults.Background, defaults => defaults.BackgroundResourceKey);
 
-    private string ForegroundAttribute(DesignControlModel control) =>
-        BrushAttribute(control, "Foreground", control.Foreground, defaults => defaults.Foreground, defaults => defaults.ForegroundResourceKey);
+    private string ForegroundAttribute(DesignControlModel control)
+    {
+        var attribute = BrushAttribute(control, "Foreground", control.Foreground, defaults => defaults.Foreground, defaults => defaults.ForegroundResourceKey);
+        AddInteractionTrace(
+            "EXPORT_CONTROL_FOREGROUND",
+            $"control={control.Name}:{control.Id}; type={control.Type}; foreground={control.Foreground}; exported={attribute.Trim()}");
+        return attribute;
+    }
 
     private string BorderBrushAttribute(DesignControlModel control) =>
         BrushAttribute(control, "BorderBrush", control.BorderBrush, defaults => defaults.BorderBrush, defaults => defaults.BorderBrushResourceKey);
@@ -15955,7 +16001,17 @@ public partial class MainWindowViewModel : ObservableObject
 
         _isHistorySuspended = true;
         _isApplyingDocument = true;
-        ResetDocumentScopedRefreshState();
+        if (refreshEditorSurfaces)
+        {
+            ResetDocumentScopedRefreshState();
+        }
+        else if (_isGeneratingSecondaryFormExport || string.Equals(caller, nameof(BuildSecondaryFormGeneratedFiles), StringComparison.Ordinal))
+        {
+            TraceDocumentDebug(
+                "EXPORT_PIPELINE_EDITOR_SURFACE_MUTATION_SUPPRESSED",
+                $"caller={caller}; document={documentName}; activeDocument={ActiveDocumentName}:{ActiveDocumentId}; selected={SelectedControl?.Name ?? "-"}:{SelectedControl?.Id ?? "-"}; inspector={PropertyGridContextDocumentId}/{PropertyGridContextControlId}; reason=hidden export apply keeps inspector/property-grid surface state",
+                toOutput: false);
+        }
 
         try
         {

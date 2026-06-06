@@ -41,6 +41,13 @@ internal static class Program
             new("SwitchFormsClearsInspector", ConfigureSwitchFormsClearsInspector, AssertSwitchFormsClearsInspector),
             new("PropertyGridTextEditUsesLocalBuffer", ConfigurePropertyGridTextEditUsesLocalBuffer, AssertPropertyGridTextEditUsesLocalBuffer),
             new("EditAfterAddFormWorks", ConfigureEditAfterAddFormWorks, AssertEditAfterAddFormWorks),
+            new("EditTextAfterAddFormStillWorks", ConfigureEditTextAfterAddFormStillWorks, AssertEditTextAfterAddFormStillWorks),
+            new("ChangeForegroundAfterAddFormWorks", ConfigureChangeForegroundAfterAddFormWorks, AssertChangeForegroundAfterAddFormWorks),
+            new("ChangeBackgroundAfterAddFormWorks", ConfigureChangeBackgroundAfterAddFormWorks, AssertChangeBackgroundAfterAddFormWorks),
+            new("ForegroundPersistsInModel", ConfigureForegroundPersistsInModel, AssertForegroundPersistsInModel),
+            new("ForegroundAppearsInExportedXaml", ConfigureForegroundAppearsInExportedXaml, AssertForegroundAppearsInExportedXaml),
+            new("SameSelectionDoesNotRebuildPropertyGrid", ConfigureSameSelectionDoesNotRebuildPropertyGrid, AssertSameSelectionDoesNotRebuildPropertyGrid),
+            new("PropertiesPanelVisibleAfterAddFormAndSelectControl", ConfigurePropertiesPanelVisibleAfterAddFormAndSelectControl, AssertPropertiesPanelVisibleAfterAddFormAndSelectControl),
             new("DragAfterAddFormWorks", ConfigureDragAfterAddFormWorks, AssertDragAfterAddFormWorks),
             new("AddEmptySecondFormDoesNotBreakFirstFormPropertyGrid", ConfigureAddEmptySecondFormDoesNotBreakFirstFormPropertyGrid, AssertAddEmptySecondFormDoesNotBreakFirstFormPropertyGrid, RequiresRealDataGrid: true),
             new("AddEmptySecondFormDoesNotBreakFirstFormInspectorAndLogic", ConfigureAddEmptySecondFormDoesNotBreakFirstFormInspectorAndLogic, AssertAddEmptySecondFormDoesNotBreakFirstFormInspectorAndLogic, RequiresRealDataGrid: true),
@@ -713,6 +720,191 @@ internal static class Program
         var form2File = context.GeneratedFiles.FirstOrDefault(file => string.Equals(file.Path, "Form2.axaml", StringComparison.OrdinalIgnoreCase));
         if (form2File is not null)
             RequireNotContains(form2File.Content, "222", "Form2 should not contain Form1 edited Button text.");
+    }
+
+    private static void ConfigureEditTextAfterAddFormStillWorks(MainWindowViewModel vm)
+    {
+        var form1 = vm.ActiveFormDocument ?? throw new InvalidOperationException("Form1 missing.");
+        var button = vm.TryCreateControlFromToolboxDrop(DesignerControlTypes.Button, 40, 40, null, false, form1.Id)
+            ?? throw new InvalidOperationException("Form1 Button was not created.");
+
+        vm.AddFormEditorCommand?.Execute(null);
+        SwitchToForm(vm, form1.Id);
+        var restored = vm.Controls.Single(control => control.Id == button.Id);
+        vm.SelectSingleControl(restored);
+        EditPropertyGridTextLikeUi(vm, nameof(DesignControlModel.Text), "222222");
+
+        if (!string.Equals(restored.Text, "222222", StringComparison.Ordinal))
+            throw new InvalidOperationException("Text edit after AddForm was not preserved in model.");
+    }
+
+    private static void AssertEditTextAfterAddFormStillWorks(SmokeContext context)
+    {
+        RequireContains(context.Xaml, "Content=\"222222\"", "Text edit after AddForm should be exported.");
+    }
+
+    private static void ConfigureChangeForegroundAfterAddFormWorks(MainWindowViewModel vm)
+    {
+        var form1 = vm.ActiveFormDocument ?? throw new InvalidOperationException("Form1 missing.");
+        var button = vm.TryCreateControlFromToolboxDrop(DesignerControlTypes.Button, 40, 40, null, false, form1.Id)
+            ?? throw new InvalidOperationException("Form1 Button was not created.");
+
+        vm.AddFormEditorCommand?.Execute(null);
+        SwitchToForm(vm, form1.Id);
+        var restored = vm.Controls.Single(control => control.Id == button.Id);
+        vm.SelectSingleControl(restored);
+        SetPropertyGridValue(vm, nameof(DesignControlModel.Foreground), "#00AA44");
+
+        if (!string.Equals(restored.Foreground, "#00AA44", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException($"Foreground after AddForm was not applied. Got {restored.Foreground}.");
+    }
+
+    private static void AssertChangeForegroundAfterAddFormWorks(SmokeContext context)
+    {
+        RequireContains(context.Xaml, "Foreground=\"#00AA44\"", "Foreground after AddForm should be exported.");
+    }
+
+    private static void ConfigureChangeBackgroundAfterAddFormWorks(MainWindowViewModel vm)
+    {
+        var form1 = vm.ActiveFormDocument ?? throw new InvalidOperationException("Form1 missing.");
+        var button = vm.TryCreateControlFromToolboxDrop(DesignerControlTypes.Button, 40, 40, null, false, form1.Id)
+            ?? throw new InvalidOperationException("Form1 Button was not created.");
+
+        vm.AddFormEditorCommand?.Execute(null);
+        SwitchToForm(vm, form1.Id);
+        var restored = vm.Controls.Single(control => control.Id == button.Id);
+        vm.SelectSingleControl(restored);
+        SetPropertyGridValue(vm, nameof(DesignControlModel.Background), "#CC99EB");
+
+        if (!string.Equals(restored.Background, "#CC99EB", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException($"Background after AddForm was not applied. Got {restored.Background}.");
+    }
+
+    private static void AssertChangeBackgroundAfterAddFormWorks(SmokeContext context)
+    {
+        RequireContains(context.Xaml, "Background=\"#CC99EB\"", "Background after AddForm should be exported.");
+    }
+
+    private static void ConfigureForegroundPersistsInModel(MainWindowViewModel vm)
+    {
+        var form1 = vm.ActiveFormDocument ?? throw new InvalidOperationException("Form1 missing.");
+        var button = vm.TryCreateControlFromToolboxDrop(DesignerControlTypes.Button, 40, 40, null, false, form1.Id)
+            ?? throw new InvalidOperationException("Form1 Button was not created.");
+        vm.SelectSingleControl(button);
+        SetPropertyGridValue(vm, nameof(DesignControlModel.Foreground), "#123456");
+
+        vm.AddFormEditorCommand?.Execute(null);
+        SwitchToForm(vm, form1.Id);
+        var restored = vm.Controls.Single(control => control.Id == button.Id);
+
+        if (!string.Equals(restored.Foreground, "#123456", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException($"Foreground was lost after switching forms. Got {restored.Foreground}.");
+    }
+
+    private static void AssertForegroundPersistsInModel(SmokeContext context)
+    {
+        RequireContains(context.Xaml, "Foreground=\"#123456\"", "Persisted Foreground should be exported.");
+    }
+
+    private static void ConfigureForegroundAppearsInExportedXaml(MainWindowViewModel vm)
+    {
+        var form1 = vm.ActiveFormDocument ?? throw new InvalidOperationException("Form1 missing.");
+        var button = vm.TryCreateControlFromToolboxDrop(DesignerControlTypes.Button, 40, 40, null, false, form1.Id)
+            ?? throw new InvalidOperationException("Form1 Button was not created.");
+        button.Foreground = "#AA2244";
+        vm.SelectSingleControl(button);
+    }
+
+    private static void AssertForegroundAppearsInExportedXaml(SmokeContext context)
+    {
+        RequireContains(context.Xaml, "Foreground=\"#AA2244\"", "Button Foreground should appear in exported XAML.");
+    }
+
+    private static void ConfigureSameSelectionDoesNotRebuildPropertyGrid(MainWindowViewModel vm)
+    {
+        var form1 = vm.ActiveFormDocument ?? throw new InvalidOperationException("Form1 missing.");
+        var button = vm.TryCreateControlFromToolboxDrop(DesignerControlTypes.Button, 40, 40, null, false, form1.Id)
+            ?? throw new InvalidOperationException("Form1 Button was not created.");
+        vm.SelectSingleControl(button);
+        vm.InteractionTraceEntries.Clear();
+
+        var sameIdentity = new DesignControlModel
+        {
+            Id = button.Id,
+            Name = button.Name,
+            Type = button.Type
+        };
+        vm.SelectedControl = sameIdentity;
+
+        if (!vm.InteractionTraceEntries.Any(entry => entry.EventName == "SELECTED_CONTROL_SAME_SUPPRESSED"))
+            throw new InvalidOperationException("Same selection was not suppressed.");
+
+        if (vm.InteractionTraceEntries.Any(entry =>
+            entry.EventName == "RebuildPropertyGrid"
+            && entry.Details.Contains("SelectedControlChanged", StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new InvalidOperationException("Same selection still triggered PropertyGrid rebuild.");
+        }
+    }
+
+    private static void AssertSameSelectionDoesNotRebuildPropertyGrid(SmokeContext context)
+    {
+        RequireContains(context.Xaml, "Button1", "Same-selection scenario should keep the selected Button exportable.");
+    }
+
+    private static void ConfigurePropertiesPanelVisibleAfterAddFormAndSelectControl(MainWindowViewModel vm)
+    {
+        var form1 = vm.ActiveFormDocument ?? throw new InvalidOperationException("Form1 missing.");
+        var button = vm.TryCreateControlFromToolboxDrop(DesignerControlTypes.Button, 90, 70, null, false, form1.Id)
+            ?? throw new InvalidOperationException("Form1 Button was not created.");
+
+        vm.AddFormEditorCommand?.Execute(null);
+        SwitchToForm(vm, form1.Id);
+        var restored = vm.Controls.Single(control => control.Id == button.Id);
+        vm.SelectSingleControl(restored);
+
+        if (vm.SelectedControl is null)
+            throw new InvalidOperationException("Button selection was not restored before Properties check.");
+
+        if (vm.RightInspectorSelectedIndex != 0)
+            throw new InvalidOperationException($"Properties tab is not active. Active index: {vm.RightInspectorSelectedIndex}.");
+
+        RequirePropertyGridRowsContext(vm, form1.Id, button.Id);
+        RequirePropertyGridRow(vm, nameof(DesignControlModel.Name));
+        RequirePropertyGridRow(vm, nameof(DesignControlModel.Text));
+        RequirePropertyGridRow(vm, nameof(DesignControlModel.Width));
+        RequirePropertyGridRow(vm, nameof(DesignControlModel.Height));
+
+        if (vm.PropertiesTabRefreshVersion <= 0)
+            throw new InvalidOperationException("Properties tab refresh version was not raised after selecting the Button.");
+
+        vm.InteractionTraceEntries.Clear();
+        vm.GenerateXaml();
+
+        if (vm.SelectedControl is null || !string.Equals(vm.SelectedControl.Id, button.Id, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Export refresh cleared the selected Button.");
+
+        RequirePropertyGridRowsContext(vm, form1.Id, button.Id);
+        RequirePropertyGridRow(vm, nameof(DesignControlModel.Name));
+        RequirePropertyGridRow(vm, nameof(DesignControlModel.Text));
+        RequirePropertyGridRow(vm, nameof(DesignControlModel.Width));
+        RequirePropertyGridRow(vm, nameof(DesignControlModel.Height));
+
+        if (vm.InteractionTraceEntries.Any(entry =>
+            entry.EventName == "ApplyDocument"
+            || entry.EventName == "APPLY_DOCUMENT_START"
+            || entry.EventName == "APPLY_DOCUMENT_END"))
+        {
+            var applyTrace = string.Join(" | ", vm.InteractionTraceEntries
+                .Where(entry => entry.EventName.Contains("APPLY_DOCUMENT", StringComparison.OrdinalIgnoreCase))
+                .Select(entry => $"{entry.EventName}:{entry.Details}"));
+            throw new InvalidOperationException($"Export refresh still applied editor documents: {applyTrace}");
+        }
+    }
+
+    private static void AssertPropertiesPanelVisibleAfterAddFormAndSelectControl(SmokeContext context)
+    {
+        RequireContains(context.Xaml, "Button1", "Properties visibility scenario should keep Button exportable.");
     }
 
     private static void ConfigureDragAfterAddFormWorks(MainWindowViewModel vm)

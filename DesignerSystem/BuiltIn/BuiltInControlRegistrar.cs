@@ -22,7 +22,7 @@ public static class BuiltInControlRegistrar
     public static void Register(IDesignerRegistry registry)
     {
         RegisterSimple(registry, DesignerControlTypes.Button, "Button", "Ввод", "Кнопка для запуска действий.", false, DesignerLayoutModes.Absolute,
-            CreateCommonProperties(includeText: true, includeBackground: true, includeBorder: true, includeFont: true, includePadding: true),
+            CreateCommonProperties(includeText: true, includeBackground: true, includeBorder: true, includeForeground: true, includeFont: true, includePadding: true),
             context =>
             {
                 var themeDefaults = DesignerThemeCatalog.GetControlDefaults(DesignerControlTypes.Button, context.ActiveTheme);
@@ -41,7 +41,7 @@ public static class BuiltInControlRegistrar
             });
 
         RegisterSimple(registry, DesignerControlTypes.TextBox, "TextBox", "Ввод", "Однострочное поле для ввода текста.", false, DesignerLayoutModes.Absolute,
-            CreateCommonProperties(includeText: true, includePlaceholder: true, includeBackground: true, includeBorder: true, includeFont: true, includePadding: true),
+            CreateCommonProperties(includeText: true, includePlaceholder: true, includeBackground: true, includeBorder: true, includeForeground: true, includeFont: true, includePadding: true),
             context =>
             {
                 var themeDefaults = DesignerThemeCatalog.GetControlDefaults(DesignerControlTypes.TextBox, context.ActiveTheme);

@@ -400,12 +400,20 @@ public partial class MainWindow : Window
             UpdateWindowTitle();
         }
 
-        if (e.PropertyName == nameof(MainWindowViewModel.SelectedControl)
-            || e.PropertyName == nameof(MainWindowViewModel.DocumentSessionId))
+        if (e.PropertyName == nameof(MainWindowViewModel.PropertiesTabRefreshVersion))
+        {
+            RefreshPropertiesTabContentVisual(viewModel, "PropertiesTabRefreshVersion");
+        }
+
+        var isSimpleInspectorVisible = SimpleInspectorScrollViewer?.IsVisible == true;
+        if (isSimpleInspectorVisible
+            && (e.PropertyName == nameof(MainWindowViewModel.SelectedControl)
+                || e.PropertyName == nameof(MainWindowViewModel.DocumentSessionId)))
         {
             RefreshSimpleInspectorFields(force: true);
         }
-        else if (e.PropertyName == nameof(MainWindowViewModel.SelectedControlSummary))
+        else if (isSimpleInspectorVisible
+            && e.PropertyName == nameof(MainWindowViewModel.SelectedControlSummary))
         {
             RefreshSimpleInspectorFields(force: false);
         }
@@ -6619,17 +6627,23 @@ public partial class MainWindow : Window
         }
     }
 
-    private static TextBlock CreatePreviewText(
+    private TextBlock CreatePreviewText(
         string text,
         DesignControlModel model,
         string foreground,
         HorizontalAlignment horizontalAlignment,
         VerticalAlignment verticalAlignment)
     {
+        var foregroundBrush = ParseBrush(foreground, "#0F172A");
+        VM.AddInteractionTrace(
+            "RENDER_CONTROL_FOREGROUND",
+            $"control={model.Name}:{model.Id}; type={model.Type}; foreground={foreground}; actualBrush={DescribeBrush(foregroundBrush)}",
+            GetFocusedElementDebugName(),
+            CaptureViewInteractionState());
         return new TextBlock
         {
             Text = text,
-            Foreground = ParseBrush(foreground, "#0F172A"),
+            Foreground = foregroundBrush,
             FontFamily = new FontFamily(model.FontFamily),
             FontSize = model.FontSize,
             FontWeight = ParseFontWeight(model.FontWeight),
@@ -8156,11 +8170,62 @@ public partial class MainWindow : Window
             || int.TryParse(text, NumberStyles.Integer, CultureInfo.CurrentCulture, out value);
     }
 
+    private void RefreshPropertiesTabContentVisual(MainWindowViewModel viewModel, string reason)
+    {
+        var rowsCount = viewModel.PropertyGridCategories.Sum(category => category.Rows.Count);
+        var visualChildrenBefore = PropertyGridTableHost?.GetVisualChildren().Count() ?? 0;
+        var hasHostContent = PropertyGridTableHost?.IsVisible == true && rowsCount > 0;
+
+        viewModel.AddInteractionTrace(
+            "PROPERTIES_TAB_REFRESH_REQUESTED",
+            $"reason={reason}; selected={viewModel.SelectedControl?.Name ?? "-"}:{viewModel.SelectedControl?.Id ?? "-"}:{viewModel.SelectedControl?.Type ?? "-"}; rows={rowsCount}; activeTab={viewModel.RightInspectorSelectedIndex}; inspectorDocumentId={viewModel.PropertyGridContextDocumentId}; inspectorControlId={viewModel.PropertyGridContextControlId}; visualChildrenBefore={visualChildrenBefore}",
+            GetFocusedElementDebugName(),
+            CaptureViewInteractionState());
+
+        PropertyGridTableHost?.InvalidateMeasure();
+        PropertyGridTableHost?.InvalidateVisual();
+        PropertyGridCategoriesItemsControl?.InvalidateMeasure();
+        PropertyGridCategoriesItemsControl?.InvalidateVisual();
+
+        Dispatcher.UIThread.Post(() =>
+        {
+            var visualChildrenAfter = PropertyGridTableHost?.GetVisualChildren().Count() ?? 0;
+            if (rowsCount > 0 && viewModel.RightInspectorSelectedIndex == 0 && !hasHostContent)
+            {
+                viewModel.AddInteractionTrace(
+                    "PROPERTIES_TAB_EMPTY_AFTER_REBUILD",
+                    $"reason={reason}; selected={viewModel.SelectedControl?.Name ?? "-"}:{viewModel.SelectedControl?.Id ?? "-"}; rows={rowsCount}; activeTab={viewModel.RightInspectorSelectedIndex}; visualChildren={visualChildrenAfter}",
+                    GetFocusedElementDebugName(),
+                    CaptureViewInteractionState());
+            }
+
+            viewModel.AddInteractionTrace(
+                "PROPERTIES_TAB_CONTENT_REBUILT",
+                $"reason={reason}; rows={rowsCount}; visualChildren={visualChildrenAfter}; hasContent={PropertyGridTableHost?.IsVisible == true}",
+                GetFocusedElementDebugName(),
+                CaptureViewInteractionState());
+        }, DispatcherPriority.Background);
+    }
+
     private bool IsSimpleInspectorTextEditing =>
         SimpleInspectorNameTextBox?.IsFocused == true
         || SimpleInspectorTextTextBox?.IsFocused == true
+        || SimpleInspectorXTextBox?.IsFocused == true
+        || SimpleInspectorYTextBox?.IsFocused == true
         || SimpleInspectorWidthTextBox?.IsFocused == true
-        || SimpleInspectorHeightTextBox?.IsFocused == true;
+        || SimpleInspectorHeightTextBox?.IsFocused == true
+        || SimpleInspectorBackgroundTextBox?.IsFocused == true
+        || SimpleInspectorForegroundTextBox?.IsFocused == true
+        || SimpleInspectorBorderBrushTextBox?.IsFocused == true
+        || SimpleInspectorBorderThicknessTextBox?.IsFocused == true
+        || SimpleInspectorCornerRadiusTextBox?.IsFocused == true
+        || SimpleInspectorOpacityTextBox?.IsFocused == true
+        || SimpleInspectorFontSizeTextBox?.IsFocused == true
+        || SimpleInspectorFontWeightTextBox?.IsFocused == true
+        || SimpleInspectorHorizontalAlignmentTextBox?.IsFocused == true
+        || SimpleInspectorVerticalAlignmentTextBox?.IsFocused == true
+        || SimpleInspectorMarginTextBox?.IsFocused == true
+        || SimpleInspectorPaddingTextBox?.IsFocused == true;
 
     private void RefreshSimpleInspectorFields(bool force)
     {
@@ -8186,19 +8251,45 @@ public partial class MainWindow : Window
 
         SimpleInspectorNameTextBox.Text = control?.Name ?? "";
         SimpleInspectorTextTextBox.Text = control?.Text ?? "";
+        SimpleInspectorXTextBox.Text = control?.X.ToString(CultureInfo.InvariantCulture) ?? "";
+        SimpleInspectorYTextBox.Text = control?.Y.ToString(CultureInfo.InvariantCulture) ?? "";
         SimpleInspectorWidthTextBox.Text = control?.Width.ToString(CultureInfo.InvariantCulture) ?? "";
         SimpleInspectorHeightTextBox.Text = control?.Height.ToString(CultureInfo.InvariantCulture) ?? "";
         SimpleInspectorIsVisibleCheckBox.IsChecked = control?.IsVisible == true;
         SimpleInspectorIsLockedCheckBox.IsChecked = control?.IsLocked == true;
-        SimpleInspectorBackgroundTextBlock.Text = control?.Background ?? "";
-        SimpleInspectorForegroundTextBlock.Text = control?.Foreground ?? "";
+        SimpleInspectorBackgroundTextBox.Text = control?.Background ?? "";
+        SimpleInspectorForegroundTextBox.Text = control?.Foreground ?? "";
+        SimpleInspectorBorderBrushTextBox.Text = control?.BorderBrush ?? "";
+        SimpleInspectorBorderThicknessTextBox.Text = control?.BorderThickness.ToString(CultureInfo.InvariantCulture) ?? "";
+        SimpleInspectorCornerRadiusTextBox.Text = control?.CornerRadius.ToString(CultureInfo.InvariantCulture) ?? "";
+        SimpleInspectorOpacityTextBox.Text = control?.Opacity.ToString(CultureInfo.InvariantCulture) ?? "";
+        SimpleInspectorFontSizeTextBox.Text = control?.FontSize.ToString(CultureInfo.InvariantCulture) ?? "";
+        SimpleInspectorFontWeightTextBox.Text = control?.FontWeight ?? "";
+        SimpleInspectorHorizontalAlignmentTextBox.Text = control?.HorizontalAlignment ?? "";
+        SimpleInspectorVerticalAlignmentTextBox.Text = control?.VerticalAlignment ?? "";
+        SimpleInspectorMarginTextBox.Text = control?.Margin ?? "";
+        SimpleInspectorPaddingTextBox.Text = control?.Padding.ToString(CultureInfo.InvariantCulture) ?? "";
 
         SimpleInspectorNameTextBox.IsEnabled = hasControl;
         SimpleInspectorTextTextBox.IsEnabled = hasControl;
+        SimpleInspectorXTextBox.IsEnabled = hasControl;
+        SimpleInspectorYTextBox.IsEnabled = hasControl;
         SimpleInspectorWidthTextBox.IsEnabled = hasControl;
         SimpleInspectorHeightTextBox.IsEnabled = hasControl;
         SimpleInspectorIsVisibleCheckBox.IsEnabled = hasControl;
         SimpleInspectorIsLockedCheckBox.IsEnabled = hasControl;
+        SimpleInspectorBackgroundTextBox.IsEnabled = hasControl;
+        SimpleInspectorForegroundTextBox.IsEnabled = hasControl;
+        SimpleInspectorBorderBrushTextBox.IsEnabled = hasControl;
+        SimpleInspectorBorderThicknessTextBox.IsEnabled = hasControl;
+        SimpleInspectorCornerRadiusTextBox.IsEnabled = hasControl;
+        SimpleInspectorOpacityTextBox.IsEnabled = hasControl;
+        SimpleInspectorFontSizeTextBox.IsEnabled = hasControl;
+        SimpleInspectorFontWeightTextBox.IsEnabled = hasControl;
+        SimpleInspectorHorizontalAlignmentTextBox.IsEnabled = hasControl;
+        SimpleInspectorVerticalAlignmentTextBox.IsEnabled = hasControl;
+        SimpleInspectorMarginTextBox.IsEnabled = hasControl;
+        SimpleInspectorPaddingTextBox.IsEnabled = hasControl;
     }
 
     private void SimpleInspectorTextBox_PointerPressed(object? sender, PointerPressedEventArgs e)
@@ -8309,8 +8400,36 @@ public partial class MainWindow : Window
             case nameof(DesignControlModel.Text):
                 target.Text = value;
                 break;
+            case nameof(DesignControlModel.Background):
+                target.Background = string.IsNullOrWhiteSpace(value) ? GetColorFallback(propertyName) : value.Trim();
+                break;
+            case nameof(DesignControlModel.Foreground):
+                target.Foreground = string.IsNullOrWhiteSpace(value) ? GetColorFallback(propertyName) : value.Trim();
+                break;
+            case nameof(DesignControlModel.BorderBrush):
+                target.BorderBrush = string.IsNullOrWhiteSpace(value) ? GetColorFallback(propertyName) : value.Trim();
+                break;
+            case nameof(DesignControlModel.FontWeight):
+                target.FontWeight = string.IsNullOrWhiteSpace(value) ? "Normal" : value.Trim();
+                break;
+            case nameof(DesignControlModel.HorizontalAlignment):
+                target.HorizontalAlignment = value;
+                break;
+            case nameof(DesignControlModel.VerticalAlignment):
+                target.VerticalAlignment = value;
+                break;
+            case nameof(DesignControlModel.Margin):
+                target.Margin = value;
+                break;
+            case nameof(DesignControlModel.X):
+            case nameof(DesignControlModel.Y):
             case nameof(DesignControlModel.Width):
             case nameof(DesignControlModel.Height):
+            case nameof(DesignControlModel.Opacity):
+            case nameof(DesignControlModel.BorderThickness):
+            case nameof(DesignControlModel.CornerRadius):
+            case nameof(DesignControlModel.FontSize):
+            case nameof(DesignControlModel.Padding):
                 if (!TryParseDouble(value, out var number))
                 {
                     VM.StatusText = $"Invalid number for {propertyName}: {value}";
@@ -8318,10 +8437,7 @@ public partial class MainWindow : Window
                     return;
                 }
 
-                if (propertyName == nameof(DesignControlModel.Width))
-                    target.Width = Math.Max(40, number);
-                else
-                    target.Height = Math.Max(24, number);
+                ApplySimpleInspectorDouble(target, propertyName, number);
                 VM.ClampControlToSurface(target);
                 break;
             default:
@@ -8360,10 +8476,31 @@ public partial class MainWindow : Window
         {
             nameof(DesignControlModel.Name) => target.Name,
             nameof(DesignControlModel.Text) => target.Text,
+            nameof(DesignControlModel.X) => target.X.ToString(CultureInfo.InvariantCulture),
+            nameof(DesignControlModel.Y) => target.Y.ToString(CultureInfo.InvariantCulture),
             nameof(DesignControlModel.Width) => target.Width.ToString(CultureInfo.InvariantCulture),
             nameof(DesignControlModel.Height) => target.Height.ToString(CultureInfo.InvariantCulture),
+            nameof(DesignControlModel.Background) => target.Background,
+            nameof(DesignControlModel.Foreground) => target.Foreground,
+            nameof(DesignControlModel.BorderBrush) => target.BorderBrush,
+            nameof(DesignControlModel.BorderThickness) => target.BorderThickness.ToString(CultureInfo.InvariantCulture),
+            nameof(DesignControlModel.CornerRadius) => target.CornerRadius.ToString(CultureInfo.InvariantCulture),
+            nameof(DesignControlModel.Opacity) => target.Opacity.ToString(CultureInfo.InvariantCulture),
+            nameof(DesignControlModel.FontSize) => target.FontSize.ToString(CultureInfo.InvariantCulture),
+            nameof(DesignControlModel.FontWeight) => target.FontWeight,
+            nameof(DesignControlModel.HorizontalAlignment) => target.HorizontalAlignment,
+            nameof(DesignControlModel.VerticalAlignment) => target.VerticalAlignment,
+            nameof(DesignControlModel.Margin) => target.Margin,
+            nameof(DesignControlModel.Padding) => target.Padding.ToString(CultureInfo.InvariantCulture),
             _ => textBox.Text
         };
+    }
+
+    private static string DescribeBrush(IBrush brush)
+    {
+        return brush is ISolidColorBrush solid
+            ? solid.Color.ToString()
+            : brush.ToString() ?? brush.GetType().Name;
     }
 
     private static string GetSimpleInspectorTargetValue(DesignControlModel target, string propertyName)
@@ -8372,10 +8509,58 @@ public partial class MainWindow : Window
         {
             nameof(DesignControlModel.Name) => target.Name,
             nameof(DesignControlModel.Text) => target.Text,
+            nameof(DesignControlModel.X) => target.X.ToString(CultureInfo.InvariantCulture),
+            nameof(DesignControlModel.Y) => target.Y.ToString(CultureInfo.InvariantCulture),
             nameof(DesignControlModel.Width) => target.Width.ToString(CultureInfo.InvariantCulture),
             nameof(DesignControlModel.Height) => target.Height.ToString(CultureInfo.InvariantCulture),
+            nameof(DesignControlModel.Background) => target.Background,
+            nameof(DesignControlModel.Foreground) => target.Foreground,
+            nameof(DesignControlModel.BorderBrush) => target.BorderBrush,
+            nameof(DesignControlModel.BorderThickness) => target.BorderThickness.ToString(CultureInfo.InvariantCulture),
+            nameof(DesignControlModel.CornerRadius) => target.CornerRadius.ToString(CultureInfo.InvariantCulture),
+            nameof(DesignControlModel.Opacity) => target.Opacity.ToString(CultureInfo.InvariantCulture),
+            nameof(DesignControlModel.FontSize) => target.FontSize.ToString(CultureInfo.InvariantCulture),
+            nameof(DesignControlModel.FontWeight) => target.FontWeight,
+            nameof(DesignControlModel.HorizontalAlignment) => target.HorizontalAlignment,
+            nameof(DesignControlModel.VerticalAlignment) => target.VerticalAlignment,
+            nameof(DesignControlModel.Margin) => target.Margin,
+            nameof(DesignControlModel.Padding) => target.Padding.ToString(CultureInfo.InvariantCulture),
             _ => ""
         };
+    }
+
+    private static void ApplySimpleInspectorDouble(DesignControlModel target, string propertyName, double number)
+    {
+        switch (propertyName)
+        {
+            case nameof(DesignControlModel.X):
+                target.X = Math.Max(0, number);
+                break;
+            case nameof(DesignControlModel.Y):
+                target.Y = Math.Max(0, number);
+                break;
+            case nameof(DesignControlModel.Width):
+                target.Width = Math.Max(40, number);
+                break;
+            case nameof(DesignControlModel.Height):
+                target.Height = Math.Max(24, number);
+                break;
+            case nameof(DesignControlModel.Opacity):
+                target.Opacity = Math.Clamp(number, 0, 1);
+                break;
+            case nameof(DesignControlModel.BorderThickness):
+                target.BorderThickness = Math.Max(0, number);
+                break;
+            case nameof(DesignControlModel.CornerRadius):
+                target.CornerRadius = Math.Max(0, number);
+                break;
+            case nameof(DesignControlModel.FontSize):
+                target.FontSize = Math.Max(8, number);
+                break;
+            case nameof(DesignControlModel.Padding):
+                target.Padding = Math.Max(0, number);
+                break;
+        }
     }
 
     private void SimpleInspectorCheckBox_Click(object? sender, RoutedEventArgs e)
@@ -8410,25 +8595,54 @@ public partial class MainWindow : Window
             return;
         }
 
+        var target = VM.SelectedControl;
         var initialValue = GetCurrentColorValue(propertyName) ?? GetColorFallback(propertyName);
         VM.TraceDocumentDebug(
             "SIMPLE_INSPECTOR_COLOR_ATTEMPT",
-            $"property={propertyName}; active={VM.ActiveDocumentId}; selected={VM.SelectedControl.Name}:{VM.SelectedControl.Id}",
+            $"property={propertyName}; active={VM.ActiveDocumentId}; selected={target.Name}:{target.Id}",
             toOutput: false);
-        var selectedColor = await ShowColorPickerDialogAsync(button, propertyName, initialValue);
-        if (string.IsNullOrWhiteSpace(selectedColor))
-        {
-            VM.AddInteractionTrace("COLOR_DIALOG_REJECTED", $"property={propertyName}; source=SimpleInspector", GetFocusedElementDebugName(), CaptureViewInteractionState());
-            return;
-        }
+        VM.BeginInspectorInteraction(
+            $"SimpleInspectorColor:{VM.ActiveDocumentId}/{target.Id}/{propertyName}",
+            logToOutput: false,
+            dumpState: false);
 
-        ApplyColorValue(propertyName, selectedColor);
-        RefreshFromPropertyPanel();
-        VM.AddInteractionTrace("COLOR_DIALOG_APPLIED", $"property={propertyName}; value={selectedColor}; source=SimpleInspector", GetFocusedElementDebugName(), CaptureViewInteractionState());
-        VM.TraceDocumentDebug(
-            "SIMPLE_INSPECTOR_COLOR_ACCEPTED",
-            $"property={propertyName}; value={selectedColor}; active={VM.ActiveDocumentId}; selected={VM.SelectedControl.Name}:{VM.SelectedControl.Id}",
-            toOutput: false);
+        try
+        {
+            var selectedColor = await ShowColorPickerFlyoutAsync(button, propertyName, initialValue);
+            if (string.IsNullOrWhiteSpace(selectedColor))
+            {
+                VM.AddInteractionTrace("COLOR_DIALOG_REJECTED", $"property={propertyName}; source=SimpleInspector", GetFocusedElementDebugName(), CaptureViewInteractionState());
+                return;
+            }
+
+            var oldValue = GetColorValue(target, propertyName) ?? initialValue;
+            VM.AddInteractionTrace(
+                "COLOR_DIALOG_APPLY_ATTEMPT",
+                $"property={propertyName}; old={oldValue}; new={selectedColor}; selected={VM.SelectedControl?.Name ?? "-"}:{VM.SelectedControl?.Id ?? "-"}; activeDocument={VM.ActiveDocumentId}",
+                GetFocusedElementDebugName(),
+                CaptureViewInteractionState());
+            var applied = ApplyColorValue(propertyName, selectedColor);
+            RefreshFromPropertyPanel();
+            RefreshSimpleInspectorFields(force: false);
+            VM.AddInteractionTrace(
+                applied ? "COLOR_PROPERTY_APPLIED" : "COLOR_PROPERTY_APPLY_SKIPPED",
+                applied
+                    ? $"property={propertyName}; value={selectedColor}; modelUpdated={string.Equals(GetColorValue(target, propertyName), selectedColor, StringComparison.OrdinalIgnoreCase)}; previewInvalidated=true"
+                    : $"property={propertyName}; value={selectedColor}; reason=apply-returned-false",
+                GetFocusedElementDebugName(),
+                CaptureViewInteractionState());
+            VM.TraceDocumentDebug(
+                "SIMPLE_INSPECTOR_COLOR_ACCEPTED",
+                $"property={propertyName}; value={selectedColor}; active={VM.ActiveDocumentId}; selected={VM.SelectedControl?.Name ?? "-"}:{VM.SelectedControl?.Id ?? "-"}",
+                toOutput: false);
+        }
+        finally
+        {
+            VM.EndInspectorInteraction(
+                $"SimpleInspectorColor:{VM.ActiveDocumentId}/{target.Id}/{propertyName}",
+                logToOutput: false,
+                dumpState: false);
+        }
     }
 
     private string? GetCurrentColorValue(string propertyName)
@@ -8488,12 +8702,34 @@ public partial class MainWindow : Window
         };
     }
 
-    private void ApplyColorValue(string propertyName, string value)
+    private string? GetColorValue(DesignControlModel control, string propertyName)
+    {
+        return propertyName switch
+        {
+            nameof(DesignControlModel.Background) => control.Background,
+            nameof(DesignControlModel.Foreground) => control.Foreground,
+            nameof(DesignControlModel.BorderBrush) => control.BorderBrush,
+            nameof(DesignControlModel.DataGridGlowColor) => control.DataGridGlowColor,
+            nameof(DesignControlModel.DataGridHeaderBackground) => control.DataGridHeaderBackground,
+            nameof(DesignControlModel.DataGridHeaderForeground) => control.DataGridHeaderForeground,
+            nameof(DesignControlModel.DataGridRowBackground) => control.DataGridRowBackground,
+            nameof(DesignControlModel.DataGridAlternateRowBackground) => control.DataGridAlternateRowBackground,
+            nameof(DesignControlModel.DataGridRowForeground) => control.DataGridRowForeground,
+            nameof(DesignControlModel.DataGridHoverRowBackground) => control.DataGridHoverRowBackground,
+            nameof(DesignControlModel.DataGridSelectedRowBackground) => control.DataGridSelectedRowBackground,
+            nameof(DesignControlModel.DataGridSelectedRowForeground) => control.DataGridSelectedRowForeground,
+            nameof(DesignControlModel.DataGridGridLineBrush) => control.DataGridGridLineBrush,
+            nameof(DesignControlModel.DataGridOuterBorderBrush) => control.DataGridOuterBorderBrush,
+            _ => null
+        };
+    }
+
+    private bool ApplyColorValue(string propertyName, string value)
     {
         if (propertyName == nameof(MainWindowViewModel.SurfaceBackground))
         {
             VM.SurfaceBackground = value;
-            return;
+            return true;
         }
 
         if (VM.IsSelectedCustomDescriptorProperty(propertyName))
@@ -8504,12 +8740,32 @@ public partial class MainWindow : Window
                     && string.IsNullOrWhiteSpace(property.BuiltInPropertyName));
 
             if (descriptor is not null)
+            {
                 VM.SetDescriptorCustomPropertyFromString(descriptor, value);
+                return true;
+            }
 
-            return;
+            VM.AddInteractionTrace(
+                "COLOR_PROPERTY_APPLY_SKIPPED",
+                $"property={propertyName}; reason=missing-custom-descriptor; selected={VM.SelectedControl?.Name ?? "-"}:{VM.SelectedControl?.Id ?? "-"}",
+                GetFocusedElementDebugName(),
+                CaptureViewInteractionState());
+            return false;
+        }
+
+        var targets = GetSelectionTargets(propertyName).ToList();
+        if (targets.Count == 0)
+        {
+            VM.AddInteractionTrace(
+                "COLOR_PROPERTY_APPLY_SKIPPED",
+                $"property={propertyName}; reason=unsupported-or-no-selection; selected={VM.SelectedControl?.Name ?? "-"}:{VM.SelectedControl?.Id ?? "-"}; type={VM.SelectedControl?.Type ?? "-"}",
+                GetFocusedElementDebugName(),
+                CaptureViewInteractionState());
+            return false;
         }
 
         ApplyStringPropertyToSelection(propertyName, value);
+        return targets.Any(target => string.Equals(GetColorValue(target, propertyName), value, StringComparison.OrdinalIgnoreCase));
     }
 
     private static string FormatSolidColor(Color color)
@@ -8517,8 +8773,9 @@ public partial class MainWindow : Window
         return $"#{color.R:X2}{color.G:X2}{color.B:X2}";
     }
 
-    private async Task<string?> ShowColorPickerDialogAsync(Control target, string propertyName, string initialValue)
+    private Task<string?> ShowColorPickerFlyoutAsync(Control target, string propertyName, string initialValue)
     {
+        var completion = new TaskCompletionSource<string?>();
         var colorView = new ColorView
         {
             Color = ParseColor(initialValue, GetColorFallback(propertyName)),
@@ -8543,22 +8800,35 @@ public partial class MainWindow : Window
             IsCancel = true
         };
 
-        var dialog = new Window
+        var flyout = new Flyout
         {
-            Title = $"Choose color: {propertyName}",
-            Width = 430,
-            Height = 520,
-            CanResize = false,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner
+            Placement = PlacementMode.BottomEdgeAlignedLeft,
+            ShowMode = FlyoutShowMode.Standard
         };
 
-        applyButton.Click += (_, _) => dialog.Close(FormatSolidColor(colorView.Color));
-        cancelButton.Click += (_, _) => dialog.Close(null);
+        var isCompleted = false;
 
-        dialog.Content = new Border
+        void Complete(string? value)
+        {
+            if (isCompleted)
+                return;
+
+            isCompleted = true;
+            completion.TrySetResult(value);
+            flyout.Hide();
+        }
+
+        applyButton.Click += (_, _) => Complete(FormatSolidColor(colorView.Color));
+        cancelButton.Click += (_, _) => Complete(null);
+        flyout.Closed += (_, _) => Complete(null);
+
+        flyout.Content = new Border
         {
             Padding = new Thickness(16),
             Background = Brushes.White,
+            BorderBrush = new SolidColorBrush(Color.Parse("#CBD5E1")),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8),
             Child = new Grid
             {
                 RowDefinitions = new RowDefinitions("Auto,*,Auto"),
@@ -8601,16 +8871,24 @@ public partial class MainWindow : Window
             }
         };
 
-        var openDetails = $"target={DescribeInputElement(target)}; property={propertyName}; initial={initialValue}";
+        var selected = VM.SelectedControl;
+        var openDetails = $"property={propertyName}; target={selected?.Name ?? "-"}:{selected?.Id ?? "-"}; type={selected?.Type ?? "-"}; old={initialValue}; source={DescribeInputElement(target)}";
         Debug.WriteLine($"[InspectorInput] COLOR_PICKER_OPENED; {openDetails}; focused={GetFocusedElementDebugName()}");
         VM.AddInteractionTrace("COLOR_DIALOG_OPENED", openDetails, GetFocusedElementDebugName(), CaptureViewInteractionState());
 
-        var result = await dialog.ShowDialog<string?>(this);
-        var closeEvent = string.IsNullOrWhiteSpace(result)
-            ? "COLOR_DIALOG_REJECTED"
-            : "COLOR_DIALOG_CLOSED";
-        VM.AddInteractionTrace(closeEvent, $"property={propertyName}; result={result ?? "-"}", GetFocusedElementDebugName(), CaptureViewInteractionState());
-        return result;
+        flyout.ShowAt(target);
+        return completion.Task.ContinueWith(task =>
+        {
+            var result = task.Result;
+            var closeEvent = string.IsNullOrWhiteSpace(result)
+                ? "COLOR_DIALOG_REJECTED"
+                : "COLOR_DIALOG_CLOSED";
+            Dispatcher.UIThread.Post(() =>
+            {
+                VM.AddInteractionTrace(closeEvent, $"property={propertyName}; result={result ?? "-"}; host=Flyout", GetFocusedElementDebugName(), CaptureViewInteractionState());
+            });
+            return result;
+        });
     }
 
     private async Task<PropertyGridOptionViewModel?> ShowPropertyGridOptionDialogAsync(PropertyGridRowViewModel row)
@@ -8888,7 +9166,7 @@ public partial class MainWindow : Window
         try
         {
             TraceInspectorInput("COLOR_PICKER_OPEN_REQUEST", sender, e);
-            var selectedColor = await ShowColorPickerDialogAsync(button, row.Key, row.Value);
+            var selectedColor = await ShowColorPickerFlyoutAsync(button, row.Key, row.Value);
             if (string.IsNullOrWhiteSpace(selectedColor))
             {
                 TraceInspectorInput("COLOR_PICKER_CANCELLED", sender, e);
@@ -9649,7 +9927,7 @@ public partial class MainWindow : Window
         if (string.IsNullOrWhiteSpace(initialValue))
             return;
 
-        var selectedColor = await ShowColorPickerDialogAsync(button, propertyName, initialValue);
+        var selectedColor = await ShowColorPickerFlyoutAsync(button, propertyName, initialValue);
         if (string.IsNullOrWhiteSpace(selectedColor))
             return;
 
