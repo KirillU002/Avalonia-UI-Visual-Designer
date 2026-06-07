@@ -111,7 +111,7 @@ public partial class MainWindow : Window
     private const double MarqueeActivationThreshold = 4;
     private const double SmartMeasurementMaxDistance = 240;
     private const double SmartMeasurementTickSize = 6;
-    private const int MaxPreviewDataGridRows = 120;
+    private const int MaxPreviewDataGridRows = 50;
 
     private sealed record CanvasSnapCandidate(string Id, string ParentId, Rect Bounds);
 
@@ -979,6 +979,9 @@ public partial class MainWindow : Window
         DesignerCanvas.Children.Clear();
         MiniMapCanvas.Children.Clear();
         ResetInteractiveRuntimePreviewState();
+
+        if (DataContext is MainWindowViewModel viewModel)
+            viewModel.RecordCanvasRenderStats(0, 0, $"ResetDocumentVisualState:{sessionId}");
     }
 
     private string CaptureViewInteractionState()
@@ -2543,7 +2546,6 @@ public partial class MainWindow : Window
         if (_attachedViewModel is null)
             return;
 
-        VM.MarkCanvasRenderedDocument("RenderDesigner");
         RefreshPreviewMetrics();
         _isApplyingTextChanges = true;
 
@@ -2600,6 +2602,10 @@ public partial class MainWindow : Window
 
             RenderIdleSelectionOverlay();
             RenderMiniMap();
+            VM.MarkCanvasRenderedDocument(
+                "RenderDesigner",
+                _wrapperByControlId.Count,
+                _sqlPreviewRowsBySourceId.Values.Sum(item => item.Rows.Count));
         }
         finally
         {
@@ -4301,7 +4307,7 @@ public partial class MainWindow : Window
 
     private Control CreateButtonPreview(DesignControlModel model)
     {
-        var text = ResolvePreviewTextValue(model, string.IsNullOrWhiteSpace(model.Text) ? "Кнопка" : model.Text);
+        var text = ResolvePreviewTextValue(model, model.Text ?? string.Empty);
         return new Border
         {
             Width = model.Width,

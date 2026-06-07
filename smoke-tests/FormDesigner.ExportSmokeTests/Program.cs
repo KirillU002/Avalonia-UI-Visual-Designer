@@ -48,9 +48,19 @@ internal static class Program
             new("ForegroundAppearsInExportedXaml", ConfigureForegroundAppearsInExportedXaml, AssertForegroundAppearsInExportedXaml),
             new("SameSelectionDoesNotRebuildPropertyGrid", ConfigureSameSelectionDoesNotRebuildPropertyGrid, AssertSameSelectionDoesNotRebuildPropertyGrid),
             new("PropertiesPanelVisibleAfterAddFormAndSelectControl", ConfigurePropertiesPanelVisibleAfterAddFormAndSelectControl, AssertPropertiesPanelVisibleAfterAddFormAndSelectControl),
+            new("InspectorShowsActiveFormPropertiesAfterSwitch", ConfigureInspectorShowsActiveFormPropertiesAfterSwitch, AssertInspectorShowsActiveFormPropertiesAfterSwitch),
+            new("RenameFormDoesNotDuplicatePropertyRows", ConfigureRenameFormDoesNotDuplicatePropertyRows, AssertRenameFormDoesNotDuplicatePropertyRows),
+            new("WidthHeightEditDoesNotLockInspector", ConfigureWidthHeightEditDoesNotLockInspector, AssertWidthHeightEditDoesNotLockInspector),
+            new("EmptyButtonTextIsPreserved", ConfigureEmptyButtonTextIsPreserved, AssertEmptyButtonTextIsPreserved),
+            new("PropertyEditBlockedForStaleInspectorTarget", ConfigurePropertyEditBlockedForStaleInspectorTarget, AssertPropertyEditBlockedForStaleInspectorTarget),
+            new("AddFormRegressionStillWorks", ConfigureAddFormRegressionStillWorks, AssertAddFormRegressionStillWorks),
             new("NewProjectClearsPreviousFormsAndState", ConfigureNewProjectClearsPreviousFormsAndState, AssertNewProjectClearsPreviousFormsAndState),
             new("NewProjectAfterSavedMultiFormProjectClearsAllOldForms", ConfigureNewProjectAfterSavedMultiFormProjectClearsAllOldForms, AssertNewProjectAfterSavedMultiFormProjectClearsAllOldForms),
             new("NewProjectDoesNotReuseOldFormNamesOrIds", ConfigureNewProjectDoesNotReuseOldFormNamesOrIds, AssertNewProjectDoesNotReuseOldFormNamesOrIds),
+            new("NewProjectReleasesOldFormsAndControls", ConfigureNewProjectReleasesOldFormsAndControls, AssertNewProjectReleasesOldFormsAndControls),
+            new("NewProjectClearsDataDllExportCaches", ConfigureNewProjectClearsDataDllExportCaches, AssertNewProjectClearsDataDllExportCaches),
+            new("PropertyEditDoesNotTriggerExportPipeline", ConfigurePropertyEditDoesNotTriggerExportPipeline, AssertPropertyEditDoesNotTriggerExportPipeline),
+            new("ResizeDoesNotRebuildPropertyGridOnEveryMove", ConfigureResizeDoesNotRebuildPropertyGridOnEveryMove, AssertResizeDoesNotRebuildPropertyGridOnEveryMove),
             new("DragAfterAddFormWorks", ConfigureDragAfterAddFormWorks, AssertDragAfterAddFormWorks),
             new("AddEmptySecondFormDoesNotBreakFirstFormPropertyGrid", ConfigureAddEmptySecondFormDoesNotBreakFirstFormPropertyGrid, AssertAddEmptySecondFormDoesNotBreakFirstFormPropertyGrid, RequiresRealDataGrid: true),
             new("AddEmptySecondFormDoesNotBreakFirstFormInspectorAndLogic", ConfigureAddEmptySecondFormDoesNotBreakFirstFormInspectorAndLogic, AssertAddEmptySecondFormDoesNotBreakFirstFormInspectorAndLogic, RequiresRealDataGrid: true),
@@ -910,6 +920,168 @@ internal static class Program
         RequireContains(context.Xaml, "Button1", "Properties visibility scenario should keep Button exportable.");
     }
 
+    private static void ConfigureInspectorShowsActiveFormPropertiesAfterSwitch(MainWindowViewModel vm)
+    {
+        var form1 = vm.ActiveFormDocument ?? throw new InvalidOperationException("Form1 missing.");
+        EditPropertyGridTextLikeUi(vm, "FormTitle", "Form_A");
+        RequirePropertyGridContext(vm, form1.Id, "");
+        RequireNoDuplicatePropertyRows(vm);
+
+        var form2 = vm.CreateNewForm();
+        EditPropertyGridTextLikeUi(vm, "FormTitle", "Form_B");
+        RequirePropertyGridContext(vm, form2.Id, "");
+        RequireNoDuplicatePropertyRows(vm);
+
+        SwitchToForm(vm, form1.Id);
+        RequirePropertyGridContext(vm, form1.Id, "");
+        var form1TitleRow = GetPropertyGridRow(vm, "FormTitle");
+        if (!string.Equals(form1TitleRow.Value, "Form_A", StringComparison.Ordinal))
+            throw new InvalidOperationException($"Inspector showed stale form title for Form1. Got {form1TitleRow.Value}.");
+
+        SwitchToForm(vm, form2.Id);
+        RequirePropertyGridContext(vm, form2.Id, "");
+        var form2TitleRow = GetPropertyGridRow(vm, "FormTitle");
+        if (!string.Equals(form2TitleRow.Value, "Form_B", StringComparison.Ordinal))
+            throw new InvalidOperationException($"Inspector showed stale form title for Form2. Got {form2TitleRow.Value}.");
+    }
+
+    private static void AssertInspectorShowsActiveFormPropertiesAfterSwitch(SmokeContext context)
+    {
+        RequireContains(context.Xaml, "x:Class", "Inspector active-form scenario should still export.");
+    }
+
+    private static void ConfigureRenameFormDoesNotDuplicatePropertyRows(MainWindowViewModel vm)
+    {
+        EditPropertyGridTextLikeUi(vm, "FormTitle", "RenamedForm");
+        RequireNoDuplicatePropertyRows(vm);
+
+        EditPropertyGridTextLikeUi(vm, "FormTitle", "RenamedFormAgain");
+        RequireNoDuplicatePropertyRows(vm);
+
+        if (vm.InteractionTraceEntries.Any(entry => entry.EventName == "PROPERTY_GRID_DUPLICATE_ROW_DETECTED"))
+        {
+            var trace = string.Join(" | ", vm.InteractionTraceEntries
+                .Where(entry => entry.EventName == "PROPERTY_GRID_DUPLICATE_ROW_DETECTED")
+                .Select(entry => entry.Details));
+            throw new InvalidOperationException($"Duplicate PropertyGrid rows were detected after form rename: {trace}");
+        }
+    }
+
+    private static void AssertRenameFormDoesNotDuplicatePropertyRows(SmokeContext context)
+    {
+        RequireContains(context.Xaml, "RenamedFormAgain", "Renamed form title should be exported.");
+    }
+
+    private static void ConfigureWidthHeightEditDoesNotLockInspector(MainWindowViewModel vm)
+    {
+        var form1 = vm.ActiveFormDocument ?? throw new InvalidOperationException("Form1 missing.");
+        var button = vm.TryCreateControlFromToolboxDrop(DesignerControlTypes.Button, 40, 40, null, false, form1.Id)
+            ?? throw new InvalidOperationException("Button was not created.");
+        vm.SelectSingleControl(button);
+
+        EditPropertyGridTextLikeUi(vm, nameof(DesignControlModel.Width), "222");
+        EditPropertyGridTextLikeUi(vm, nameof(DesignControlModel.Height), "64");
+        EditPropertyGridTextLikeUi(vm, nameof(DesignControlModel.Text), "After size edit");
+        SetPropertyGridValue(vm, nameof(DesignControlModel.Background), "#334455");
+        EditPropertyGridTextLikeUi(vm, nameof(DesignControlModel.Name), "ButtonAfterSize");
+
+        if (!string.Equals(button.Name, "ButtonAfterSize", StringComparison.Ordinal)
+            || !string.Equals(button.Text, "After size edit", StringComparison.Ordinal)
+            || Math.Abs(button.Width - 222) > 0.001
+            || Math.Abs(button.Height - 64) > 0.001
+            || !string.Equals(button.Background, "#334455", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Width/Height edit left the inspector unable to edit later properties.");
+        }
+
+        if (vm.InteractionTraceEntries.Any(entry => entry.EventName == "PROPERTY_EDIT_STATE_STUCK"))
+            throw new InvalidOperationException("Width/Height edit left a stuck property edit state.");
+    }
+
+    private static void AssertWidthHeightEditDoesNotLockInspector(SmokeContext context)
+    {
+        RequireContains(context.Xaml, "ButtonAfterSize", "Width/Height lock scenario should export renamed Button.");
+        RequireContains(context.Xaml, "Content=\"After size edit\"", "Width/Height lock scenario should export later text edit.");
+    }
+
+    private static void ConfigureEmptyButtonTextIsPreserved(MainWindowViewModel vm)
+    {
+        var form1 = vm.ActiveFormDocument ?? throw new InvalidOperationException("Form1 missing.");
+        var button = vm.TryCreateControlFromToolboxDrop(DesignerControlTypes.Button, 40, 40, null, false, form1.Id)
+            ?? throw new InvalidOperationException("Button was not created.");
+        vm.SelectSingleControl(button);
+        EditPropertyGridTextLikeUi(vm, nameof(DesignControlModel.Text), "");
+
+        if (!string.Equals(button.Text, "", StringComparison.Ordinal))
+            throw new InvalidOperationException($"Empty Button text was not preserved in model. Got '{button.Text}'.");
+    }
+
+    private static void AssertEmptyButtonTextIsPreserved(SmokeContext context)
+    {
+        RequireContains(context.Xaml, "Content=\"\"", "Empty Button text should be exported as an explicit empty Content.");
+        RequireNotContains(context.Xaml, "Content=\"Кнопка\"", "Empty Button text should not fall back to the default Russian caption.");
+    }
+
+    private static void ConfigurePropertyEditBlockedForStaleInspectorTarget(MainWindowViewModel vm)
+    {
+        var form1 = vm.ActiveFormDocument ?? throw new InvalidOperationException("Form1 missing.");
+        var form2 = vm.CreateNewForm();
+        SwitchToForm(vm, form1.Id);
+
+        var staleRow = new PropertyGridRowViewModel(
+            "FormTitle",
+            "Title",
+            "Common",
+            PropertyGridEditorKind.Text,
+            "Form_B",
+            "Stale form row.",
+            (_, value) => vm.FormTitle = value,
+            contextDocumentId: form2.Id,
+            contextControlType: "Form");
+
+        vm.CommitPropertyGridEdit(staleRow, "ShouldNotApply");
+
+        if (string.Equals(vm.FormTitle, "ShouldNotApply", StringComparison.Ordinal))
+            throw new InvalidOperationException("Stale inspector form edit was applied to the active form.");
+
+        if (!vm.InteractionTraceEntries.Any(entry => entry.EventName == "PROPERTY_EDIT_BLOCKED_STALE_INSPECTOR_TARGET"))
+            throw new InvalidOperationException("Stale inspector edit was not logged as blocked.");
+    }
+
+    private static void AssertPropertyEditBlockedForStaleInspectorTarget(SmokeContext context)
+    {
+        RequireNotContains(context.Xaml, "ShouldNotApply", "Stale inspector edit should not appear in exported XAML.");
+    }
+
+    private static void ConfigureAddFormRegressionStillWorks(MainWindowViewModel vm)
+    {
+        var form1 = vm.ActiveFormDocument ?? throw new InvalidOperationException("Form1 missing.");
+        var button = vm.TryCreateControlFromToolboxDrop(DesignerControlTypes.Button, 40, 40, null, false, form1.Id)
+            ?? throw new InvalidOperationException("Button was not created.");
+
+        vm.CreateNewForm();
+        SwitchToForm(vm, form1.Id);
+        var restored = vm.Controls.Single(control => control.Id == button.Id);
+        vm.SelectSingleControl(restored);
+        RequirePropertyGridRowsContext(vm, form1.Id, restored.Id);
+        EditPropertyGridTextLikeUi(vm, nameof(DesignControlModel.Text), "Regression still works");
+
+        if (!string.Equals(restored.Text, "Regression still works", StringComparison.Ordinal))
+            throw new InvalidOperationException("AddForm regression text edit failed.");
+
+        if (vm.InteractionTraceEntries.Any(entry =>
+            entry.EventName == "APPLY_DOCUMENT_START"
+            && entry.Details.Contains("Property", StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new InvalidOperationException("Property edit after AddForm triggered ApplyDocument.");
+        }
+    }
+
+    private static void AssertAddFormRegressionStillWorks(SmokeContext context)
+    {
+        RequireContains(context.Xaml, "Content=\"Regression still works\"", "AddForm regression should export edited Button text.");
+    }
+
     private static void ConfigureNewProjectClearsPreviousFormsAndState(MainWindowViewModel vm)
     {
         var form1 = vm.ActiveFormDocument ?? throw new InvalidOperationException("Form1 missing.");
@@ -1088,6 +1260,151 @@ internal static class Program
             throw new InvalidOperationException("NewProjectDoesNotReuseOldFormNamesOrIds should finish with one form.");
         RequireNotContains(context.Xaml, "OldForm1Button", "Old Form1 Button should not remain after New.");
         RequireNotContains(context.Xaml, "OldForm2Button", "Old Form2 Button should not remain after New.");
+    }
+
+    private static void ConfigureNewProjectReleasesOldFormsAndControls(MainWindowViewModel vm)
+    {
+        var state = PrepareWeakReferenceProjectAndRunNew(vm);
+        ForceFullGc();
+
+        var alive = state.WeakReferences
+            .Where(item => item.Reference.IsAlive)
+            .Select(item => $"{item.Kind}:{item.Id}")
+            .ToList();
+        if (alive.Count > 0)
+            throw new InvalidOperationException($"Old project objects are still alive after New Project: {string.Join(", ", alive.Take(12))}");
+
+        AssertCleanNewProjectViewModelState(vm, state.OldFormIds, state.OldControlIds);
+    }
+
+    private static void AssertNewProjectReleasesOldFormsAndControls(SmokeContext context)
+    {
+        RequireContains(context.Xaml, "<Canvas", "NewProjectReleasesOldFormsAndControls should export clean Form1.");
+        RequireNotContains(context.Xaml, "WeakOldForm", "Old weak-reference controls must not be exported after New.");
+    }
+
+    private static NewProjectWeakState PrepareWeakReferenceProjectAndRunNew(MainWindowViewModel vm)
+    {
+        var form1 = vm.ActiveFormDocument ?? throw new InvalidOperationException("Form1 missing.");
+        var form1Button = vm.TryCreateControlFromToolboxDrop(DesignerControlTypes.Button, 44, 44, null, false, form1.Id)
+            ?? throw new InvalidOperationException("Old Form1 Button was not created.");
+        form1Button.Name = "WeakOldForm1Button";
+        vm.SelectSingleControl(form1Button);
+
+        var form2 = vm.CreateNewForm();
+        var form2Button = vm.TryCreateControlFromToolboxDrop(DesignerControlTypes.Button, 84, 84, null, false, form2.Id)
+            ?? throw new InvalidOperationException("Old Form2 Button was not created.");
+        form2Button.Name = "WeakOldForm2Button";
+
+        var oldFormIds = vm.CurrentProject.Forms.Select(form => form.Id).Where(id => !string.IsNullOrWhiteSpace(id)).ToList();
+        var oldControlIds = vm.CurrentProject.Forms
+            .SelectMany(form => form.Document.Controls)
+            .Select(control => control.Id)
+            .Concat(vm.Controls.Select(control => control.Id))
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var weakReferences = new List<NamedWeakReference>
+        {
+            new("Form", form1.Id, new WeakReference(form1)),
+            new("Form", form2.Id, new WeakReference(form2)),
+            new("RuntimeControl", form1Button.Id, new WeakReference(form1Button)),
+            new("RuntimeControl", form2Button.Id, new WeakReference(form2Button))
+        };
+        weakReferences.AddRange(vm.PropertyGridCategories
+            .SelectMany(category => category.Rows)
+            .Take(8)
+            .Select(row => new NamedWeakReference("PropertyRow", $"{row.ContextDocumentId}/{row.ContextControlId}/{row.Key}", new WeakReference(row))));
+
+        vm.NewDocumentCommand.Execute(null);
+        return new NewProjectWeakState(oldFormIds, oldControlIds, weakReferences);
+    }
+
+    private static void ConfigureNewProjectClearsDataDllExportCaches(MainWindowViewModel vm)
+    {
+        var source = CustomersSource();
+        vm.BindingSources.Add(source);
+        vm.SelectedBindingSource = source;
+        vm.ImportedDllCatalog.Add(new ImportedDllInfoModel
+        {
+            FileName = "HeavyMetadata.dll",
+            AssemblyPath = @"C:\Temp\HeavyMetadata.dll",
+            SourceCount = 1,
+            SourceNames = source.Name,
+            TypeNames = source.ItemTypeName,
+            Summary = "Fake heavy metadata"
+        });
+        vm.FilteredImportedDllCatalog.Add(vm.ImportedDllCatalog[0]);
+        vm.Controls.Add(DataGrid("OldDataGrid", source.Id, 40, 40, 520, 260));
+        vm.DataGridExportMode = MainWindowViewModel.DataGridExportModeReal;
+        vm.GenerateXaml();
+
+        if (vm.BindingSources.Count == 0 || vm.ImportedDllCatalog.Count == 0 || vm.GeneratedFiles.Count == 0)
+            throw new InvalidOperationException("Data/DLL/export cache smoke setup did not create cache state.");
+
+        var oldFormIds = vm.CurrentProject.Forms.Select(form => form.Id).ToList();
+        var oldControlIds = vm.Controls.Select(control => control.Id).ToList();
+        vm.NewDocumentCommand.Execute(null);
+        AssertCleanNewProjectViewModelState(vm, oldFormIds, oldControlIds);
+    }
+
+    private static void AssertNewProjectClearsDataDllExportCaches(SmokeContext context)
+    {
+        if (context.ViewModel.BindingSources.Count != 0
+            || context.ViewModel.ImportedDllCatalog.Count != 0
+            || context.ViewModel.FilteredImportedDllCatalog.Count != 0)
+        {
+            throw new InvalidOperationException("New Project should clear Data/DLL caches.");
+        }
+
+        RequireNotContains(context.Xaml, "OldDataGrid", "Old DataGrid should not remain after New Project.");
+    }
+
+    private static void ConfigurePropertyEditDoesNotTriggerExportPipeline(MainWindowViewModel vm)
+    {
+        var form1 = vm.ActiveFormDocument ?? throw new InvalidOperationException("Form1 missing.");
+        var button = vm.TryCreateControlFromToolboxDrop(DesignerControlTypes.Button, 60, 60, null, false, form1.Id)
+            ?? throw new InvalidOperationException("Button was not created.");
+        vm.SelectSingleControl(button);
+        vm.InteractionTraceEntries.Clear();
+
+        SetPropertyGridValue(vm, nameof(DesignControlModel.Text), "No export storm");
+
+        var forbidden = vm.InteractionTraceEntries
+            .Where(entry => entry.EventName is "RefreshExportPipelineResult" or "APPLY_DOCUMENT_START" or "APPLY_DOCUMENT_END"
+                || entry.EventName.Contains("BuildSecondaryFormGeneratedFiles", StringComparison.OrdinalIgnoreCase)
+                || entry.Details.Contains("BuildSecondaryFormGeneratedFiles", StringComparison.OrdinalIgnoreCase)
+                || entry.Details.Contains("RefreshExportPipelineResult", StringComparison.OrdinalIgnoreCase))
+            .Select(entry => $"{entry.EventName}:{entry.Details}")
+            .ToList();
+        if (forbidden.Count > 0)
+            throw new InvalidOperationException($"Property edit triggered heavy export/apply pipeline: {string.Join(" | ", forbidden)}");
+    }
+
+    private static void AssertPropertyEditDoesNotTriggerExportPipeline(SmokeContext context)
+    {
+        RequireContains(context.Xaml, "No export storm", "Property edit should still persist before final explicit export.");
+    }
+
+    private static void ConfigureResizeDoesNotRebuildPropertyGridOnEveryMove(MainWindowViewModel vm)
+    {
+        var form1 = vm.ActiveFormDocument ?? throw new InvalidOperationException("Form1 missing.");
+        var button = vm.TryCreateControlFromToolboxDrop(DesignerControlTypes.Button, 80, 80, null, false, form1.Id)
+            ?? throw new InvalidOperationException("Button was not created.");
+        vm.SelectSingleControl(button);
+        vm.InteractionTraceEntries.Clear();
+
+        for (var index = 0; index < 30; index++)
+            vm.MoveSelectedControl(1, 1);
+
+        var rebuilds = vm.InteractionTraceEntries.Count(entry => entry.EventName == "RebuildPropertyGrid");
+        if (rebuilds > 2)
+            throw new InvalidOperationException($"Resize/move should not rebuild PropertyGrid on every move. Rebuilds={rebuilds}.");
+    }
+
+    private static void AssertResizeDoesNotRebuildPropertyGridOnEveryMove(SmokeContext context)
+    {
+        RequireContains(context.Xaml, "Button1", "Resize/move storm scenario should keep the Button exportable.");
     }
 
     private static NewProjectOldState PrepareSavedTwoFormProjectForNewCommand(MainWindowViewModel vm)
@@ -1629,6 +1946,20 @@ internal static class Program
         }
     }
 
+    private static void RequireNoDuplicatePropertyRows(MainWindowViewModel vm)
+    {
+        var duplicate = vm.PropertyGridCategories
+            .SelectMany(category => category.Rows)
+            .GroupBy(row => $"{row.ContextDocumentId}|{row.ContextControlId}|{row.Key}", StringComparer.OrdinalIgnoreCase)
+            .FirstOrDefault(group => group.Count() > 1);
+
+        if (duplicate is not null)
+        {
+            var rows = string.Join(", ", duplicate.Select(row => $"{row.Category}:{row.Label}"));
+            throw new InvalidOperationException($"Duplicate PropertyGrid rows detected for {duplicate.Key}: {rows}");
+        }
+    }
+
     private static void RequireActiveControls(MainWindowViewModel vm, params string[] names)
     {
         foreach (var name in names)
@@ -1912,6 +2243,13 @@ internal static class Program
             .Where(id => !string.IsNullOrWhiteSpace(id));
     }
 
+    private static void ForceFullGc()
+    {
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+    }
+
     private static void WriteAvaloniaProject(SmokeContext context)
     {
         Directory.CreateDirectory(context.ProjectPath);
@@ -2184,6 +2522,16 @@ Diagnostics:
     private sealed record NewProjectOldState(
         IReadOnlyList<string> OldFormIds,
         IReadOnlyList<string> OldControlIds);
+
+    private sealed record NamedWeakReference(
+        string Kind,
+        string Id,
+        WeakReference Reference);
+
+    private sealed record NewProjectWeakState(
+        IReadOnlyList<string> OldFormIds,
+        IReadOnlyList<string> OldControlIds,
+        IReadOnlyList<NamedWeakReference> WeakReferences);
 
     private sealed record SmokeScenario(
         string Name,

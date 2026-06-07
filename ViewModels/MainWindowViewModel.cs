@@ -226,6 +226,12 @@ public partial class MainWindowViewModel : ObservableObject
     private double _lastExportChecklistRefreshMs;
     private double _lastExportGenerationMs;
     private long _propertyGridRebuildCount;
+    private readonly Dictionary<string, Queue<DateTime>> _refreshOperationTimestamps = new(StringComparer.OrdinalIgnoreCase);
+    private const int RefreshStormThreshold = 12;
+    private static readonly TimeSpan RefreshStormWindow = TimeSpan.FromSeconds(2);
+    private const double HeavyUiOperationThresholdMs = 120;
+    private int _lastCanvasWrapperCount;
+    private int _lastPreviewRowsCount;
     private string _propertyGridContextDocumentId = "";
     private string _propertyGridContextControlId = "";
     private string _canvasRenderedDocumentId = "";
@@ -4194,7 +4200,9 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void RefreshDiagnosticsNow()
     {
+        TrackRefreshOperation(nameof(RefreshDiagnosticsNow), "ScheduledDiagnostics");
         var stopwatch = Stopwatch.StartNew();
+        var memoryBefore = GC.GetTotalMemory(forceFullCollection: false);
         var diagnostics = _diagnosticsService
             .Validate(Controls, BindingSources, Interactions, CurrentDocumentPath, DesignWidth, DesignHeight, SurfaceLayoutMode, SurfaceLayoutColumns, SurfaceLayoutRows)
             .ToList();
@@ -4210,6 +4218,12 @@ public partial class MainWindowViewModel : ObservableObject
             ScheduleExportChecklistRefresh();
             stopwatch.Stop();
             _lastDiagnosticsRefreshMs = stopwatch.Elapsed.TotalMilliseconds;
+            TracePerfOperationEnd(
+                nameof(RefreshDiagnosticsNow),
+                stopwatch,
+                "NoChanges",
+                $"diagnostics={diagnostics.Count}",
+                memoryBefore);
             OnPropertyChanged(nameof(PerformanceDiagnosticsSummary));
             return;
         }
@@ -4231,6 +4245,12 @@ public partial class MainWindowViewModel : ObservableObject
         stopwatch.Stop();
         _lastDiagnosticsRefreshMs = stopwatch.Elapsed.TotalMilliseconds;
         ReportPerformanceMetric("Diagnostics refresh", _lastDiagnosticsRefreshMs);
+        TracePerfOperationEnd(
+            nameof(RefreshDiagnosticsNow),
+            stopwatch,
+            "Updated",
+            $"diagnostics={diagnostics.Count}",
+            memoryBefore);
         LogWorkspace(
             HasDiagnosticErrors ? WorkspaceLogLevel.Error : HasDiagnosticWarnings ? WorkspaceLogLevel.Warning : WorkspaceLogLevel.Info,
             OutputCategoryDiagnostics,
@@ -4359,6 +4379,79 @@ public partial class MainWindowViewModel : ObservableObject
             return;
 
         Debug.WriteLine($"[FormDesigner:Perf] {name}: {elapsedMs:0.0} ms");
+    }
+
+    private void TrackRefreshOperation(string operation, string reason)
+    {
+        if (string.IsNullOrWhiteSpace(operation))
+            return;
+
+        var now = DateTime.UtcNow;
+        if (!_refreshOperationTimestamps.TryGetValue(operation, out var timestamps))
+        {
+            timestamps = new Queue<DateTime>();
+            _refreshOperationTimestamps[operation] = timestamps;
+        }
+
+        timestamps.Enqueue(now);
+        while (timestamps.Count > 0 && now - timestamps.Peek() > RefreshStormWindow)
+            timestamps.Dequeue();
+
+        if (timestamps.Count == RefreshStormThreshold)
+        {
+            TraceDocumentDebug(
+                "REFRESH_STORM_DETECTED",
+                $"operation={operation}; count={timestamps.Count}; windowMs={RefreshStormWindow.TotalMilliseconds:0}; reason={reason}; caller={operation}",
+                toOutput: true,
+                warning: true);
+        }
+    }
+
+    private void TracePerfOperationEnd(string operation, Stopwatch stopwatch, string reason, string details = "", long? memoryBefore = null)
+    {
+        stopwatch.Stop();
+        var memoryAfter = GC.GetTotalMemory(forceFullCollection: false);
+        var allocationDetails = memoryBefore.HasValue
+            ? $"; memoryBefore={memoryBefore.Value}; memoryAfter={memoryAfter}; memoryDelta={memoryAfter - memoryBefore.Value}"
+            : $"; memory={memoryAfter}";
+
+        AddInteractionTrace(
+            "PERF_OPERATION_END",
+            $"operation={operation}; elapsed={stopwatch.Elapsed.TotalMilliseconds:0.0}ms; reason={reason}; {details}{allocationDetails}");
+
+        if (stopwatch.Elapsed.TotalMilliseconds >= HeavyUiOperationThresholdMs)
+        {
+            TraceDocumentDebug(
+                "HEAVY_OPERATION_ON_UI_THREAD",
+                $"operation={operation}; elapsed={stopwatch.Elapsed.TotalMilliseconds:0.0}ms; reason={reason}; {details}",
+                toOutput: true,
+                warning: true);
+        }
+    }
+
+    public void ReportMemorySnapshot(string reason, bool forceFullCollection = false)
+    {
+        var memory = GC.GetTotalMemory(forceFullCollection);
+        var controlsCount = Controls.Count;
+        var projectControlsCount = CurrentProject.Forms.Sum(form => form.Document?.Controls.Count ?? 0);
+        var propertyRowsCount = PropertyGridCategories.Sum(category => category.Rows.Count);
+        var schemaCount = BindingSources.Sum(source => source.Fields.Count);
+        var exportCacheCount = GeneratedFiles.Count + RequiredPackages.Count + ExportDiagnostics.Count;
+        var undoRedoCount = _undoStack.Count + _redoStack.Count;
+
+        TraceDocumentDebug(
+            "MEMORY_SNAPSHOT",
+            $"reason={reason}; memory={memory}; forms={CurrentProject.Forms.Count}; controls={controlsCount}; projectControls={projectControlsCount}; wrappers={_lastCanvasWrapperCount}; " +
+            $"propertyRows={propertyRowsCount}; loadedDll={ImportedDllCatalog.Count}; dataSources={BindingSources.Count}; schemaCache={schemaCount}; previewRows={_lastPreviewRowsCount}; " +
+            $"exportCache={exportCacheCount}; undoRedo={undoRedoCount}",
+            toOutput: true);
+    }
+
+    public void RecordCanvasRenderStats(int wrapperCount, int previewRowsCount, string reason)
+    {
+        _lastCanvasWrapperCount = Math.Max(0, wrapperCount);
+        _lastPreviewRowsCount = Math.Max(0, previewRowsCount);
+        TrackRefreshOperation("RenderCanvas", reason);
     }
 
     private void AppendPluginLoaderDiagnostics(ICollection<DocumentDiagnosticModel> diagnostics)
@@ -5279,11 +5372,18 @@ public partial class MainWindowViewModel : ObservableObject
             : "";
     }
 
-    public void MarkCanvasRenderedDocument(string reason)
+    public void MarkCanvasRenderedDocument(string reason, int wrapperCount = -1, int previewRowsCount = -1)
     {
+        if (wrapperCount >= 0 || previewRowsCount >= 0)
+        {
+            _lastCanvasWrapperCount = Math.Max(0, wrapperCount);
+            _lastPreviewRowsCount = Math.Max(0, previewRowsCount);
+        }
+
+        TrackRefreshOperation("RenderCanvas", reason);
         _canvasRenderedDocumentId = ActiveDocumentId;
         OnPropertyChanged(nameof(CanvasRenderedDocumentId));
-        TraceDocumentDebug("RenderCanvas", $"reason={reason}; controls={Controls.Count}", toOutput: false);
+        TraceDocumentDebug("RenderCanvas", $"reason={reason}; controls={Controls.Count}; wrappers={_lastCanvasWrapperCount}; previewRows={_lastPreviewRowsCount}", toOutput: false);
     }
 
     public void TraceDocumentDebug(string eventName, string details = "", bool toOutput = false, bool warning = false)
@@ -5564,6 +5664,14 @@ public partial class MainWindowViewModel : ObservableObject
         if (_isEditingPropertyGrid && !IsEditingPropertyGridRow(row))
             EndPropertyGridTextEdit();
 
+        TracePropertyGridEdit(
+            "PROPERTY_EDIT_BEGIN",
+            row,
+            $"property={row.Key}; editor={row.Editor}; text={text ?? ""}");
+
+        if (!CanApplyPropertyGridRow(row, text ?? string.Empty))
+            return;
+
         BeginInspectorInteraction(
             $"PropertyTextEdit:{row.ContextDocumentId}/{row.ContextControlId}/{row.Key}",
             logToOutput: false,
@@ -5678,10 +5786,44 @@ public partial class MainWindowViewModel : ObservableObject
             row.Value = newValue;
             row.CommitValue();
 
+            if (row.HasValidationError)
+            {
+                if (row.Editor == PropertyGridEditorKind.Number)
+                {
+                    TracePropertyGridEdit(
+                        "NUMERIC_PROPERTY_VALIDATION_FAILED",
+                        row,
+                        $"property={row.Key}; input={newValue}; reason={row.ValidationMessage}");
+                }
+
+                TracePropertyGridEdit(
+                    "PROPERTY_EDIT_COMMIT",
+                    row,
+                    $"property={row.Key}; oldValue={oldModelValue}; newValue={newValue}; success=False; validation={row.ValidationMessage}");
+                return;
+            }
+
+            if (string.Equals(row.Key, nameof(DesignControlModel.Text), StringComparison.OrdinalIgnoreCase)
+                && string.IsNullOrEmpty(newValue))
+            {
+                TracePropertyGridEdit(
+                    "TEXT_PROPERTY_EMPTY_VALUE_APPLIED",
+                    row,
+                    $"target={row.ContextControlName}:{row.ContextControlId}; property={row.Key}; oldValue={oldModelValue}; newValue=<empty>");
+                TracePropertyGridEdit(
+                    "TEXT_PROPERTY_DEFAULT_FALLBACK_SUPPRESSED",
+                    row,
+                    "reason=user explicitly set empty value");
+            }
+
             TracePropertyGridEdit(
                 "PG_DIRECT_COMMIT_END",
                 row,
                 $"property={row.Key}; modelValue={GetPropertyGridTargetValue(row)}; validation={row.ValidationMessage}");
+            TracePropertyGridEdit(
+                "PROPERTY_EDIT_COMMIT",
+                row,
+                $"property={row.Key}; oldValue={oldModelValue}; newValue={newValue}; success=True");
         }
         catch (Exception ex)
         {
@@ -5690,6 +5832,10 @@ public partial class MainWindowViewModel : ObservableObject
                 "PG_DIRECT_COMMIT_EXCEPTION",
                 row,
                 $"property={row.Key}; exception={ex.GetType().Name}; message={ex.Message}");
+            TracePropertyGridEdit(
+                "PROPERTY_EDIT_COMMIT",
+                row,
+                $"property={row.Key}; newValue={newValue}; success=False; exception={ex.GetType().Name}; message={ex.Message}");
         }
         finally
         {
@@ -5701,7 +5847,13 @@ public partial class MainWindowViewModel : ObservableObject
     public void EndPropertyGridTextEdit(PropertyGridRowViewModel? row = null)
     {
         if (row is not null && !IsEditingPropertyGridRow(row))
-            return;
+        {
+            TracePropertyGridEdit(
+                "PROPERTY_EDIT_STATE_STUCK",
+                row,
+                $"reason=end-row-mismatch; activeEditor={_editingPropertyGridDocumentId}/{_editingPropertyGridControlId}/{_editingPropertyGridKey}; forcingCleanup=True");
+            row = null;
+        }
 
         var shouldCommitBatch = _isPropertyGridEditUndoBatchOpen;
         var shouldRunDeferredRebuild = _hasDeferredPropertyGridRebuild;
@@ -5739,7 +5891,21 @@ public partial class MainWindowViewModel : ObservableObject
     public void CancelPropertyGridTextEdit(PropertyGridRowViewModel? row = null)
     {
         if (row is not null && !IsEditingPropertyGridRow(row))
-            return;
+        {
+            TracePropertyGridEdit(
+                "PROPERTY_EDIT_STATE_STUCK",
+                row,
+                $"reason=cancel-row-mismatch; activeEditor={_editingPropertyGridDocumentId}/{_editingPropertyGridControlId}/{_editingPropertyGridKey}; forcingCleanup=True");
+            row = null;
+        }
+
+        if (row is not null)
+        {
+            TracePropertyGridEdit(
+                "PROPERTY_EDIT_CANCEL",
+                row,
+                $"property={row.Key}; editor={row.Editor}");
+        }
 
         _isEditingPropertyGrid = false;
         if (_isPropertyGridEditUndoBatchOpen && _undoBatchDepth > 0)
@@ -6755,14 +6921,18 @@ public partial class MainWindowViewModel : ObservableObject
         var oldProjectExplorerFormIds = GetProjectExplorerFormIds().ToList();
         var oldOpenedTabs = DocumentTabs.Select(tab => tab.DocumentId).Where(id => !string.IsNullOrWhiteSpace(id)).ToList();
         var oldProjectId = CurrentProject.Id;
+#if DEBUG
+        var oldObjectReferences = CaptureOldProjectWeakReferences();
+#endif
 
         TraceDocumentDebug(
             "NEW_PROJECT_START",
             $"oldProjectId={oldProjectId}; oldProjectName={CurrentProjectDisplayName}; oldFormsCount={CurrentProject.Forms.Count}; oldFormIds={string.Join(",", oldFormIds)}; oldProjectExplorerFormIds={string.Join(",", oldProjectExplorerFormIds)}; oldOpenedTabs={string.Join(",", oldOpenedTabs)}; oldActiveFormId={ActiveDocumentId}; oldCanvasDocumentId={CanvasRenderedDocumentId}; oldSelectedControlId={SelectedControl?.Id ?? ""}; controls={CurrentProject.Forms.Sum(form => form.Document?.Controls.Count ?? 0) + Controls.Count}; dll={ImportedDllCatalog.Count}; dataSources={BindingSources.Count}",
             toOutput: true);
 
-        var memoryBefore = GC.GetTotalMemory(forceFullCollection: false);
+        ReportMemorySnapshot("BeforeNewProject", forceFullCollection: false);
         ResetApplicationStateForNewProject(oldFormIds, oldControlIds, "NewProject");
+        ReportMemorySnapshot("AfterNewProjectReset", forceFullCollection: false);
 
         Workspace = _projectWorkspaceService.CreateWorkspace("Avalonia UI Project");
         CurrentProjectPath = "";
@@ -6783,11 +6953,8 @@ public partial class MainWindowViewModel : ObservableObject
         GC.Collect();
         GC.WaitForPendingFinalizers();
         GC.Collect();
-        var memoryAfter = GC.GetTotalMemory(forceFullCollection: false);
-        TraceDocumentDebug(
-            "NEW_PROJECT_MEMORY_SNAPSHOT",
-            $"before={memoryBefore}; after={memoryAfter}; delta={memoryAfter - memoryBefore}",
-            toOutput: true);
+        ReportMemorySnapshot("AfterNewProjectGc", forceFullCollection: false);
+        CheckOldProjectWeakReferences(oldObjectReferences, "NewProject");
 #endif
         TraceDocumentDebug(
             "NEW_PROJECT_CREATED",
@@ -6935,6 +7102,9 @@ public partial class MainWindowViewModel : ObservableObject
             _propertyGridRowsByKey.Clear();
             _propertyGridRowsByContextKey.Clear();
             _previewRuntimeDiagnostics.Clear();
+            _refreshOperationTimestamps.Clear();
+            _lastCanvasWrapperCount = 0;
+            _lastPreviewRowsCount = 0;
             _canvasRenderedDocumentId = "";
             DocumentSessionId = Guid.NewGuid().ToString("N");
 
@@ -7107,6 +7277,52 @@ public partial class MainWindowViewModel : ObservableObject
                 warning: true);
         }
     }
+
+#if DEBUG
+    private sealed record TrackedWeakReference(string Kind, string Id, WeakReference Reference);
+
+    private List<TrackedWeakReference> CaptureOldProjectWeakReferences()
+    {
+        var references = new List<TrackedWeakReference>();
+        references.Add(new TrackedWeakReference("Project", CurrentProject.Id, new WeakReference(CurrentProject)));
+
+        foreach (var form in CurrentProject.Forms)
+        {
+            references.Add(new TrackedWeakReference("Form", form.Id, new WeakReference(form)));
+            if (form.Document is not null)
+                references.Add(new TrackedWeakReference("Document", form.Id, new WeakReference(form.Document)));
+
+            foreach (var control in form.Document?.Controls ?? Enumerable.Empty<DesignerControlFileModel>())
+                references.Add(new TrackedWeakReference("SerializedControl", control.Id, new WeakReference(control)));
+        }
+
+        foreach (var control in Controls)
+            references.Add(new TrackedWeakReference("RuntimeControl", control.Id, new WeakReference(control)));
+
+        foreach (var source in BindingSources)
+            references.Add(new TrackedWeakReference("BindingSource", source.Id, new WeakReference(source)));
+
+        foreach (var row in PropertyGridCategories.SelectMany(category => category.Rows))
+            references.Add(new TrackedWeakReference("PropertyRow", $"{row.ContextDocumentId}/{row.ContextControlId}/{row.Key}", new WeakReference(row)));
+
+        return references;
+    }
+
+    private void CheckOldProjectWeakReferences(IReadOnlyList<TrackedWeakReference> references, string reason)
+    {
+        var alive = references
+            .Where(item => item.Reference.IsAlive)
+            .GroupBy(item => item.Kind)
+            .Select(group => $"{group.Key}:{group.Count()}")
+            .ToList();
+
+        TraceDocumentDebug(
+            "OLD_PROJECT_OBJECTS_STILL_ALIVE",
+            $"reason={reason}; tracked={references.Count}; alive={(alive.Count == 0 ? "none" : string.Join(", ", alive))}",
+            toOutput: true,
+            warning: alive.Count > 0);
+    }
+#endif
 
     private IEnumerable<string> GetProjectExplorerFormIds()
     {
@@ -8076,6 +8292,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void RebuildPropertyGrid(string reason = "General")
     {
+        TrackRefreshOperation(nameof(RebuildPropertyGrid), reason);
         if (_isApplyingDocument)
             return;
 
@@ -8095,15 +8312,27 @@ public partial class MainWindowViewModel : ObservableObject
         }
 
         var stopwatch = Stopwatch.StartNew();
+        var memoryBefore = GC.GetTotalMemory(forceFullCollection: false);
         _isRebuildingPropertyGrid = true;
         try
         {
-            _propertyGridContextDocumentId = ActiveDocumentId;
-            _propertyGridContextControlId = SelectedControl?.Id ?? "";
+            var nextDocumentId = ActiveDocumentId;
+            var nextControlId = SelectedControl?.Id ?? "";
+            if (!string.Equals(_propertyGridContextDocumentId, nextDocumentId, StringComparison.OrdinalIgnoreCase)
+                || !string.Equals(_propertyGridContextControlId, nextControlId, StringComparison.OrdinalIgnoreCase))
+            {
+                TraceDocumentDebug(
+                    "INSPECTOR_TARGET_CHANGED",
+                    $"reason={reason}; old={_propertyGridContextDocumentId}/{_propertyGridContextControlId}; new={nextDocumentId}/{nextControlId}; activeDocument={ActiveDocumentId}; selected={SelectedControl?.Name ?? "-"}:{SelectedControl?.Id ?? "-"}",
+                    toOutput: false);
+            }
+
+            _propertyGridContextDocumentId = nextDocumentId;
+            _propertyGridContextControlId = nextControlId;
             _propertyGridRebuildCount++;
             var query = PropertyGridSearchText.Trim();
             var hasSearch = !string.IsNullOrWhiteSpace(query);
-            var rows = BuildPropertyGridRows().ToList();
+            var rows = RemoveDuplicatePropertyGridRows(BuildPropertyGridRows().ToList(), reason);
             if (hasSearch)
             {
                 rows = rows
@@ -8125,6 +8354,11 @@ public partial class MainWindowViewModel : ObservableObject
                 if (categoryRows.Count > 0)
                     AddPropertyGridCategory(category, category, categoryRows, hasSearch);
             }
+
+            TraceDocumentDebug(
+                "PROPERTY_ROWS_REBUILT",
+                $"reason={reason}; target={PropertyGridContextDocumentId}/{PropertyGridContextControlId}; rows={rows.Count}; unique={rows.Select(row => CreatePropertyGridRowCacheKey(row.ContextDocumentId, row.ContextControlId, row.Key)).Distinct(StringComparer.OrdinalIgnoreCase).Count()}",
+                toOutput: false);
         }
         finally
         {
@@ -8134,6 +8368,12 @@ public partial class MainWindowViewModel : ObservableObject
         stopwatch.Stop();
         _lastPropertyGridRebuildMs = stopwatch.Elapsed.TotalMilliseconds;
         ReportPerformanceMetric($"PropertyGrid rebuild ({reason})", _lastPropertyGridRebuildMs);
+        TracePerfOperationEnd(
+            nameof(RebuildPropertyGrid),
+            stopwatch,
+            reason,
+            $"rows={PropertyGridCategories.Sum(category => category.Rows.Count)}; count={_propertyGridRebuildCount}",
+            memoryBefore);
         TraceDocumentDebug(
             "RebuildPropertyGrid",
             $"reason={reason}; openedTab={SelectedDocumentTab?.DocumentId ?? "-"}; inspector={PropertyGridContextDocumentId}/{PropertyGridContextControlId}; selected={SelectedControl?.Id ?? "-"}; count={_propertyGridRebuildCount}; rows={PropertyGridCategories.Sum(category => category.Rows.Count)}; elapsed={_lastPropertyGridRebuildMs:0.0}ms",
@@ -8143,6 +8383,31 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(PropertyGridContextControlId));
         OnPropertyChanged(nameof(PerformanceDiagnosticsSummary));
         EnsurePropertiesTabContent($"RebuildPropertyGrid:{reason}");
+    }
+
+    private List<PropertyGridRowViewModel> RemoveDuplicatePropertyGridRows(List<PropertyGridRowViewModel> rows, string reason)
+    {
+        var result = new List<PropertyGridRowViewModel>(rows.Count);
+        var seen = new Dictionary<string, PropertyGridRowViewModel>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var row in rows)
+        {
+            var key = CreatePropertyGridRowCacheKey(row.ContextDocumentId, row.ContextControlId, row.Key);
+            if (seen.TryGetValue(key, out var existing))
+            {
+                TraceDocumentDebug(
+                    "PROPERTY_GRID_DUPLICATE_ROW_DETECTED",
+                    $"reason={reason}; target={row.ContextDocumentId}/{row.ContextControlName}:{row.ContextControlId}:{row.ContextControlType}; property={row.Key}; existingCategory={existing.Category}; duplicateCategory={row.Category}; existingCount={rows.Count(item => string.Equals(CreatePropertyGridRowCacheKey(item.ContextDocumentId, item.ContextControlId, item.Key), key, StringComparison.OrdinalIgnoreCase))}",
+                    toOutput: false,
+                    warning: true);
+                continue;
+            }
+
+            seen[key] = row;
+            result.Add(row);
+        }
+
+        return result;
     }
 
     private void EnsurePropertiesTabContent(string reason)
@@ -8722,35 +8987,96 @@ public partial class MainWindowViewModel : ObservableObject
 
     private bool CanApplyPropertyGridRow(PropertyGridRowViewModel row, string newValue)
     {
+        if (!TryGetPropertyGridTargetStaleReason(row, out var staleReason))
+            return true;
+
+        RejectStalePropertyGridEdit(row, newValue, staleReason);
+        return false;
+    }
+
+    private bool TryGetPropertyGridTargetStaleReason(PropertyGridRowViewModel row, out string reason)
+    {
+        reason = "";
+
+        if (string.IsNullOrWhiteSpace(row.ContextDocumentId))
+        {
+            reason = "row context document is empty";
+            return true;
+        }
+
         if (!string.Equals(row.ContextDocumentId, ActiveDocumentId, StringComparison.OrdinalIgnoreCase))
         {
-            RejectStalePropertyGridEdit(row, newValue, $"context document '{row.ContextDocumentId}' != active document '{ActiveDocumentId}'");
-            return false;
+            reason = $"context document '{row.ContextDocumentId}' != active document '{ActiveDocumentId}'";
+            return true;
+        }
+
+        if (!string.IsNullOrWhiteSpace(PropertyGridContextDocumentId)
+            && !string.Equals(PropertyGridContextDocumentId, ActiveDocumentId, StringComparison.OrdinalIgnoreCase))
+        {
+            reason = $"inspector document '{PropertyGridContextDocumentId}' != active document '{ActiveDocumentId}'";
+            return true;
+        }
+
+        if (!string.IsNullOrWhiteSpace(PropertyGridContextDocumentId)
+            && !string.Equals(PropertyGridContextDocumentId, row.ContextDocumentId, StringComparison.OrdinalIgnoreCase))
+        {
+            reason = $"inspector document '{PropertyGridContextDocumentId}' != row document '{row.ContextDocumentId}'";
+            return true;
         }
 
         if (!string.IsNullOrWhiteSpace(row.ContextControlId))
         {
+            if (!string.Equals(PropertyGridContextControlId, row.ContextControlId, StringComparison.OrdinalIgnoreCase))
+            {
+                reason = $"inspector control '{PropertyGridContextControlId}' != row control '{row.ContextControlId}'";
+                return true;
+            }
+
             var rowControl = Controls.FirstOrDefault(control => string.Equals(control.Id, row.ContextControlId, StringComparison.OrdinalIgnoreCase));
             if (rowControl is null)
             {
-                RejectStalePropertyGridEdit(row, newValue, "row control is not in the active controls collection");
-                return false;
+                reason = "row control is not in the active controls collection";
+                return true;
             }
 
             if (SelectedControl is null
                 || !string.Equals(SelectedControl.Id, row.ContextControlId, StringComparison.OrdinalIgnoreCase))
             {
-                RejectStalePropertyGridEdit(row, newValue, "selected control does not match the row context");
-                return false;
+                reason = "selected control does not match the row context";
+                return true;
+            }
+        }
+        else if (string.Equals(row.ContextControlType, "Form", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!string.IsNullOrWhiteSpace(PropertyGridContextControlId))
+            {
+                reason = $"inspector has control '{PropertyGridContextControlId}' while row targets active form";
+                return true;
+            }
+
+            if (SelectedControl is not null)
+            {
+                reason = $"selected control '{SelectedControl.Id}' is active while row targets active form";
+                return true;
             }
         }
 
-        return true;
+        return false;
     }
 
     private void RejectStalePropertyGridEdit(PropertyGridRowViewModel row, string newValue, string reason)
     {
         row.ValidationMessage = "Stale PropertyGrid context. Переключите элемент ещё раз.";
+        TraceDocumentDebug(
+            "PROPERTY_EDIT_BLOCKED_STALE_INSPECTOR_TARGET",
+            $"reason={reason}; activeDocument={ActiveDocumentId}; inspector={PropertyGridContextDocumentId}/{PropertyGridContextControlId}; selected={SelectedControl?.Name ?? "-"}:{SelectedControl?.Id ?? "-"}; row={row.ContextDocumentId}/{row.ContextControlName}:{row.ContextControlId}; key={row.Key}; attempted={newValue}",
+            toOutput: false,
+            warning: true);
+        TraceDocumentDebug(
+            "INSPECTOR_TARGET_STALE_DETECTED",
+            $"reason={reason}; activeDocument={ActiveDocumentId}; inspector={PropertyGridContextDocumentId}/{PropertyGridContextControlId}; selected={SelectedControl?.Name ?? "-"}:{SelectedControl?.Id ?? "-"}; row={row.ContextDocumentId}/{row.ContextControlName}:{row.ContextControlId}; key={row.Key}",
+            toOutput: false,
+            warning: true);
         TracePropertyGridEdit(
             "EDIT_REJECTED",
             row,
@@ -10617,7 +10943,9 @@ public partial class MainWindowViewModel : ObservableObject
     [RelayCommand]
     public void GenerateXaml()
     {
+        TrackRefreshOperation(nameof(GenerateXaml), _isGeneratingSecondaryFormExport ? "SecondaryForm" : "ExplicitExport");
         var stopwatch = Stopwatch.StartNew();
+        var memoryBefore = GC.GetTotalMemory(forceFullCollection: false);
         // Итоговый XAML строится прямо из текущего состояния документа,
         // поэтому предпросмотр и экспорт всегда используют одну и ту же модель.
         var usesManagedWindowLayout = IsFormSizeManagedByMonitor;
@@ -10752,11 +11080,17 @@ public partial class MainWindowViewModel : ObservableObject
         _exportCacheSettingsSignature = BuildExportSettingsSignature();
         _exportCacheGeneratedUtc = DateTime.UtcNow;
         _activeLayoutExportPlan = null;
-        RefreshExportChecklistNow();
+        RefreshExportChecklistNow(refreshPipeline: true);
         RaiseExportCacheProperties();
         stopwatch.Stop();
         _lastExportGenerationMs = stopwatch.Elapsed.TotalMilliseconds;
         ReportPerformanceMetric("Export generation", _lastExportGenerationMs);
+        TracePerfOperationEnd(
+            nameof(GenerateXaml),
+            stopwatch,
+            "ExplicitExport",
+            $"xaml={GeneratedXaml.Length}; csharp={GeneratedCSharp.Length}; controls={Controls.Count}; forms={CurrentProject.Forms.Count}",
+            memoryBefore);
         OnPropertyChanged(nameof(PerformanceDiagnosticsSummary));
         LogWorkspace(
             WorkspaceLogLevel.Success,
@@ -10810,6 +11144,9 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void RefreshExportPipelineResult()
     {
+        TrackRefreshOperation(nameof(RefreshExportPipelineResult), "ExportPipeline");
+        var stopwatch = Stopwatch.StartNew();
+        var memoryBefore = GC.GetTotalMemory(forceFullCollection: false);
         var selectedPath = SelectedGeneratedFile?.Path;
         var profile = BuildExportProfile();
         var files = BuildGeneratedFiles().ToList();
@@ -10839,6 +11176,12 @@ public partial class MainWindowViewModel : ObservableObject
         SelectedGeneratedFileNode = FindGeneratedFileNode(GeneratedFileTreeNodes, SelectedGeneratedFile?.Path);
 
         RaiseExportPipelineProperties();
+        TracePerfOperationEnd(
+            nameof(RefreshExportPipelineResult),
+            stopwatch,
+            "ExportPipeline",
+            $"files={files.Count}; packages={packages.Count}; diagnostics={diagnostics.Count}",
+            memoryBefore);
     }
 
     private ExportProfile BuildExportProfile()
@@ -11215,16 +11558,16 @@ public partial class MainWindowViewModel : ObservableObject
         if (!string.Equals(_scheduledExportChecklistSessionId, DocumentSessionId, StringComparison.Ordinal))
             return;
 
-        RefreshExportChecklistNow();
+        RefreshExportChecklistNow(refreshPipeline: IsCodeMode);
     }
 
-    private void RefreshExportChecklistNow()
+    private void RefreshExportChecklistNow(bool refreshPipeline = false)
     {
         if (IsPropertyEditorFocused || IsInspectorInteractionActive)
         {
             TraceDocumentDebug(
                 "EXPORT_PIPELINE_REFRESH_SUPPRESSED_DURING_TEXT_EDIT",
-                $"propertyEditor={IsPropertyEditorFocused}; inspectorInteraction={IsInspectorInteractionActive}:{_inspectorInteractionKind}; session={DocumentSessionId}",
+                $"propertyEditor={IsPropertyEditorFocused}; inspectorInteraction={IsInspectorInteractionActive}:{_inspectorInteractionKind}; session={DocumentSessionId}; refreshPipeline={refreshPipeline}",
                 toOutput: false);
             _isExportChecklistRefreshScheduled = true;
             _scheduledExportChecklistSessionId = DocumentSessionId;
@@ -11233,12 +11576,24 @@ public partial class MainWindowViewModel : ObservableObject
             return;
         }
 
+        TrackRefreshOperation(nameof(RefreshExportChecklistNow), refreshPipeline ? "WithPipeline" : "ChecklistOnly");
         var stopwatch = Stopwatch.StartNew();
         _exportChecklistItemsCache = BuildExportChecklist();
         stopwatch.Stop();
         _lastExportChecklistRefreshMs = stopwatch.Elapsed.TotalMilliseconds;
         ReportPerformanceMetric("Export checklist refresh", _lastExportChecklistRefreshMs);
-        RefreshExportPipelineResult();
+        if (refreshPipeline)
+        {
+            RefreshExportPipelineResult();
+        }
+        else
+        {
+            TraceDocumentDebug(
+                "EXPORT_PIPELINE_REFRESH_SKIPPED",
+                "reason=ChecklistOnly; generated files stay stale until explicit Generate/Validate/Export/Code mode",
+                toOutput: false);
+        }
+
         RaiseExportChecklistProperties();
         OnPropertyChanged(nameof(PerformanceDiagnosticsSummary));
     }
@@ -16342,6 +16697,9 @@ public partial class MainWindowViewModel : ObservableObject
         bool refreshEditorSurfaces = true,
         [CallerMemberName] string caller = "")
     {
+        TrackRefreshOperation(nameof(ApplyDocument), caller);
+        var stopwatch = Stopwatch.StartNew();
+        var memoryBefore = GC.GetTotalMemory(forceFullCollection: false);
         var preservedActiveDocumentId = ActiveDocumentId;
         var preservedSelectedControlId = SelectedControl?.Id ?? "";
         var preservedSelectedControlName = SelectedControl?.Name ?? "";
@@ -16515,6 +16873,12 @@ public partial class MainWindowViewModel : ObservableObject
             $"caller={caller}; source={sourcePath ?? ""}; document={documentName}; documentControls={document.Controls.Count}; preservedSelectedControlId={preservedSelectedControlId}; restoredSelectedControlId={restoredSelectedControlId}; " +
             $"clearSelectionReason={(string.IsNullOrWhiteSpace(restoredSelectedControlId) && !string.IsNullOrWhiteSpace(preservedSelectedControlId) ? "missing-control" : "none")}; controls={Controls.Count}; refresh={refreshEditorSurfaces}",
             toOutput: false);
+        TracePerfOperationEnd(
+            nameof(ApplyDocument),
+            stopwatch,
+            caller,
+            $"document={documentName}; controls={document.Controls.Count}; refresh={refreshEditorSurfaces}",
+            memoryBefore);
     }
 
     private string RestoreSelectionAfterApplyDocument(
@@ -18573,6 +18937,21 @@ public partial class MainWindowViewModel : ObservableObject
 
     partial void OnFormTitleChanged(string value)
     {
+        if (!_isApplyingDocument && ActiveFormDocument is not null)
+        {
+            var title = string.IsNullOrWhiteSpace(value) ? "Form1" : value.Trim();
+            ActiveFormDocument.Name = title;
+            ActiveFormDocument.Document ??= CreateDocumentFileModel();
+            ActiveFormDocument.Document.FormTitle = title;
+            ActiveFormDocument.RelativePath = $"Forms/{ActiveFormDocument.DisplayName}.formdesigner.json";
+            RefreshFormsCollection();
+            RefreshDocumentTabs();
+            RebuildProjectExplorer();
+            RaiseProjectWorkspaceProperties();
+            RaiseDocumentStateProperties();
+            EnsurePropertiesTabContent("FormTitleChanged");
+        }
+
         RebuildStructureTree();
         NotifyDesignerStateChanged();
     }
@@ -19205,6 +19584,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void NotifyDesignerStateChanged(bool trackHistory = true)
     {
+        TrackRefreshOperation(nameof(NotifyDesignerStateChanged), trackHistory ? "Tracked" : "Untracked");
         // Общая точка синхронизации всего конструктора:
         // фиксируем историю, пересобираем XAML и просим окно перерисовать поверхность.
         if (_isApplyingDocument)
