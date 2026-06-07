@@ -37,6 +37,11 @@ internal static class Program
             new("PreviewAndExportHaveSameKeyProperties", ConfigurePreviewExportPropertiesForm, AssertPreviewAndExportHaveSameKeyProperties),
             new("PreviewGenerationDoesNotMutateEditorState", ConfigurePreviewExportStateMutationForm, AssertPreviewGenerationDoesNotMutateEditorState),
             new("ExportGenerationDoesNotMutateEditorState", ConfigurePreviewExportStateMutationForm, AssertExportGenerationDoesNotMutateEditorState),
+            new("ResizeFormDoesNotMoveCanvasControls", ConfigureResizeFormDoesNotMoveCanvasControls, AssertResizeFormDoesNotMoveCanvasControls),
+            new("ResizePreviewWindowDoesNotChangeControlPositions", ConfigureResizePreviewWindowDoesNotChangeControlPositions, AssertResizePreviewWindowDoesNotChangeControlPositions),
+            new("ButtonCornerRadiusPreviewExportMatch", ConfigureButtonCornerRadiusPreviewExportMatch, AssertButtonCornerRadiusPreviewExportMatch),
+            new("OpacityZeroDesignerOnlyOutline", ConfigureOpacityZeroDesignerOnlyOutline, AssertOpacityZeroDesignerOnlyOutline),
+            new("PreviewExportBoundsMatchAfterResize", ConfigurePreviewExportBoundsMatchAfterResize, AssertPreviewExportBoundsMatchAfterResize),
             new("RealDataGridExport", ConfigureRealDataGridExport, AssertRealDataGridExport, RequiresRealDataGrid: true),
             new("InteractionsExport", ConfigureInteractionsExport, AssertInteractionsExport, RequiresRealDataGrid: true),
             new("MultiFormOpenFormExport", ConfigureMultiFormOpenFormExport, AssertMultiFormOpenFormExport),
@@ -332,6 +337,98 @@ internal static class Program
         RequireEditorStateUnchanged(before, after, "Export pipeline should remain read-only for editor state.");
         RequireNoExportEditorMutationTrace(context.ViewModel);
         RequireNoApplyDocumentTrace(context.ViewModel, "ExportGenerationDoesNotMutateEditorState");
+    }
+
+    private static void ConfigureResizeFormDoesNotMoveCanvasControls(MainWindowViewModel vm)
+    {
+        vm.SurfaceLayoutMode = DesignerLayoutModes.Absolute;
+        vm.DesignWidth = 1200;
+        vm.DesignHeight = 800;
+        vm.Controls.Add(Control(DesignerControlTypes.Button, "ResizeButton", 100, 100, 160, 40, text: "Resize"));
+        vm.Controls.Add(Control(DesignerControlTypes.TextBox, "ResizeInput", 260, 180, 240, 38, placeholder: "Input"));
+    }
+
+    private static void AssertResizeFormDoesNotMoveCanvasControls(SmokeContext context)
+    {
+        var before = CaptureBoundsByName(context.ViewModel);
+        context.ViewModel.DesignWidth = 780;
+        context.ViewModel.DesignHeight = 520;
+        var after = CaptureBoundsByName(context.ViewModel);
+        RequireBoundsMapUnchanged(before, after, "Changing form size must not move Canvas controls.");
+        RequireContains(context.Xaml, "Canvas.Left=\"100\" Canvas.Top=\"100\"", "Original Button position should remain exported.");
+    }
+
+    private static void ConfigureResizePreviewWindowDoesNotChangeControlPositions(MainWindowViewModel vm)
+    {
+        vm.SurfaceLayoutMode = DesignerLayoutModes.Absolute;
+        vm.DesignWidth = 1200;
+        vm.DesignHeight = 800;
+        vm.Controls.Add(Control(DesignerControlTypes.Button, "PreviewResizeButton", 100, 100, 160, 40, text: "Preview"));
+        vm.Controls.Add(Control(DesignerControlTypes.Border, "PreviewResizePanel", 380, 220, 280, 120, background: "#F8FAFC", border: "#CBD5E1", radius: 12));
+    }
+
+    private static void AssertResizePreviewWindowDoesNotChangeControlPositions(SmokeContext context)
+    {
+        var compact = context.ViewModel.BuildPreviewControlSnapshotsForActiveDocument("PreviewWindowCompact", 900, 600);
+        var wide = context.ViewModel.BuildPreviewControlSnapshotsForActiveDocument("PreviewWindowWide", 1600, 1000);
+        foreach (var compactControl in compact)
+        {
+            var wideControl = wide.Single(control => control.ControlId == compactControl.ControlId);
+            RequireSameBounds(compactControl, wideControl);
+        }
+    }
+
+    private static void ConfigureButtonCornerRadiusPreviewExportMatch(MainWindowViewModel vm)
+    {
+        vm.SurfaceLayoutMode = DesignerLayoutModes.Absolute;
+        var button = Control(DesignerControlTypes.Button, "RoundButton", 80, 90, 180, 44, text: "Round", background: "#2563EB", foreground: "#FFFFFF", border: "#1D4ED8", radius: 18);
+        vm.Controls.Add(button);
+    }
+
+    private static void AssertButtonCornerRadiusPreviewExportMatch(SmokeContext context)
+    {
+        var comparison = context.ViewModel.ComparePreviewAndExportForActiveDocument("ButtonCornerRadiusPreviewExportMatch");
+        RequireNoPreviewExportMismatches(comparison);
+        var exportButton = comparison.ExportControls.Single(control => control.Name == "RoundButton");
+        if (Math.Abs(exportButton.CornerRadius - 18) > 0.01)
+            throw new InvalidOperationException("Button CornerRadius should be preserved in export snapshot.");
+        RequireContains(context.Xaml, "CornerRadius=\"18\"", "Button CornerRadius should be exported in AXAML.");
+    }
+
+    private static void ConfigureOpacityZeroDesignerOnlyOutline(MainWindowViewModel vm)
+    {
+        vm.SurfaceLayoutMode = DesignerLayoutModes.Absolute;
+        var hidden = Control(DesignerControlTypes.Button, "InvisibleButton", 120, 130, 180, 44, text: "Invisible", background: "#2563EB", foreground: "#FFFFFF", border: "#1D4ED8", radius: 8);
+        hidden.Opacity = 0;
+        vm.Controls.Add(hidden);
+        vm.SelectControls(new[] { hidden }, hidden);
+    }
+
+    private static void AssertOpacityZeroDesignerOnlyOutline(SmokeContext context)
+    {
+        if (context.ViewModel.SelectedControl?.Name != "InvisibleButton")
+            throw new InvalidOperationException("Opacity=0 control should remain selectable in designer model.");
+        var comparison = context.ViewModel.ComparePreviewAndExportForActiveDocument("OpacityZeroDesignerOnlyOutline");
+        RequireNoPreviewExportMismatches(comparison);
+        var exportControl = comparison.ExportControls.Single(control => control.Name == "InvisibleButton");
+        if (Math.Abs(exportControl.Opacity) > 0.01)
+            throw new InvalidOperationException("Opacity=0 should be preserved for preview/export runtime behavior.");
+        RequireContains(context.Xaml, "Opacity=\"0\"", "Opacity=0 should be exported.");
+        RequireNotContains(context.Xaml, "DESIGNER_INVISIBLE_CONTROL_OUTLINE_SHOWN", "Designer-only invisible outline must not be exported.");
+        RequireNotContains(context.Xaml, "StrokeDashArray", "Designer-only invisible outline must not be exported.");
+    }
+
+    private static void ConfigurePreviewExportBoundsMatchAfterResize(MainWindowViewModel vm)
+    {
+        ConfigureResizeFormDoesNotMoveCanvasControls(vm);
+    }
+
+    private static void AssertPreviewExportBoundsMatchAfterResize(SmokeContext context)
+    {
+        context.ViewModel.DesignWidth = 1500;
+        context.ViewModel.DesignHeight = 920;
+        var comparison = context.ViewModel.ComparePreviewAndExportForActiveDocument("PreviewExportBoundsMatchAfterResize");
+        RequireNoPreviewExportMismatches(comparison);
     }
 
     private static void ConfigureRealDataGridExport(MainWindowViewModel vm)
@@ -2284,6 +2381,25 @@ internal static class Program
             || Math.Abs(preview.Height - export.Height) > tolerance)
         {
             throw new InvalidOperationException($"Bounds mismatch for {preview.Name}. Preview: {preview.BoundsText}. Export: {export.BoundsText}.");
+        }
+    }
+
+    private static Dictionary<string, string> CaptureBoundsByName(MainWindowViewModel vm)
+    {
+        return vm.Controls.ToDictionary(
+            control => control.Name,
+            control => $"{control.X.ToString(System.Globalization.CultureInfo.InvariantCulture)},{control.Y.ToString(System.Globalization.CultureInfo.InvariantCulture)} {control.Width.ToString(System.Globalization.CultureInfo.InvariantCulture)}x{control.Height.ToString(System.Globalization.CultureInfo.InvariantCulture)}",
+            StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static void RequireBoundsMapUnchanged(Dictionary<string, string> before, Dictionary<string, string> after, string message)
+    {
+        foreach (var (name, beforeBounds) in before)
+        {
+            if (!after.TryGetValue(name, out var afterBounds))
+                throw new InvalidOperationException($"{message} Missing control after resize: {name}.");
+            if (!string.Equals(beforeBounds, afterBounds, StringComparison.Ordinal))
+                throw new InvalidOperationException($"{message} {name}: before={beforeBounds}; after={afterBounds}.");
         }
     }
 

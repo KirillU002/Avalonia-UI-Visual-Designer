@@ -80,7 +80,7 @@ public partial class PreviewWindow : Window
         ApplyWindowSettings();
         Opened += PreviewWindow_Opened;
         KeyDown += PreviewWindow_KeyDown;
-        SizeChanged += (_, _) => ScheduleRenderDocument();
+        SizeChanged += PreviewWindow_SizeChanged;
         _renderDocumentTimer.Interval = TimeSpan.FromMilliseconds(33);
         _renderDocumentTimer.Tick += RenderDocumentTimer_Tick;
         AddHandler(InputElement.PointerMovedEvent, PreviewWindow_PointerMoved, RoutingStrategies.Tunnel, true);
@@ -428,6 +428,15 @@ public partial class PreviewWindow : Window
         }
     }
 
+    private void PreviewWindow_SizeChanged(object? sender, SizeChangedEventArgs e)
+    {
+        Debug.WriteLine(
+            $"PREVIEW_WINDOW_RESIZE old={e.PreviousSize.Width.ToString(CultureInfo.InvariantCulture)}x{e.PreviousSize.Height.ToString(CultureInfo.InvariantCulture)}; " +
+            $"new={e.NewSize.Width.ToString(CultureInfo.InvariantCulture)}x{e.NewSize.Height.ToString(CultureInfo.InvariantCulture)}; " +
+            $"canvas={PreviewCanvas.Bounds.Width.ToString(CultureInfo.InvariantCulture)}x{PreviewCanvas.Bounds.Height.ToString(CultureInfo.InvariantCulture)}; zoom=1");
+        ScheduleRenderDocument();
+    }
+
     private void ScheduleRenderDocument()
     {
         _isRenderDocumentScheduled = true;
@@ -472,20 +481,7 @@ public partial class PreviewWindow : Window
         {
             foreach (var child in children)
             {
-                var frame = AnchorLayoutHelper.ResolveFrame(
-                    child.X,
-                    child.Y,
-                    child.Width,
-                    child.Height,
-                    baseParentWidth,
-                    baseParentHeight,
-                    actualParentWidth,
-                    actualParentHeight,
-                    child.AnchorLeft,
-                    child.AnchorTop,
-                    child.AnchorRight,
-                    child.AnchorBottom);
-                AddRenderedControl(host, child, new Rect(frame.X, frame.Y, frame.Width, frame.Height));
+                AddRenderedControl(host, child, new Rect(child.X, child.Y, child.Width, child.Height));
             }
 
             return;
@@ -1046,6 +1042,7 @@ public partial class PreviewWindow : Window
             Background = ParseBrush(control.Background, "#2563EB"),
             BorderBrush = ParseBrush(control.BorderBrush, "#1D4ED8"),
             BorderThickness = UniformThickness(control.BorderThickness),
+            CornerRadius = UniformCornerRadius(control.CornerRadius),
             Padding = UniformThickness(control.Padding),
             Cursor = new Cursor(StandardCursorType.Hand),
             Content = CreatePreviewText(

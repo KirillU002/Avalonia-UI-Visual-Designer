@@ -11306,7 +11306,10 @@ public partial class MainWindowViewModel : ObservableObject
         }
     }
 
-    public IReadOnlyList<PreviewExportControlSnapshot> BuildPreviewControlSnapshotsForActiveDocument(string reason = "Manual")
+    public IReadOnlyList<PreviewExportControlSnapshot> BuildPreviewControlSnapshotsForActiveDocument(
+        string reason = "Manual",
+        double? actualRootWidth = null,
+        double? actualRootHeight = null)
     {
         var stopwatch = Stopwatch.StartNew();
         TraceDocumentDebug(
@@ -11319,8 +11322,8 @@ public partial class MainWindowViewModel : ObservableObject
             parentId: null,
             baseParentWidth: DesignWidth,
             baseParentHeight: DesignHeight,
-            actualParentWidth: PreviewFormWidth,
-            actualParentHeight: PreviewFormHeight,
+            actualParentWidth: actualRootWidth ?? PreviewFormWidth,
+            actualParentHeight: actualRootHeight ?? PreviewFormHeight,
             snapshots);
 
         TraceControlSnapshotOrder("PREVIEW_CONTROL_ORDER", snapshots);
@@ -11443,21 +11446,8 @@ public partial class MainWindowViewModel : ObservableObject
         {
             foreach (var child in children)
             {
-                var frame = AnchorLayoutHelper.ResolveFrame(
-                    child.X,
-                    child.Y,
-                    child.Width,
-                    child.Height,
-                    baseParentWidth,
-                    baseParentHeight,
-                    actualParentWidth,
-                    actualParentHeight,
-                    child.AnchorLeft,
-                    child.AnchorTop,
-                    child.AnchorRight,
-                    child.AnchorBottom);
-                snapshots.Add(CreatePreviewExportSnapshot(source, child, snapshots.Count, frame.X, frame.Y, frame.Width, frame.Height));
-                appendChildren(child.Id, child.Width, child.Height, frame.Width, frame.Height, snapshots);
+                snapshots.Add(CreatePreviewExportSnapshot(source, child, snapshots.Count, child.X, child.Y, child.Width, child.Height));
+                appendChildren(child.Id, child.Width, child.Height, child.Width, child.Height, snapshots);
             }
 
             return;
@@ -11666,6 +11656,22 @@ public partial class MainWindowViewModel : ObservableObject
         var properties = snapshots.Select(item =>
             $"{item.Name}:{item.Type}:text={item.Text}:bg={item.Background}:fg={item.Foreground}:border={item.BorderBrush}:radius={ToInvariant(item.CornerRadius)}:opacity={ToInvariant(item.Opacity)}");
         TraceDocumentDebug(eventName, $"document={ActiveDocumentName}:{ActiveDocumentId}; controls=[{string.Join(" | ", properties)}]", toOutput: false);
+
+        var opacityEvent = eventName.StartsWith("PREVIEW_", StringComparison.OrdinalIgnoreCase)
+            ? "PREVIEW_OPACITY"
+            : eventName.StartsWith("EXPORT_", StringComparison.OrdinalIgnoreCase)
+                ? "EXPORT_OPACITY"
+                : "";
+        if (string.IsNullOrWhiteSpace(opacityEvent))
+            return;
+
+        foreach (var item in snapshots)
+        {
+            TraceDocumentDebug(
+                opacityEvent,
+                $"control={item.Name}:{item.ControlId}; type={item.Type}; value={ToInvariant(item.Opacity)}",
+                toOutput: false);
+        }
     }
 
     private sealed record ExportEditorStateSnapshot(
@@ -16155,7 +16161,11 @@ public partial class MainWindowViewModel : ObservableObject
         var contentAttribute = string.IsNullOrWhiteSpace(control.TextBindingPath)
             ? $"Content=\"{EscapeXml(control.Text)}\""
             : $"Content=\"{{Binding {EscapeXml(control.TextBindingPath)}}}\"";
-        sb.AppendLine($"{Indent(indentLevel)}<Button x:Name=\"{EscapeXml(exportName)}\"{clickAttribute} {contentAttribute} {PlacementAttributes(control)}{BackgroundAttribute(control)}{ForegroundAttribute(control)}{TextStyleAttributes(control)}{BorderStyleAttributes(control)} Padding=\"{ToInvariant(control.Padding)}\"{CommonVisibilityAttributes(control)} />");
+        TraceDocumentDebug(
+            "EXPORT_BUTTON_CORNER_RADIUS",
+            $"control={control.Name}:{control.Id}; value={ToInvariant(control.CornerRadius)}; exportedAs=Button.CornerRadius",
+            toOutput: false);
+        sb.AppendLine($"{Indent(indentLevel)}<Button x:Name=\"{EscapeXml(exportName)}\"{clickAttribute} {contentAttribute} {PlacementAttributes(control)}{BackgroundAttribute(control)}{ForegroundAttribute(control)}{TextStyleAttributes(control)}{BorderStyleAttributes(control)} CornerRadius=\"{ToInvariant(control.CornerRadius)}\" Padding=\"{ToInvariant(control.Padding)}\"{CommonVisibilityAttributes(control)} />");
     }
 
     private void AppendLayoutHostOpening(
@@ -19172,6 +19182,11 @@ public partial class MainWindowViewModel : ObservableObject
             && DesignerThemeCatalog.AreEquivalent(currentValue, previousValue);
     }
 
+    partial void OnDesignWidthChanging(double oldValue, double newValue)
+    {
+        TraceFormResizeStart("Width", oldValue, newValue);
+    }
+
     partial void OnDesignWidthChanged(double value)
     {
         if (value < 300)
@@ -19180,9 +19195,14 @@ public partial class MainWindowViewModel : ObservableObject
             return;
         }
 
-        ClampAllControlsToSurface();
+        TraceFormResize("Width", value);
         RaisePreviewProperties();
         NotifyDesignerStateChanged();
+    }
+
+    partial void OnDesignHeightChanging(double oldValue, double newValue)
+    {
+        TraceFormResizeStart("Height", oldValue, newValue);
     }
 
     partial void OnDesignHeightChanged(double value)
@@ -19193,9 +19213,32 @@ public partial class MainWindowViewModel : ObservableObject
             return;
         }
 
-        ClampAllControlsToSurface();
+        TraceFormResize("Height", value);
         RaisePreviewProperties();
         NotifyDesignerStateChanged();
+    }
+
+    private void TraceFormResizeStart(string dimension, double oldValue, double newValue)
+    {
+        TraceDocumentDebug(
+            "FORM_RESIZE_START",
+            $"dimension={dimension}; oldValue={ToInvariant(oldValue)}; newValue={ToInvariant(newValue)}; form={ToInvariant(DesignWidth)}x{ToInvariant(DesignHeight)}; controlsBoundsBefore=[{CaptureControlBoundsForTrace()}]",
+            toOutput: false);
+    }
+
+    private void TraceFormResize(string dimension, double value)
+    {
+        var bounds = CaptureControlBoundsForTrace();
+        TraceDocumentDebug(
+            "FORM_RESIZE_END",
+            $"dimension={dimension}; newValue={ToInvariant(value)}; form={ToInvariant(DesignWidth)}x{ToInvariant(DesignHeight)}; controlsBounds=[{bounds}]; changedControls=0",
+            toOutput: false);
+    }
+
+    private string CaptureControlBoundsForTrace()
+    {
+        return string.Join(" | ", Controls.Select(control =>
+            $"{control.Name}:{control.Id}:{control.Type}:{ToInvariant(control.X)},{ToInvariant(control.Y)} {ToInvariant(control.Width)}x{ToInvariant(control.Height)}").Take(24));
     }
 
     partial void OnSnapStepChanged(int value)

@@ -2636,29 +2636,7 @@ public partial class MainWindow : Window
         {
             foreach (var child in children)
             {
-                Rect frame;
-                if (useUserPreview)
-                {
-                    var resolved = AnchorLayoutHelper.ResolveFrame(
-                        child.X,
-                        child.Y,
-                        child.Width,
-                        child.Height,
-                        baseParentWidth,
-                        baseParentHeight,
-                        actualParentWidth,
-                        actualParentHeight,
-                        child.AnchorLeft,
-                        child.AnchorTop,
-                        child.AnchorRight,
-                        child.AnchorBottom);
-                    frame = new Rect(resolved.X, resolved.Y, resolved.Width, resolved.Height);
-                }
-                else
-                {
-                    frame = new Rect(child.X, child.Y, child.Width, child.Height);
-                }
-
+                var frame = new Rect(child.X, child.Y, child.Width, child.Height);
                 AddRenderedControl(host, child, frame, useUserPreview);
             }
 
@@ -3963,7 +3941,15 @@ public partial class MainWindow : Window
             ClipToBounds = false
         };
 
-        root.Children.Add(preview);
+        var visualLayer = new Canvas
+        {
+            Width = renderedWidth,
+            Height = renderedHeight,
+            ClipToBounds = false,
+            Opacity = Math.Clamp(model.Opacity, 0, 1)
+        };
+
+        visualLayer.Children.Add(preview);
         Canvas.SetLeft(preview, 0);
         Canvas.SetTop(preview, 0);
 
@@ -3986,13 +3972,38 @@ public partial class MainWindow : Window
                 renderedHeight,
                 useUserPreview: isUserPreviewMode);
 
-            root.Children.Add(childHost);
+            visualLayer.Children.Add(childHost);
             Canvas.SetLeft(childHost, 0);
             Canvas.SetTop(childHost, 0);
         }
 
+        root.Children.Add(visualLayer);
+        Canvas.SetLeft(visualLayer, 0);
+        Canvas.SetTop(visualLayer, 0);
+
         if (!isUserPreviewMode)
         {
+            if (model.Opacity <= 0.01)
+            {
+                var invisibleOutline = new Rectangle
+                {
+                    Width = renderedWidth,
+                    Height = renderedHeight,
+                    Stroke = new SolidColorBrush(Color.Parse("#7C3AED")),
+                    StrokeThickness = isSelected ? 2.5 : 1.5,
+                    StrokeDashArray = new AvaloniaList<double> { 5, 3 },
+                    Fill = Brushes.Transparent,
+                    IsHitTestVisible = false
+                };
+                root.Children.Add(invisibleOutline);
+                Canvas.SetLeft(invisibleOutline, 0);
+                Canvas.SetTop(invisibleOutline, 0);
+                VM.TraceDocumentDebug(
+                    "DESIGNER_INVISIBLE_CONTROL_OUTLINE_SHOWN",
+                    $"control={model.Name}:{model.Id}; type={model.Type}; opacity={model.Opacity.ToString(CultureInfo.InvariantCulture)}; selected={isSelected}",
+                    toOutput: false);
+            }
+
             var label = new Border
             {
                 Background = new SolidColorBrush(Color.Parse("#0F172A")),
@@ -4094,7 +4105,7 @@ public partial class MainWindow : Window
                     ? new SolidColorBrush(Color.Parse(model.IsLocked ? "#0F766E" : isPrimary ? "#2563EB" : "#F97316"))
                     : new SolidColorBrush(Color.Parse(model.IsLocked ? "#64748B" : "#66CBD5E1")),
             Background = Brushes.Transparent,
-            Opacity = model.Opacity,
+            Opacity = 1,
             Tag = model,
             Child = root,
             ContextMenu = isUserPreviewMode ? null : CreateControlContextMenu(model)
@@ -4308,6 +4319,10 @@ public partial class MainWindow : Window
     private Control CreateButtonPreview(DesignControlModel model)
     {
         var text = ResolvePreviewTextValue(model, model.Text ?? string.Empty);
+        VM.TraceDocumentDebug(
+            "RENDER_BUTTON_CORNER_RADIUS",
+            $"control={model.Name}:{model.Id}; value={model.CornerRadius.ToString(CultureInfo.InvariantCulture)}; renderMode=designer-border-preview",
+            toOutput: false);
         return new Border
         {
             Width = model.Width,
