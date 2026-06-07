@@ -31,6 +31,12 @@ internal static class Program
         {
             new("SimpleFormExport", ConfigureSimpleFormExport, AssertSimpleFormExport),
             new("CanvasBorderBackgroundZOrderExport", ConfigureCanvasBorderBackgroundZOrderExport, AssertCanvasBorderBackgroundZOrderExport),
+            new("PreviewAndExportUseSameControlOrder", ConfigurePreviewExportConsistencyForm, AssertPreviewAndExportUseSameControlOrder),
+            new("BorderDoesNotCoverTextControlsAfterExport", ConfigurePreviewExportConsistencyForm, AssertBorderDoesNotCoverTextControlsAfterExport),
+            new("PreviewAndExportHaveSameBounds", ConfigurePreviewExportBoundsForm, AssertPreviewAndExportHaveSameBounds),
+            new("PreviewAndExportHaveSameKeyProperties", ConfigurePreviewExportPropertiesForm, AssertPreviewAndExportHaveSameKeyProperties),
+            new("PreviewGenerationDoesNotMutateEditorState", ConfigurePreviewExportStateMutationForm, AssertPreviewGenerationDoesNotMutateEditorState),
+            new("ExportGenerationDoesNotMutateEditorState", ConfigurePreviewExportStateMutationForm, AssertExportGenerationDoesNotMutateEditorState),
             new("RealDataGridExport", ConfigureRealDataGridExport, AssertRealDataGridExport, RequiresRealDataGrid: true),
             new("InteractionsExport", ConfigureInteractionsExport, AssertInteractionsExport, RequiresRealDataGrid: true),
             new("MultiFormOpenFormExport", ConfigureMultiFormOpenFormExport, AssertMultiFormOpenFormExport),
@@ -60,6 +66,11 @@ internal static class Program
             new("NewProjectReleasesOldFormsAndControls", ConfigureNewProjectReleasesOldFormsAndControls, AssertNewProjectReleasesOldFormsAndControls),
             new("NewProjectClearsDataDllExportCaches", ConfigureNewProjectClearsDataDllExportCaches, AssertNewProjectClearsDataDllExportCaches),
             new("PropertyEditDoesNotTriggerExportPipeline", ConfigurePropertyEditDoesNotTriggerExportPipeline, AssertPropertyEditDoesNotTriggerExportPipeline),
+            new("ExportDoesNotMutateEditorState", ConfigureExportDoesNotMutateEditorState, AssertExportDoesNotMutateEditorState),
+            new("BuildSecondaryFormsDoesNotCallApplyDocument", ConfigureBuildSecondaryFormsDoesNotCallApplyDocument, AssertBuildSecondaryFormsDoesNotCallApplyDocument),
+            new("ExportWhileEditingPropertyDoesNotResetTextBox", ConfigureExportWhileEditingPropertyDoesNotResetTextBox, AssertExportWhileEditingPropertyDoesNotResetTextBox),
+            new("ValidateBuildDoesNotChangeActiveForm", ConfigureValidateBuildDoesNotChangeActiveForm, AssertValidateBuildDoesNotChangeActiveForm),
+            new("ExportAfterNewProjectDoesNotUseOldDocuments", ConfigureExportAfterNewProjectDoesNotUseOldDocuments, AssertExportAfterNewProjectDoesNotUseOldDocuments),
             new("ResizeDoesNotRebuildPropertyGridOnEveryMove", ConfigureResizeDoesNotRebuildPropertyGridOnEveryMove, AssertResizeDoesNotRebuildPropertyGridOnEveryMove),
             new("DragAfterAddFormWorks", ConfigureDragAfterAddFormWorks, AssertDragAfterAddFormWorks),
             new("AddEmptySecondFormDoesNotBreakFirstFormPropertyGrid", ConfigureAddEmptySecondFormDoesNotBreakFirstFormPropertyGrid, AssertAddEmptySecondFormDoesNotBreakFirstFormPropertyGrid, RequiresRealDataGrid: true),
@@ -206,6 +217,121 @@ internal static class Program
         {
             throw new InvalidOperationException("Export should not generate an empty inner Canvas for a background Border.");
         }
+    }
+
+    private static void ConfigurePreviewExportConsistencyForm(MainWindowViewModel vm)
+    {
+        vm.SurfaceLayoutMode = DesignerLayoutModes.Absolute;
+        vm.Controls.Add(Control(DesignerControlTypes.TextBlock, "CardTitle", 54, 46, 220, 30, text: "Customer", foreground: "#111827"));
+        vm.Controls.Add(Control(DesignerControlTypes.TextBox, "CustomerNameTextBox", 54, 92, 260, 38, placeholder: "Name", background: "#FFFFFF", foreground: "#0F172A"));
+        vm.Controls.Add(Control(DesignerControlTypes.Button, "SaveButton", 54, 146, 130, 38, text: "Save", background: "#2563EB", foreground: "#FFFFFF", border: "#1D4ED8", radius: 8));
+        vm.Controls.Add(Control(DesignerControlTypes.Border, "BackgroundPanel", 24, 28, 520, 210, background: "#EFF6FF", border: "#93C5FD", radius: 16));
+    }
+
+    private static void AssertPreviewAndExportUseSameControlOrder(SmokeContext context)
+    {
+        var comparison = context.ViewModel.ComparePreviewAndExportForActiveDocument("PreviewAndExportUseSameControlOrder");
+        RequireNoPreviewExportMismatches(comparison);
+        RequireControlOrder(comparison.PreviewControls, "BackgroundPanel", "CardTitle", "CustomerNameTextBox", "SaveButton");
+        RequireControlOrder(comparison.ExportControls, "BackgroundPanel", "CardTitle", "CustomerNameTextBox", "SaveButton");
+    }
+
+    private static void AssertBorderDoesNotCoverTextControlsAfterExport(SmokeContext context)
+    {
+        var comparison = context.ViewModel.ComparePreviewAndExportForActiveDocument("BorderDoesNotCoverTextControlsAfterExport");
+        RequireNoPreviewExportMismatches(comparison);
+
+        var background = comparison.ExportControls.Single(control => control.Name == "BackgroundPanel");
+        var title = comparison.ExportControls.Single(control => control.Name == "CardTitle");
+        var input = comparison.ExportControls.Single(control => control.Name == "CustomerNameTextBox");
+        if (background.VisualIndex >= title.VisualIndex || background.VisualIndex >= input.VisualIndex)
+            throw new InvalidOperationException("Background Border should be below text controls in export snapshot.");
+        if (background.ZIndex >= title.ZIndex || background.ZIndex >= input.ZIndex)
+            throw new InvalidOperationException("Background Border should have lower ZIndex than text controls.");
+
+        var borderIndex = context.Xaml.IndexOf("x:Name=\"BackgroundPanel\"", StringComparison.Ordinal);
+        var titleIndex = context.Xaml.IndexOf("x:Name=\"CardTitle\"", StringComparison.Ordinal);
+        var inputIndex = context.Xaml.IndexOf("x:Name=\"CustomerNameTextBox\"", StringComparison.Ordinal);
+        if (borderIndex < 0 || titleIndex < 0 || inputIndex < 0 || borderIndex > titleIndex || borderIndex > inputIndex)
+            throw new InvalidOperationException("Exported AXAML order should keep background Border before foreground text controls.");
+    }
+
+    private static void ConfigurePreviewExportBoundsForm(MainWindowViewModel vm)
+    {
+        vm.DesignWidth = 1200;
+        vm.DesignHeight = 800;
+        vm.SurfaceLayoutMode = DesignerLayoutModes.Absolute;
+        vm.Controls.Add(Control(DesignerControlTypes.TextBlock, "TitleText", 32, 24, 260, 30, text: "Bounds"));
+        vm.Controls.Add(Control(DesignerControlTypes.TextBox, "InputBox", 132, 104, 320, 42, placeholder: "Name"));
+        vm.Controls.Add(Control(DesignerControlTypes.Border, "DetailsCard", 96, 176, 420, 140, background: "#F8FAFC", border: "#CBD5E1", radius: 12));
+    }
+
+    private static void AssertPreviewAndExportHaveSameBounds(SmokeContext context)
+    {
+        var comparison = context.ViewModel.ComparePreviewAndExportForActiveDocument("PreviewAndExportHaveSameBounds");
+        RequireNoPreviewExportMismatches(comparison);
+        foreach (var preview in comparison.PreviewControls)
+        {
+            var export = comparison.ExportControls.Single(control => control.ControlId == preview.ControlId);
+            RequireSameBounds(preview, export);
+        }
+    }
+
+    private static void ConfigurePreviewExportPropertiesForm(MainWindowViewModel vm)
+    {
+        vm.SurfaceLayoutMode = DesignerLayoutModes.Absolute;
+        var button = Control(DesignerControlTypes.Button, "StyledButton", 40, 46, 180, 44, text: "Styled", background: "#334155", foreground: "#F8FAFC", border: "#0F172A", radius: 11);
+        button.BorderThickness = 2;
+        button.Opacity = 0.82;
+        button.Padding = 10;
+        button.FontSize = 16;
+        button.FontWeight = "Bold";
+        button.FontFamily = "Inter";
+        vm.Controls.Add(button);
+
+        var text = Control(DesignerControlTypes.TextBlock, "StyledText", 40, 112, 280, 40, text: "Preview equals export", background: "Transparent", foreground: "#7C2D12", border: "#94A3B8", radius: 0);
+        text.FontSize = 15;
+        text.FontWeight = "SemiBold";
+        vm.Controls.Add(text);
+    }
+
+    private static void AssertPreviewAndExportHaveSameKeyProperties(SmokeContext context)
+    {
+        var comparison = context.ViewModel.ComparePreviewAndExportForActiveDocument("PreviewAndExportHaveSameKeyProperties");
+        RequireNoPreviewExportMismatches(comparison);
+        var exportButton = comparison.ExportControls.Single(control => control.Name == "StyledButton");
+        if (exportButton.Background != "#334155" || exportButton.Foreground != "#F8FAFC" || exportButton.BorderBrush != "#0F172A")
+            throw new InvalidOperationException("Export snapshot should preserve key styled Button colors.");
+        RequireContains(context.Xaml, "Background=\"#334155\"", "Styled Button background should be in AXAML.");
+        RequireContains(context.Xaml, "Foreground=\"#F8FAFC\"", "Styled Button foreground should be in AXAML.");
+    }
+
+    private static void ConfigurePreviewExportStateMutationForm(MainWindowViewModel vm)
+    {
+        vm.Controls.Add(Control(DesignerControlTypes.Button, "SelectedButton", 40, 40, 160, 40, text: "Selected"));
+        var button = vm.Controls.Single(control => control.Name == "SelectedButton");
+        vm.SelectControls(new[] { button }, button);
+        vm.MarkCanvasRenderedDocument("PreviewExportStateMutationForm", vm.Controls.Count, 0);
+    }
+
+    private static void AssertPreviewGenerationDoesNotMutateEditorState(SmokeContext context)
+    {
+        var before = CaptureEditorState(context.ViewModel);
+        var comparison = context.ViewModel.ComparePreviewAndExportForActiveDocument("PreviewGenerationDoesNotMutateEditorState");
+        RequireNoPreviewExportMismatches(comparison);
+        var after = CaptureEditorState(context.ViewModel);
+        RequireEditorStateUnchanged(before, after, "Preview/export comparison should not mutate editor state.");
+    }
+
+    private static void AssertExportGenerationDoesNotMutateEditorState(SmokeContext context)
+    {
+        context.ViewModel.InteractionTraceEntries.Clear();
+        var before = CaptureEditorState(context.ViewModel);
+        context.ViewModel.RefreshExportPipelineForSmokeTest();
+        var after = CaptureEditorState(context.ViewModel);
+        RequireEditorStateUnchanged(before, after, "Export pipeline should remain read-only for editor state.");
+        RequireNoExportEditorMutationTrace(context.ViewModel);
+        RequireNoApplyDocumentTrace(context.ViewModel, "ExportGenerationDoesNotMutateEditorState");
     }
 
     private static void ConfigureRealDataGridExport(MainWindowViewModel vm)
@@ -1386,6 +1512,155 @@ internal static class Program
         RequireContains(context.Xaml, "No export storm", "Property edit should still persist before final explicit export.");
     }
 
+    private static void ConfigureExportDoesNotMutateEditorState(MainWindowViewModel vm)
+    {
+        var form1 = vm.ActiveFormDocument ?? throw new InvalidOperationException("Form1 missing.");
+        var button = vm.TryCreateControlFromToolboxDrop(DesignerControlTypes.Button, 60, 60, null, false, form1.Id)
+            ?? throw new InvalidOperationException("Form1 Button was not created.");
+        button.Text = "Export state Button";
+        var form2 = vm.CreateNewForm();
+        var textBox = vm.TryCreateControlFromToolboxDrop(DesignerControlTypes.TextBox, 90, 90, null, false, form2.Id)
+            ?? throw new InvalidOperationException("Form2 TextBox was not created.");
+        textBox.PlaceholderText = "Secondary";
+
+        SwitchToForm(vm, form1.Id);
+        var restoredButton = vm.Controls.Single(control => control.Id == button.Id);
+        vm.SelectSingleControl(restoredButton);
+        var before = CaptureEditorState(vm);
+        vm.InteractionTraceEntries.Clear();
+
+        vm.GenerateXaml();
+
+        var after = CaptureEditorState(vm);
+        if (!string.Equals(before, after, StringComparison.Ordinal))
+            throw new InvalidOperationException($"Export mutated editor state. Before={before}; After={after}");
+        RequireNoExportEditorMutationTrace(vm);
+        RequireNoApplyDocumentTrace(vm, "ExportDoesNotMutateEditorState");
+    }
+
+    private static void AssertExportDoesNotMutateEditorState(SmokeContext context)
+    {
+        RequireGeneratedFile(context, "MainWindow.axaml");
+        RequireSecondaryGeneratedFiles(context);
+    }
+
+    private static void ConfigureBuildSecondaryFormsDoesNotCallApplyDocument(MainWindowViewModel vm)
+    {
+        var form1 = vm.ActiveFormDocument ?? throw new InvalidOperationException("Form1 missing.");
+        _ = vm.TryCreateControlFromToolboxDrop(DesignerControlTypes.Button, 50, 50, null, false, form1.Id)
+            ?? throw new InvalidOperationException("Form1 Button was not created.");
+        var form2 = vm.CreateNewForm();
+        _ = vm.TryCreateControlFromToolboxDrop(DesignerControlTypes.TextBlock, 80, 80, null, false, form2.Id)
+            ?? throw new InvalidOperationException("Form2 TextBlock was not created.");
+
+        SwitchToForm(vm, form1.Id);
+        vm.InteractionTraceEntries.Clear();
+        vm.GenerateXaml();
+
+        RequireNoApplyDocumentTrace(vm, "BuildSecondaryFormsDoesNotCallApplyDocument");
+        if (!vm.InteractionTraceEntries.Any(entry => entry.EventName == "BUILD_SECONDARY_FORM_GENERATION_PURE"))
+            throw new InvalidOperationException("Secondary form export did not use the pure generation path.");
+    }
+
+    private static void AssertBuildSecondaryFormsDoesNotCallApplyDocument(SmokeContext context)
+    {
+        RequireSecondaryGeneratedFiles(context);
+    }
+
+    private static void ConfigureExportWhileEditingPropertyDoesNotResetTextBox(MainWindowViewModel vm)
+    {
+        var form1 = vm.ActiveFormDocument ?? throw new InvalidOperationException("Form1 missing.");
+        var button = vm.TryCreateControlFromToolboxDrop(DesignerControlTypes.Button, 60, 60, null, false, form1.Id)
+            ?? throw new InvalidOperationException("Button was not created.");
+        vm.SelectSingleControl(button);
+        var row = GetPropertyGridRow(vm, nameof(DesignControlModel.Text));
+        var originalRowValue = row.Value;
+
+        vm.BeginPropertyGridTextEdit(row, row.Value);
+        vm.UpdatePropertyGridTextEdit(row, "Typing during export");
+        vm.InteractionTraceEntries.Clear();
+
+        vm.GenerateXaml();
+
+        if (!string.Equals(row.Value, originalRowValue, StringComparison.Ordinal))
+            throw new InvalidOperationException($"Export reset the property row during active edit. Expected '{originalRowValue}', got '{row.Value}'.");
+        if (vm.SelectedControl is null || !string.Equals(vm.SelectedControl.Id, button.Id, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Export changed selected control during property edit.");
+        if (vm.InteractionTraceEntries.Any(entry => entry.EventName == "RebuildPropertyGrid"))
+            throw new InvalidOperationException("Export rebuilt PropertyGrid during property edit.");
+        RequireNoApplyDocumentTrace(vm, "ExportWhileEditingPropertyDoesNotResetTextBox");
+
+        vm.CommitPropertyGridTextEdit(row, "Typing committed after export");
+    }
+
+    private static void AssertExportWhileEditingPropertyDoesNotResetTextBox(SmokeContext context)
+    {
+        RequireContains(context.Xaml, "Content=\"Typing committed after export\"", "Property edit should commit after export without reset.");
+    }
+
+    private static void ConfigureValidateBuildDoesNotChangeActiveForm(MainWindowViewModel vm)
+    {
+        var form1 = vm.ActiveFormDocument ?? throw new InvalidOperationException("Form1 missing.");
+        var button = vm.TryCreateControlFromToolboxDrop(DesignerControlTypes.Button, 60, 60, null, false, form1.Id)
+            ?? throw new InvalidOperationException("Button was not created.");
+        var form2 = vm.CreateNewForm();
+        _ = vm.TryCreateControlFromToolboxDrop(DesignerControlTypes.TextBox, 90, 90, null, false, form2.Id)
+            ?? throw new InvalidOperationException("Form2 TextBox was not created.");
+
+        SwitchToForm(vm, form1.Id);
+        var restoredButton = vm.Controls.Single(control => control.Id == button.Id);
+        vm.SelectSingleControl(restoredButton);
+        var before = CaptureEditorState(vm);
+        vm.InteractionTraceEntries.Clear();
+
+        var validationRoot = Path.Combine(Path.GetTempPath(), "FormDesignerSmokeValidation", Guid.NewGuid().ToString("N"));
+        var result = vm.ValidateCurrentExportBuildAsync(validationRoot).GetAwaiter().GetResult();
+        if (result.Status != ExportBuildValidationStatus.Passed)
+            throw new InvalidOperationException($"Validation build did not pass: {result.Status} {result.Output}");
+
+        var after = CaptureEditorState(vm);
+        if (!string.Equals(before, after, StringComparison.Ordinal))
+            throw new InvalidOperationException($"Validate build mutated editor state. Before={before}; After={after}");
+        RequireNoExportEditorMutationTrace(vm);
+        RequireNoApplyDocumentTrace(vm, "ValidateBuildDoesNotChangeActiveForm");
+    }
+
+    private static void AssertValidateBuildDoesNotChangeActiveForm(SmokeContext context)
+    {
+        RequireSecondaryGeneratedFiles(context);
+    }
+
+    private static void ConfigureExportAfterNewProjectDoesNotUseOldDocuments(MainWindowViewModel vm)
+    {
+        var form1 = vm.ActiveFormDocument ?? throw new InvalidOperationException("Form1 missing.");
+        var oldButton = vm.TryCreateControlFromToolboxDrop(DesignerControlTypes.Button, 40, 40, null, false, form1.Id)
+            ?? throw new InvalidOperationException("Old Button was not created.");
+        oldButton.Name = "OldExportButton";
+        oldButton.Text = "Old export text";
+        var oldForm2 = vm.CreateNewForm();
+        var oldTextBox = vm.TryCreateControlFromToolboxDrop(DesignerControlTypes.TextBox, 80, 80, null, false, oldForm2.Id)
+            ?? throw new InvalidOperationException("Old TextBox was not created.");
+        oldTextBox.Name = "OldExportTextBox";
+
+        vm.NewDocumentCommand.Execute(null);
+        vm.InteractionTraceEntries.Clear();
+        vm.GenerateXaml();
+
+        if (vm.GeneratedFiles.Any(file => file.Path.Contains("Form2", StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidOperationException("Export after New Project still generated old secondary form files.");
+        if (vm.GeneratedFiles.Any(file => file.Content.Contains("OldExport", StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidOperationException("Export after New Project still contains old document controls.");
+        RequireNoApplyDocumentTrace(vm, "ExportAfterNewProjectDoesNotUseOldDocuments");
+    }
+
+    private static void AssertExportAfterNewProjectDoesNotUseOldDocuments(SmokeContext context)
+    {
+        RequireGeneratedFile(context, "MainWindow.axaml");
+        if (context.GeneratedFiles.Any(file => file.Path.Contains("Form2", StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidOperationException("Final export after New Project should not include old Form2.");
+        RequireNotContains(context.Xaml, "OldExport", "Final export after New Project should not include old controls.");
+    }
+
     private static void ConfigureResizeDoesNotRebuildPropertyGridOnEveryMove(MainWindowViewModel vm)
     {
         var form1 = vm.ActiveFormDocument ?? throw new InvalidOperationException("Form1 missing.");
@@ -1960,6 +2235,80 @@ internal static class Program
         }
     }
 
+    private static string CaptureEditorState(MainWindowViewModel vm)
+    {
+        return string.Join("|",
+            vm.ActiveDocumentId,
+            vm.SelectedControl?.Id ?? "",
+            vm.PropertyGridContextDocumentId,
+            vm.PropertyGridContextControlId,
+            vm.RightInspectorSelectedIndex.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            string.Join(",", vm.DocumentTabs.Select(tab => tab.DocumentId)),
+            vm.CanvasRenderedDocumentId,
+            vm.Controls.Count.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            vm.PropertyGridCategories.Sum(category => category.Rows.Count).ToString(System.Globalization.CultureInfo.InvariantCulture));
+    }
+
+    private static void RequireEditorStateUnchanged(string before, string after, string message)
+    {
+        if (!string.Equals(before, after, StringComparison.Ordinal))
+            throw new InvalidOperationException($"{message} Before: {before}. After: {after}.");
+    }
+
+    private static void RequireNoPreviewExportMismatches(PreviewExportComparisonResult comparison)
+    {
+        if (comparison.Mismatches.Count == 0)
+            return;
+
+        var details = string.Join(" | ", comparison.Mismatches.Select(item =>
+            $"{item.Kind}:{item.ControlId}:preview={item.PreviewValue}:export={item.ExportValue}:{item.Details}"));
+        throw new InvalidOperationException($"Preview/export mismatch detected: {details}");
+    }
+
+    private static void RequireControlOrder(IReadOnlyList<PreviewExportControlSnapshot> snapshots, params string[] expectedNames)
+    {
+        var actualNames = snapshots.Select(snapshot => snapshot.Name).ToList();
+        for (var index = 0; index < expectedNames.Length; index++)
+        {
+            if (index >= actualNames.Count || !string.Equals(actualNames[index], expectedNames[index], StringComparison.Ordinal))
+                throw new InvalidOperationException($"Unexpected control order. Expected: {string.Join(", ", expectedNames)}. Actual: {string.Join(", ", actualNames)}.");
+        }
+    }
+
+    private static void RequireSameBounds(PreviewExportControlSnapshot preview, PreviewExportControlSnapshot export)
+    {
+        const double tolerance = 0.01;
+        if (Math.Abs(preview.X - export.X) > tolerance
+            || Math.Abs(preview.Y - export.Y) > tolerance
+            || Math.Abs(preview.Width - export.Width) > tolerance
+            || Math.Abs(preview.Height - export.Height) > tolerance)
+        {
+            throw new InvalidOperationException($"Bounds mismatch for {preview.Name}. Preview: {preview.BoundsText}. Export: {export.BoundsText}.");
+        }
+    }
+
+    private static void RequireNoApplyDocumentTrace(MainWindowViewModel vm, string scenario)
+    {
+        var applyTrace = vm.InteractionTraceEntries
+            .Where(entry => entry.EventName.Contains("APPLY_DOCUMENT", StringComparison.OrdinalIgnoreCase)
+                || entry.EventName == "ApplyDocument")
+            .Select(entry => $"{entry.EventName}:{entry.Details}")
+            .ToList();
+        if (applyTrace.Count > 0)
+            throw new InvalidOperationException($"{scenario}: export pipeline called ApplyDocument: {string.Join(" | ", applyTrace)}");
+    }
+
+    private static void RequireNoExportEditorMutationTrace(MainWindowViewModel vm)
+    {
+        var mutations = vm.InteractionTraceEntries
+            .Where(entry => entry.EventName == "EXPORT_MUTATED_EDITOR_STATE"
+                || entry.EventName == "EDITOR_STATE_MUTATION_DURING_EXPORT_BLOCKED")
+            .Select(entry => $"{entry.EventName}:{entry.Details}")
+            .ToList();
+        if (mutations.Count > 0)
+            throw new InvalidOperationException($"Export mutated editor state: {string.Join(" | ", mutations)}");
+    }
+
     private static void RequireActiveControls(MainWindowViewModel vm, params string[] names)
     {
         foreach (var name in names)
@@ -2454,6 +2803,24 @@ Diagnostics:
     {
         if (!context.GeneratedFiles.Any(file => string.Equals(file.Path, path, StringComparison.OrdinalIgnoreCase)))
             throw new InvalidOperationException($"Generated file missing: {path}");
+    }
+
+    private static void RequireSecondaryGeneratedFiles(SmokeContext context)
+    {
+        var secondaryXaml = context.GeneratedFiles
+            .Where(file => file.Path.EndsWith(".axaml", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(file.Path, "MainWindow.axaml", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        var secondaryCode = context.GeneratedFiles
+            .Where(file => file.Path.EndsWith(".axaml.cs", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(file.Path, "MainWindow.axaml.cs", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        if (secondaryXaml.Count == 0 || secondaryCode.Count == 0)
+        {
+            var files = string.Join(", ", context.GeneratedFiles.Select(file => file.Path));
+            throw new InvalidOperationException($"Expected secondary generated form files. Files: {files}");
+        }
     }
 
     private static void SafeCleanDirectory(string path)

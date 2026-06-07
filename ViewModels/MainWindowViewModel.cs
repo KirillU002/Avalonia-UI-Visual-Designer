@@ -130,6 +130,8 @@ public partial class MainWindowViewModel : ObservableObject
     private IReadOnlyDictionary<string, string>? _activeXamlControlNameMap;
     private LayoutExportPlan? _activeLayoutExportPlan;
     private bool _isGeneratingSecondaryFormExport;
+    private bool _isExportPipelineRunning;
+    private bool _isPreviewGenerationRunning;
     private string? _exportNamespaceOverride;
     private string? _exportWindowClassNameOverride;
     private string? _exportViewModelClassNameOverride;
@@ -11142,46 +11144,576 @@ public partial class MainWindowViewModel : ObservableObject
             GenerateXaml();
     }
 
+    public void RefreshExportPipelineForSmokeTest()
+    {
+        RefreshExportPipelineResult();
+    }
+
     private void RefreshExportPipelineResult()
     {
         TrackRefreshOperation(nameof(RefreshExportPipelineResult), "ExportPipeline");
         var stopwatch = Stopwatch.StartNew();
         var memoryBefore = GC.GetTotalMemory(forceFullCollection: false);
+        var wasExportPipelineRunning = _isExportPipelineRunning;
+        var beforeState = CaptureExportEditorStateSnapshot();
         var selectedPath = SelectedGeneratedFile?.Path;
-        var profile = BuildExportProfile();
-        var files = BuildGeneratedFiles().ToList();
-        var packages = BuildRequiredPackageModels().ToList();
-        var diagnostics = BuildExportDiagnosticModels().ToList();
+        var files = new List<GeneratedFileModel>();
+        var packages = new List<RequiredPackageModel>();
+        var diagnostics = new List<ExportDiagnosticModel>();
 
-        CurrentExportResult = _exportPipelineService.CreateResult(profile, files, packages, diagnostics, CurrentExportBuildValidation);
+        if (!wasExportPipelineRunning)
+        {
+            _isExportPipelineRunning = true;
+            TraceDocumentDebug(
+                "EXPORT_PIPELINE_START",
+                $"reason=RefreshExportPipelineResult; activeDocument={ActiveDocumentName}:{ActiveDocumentId}; selected={SelectedControl?.Name ?? "-"}:{SelectedControl?.Id ?? "-"}; forms={CurrentProject.Forms.Count}",
+                toOutput: false);
+            TraceDocumentDebug("EXPORT_EDITOR_STATE_SNAPSHOT_BEFORE", beforeState.ToTraceDetails(), toOutput: false);
+        }
 
-        GeneratedFiles.Clear();
-        foreach (var file in files)
-            GeneratedFiles.Add(file);
+        try
+        {
+            var profile = BuildExportProfile();
+            files = BuildGeneratedFiles().ToList();
+            packages = BuildRequiredPackageModels().ToList();
+            diagnostics = BuildExportDiagnosticModels().ToList();
 
-        GeneratedFileTreeNodes.Clear();
-        foreach (var node in BuildGeneratedFileTreeNodes(files))
-            GeneratedFileTreeNodes.Add(node);
+            CurrentExportResult = _exportPipelineService.CreateResult(profile, files, packages, diagnostics, CurrentExportBuildValidation);
 
-        RequiredPackages.Clear();
-        foreach (var package in packages)
-            RequiredPackages.Add(package);
+            GeneratedFiles.Clear();
+            foreach (var file in files)
+                GeneratedFiles.Add(file);
 
-        ExportDiagnostics.Clear();
-        foreach (var diagnostic in diagnostics)
-            ExportDiagnostics.Add(diagnostic);
+            GeneratedFileTreeNodes.Clear();
+            foreach (var node in BuildGeneratedFileTreeNodes(files))
+                GeneratedFileTreeNodes.Add(node);
 
-        SelectedGeneratedFile = GeneratedFiles.FirstOrDefault(file => string.Equals(file.Path, selectedPath, StringComparison.OrdinalIgnoreCase))
-            ?? GeneratedFiles.FirstOrDefault();
-        SelectedGeneratedFileNode = FindGeneratedFileNode(GeneratedFileTreeNodes, SelectedGeneratedFile?.Path);
+            RequiredPackages.Clear();
+            foreach (var package in packages)
+                RequiredPackages.Add(package);
 
-        RaiseExportPipelineProperties();
-        TracePerfOperationEnd(
-            nameof(RefreshExportPipelineResult),
-            stopwatch,
-            "ExportPipeline",
-            $"files={files.Count}; packages={packages.Count}; diagnostics={diagnostics.Count}",
-            memoryBefore);
+            ExportDiagnostics.Clear();
+            foreach (var diagnostic in diagnostics)
+                ExportDiagnostics.Add(diagnostic);
+
+            SelectedGeneratedFile = GeneratedFiles.FirstOrDefault(file => string.Equals(file.Path, selectedPath, StringComparison.OrdinalIgnoreCase))
+                ?? GeneratedFiles.FirstOrDefault();
+            SelectedGeneratedFileNode = FindGeneratedFileNode(GeneratedFileTreeNodes, SelectedGeneratedFile?.Path);
+
+            RaiseExportPipelineProperties();
+        }
+        finally
+        {
+            if (!wasExportPipelineRunning)
+            {
+                var afterState = CaptureExportEditorStateSnapshot();
+                TraceDocumentDebug("EXPORT_EDITOR_STATE_SNAPSHOT_AFTER", afterState.ToTraceDetails(), toOutput: false);
+                TraceExportEditorStateMutations(beforeState, afterState, nameof(RefreshExportPipelineResult));
+                TraceDocumentDebug(
+                    "EXPORT_PIPELINE_END",
+                    $"reason=RefreshExportPipelineResult; generatedFiles={files.Count}; warnings={diagnostics.Count(item => item.Severity == ExportChecklistSeverity.Warning)}; elapsedMs={stopwatch.Elapsed.TotalMilliseconds:0.0}",
+                    toOutput: false);
+                _isExportPipelineRunning = false;
+            }
+
+            TracePerfOperationEnd(
+                nameof(RefreshExportPipelineResult),
+                stopwatch,
+                "ExportPipeline",
+                $"files={files.Count}; packages={packages.Count}; diagnostics={diagnostics.Count}",
+                memoryBefore);
+        }
+    }
+
+    private ExportEditorStateSnapshot CaptureExportEditorStateSnapshot()
+    {
+        return new ExportEditorStateSnapshot(
+            ActiveDocumentId,
+            SelectedControl?.Id ?? "",
+            PropertyGridContextDocumentId,
+            PropertyGridContextControlId,
+            RightInspectorSelectedIndex,
+            string.Join(",", DocumentTabs.Select(tab => tab.DocumentId)),
+            CanvasRenderedDocumentId,
+            Controls.Count,
+            PropertyGridCategories.Sum(category => category.Rows.Count),
+            _isEditingPropertyGrid,
+            _isInspectorInteractionActive);
+    }
+
+    private void TraceExportEditorStateMutations(ExportEditorStateSnapshot before, ExportEditorStateSnapshot after, string operation)
+    {
+        foreach (var mutation in before.GetMutations(after))
+        {
+            TraceDocumentDebug(
+                "EXPORT_MUTATED_EDITOR_STATE",
+                $"operation={operation}; field={mutation.Field}; before={mutation.Before}; after={mutation.After}",
+                toOutput: true,
+                warning: true);
+        }
+    }
+
+    public PreviewExportComparisonResult ComparePreviewAndExportForActiveDocument(string reason = "Manual")
+    {
+        var beforeState = CaptureExportEditorStateSnapshot();
+        var wasPreviewGenerationRunning = _isPreviewGenerationRunning;
+        var stopwatch = Stopwatch.StartNew();
+        var previewSnapshots = Array.Empty<PreviewExportControlSnapshot>() as IReadOnlyList<PreviewExportControlSnapshot>;
+        var exportSnapshots = Array.Empty<PreviewExportControlSnapshot>() as IReadOnlyList<PreviewExportControlSnapshot>;
+
+        if (!wasPreviewGenerationRunning)
+        {
+            _isPreviewGenerationRunning = true;
+            TraceDocumentDebug(
+                "PREVIEW_EXPORT_COMPARE_START",
+                $"reason={reason}; document={ActiveDocumentName}:{ActiveDocumentId}; controls={Controls.Count}",
+                toOutput: false);
+            TraceDocumentDebug("EXPORT_EDITOR_STATE_SNAPSHOT_BEFORE", beforeState.ToTraceDetails(), toOutput: false);
+        }
+
+        try
+        {
+            previewSnapshots = BuildPreviewControlSnapshotsForActiveDocument(reason);
+            exportSnapshots = BuildExportControlSnapshotsForActiveDocument(reason);
+
+            var mismatches = ComparePreviewExportSnapshots(previewSnapshots, exportSnapshots);
+            TracePreviewExportMismatches(mismatches);
+            TraceDocumentDebug(
+                "PREVIEW_EXPORT_COMPARE_END",
+                $"reason={reason}; mismatchCount={mismatches.Count}; elapsedMs={stopwatch.Elapsed.TotalMilliseconds:0.0}",
+                toOutput: false,
+                warning: mismatches.Count > 0);
+
+            return new PreviewExportComparisonResult(previewSnapshots, exportSnapshots, mismatches);
+        }
+        finally
+        {
+            if (!wasPreviewGenerationRunning)
+            {
+                var afterState = CaptureExportEditorStateSnapshot();
+                TraceDocumentDebug("EXPORT_EDITOR_STATE_SNAPSHOT_AFTER", afterState.ToTraceDetails(), toOutput: false);
+                foreach (var mutation in beforeState.GetMutations(afterState))
+                {
+                    TraceDocumentDebug(
+                        "PREVIEW_MUTATED_EDITOR_STATE",
+                        $"reason={reason}; field={mutation.Field}; before={mutation.Before}; after={mutation.After}",
+                        toOutput: true,
+                        warning: true);
+                }
+
+                _isPreviewGenerationRunning = false;
+            }
+        }
+    }
+
+    public IReadOnlyList<PreviewExportControlSnapshot> BuildPreviewControlSnapshotsForActiveDocument(string reason = "Manual")
+    {
+        var stopwatch = Stopwatch.StartNew();
+        TraceDocumentDebug(
+            "PREVIEW_GENERATION_START",
+            $"reason={reason}; document={ActiveDocumentName}:{ActiveDocumentId}; controls={Controls.Count}; mode=Preview",
+            toOutput: false);
+
+        var snapshots = new List<PreviewExportControlSnapshot>();
+        BuildPreviewControlSnapshotsRecursive(
+            parentId: null,
+            baseParentWidth: DesignWidth,
+            baseParentHeight: DesignHeight,
+            actualParentWidth: PreviewFormWidth,
+            actualParentHeight: PreviewFormHeight,
+            snapshots);
+
+        TraceControlSnapshotOrder("PREVIEW_CONTROL_ORDER", snapshots);
+        TraceLayoutSnapshot("PREVIEW_LAYOUT_SNAPSHOT", snapshots);
+        TraceControlProperties("PREVIEW_CONTROL_PROPERTIES", snapshots);
+        TraceDocumentDebug(
+            "PREVIEW_GENERATION_END",
+            $"reason={reason}; elapsedMs={stopwatch.Elapsed.TotalMilliseconds:0.0}; generatedXamlLength=0; controls={snapshots.Count}",
+            toOutput: false);
+        return snapshots;
+    }
+
+    public IReadOnlyList<PreviewExportControlSnapshot> BuildExportControlSnapshotsForActiveDocument(string reason = "Manual")
+    {
+        var stopwatch = Stopwatch.StartNew();
+        var previousPlan = _activeLayoutExportPlan;
+        TraceDocumentDebug(
+            "EXPORT_GENERATION_START",
+            $"reason={reason}; document={ActiveDocumentName}:{ActiveDocumentId}; controls={Controls.Count}; mode=Export",
+            toOutput: false);
+
+        var snapshots = new List<PreviewExportControlSnapshot>();
+        _activeLayoutExportPlan = BuildLayoutExportPlan();
+        try
+        {
+            BuildExportControlSnapshotsRecursive(
+                parentId: null,
+                baseParentWidth: DesignWidth,
+                baseParentHeight: DesignHeight,
+                actualParentWidth: PreviewFormWidth,
+                actualParentHeight: PreviewFormHeight,
+                snapshots);
+        }
+        finally
+        {
+            _activeLayoutExportPlan = previousPlan;
+        }
+
+        TraceControlSnapshotOrder("EXPORT_CONTROL_ORDER", snapshots);
+        TraceLayoutSnapshot("EXPORT_LAYOUT_SNAPSHOT", snapshots);
+        TraceControlProperties("EXPORT_CONTROL_PROPERTIES", snapshots);
+        TraceDocumentDebug(
+            "EXPORT_GENERATION_END",
+            $"reason={reason}; elapsedMs={stopwatch.Elapsed.TotalMilliseconds:0.0}; generatedXamlLength={GeneratedXaml?.Length ?? 0}; controls={snapshots.Count}",
+            toOutput: false);
+        return snapshots;
+    }
+
+    private void BuildPreviewControlSnapshotsRecursive(
+        string? parentId,
+        double baseParentWidth,
+        double baseParentHeight,
+        double actualParentWidth,
+        double actualParentHeight,
+        List<PreviewExportControlSnapshot> snapshots)
+    {
+        var layoutMode = string.IsNullOrWhiteSpace(NormalizeId(parentId))
+            ? SurfaceLayoutMode
+            : GetLayoutModeForControl(GetControl(parentId));
+        var children = GetChildControlsForDesignerRender(parentId)
+            .Where(control => control.IsVisible)
+            .ToList();
+
+        AppendControlSnapshotsRecursive(
+            "Preview",
+            parentId,
+            layoutMode,
+            children,
+            baseParentWidth,
+            baseParentHeight,
+            actualParentWidth,
+            actualParentHeight,
+            snapshots,
+            BuildPreviewControlSnapshotsRecursive);
+    }
+
+    private void BuildExportControlSnapshotsRecursive(
+        string? parentId,
+        double baseParentWidth,
+        double baseParentHeight,
+        double actualParentWidth,
+        double actualParentHeight,
+        List<PreviewExportControlSnapshot> snapshots)
+    {
+        var layoutMode = GetExportLayoutModeForParent(parentId);
+        var children = string.IsNullOrWhiteSpace(NormalizeId(parentId))
+            ? GetRootControlsForExport().Where(control => control.IsVisible).ToList()
+            : GetChildControlsForExport(parentId).Where(control => control.IsVisible).ToList();
+
+        AppendControlSnapshotsRecursive(
+            "Export",
+            parentId,
+            layoutMode,
+            children,
+            baseParentWidth,
+            baseParentHeight,
+            actualParentWidth,
+            actualParentHeight,
+            snapshots,
+            BuildExportControlSnapshotsRecursive);
+    }
+
+    private void AppendControlSnapshotsRecursive(
+        string source,
+        string? parentId,
+        string? layoutMode,
+        IReadOnlyList<DesignControlModel> children,
+        double baseParentWidth,
+        double baseParentHeight,
+        double actualParentWidth,
+        double actualParentHeight,
+        List<PreviewExportControlSnapshot> snapshots,
+        Action<string?, double, double, double, double, List<PreviewExportControlSnapshot>> appendChildren)
+    {
+        if (children.Count == 0)
+            return;
+
+        var normalizedLayoutMode = DesignerLayoutModes.NormalizeMode(layoutMode);
+        if (DesignerLayoutModes.IsAbsolute(normalizedLayoutMode))
+        {
+            foreach (var child in children)
+            {
+                var frame = AnchorLayoutHelper.ResolveFrame(
+                    child.X,
+                    child.Y,
+                    child.Width,
+                    child.Height,
+                    baseParentWidth,
+                    baseParentHeight,
+                    actualParentWidth,
+                    actualParentHeight,
+                    child.AnchorLeft,
+                    child.AnchorTop,
+                    child.AnchorRight,
+                    child.AnchorBottom);
+                snapshots.Add(CreatePreviewExportSnapshot(source, child, snapshots.Count, frame.X, frame.Y, frame.Width, frame.Height));
+                appendChildren(child.Id, child.Width, child.Height, frame.Width, frame.Height, snapshots);
+            }
+
+            return;
+        }
+
+        var orientation = string.IsNullOrWhiteSpace(NormalizeId(parentId))
+            ? (source == "Export" ? GetExportParentLayoutOrientation(parentId) : SurfaceLayoutOrientation)
+            : GetParentLayoutOrientation(parentId);
+        var spacing = string.IsNullOrWhiteSpace(NormalizeId(parentId))
+            ? (source == "Export" ? GetExportParentLayoutSpacing(parentId) : SurfaceLayoutSpacing)
+            : GetParentLayoutSpacing(parentId);
+        var columns = string.IsNullOrWhiteSpace(NormalizeId(parentId))
+            ? SurfaceLayoutColumns
+            : GetControl(parentId)?.Columns ?? SurfaceLayoutColumns;
+        var rows = string.IsNullOrWhiteSpace(NormalizeId(parentId))
+            ? SurfaceLayoutRows
+            : GetControl(parentId)?.Rows ?? SurfaceLayoutRows;
+        var padding = GetControl(parentId)?.Padding ?? 0;
+        var frames = LayoutArrangementHelper.ArrangeChildren(
+            normalizedLayoutMode,
+            orientation,
+            spacing,
+            columns,
+            rows,
+            padding,
+            actualParentWidth,
+            actualParentHeight,
+            children.Select(child => new LayoutArrangementHelper.ChildSnapshot(
+                child.Id,
+                child.Width,
+                child.Height,
+                child.GridRow,
+                child.GridColumn,
+                child.GridRowSpan,
+                child.GridColumnSpan,
+                child.StackOrder)).ToList())
+            .ToDictionary(frame => frame.Id, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var child in children)
+        {
+            if (!frames.TryGetValue(child.Id, out var frame))
+                continue;
+
+            snapshots.Add(CreatePreviewExportSnapshot(source, child, snapshots.Count, frame.X, frame.Y, frame.Width, frame.Height));
+            appendChildren(child.Id, child.Width, child.Height, frame.Width, frame.Height, snapshots);
+        }
+    }
+
+    private PreviewExportControlSnapshot CreatePreviewExportSnapshot(
+        string source,
+        DesignControlModel control,
+        int visualIndex,
+        double x,
+        double y,
+        double width,
+        double height)
+    {
+        return new PreviewExportControlSnapshot(
+            source,
+            ActiveDocumentId,
+            control.Id,
+            control.Name,
+            control.Type,
+            NormalizeId(control.ParentId),
+            visualIndex,
+            GetCanvasVisualZIndex(control),
+            x,
+            y,
+            width,
+            height,
+            control.Text ?? string.Empty,
+            control.Background ?? string.Empty,
+            control.Foreground ?? string.Empty,
+            control.BorderBrush ?? string.Empty,
+            control.BorderThickness,
+            control.CornerRadius,
+            control.Padding,
+            control.Opacity,
+            control.FontFamily ?? string.Empty,
+            control.FontSize,
+            control.FontWeight ?? string.Empty,
+            control.IsVisible,
+            control.HorizontalAlignment ?? string.Empty,
+            control.VerticalAlignment ?? string.Empty,
+            control.Margin ?? string.Empty);
+    }
+
+    private static IReadOnlyList<PreviewExportMismatch> ComparePreviewExportSnapshots(
+        IReadOnlyList<PreviewExportControlSnapshot> preview,
+        IReadOnlyList<PreviewExportControlSnapshot> export)
+    {
+        var mismatches = new List<PreviewExportMismatch>();
+        if (preview.Count != export.Count)
+        {
+            mismatches.Add(new PreviewExportMismatch(
+                "Count",
+                "",
+                $"preview={preview.Count}",
+                $"export={export.Count}",
+                "Control count differs."));
+        }
+
+        var exportById = export.ToDictionary(item => item.ControlId, StringComparer.OrdinalIgnoreCase);
+        for (var index = 0; index < preview.Count; index++)
+        {
+            var previewItem = preview[index];
+            if (!exportById.TryGetValue(previewItem.ControlId, out var exportItem))
+            {
+                mismatches.Add(new PreviewExportMismatch("MissingInExport", previewItem.ControlId, previewItem.Name, "", "Preview control is not exported."));
+                continue;
+            }
+
+            if (previewItem.VisualIndex != exportItem.VisualIndex || previewItem.ZIndex != exportItem.ZIndex)
+            {
+                mismatches.Add(new PreviewExportMismatch(
+                    "Order",
+                    previewItem.ControlId,
+                    $"previewIndex={previewItem.VisualIndex}; previewZ={previewItem.ZIndex}",
+                    $"exportIndex={exportItem.VisualIndex}; exportZ={exportItem.ZIndex}",
+                    "Visual order differs."));
+            }
+
+            CompareBounds(previewItem, exportItem, mismatches);
+            CompareProperties(previewItem, exportItem, mismatches);
+        }
+
+        foreach (var exportItem in export)
+        {
+            if (preview.All(item => !string.Equals(item.ControlId, exportItem.ControlId, StringComparison.OrdinalIgnoreCase)))
+                mismatches.Add(new PreviewExportMismatch("MissingInPreview", exportItem.ControlId, "", exportItem.Name, "Export control is not in preview snapshot."));
+        }
+
+        return mismatches;
+    }
+
+    private static void CompareBounds(PreviewExportControlSnapshot preview, PreviewExportControlSnapshot export, List<PreviewExportMismatch> mismatches)
+    {
+        const double tolerance = 0.01;
+        if (Math.Abs(preview.X - export.X) > tolerance
+            || Math.Abs(preview.Y - export.Y) > tolerance
+            || Math.Abs(preview.Width - export.Width) > tolerance
+            || Math.Abs(preview.Height - export.Height) > tolerance)
+        {
+            mismatches.Add(new PreviewExportMismatch(
+                "Layout",
+                preview.ControlId,
+                $"preview={preview.BoundsText}",
+                $"export={export.BoundsText}",
+                "Bounds differ."));
+        }
+    }
+
+    private static void CompareProperties(PreviewExportControlSnapshot preview, PreviewExportControlSnapshot export, List<PreviewExportMismatch> mismatches)
+    {
+        foreach (var (name, previewValue, exportValue) in preview.GetComparableProperties(export))
+        {
+            if (!string.Equals(previewValue, exportValue, StringComparison.Ordinal))
+            {
+                mismatches.Add(new PreviewExportMismatch(
+                    "Property",
+                    preview.ControlId,
+                    $"{name}={previewValue}",
+                    $"{name}={exportValue}",
+                    "Key property differs."));
+            }
+        }
+    }
+
+    private void TracePreviewExportMismatches(IReadOnlyList<PreviewExportMismatch> mismatches)
+    {
+        foreach (var mismatch in mismatches)
+        {
+            var eventName = mismatch.Kind switch
+            {
+                "Order" => "PREVIEW_EXPORT_ORDER_MISMATCH",
+                "Layout" => "PREVIEW_EXPORT_LAYOUT_MISMATCH",
+                "Property" => "PREVIEW_EXPORT_PROPERTY_MISMATCH",
+                _ => "PREVIEW_EXPORT_MISMATCH"
+            };
+            TraceDocumentDebug(
+                eventName,
+                $"control={mismatch.ControlId}; preview={mismatch.PreviewValue}; export={mismatch.ExportValue}; reason={mismatch.Details}",
+                toOutput: false,
+                warning: true);
+        }
+    }
+
+    private void TraceControlSnapshotOrder(string eventName, IReadOnlyList<PreviewExportControlSnapshot> snapshots)
+    {
+        var ordered = snapshots.Select(item =>
+            $"{item.VisualIndex}:{item.Name}:{item.Type}:z={item.ZIndex}:x={ToInvariant(item.X)}:y={ToInvariant(item.Y)}");
+        TraceDocumentDebug(eventName, $"document={ActiveDocumentName}:{ActiveDocumentId}; ordered=[{string.Join(" | ", ordered)}]", toOutput: false);
+    }
+
+    private void TraceLayoutSnapshot(string eventName, IReadOnlyList<PreviewExportControlSnapshot> snapshots)
+    {
+        var bounds = snapshots.Select(item => $"{item.Name}:{item.BoundsText}").Take(24);
+        TraceDocumentDebug(
+            eventName,
+            $"window={ToInvariant(PreviewFormWidth)}x{ToInvariant(PreviewFormHeight)}; canvas={ToInvariant(DesignWidth)}x{ToInvariant(DesignHeight)}; zoom=1; viewport=0,0; controls=[{string.Join(" | ", bounds)}]",
+            toOutput: false);
+    }
+
+    private void TraceControlProperties(string eventName, IReadOnlyList<PreviewExportControlSnapshot> snapshots)
+    {
+        var properties = snapshots.Select(item =>
+            $"{item.Name}:{item.Type}:text={item.Text}:bg={item.Background}:fg={item.Foreground}:border={item.BorderBrush}:radius={ToInvariant(item.CornerRadius)}:opacity={ToInvariant(item.Opacity)}");
+        TraceDocumentDebug(eventName, $"document={ActiveDocumentName}:{ActiveDocumentId}; controls=[{string.Join(" | ", properties)}]", toOutput: false);
+    }
+
+    private sealed record ExportEditorStateSnapshot(
+        string ActiveDocumentId,
+        string SelectedControlId,
+        string InspectorDocumentId,
+        string InspectorControlId,
+        int ActiveRightTab,
+        string OpenedTabs,
+        string CanvasDocumentId,
+        int CanvasControlsCount,
+        int PropertyRowsCount,
+        bool IsEditingProperty,
+        bool IsInspectorInteractionActive)
+    {
+        public string ToTraceDetails()
+        {
+            return
+                $"activeDocument={ActiveDocumentId}; selectedControl={SelectedControlId}; inspector={InspectorDocumentId}/{InspectorControlId}; " +
+                $"activeTab={ActiveRightTab}; openedTabs={OpenedTabs}; canvasDocument={CanvasDocumentId}; canvasControls={CanvasControlsCount}; " +
+                $"propertyRows={PropertyRowsCount}; isEditingProperty={IsEditingProperty}; isInspectorInteractionActive={IsInspectorInteractionActive}";
+        }
+
+        public IEnumerable<(string Field, string Before, string After)> GetMutations(ExportEditorStateSnapshot after)
+        {
+            if (!string.Equals(ActiveDocumentId, after.ActiveDocumentId, StringComparison.OrdinalIgnoreCase))
+                yield return (nameof(ActiveDocumentId), ActiveDocumentId, after.ActiveDocumentId);
+            if (!string.Equals(SelectedControlId, after.SelectedControlId, StringComparison.OrdinalIgnoreCase))
+                yield return (nameof(SelectedControlId), SelectedControlId, after.SelectedControlId);
+            if (!string.Equals(InspectorDocumentId, after.InspectorDocumentId, StringComparison.OrdinalIgnoreCase))
+                yield return (nameof(InspectorDocumentId), InspectorDocumentId, after.InspectorDocumentId);
+            if (!string.Equals(InspectorControlId, after.InspectorControlId, StringComparison.OrdinalIgnoreCase))
+                yield return (nameof(InspectorControlId), InspectorControlId, after.InspectorControlId);
+            if (ActiveRightTab != after.ActiveRightTab)
+                yield return (nameof(ActiveRightTab), ActiveRightTab.ToString(CultureInfo.InvariantCulture), after.ActiveRightTab.ToString(CultureInfo.InvariantCulture));
+            if (!string.Equals(OpenedTabs, after.OpenedTabs, StringComparison.Ordinal))
+                yield return (nameof(OpenedTabs), OpenedTabs, after.OpenedTabs);
+            if (!string.Equals(CanvasDocumentId, after.CanvasDocumentId, StringComparison.OrdinalIgnoreCase))
+                yield return (nameof(CanvasDocumentId), CanvasDocumentId, after.CanvasDocumentId);
+            if (CanvasControlsCount != after.CanvasControlsCount)
+                yield return (nameof(CanvasControlsCount), CanvasControlsCount.ToString(CultureInfo.InvariantCulture), after.CanvasControlsCount.ToString(CultureInfo.InvariantCulture));
+            if (PropertyRowsCount != after.PropertyRowsCount)
+                yield return (nameof(PropertyRowsCount), PropertyRowsCount.ToString(CultureInfo.InvariantCulture), after.PropertyRowsCount.ToString(CultureInfo.InvariantCulture));
+            if (IsEditingProperty != after.IsEditingProperty)
+                yield return (nameof(IsEditingProperty), IsEditingProperty.ToString(), after.IsEditingProperty.ToString());
+            if (IsInspectorInteractionActive != after.IsInspectorInteractionActive)
+                yield return (nameof(IsInspectorInteractionActive), IsInspectorInteractionActive.ToString(), after.IsInspectorInteractionActive.ToString());
+        }
     }
 
     private ExportProfile BuildExportProfile()
@@ -11305,8 +11837,8 @@ public partial class MainWindowViewModel : ObservableObject
     private (string Xaml, string CSharp) BuildSecondaryFormGeneratedFiles(DesignerFormDocument form, string className)
     {
         TraceDocumentDebug(
-            "EXPORT_PIPELINE_EDITOR_SURFACE_MUTATION_SUPPRESSED",
-            $"caller={nameof(BuildSecondaryFormGeneratedFiles)}; document={form.DisplayName}:{form.Id}; activeDocument={ActiveDocumentName}:{ActiveDocumentId}; selected={SelectedControl?.Name ?? "-"}:{SelectedControl?.Id ?? "-"}; reason=secondary export uses isolated VM",
+            "BUILD_SECONDARY_FORM_GENERATION_PURE",
+            $"form={form.DisplayName}:{form.Id}; controls={form.Document?.Controls.Count ?? 0}; activeDocument={ActiveDocumentName}:{ActiveDocumentId}; selected={SelectedControl?.Name ?? "-"}:{SelectedControl?.Id ?? "-"}; reason=secondary export uses snapshot-only context",
             toOutput: false);
 
         var exportViewModel = new MainWindowViewModel(_registry);
@@ -11320,20 +11852,151 @@ public partial class MainWindowViewModel : ObservableObject
                     string.Equals(item.Id, form.Id, StringComparison.OrdinalIgnoreCase))
                 ?? CloneFormDocumentForPreview(form);
             exportViewModel._isGeneratingSecondaryFormExport = true;
-            exportViewModel.ApplyDocument(
+            exportViewModel.LoadDocumentSnapshotForExportGeneration(
+                exportViewModel.ActiveFormDocument,
                 CloneDocumentFileModel(exportViewModel.ActiveFormDocument.Document),
-                CurrentProjectPath,
-                markAsSaved: true,
-                resetDocumentSession: false,
-                resetHistory: false,
-                refreshEditorSurfaces: false);
+                CurrentProjectPath);
             exportViewModel.GenerateXaml();
+            TraceDocumentDebug(
+                "BUILD_SECONDARY_FORM_GENERATION_PURE",
+                $"form={form.DisplayName}:{form.Id}; controls={form.Document?.Controls.Count ?? 0}; generatedAxaml={exportViewModel.GeneratedXaml.Length}; generatedCode={exportViewModel.GeneratedCSharp.Length}",
+                toOutput: false);
             return (exportViewModel.GeneratedXaml, exportViewModel.GeneratedCSharp);
         }
         finally
         {
             exportViewModel.DisposeExportOnlyViewModel();
         }
+    }
+
+    private void LoadDocumentSnapshotForExportGeneration(DesignerFormDocument form, DesignerDocumentFileModel document, string? sourcePath)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        var memoryBefore = GC.GetTotalMemory(forceFullCollection: false);
+        ActiveFormDocument = form;
+        Workspace.Session.ActiveDocumentId = form.Id;
+        CurrentDocumentPath = sourcePath ?? "";
+
+        _isHistorySuspended = true;
+        _isApplyingDocument = true;
+        try
+        {
+            SelectedControl = null;
+            SelectedControlIds.Clear();
+            SelectedInteraction = null;
+            SelectedBindingSource = null;
+            Controls.Clear();
+            BindingSources.Clear();
+            Interactions.Clear();
+            _controlDocumentIdsByControlId.Clear();
+            _controlPropertySubscriptions.Clear();
+
+            var normalizedTheme = DesignerThemeCatalog.NormalizeThemeName(
+                string.IsNullOrWhiteSpace(document.FormTheme)
+                    ? DesignerThemeCatalog.InferThemeName(document.SurfaceBackground)
+                    : document.FormTheme);
+            var palette = DesignerThemeCatalog.Get(normalizedTheme);
+
+            FormTheme = normalizedTheme;
+            _activeFormTheme = normalizedTheme;
+            DesignWidth = Math.Max(300, document.DesignWidth);
+            DesignHeight = Math.Max(200, document.DesignHeight);
+            SnapStep = Math.Max(1, document.SnapStep);
+            IsGridSnapEnabled = document.IsGridSnapEnabled;
+            IsControlSnapEnabled = document.IsControlSnapEnabled;
+            SnapThreshold = Math.Clamp(document.SnapThreshold, 1, 40);
+            IsCanvasSnappingEnabled = document.IsCanvasSnappingEnabled;
+            IsDesignerGridVisible = document.IsDesignerGridVisible;
+            IsSmartGuidesEnabled = document.IsSmartGuidesEnabled;
+            IsDistanceHintsEnabled = document.IsDistanceHintsEnabled;
+            IgnoreLockedDuringSelection = document.IgnoreLockedDuringSelection;
+            IsSelectionToolbarEnabled = document.IsSelectionToolbarEnabled;
+            SurfaceBackground = string.IsNullOrWhiteSpace(document.SurfaceBackground) ? palette.SurfaceBackground : document.SurfaceBackground;
+            SurfaceGridMinorColor = string.IsNullOrWhiteSpace(document.SurfaceGridMinorColor) ? palette.SurfaceGridMinorColor : document.SurfaceGridMinorColor;
+            SurfaceGridMajorColor = string.IsNullOrWhiteSpace(document.SurfaceGridMajorColor) ? palette.SurfaceGridMajorColor : document.SurfaceGridMajorColor;
+            SurfaceLayoutMode = DesignerLayoutModes.NormalizeMode(document.SurfaceLayoutMode);
+            SurfaceLayoutOrientation = DesignerLayoutModes.NormalizeOrientation(document.SurfaceLayoutOrientation);
+            SurfaceLayoutSpacing = Math.Max(0, document.SurfaceLayoutSpacing);
+            SurfaceLayoutColumns = Math.Max(1, document.SurfaceLayoutColumns);
+            SurfaceLayoutRows = Math.Max(1, document.SurfaceLayoutRows);
+            SurfaceGridColumnDefinitions = document.SurfaceGridColumnDefinitions ?? "";
+            SurfaceGridRowDefinitions = document.SurfaceGridRowDefinitions ?? "";
+            FormTitle = string.IsNullOrWhiteSpace(document.FormTitle) ? form.DisplayName : document.FormTitle;
+            FormWindowState = NormalizeFormWindowState(document.FormWindowState);
+            FormStartupLocation = NormalizeFormStartupLocation(document.FormStartupLocation);
+            FormCanResize = document.FormCanResize;
+            FormShowInTaskbar = document.FormShowInTaskbar;
+            FormTopmost = document.FormTopmost;
+            FormHasSystemDecorations = document.FormHasSystemDecorations;
+
+            foreach (var sourceFile in document.BindingSources)
+                BindingSources.Add(FromBindingSourceFileModel(sourceFile));
+
+            foreach (var controlFile in document.Controls)
+            {
+                var runtimeControl = FromControlFileModel(controlFile);
+                runtimeControl.Name = string.IsNullOrWhiteSpace(runtimeControl.Name)
+                    ? GetUniqueControlName(controlFile.Type)
+                    : runtimeControl.Name;
+                runtimeControl.DataGridRowBackground = string.IsNullOrWhiteSpace(runtimeControl.DataGridRowBackground)
+                    ? palette.DataGridRowBackground
+                    : runtimeControl.DataGridRowBackground;
+                runtimeControl.DataGridAlternateRowBackground = string.IsNullOrWhiteSpace(runtimeControl.DataGridAlternateRowBackground)
+                    ? palette.DataGridAlternateRowBackground
+                    : runtimeControl.DataGridAlternateRowBackground;
+                runtimeControl.DataGridTextAlignment = DesignControlModel.NormalizeDataGridTextAlignment(runtimeControl.DataGridTextAlignment);
+                runtimeControl.DataGridGlowColor = string.IsNullOrWhiteSpace(runtimeControl.DataGridGlowColor)
+                    ? palette.AccentStrongBrush
+                    : runtimeControl.DataGridGlowColor;
+                runtimeControl.DataGridHeaderBackground = string.IsNullOrWhiteSpace(runtimeControl.DataGridHeaderBackground)
+                    ? runtimeControl.Background
+                    : runtimeControl.DataGridHeaderBackground;
+                runtimeControl.DataGridHeaderForeground = string.IsNullOrWhiteSpace(runtimeControl.DataGridHeaderForeground)
+                    ? runtimeControl.Foreground
+                    : runtimeControl.DataGridHeaderForeground;
+                runtimeControl.DataGridRowForeground = string.IsNullOrWhiteSpace(runtimeControl.DataGridRowForeground)
+                    ? runtimeControl.Foreground
+                    : runtimeControl.DataGridRowForeground;
+                runtimeControl.DataGridHoverRowBackground = string.IsNullOrWhiteSpace(runtimeControl.DataGridHoverRowBackground)
+                    ? "#EFF6FF"
+                    : runtimeControl.DataGridHoverRowBackground;
+                runtimeControl.DataGridSelectedRowBackground = string.IsNullOrWhiteSpace(runtimeControl.DataGridSelectedRowBackground)
+                    ? "#DBEAFE"
+                    : runtimeControl.DataGridSelectedRowBackground;
+                runtimeControl.DataGridSelectedRowForeground = string.IsNullOrWhiteSpace(runtimeControl.DataGridSelectedRowForeground)
+                    ? runtimeControl.Foreground
+                    : runtimeControl.DataGridSelectedRowForeground;
+                runtimeControl.DataGridGridLineBrush = string.IsNullOrWhiteSpace(runtimeControl.DataGridGridLineBrush)
+                    ? runtimeControl.BorderBrush
+                    : runtimeControl.DataGridGridLineBrush;
+                runtimeControl.DataGridOuterBorderBrush = string.IsNullOrWhiteSpace(runtimeControl.DataGridOuterBorderBrush)
+                    ? runtimeControl.DataGridGlowColor
+                    : runtimeControl.DataGridOuterBorderBrush;
+                TrackControlDocument(runtimeControl, form.Id);
+                Controls.Add(runtimeControl);
+            }
+
+            foreach (var interactionFile in document.Interactions)
+                Interactions.Add(FromInteractionFileModel(interactionFile));
+
+            ClampAllControlsToSurface();
+            SelectedBindingSource = BindingSources.FirstOrDefault();
+            DocumentSessionId = Guid.NewGuid().ToString("N");
+            _currentSnapshot = JsonSerializer.Serialize(document, JsonOptions);
+            _savedSnapshot = _currentSnapshot;
+        }
+        finally
+        {
+            _isApplyingDocument = false;
+            _isHistorySuspended = false;
+        }
+
+        TracePerfOperationEnd(
+            nameof(LoadDocumentSnapshotForExportGeneration),
+            stopwatch,
+            $"form={form.DisplayName}:{form.Id}",
+            $"controls={Controls.Count}; bindings={BindingSources.Count}; interactions={Interactions.Count}",
+            memoryBefore);
     }
 
     private WorkspaceModel CloneWorkspaceForExport()
@@ -16697,6 +17360,33 @@ public partial class MainWindowViewModel : ObservableObject
         bool refreshEditorSurfaces = true,
         [CallerMemberName] string caller = "")
     {
+        if (_isExportPipelineRunning || _isGeneratingSecondaryFormExport)
+        {
+            var stack = TrimStackTrace(new StackTrace(skipFrames: 1, fNeedFileInfo: false).ToString());
+            TraceDocumentDebug(
+                "EXPORT_PIPELINE_APPLY_DOCUMENT_CALL_DETECTED",
+                $"caller={caller}; document={document.FormTitle}; activeDocument={ActiveDocumentName}:{ActiveDocumentId}; selected={SelectedControl?.Name ?? "-"}:{SelectedControl?.Id ?? "-"}; secondary={_isGeneratingSecondaryFormExport}; stack={stack}",
+                toOutput: true,
+                warning: true);
+            TraceDocumentDebug(
+                "EDITOR_STATE_MUTATION_DURING_EXPORT_BLOCKED",
+                $"method={nameof(ApplyDocument)}; reason=export pipeline is read-only; caller={caller}",
+                toOutput: true,
+                warning: true);
+            return;
+        }
+
+        if (_isPreviewGenerationRunning)
+        {
+            var stack = TrimStackTrace(new StackTrace(skipFrames: 1, fNeedFileInfo: false).ToString());
+            TraceDocumentDebug(
+                "PREVIEW_MUTATED_EDITOR_STATE",
+                $"method={nameof(ApplyDocument)}; caller={caller}; document={document.FormTitle}; activeDocument={ActiveDocumentName}:{ActiveDocumentId}; selected={SelectedControl?.Name ?? "-"}:{SelectedControl?.Id ?? "-"}; stack={stack}",
+                toOutput: true,
+                warning: true);
+            return;
+        }
+
         TrackRefreshOperation(nameof(ApplyDocument), caller);
         var stopwatch = Stopwatch.StartNew();
         var memoryBefore = GC.GetTotalMemory(forceFullCollection: false);
@@ -16728,13 +17418,6 @@ public partial class MainWindowViewModel : ObservableObject
         if (refreshEditorSurfaces)
         {
             ResetDocumentScopedRefreshState();
-        }
-        else if (_isGeneratingSecondaryFormExport || string.Equals(caller, nameof(BuildSecondaryFormGeneratedFiles), StringComparison.Ordinal))
-        {
-            TraceDocumentDebug(
-                "EXPORT_PIPELINE_EDITOR_SURFACE_MUTATION_SUPPRESSED",
-                $"caller={caller}; document={documentName}; activeDocument={ActiveDocumentName}:{ActiveDocumentId}; selected={SelectedControl?.Name ?? "-"}:{SelectedControl?.Id ?? "-"}; inspector={PropertyGridContextDocumentId}/{PropertyGridContextControlId}; reason=hidden export apply keeps inspector/property-grid surface state",
-                toOutput: false);
         }
 
         try
@@ -19603,6 +20286,74 @@ public partial class MainWindowViewModel : ObservableObject
         ScheduleDiagnosticsRefresh();
         ScheduleEditorCommandRefresh();
         DesignerChanged?.Invoke(this, EventArgs.Empty);
+    }
+}
+
+public sealed record PreviewExportComparisonResult(
+    IReadOnlyList<PreviewExportControlSnapshot> PreviewControls,
+    IReadOnlyList<PreviewExportControlSnapshot> ExportControls,
+    IReadOnlyList<PreviewExportMismatch> Mismatches);
+
+public sealed record PreviewExportMismatch(
+    string Kind,
+    string ControlId,
+    string PreviewValue,
+    string ExportValue,
+    string Details);
+
+public sealed record PreviewExportControlSnapshot(
+    string Source,
+    string DocumentId,
+    string ControlId,
+    string Name,
+    string Type,
+    string ParentId,
+    int VisualIndex,
+    int ZIndex,
+    double X,
+    double Y,
+    double Width,
+    double Height,
+    string Text,
+    string Background,
+    string Foreground,
+    string BorderBrush,
+    double BorderThickness,
+    double CornerRadius,
+    double Padding,
+    double Opacity,
+    string FontFamily,
+    double FontSize,
+    string FontWeight,
+    bool IsVisible,
+    string HorizontalAlignment,
+    string VerticalAlignment,
+    string Margin)
+{
+    public string BoundsText =>
+        $"{X.ToString(CultureInfo.InvariantCulture)},{Y.ToString(CultureInfo.InvariantCulture)} " +
+        $"{Width.ToString(CultureInfo.InvariantCulture)}x{Height.ToString(CultureInfo.InvariantCulture)}";
+
+    public IEnumerable<(string Name, string PreviewValue, string ExportValue)> GetComparableProperties(PreviewExportControlSnapshot export)
+    {
+        yield return (nameof(Type), Type, export.Type);
+        yield return (nameof(Name), Name, export.Name);
+        yield return (nameof(ParentId), ParentId, export.ParentId);
+        yield return (nameof(Text), Text, export.Text);
+        yield return (nameof(Background), Background, export.Background);
+        yield return (nameof(Foreground), Foreground, export.Foreground);
+        yield return (nameof(BorderBrush), BorderBrush, export.BorderBrush);
+        yield return (nameof(BorderThickness), BorderThickness.ToString(CultureInfo.InvariantCulture), export.BorderThickness.ToString(CultureInfo.InvariantCulture));
+        yield return (nameof(CornerRadius), CornerRadius.ToString(CultureInfo.InvariantCulture), export.CornerRadius.ToString(CultureInfo.InvariantCulture));
+        yield return (nameof(Padding), Padding.ToString(CultureInfo.InvariantCulture), export.Padding.ToString(CultureInfo.InvariantCulture));
+        yield return (nameof(Opacity), Opacity.ToString(CultureInfo.InvariantCulture), export.Opacity.ToString(CultureInfo.InvariantCulture));
+        yield return (nameof(FontFamily), FontFamily, export.FontFamily);
+        yield return (nameof(FontSize), FontSize.ToString(CultureInfo.InvariantCulture), export.FontSize.ToString(CultureInfo.InvariantCulture));
+        yield return (nameof(FontWeight), FontWeight, export.FontWeight);
+        yield return (nameof(IsVisible), IsVisible.ToString(CultureInfo.InvariantCulture), export.IsVisible.ToString(CultureInfo.InvariantCulture));
+        yield return (nameof(HorizontalAlignment), HorizontalAlignment, export.HorizontalAlignment);
+        yield return (nameof(VerticalAlignment), VerticalAlignment, export.VerticalAlignment);
+        yield return (nameof(Margin), Margin, export.Margin);
     }
 }
 

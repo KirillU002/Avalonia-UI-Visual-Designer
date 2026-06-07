@@ -457,17 +457,16 @@ public partial class PreviewWindow : Window
         double actualParentWidth,
         double actualParentHeight)
     {
-        var children = GetChildControls(parent?.Id)
-            .Where(control => control.IsVisible && IsRuntimeControlVisible(control))
-            .ToList();
-        if (children.Count == 0)
-            return;
-
         var layoutMode = parent is null
             ? DesignerLayoutModes.NormalizeMode(_document.SurfaceLayoutMode)
             : string.IsNullOrWhiteSpace(parent.ChildLayoutMode)
                 ? DesignerLayoutModes.NormalizeMode(_registry.GetRequiredControl(parent.Type).ChildLayoutMode)
                 : DesignerLayoutModes.NormalizeMode(parent.ChildLayoutMode);
+        var children = GetChildControlsInVisualOrder(parent?.Id, layoutMode)
+            .Where(control => control.IsVisible && IsRuntimeControlVisible(control))
+            .ToList();
+        if (children.Count == 0)
+            return;
 
         if (DesignerLayoutModes.IsAbsolute(layoutMode))
         {
@@ -532,6 +531,7 @@ public partial class PreviewWindow : Window
         var wrapper = CreatePreviewWrapper(control, frame.Width, frame.Height);
         Canvas.SetLeft(wrapper, frame.X);
         Canvas.SetTop(wrapper, frame.Y);
+        wrapper.ZIndex = GetCanvasVisualZIndex(control);
         host.Children.Add(wrapper);
     }
 
@@ -3804,6 +3804,131 @@ public partial class PreviewWindow : Window
             HorizontalAlignment = horizontalAlignment,
             VerticalAlignment = verticalAlignment
         };
+    }
+
+    private IReadOnlyList<DesignerControlFileModel> GetChildControlsInVisualOrder(string? parentId, string? layoutMode)
+    {
+        var children = GetChildControls(parentId).ToList();
+        var normalizedLayoutMode = DesignerLayoutModes.NormalizeMode(layoutMode);
+        if (normalizedLayoutMode == DesignerLayoutModes.Stack)
+        {
+            return children
+                .Select((control, index) => new { Control = control, Index = index })
+                .OrderBy(item => Math.Max(0, item.Control.StackOrder))
+                .ThenBy(item => item.Index)
+                .Select(item => item.Control)
+                .ToList();
+        }
+
+        if (!DesignerLayoutModes.IsAbsolute(normalizedLayoutMode))
+            return children;
+
+        return children
+            .Select((control, index) => new { Control = control, Index = index })
+            .OrderBy(item => GetImplicitCanvasLayer(item.Control, children))
+            .ThenBy(item => item.Index)
+            .Select(item => item.Control)
+            .ToList();
+    }
+
+    private int GetCanvasVisualZIndex(DesignerControlFileModel control)
+    {
+        var parentLayoutMode = GetPreviewLayoutModeForParent(control.ParentId);
+        if (!DesignerLayoutModes.IsAbsolute(parentLayoutMode))
+            return 0;
+
+        var orderedSiblings = GetChildControlsInVisualOrder(control.ParentId, parentLayoutMode);
+        for (var index = 0; index < orderedSiblings.Count; index++)
+        {
+            if (string.Equals(orderedSiblings[index].Id, control.Id, StringComparison.Ordinal))
+                return index;
+        }
+
+        return 0;
+    }
+
+    private string GetPreviewLayoutModeForParent(string? parentId)
+    {
+        if (string.IsNullOrWhiteSpace(NormalizeParentId(parentId)))
+            return DesignerLayoutModes.NormalizeMode(_document.SurfaceLayoutMode);
+
+        var parent = GetControl(parentId);
+        if (parent is null)
+            return DesignerLayoutModes.Absolute;
+
+        if (!string.IsNullOrWhiteSpace(parent.ChildLayoutMode))
+            return DesignerLayoutModes.NormalizeMode(parent.ChildLayoutMode);
+
+        try
+        {
+            return DesignerLayoutModes.NormalizeMode(_registry.GetRequiredControl(parent.Type).ChildLayoutMode);
+        }
+        catch
+        {
+            return DesignerLayoutModes.Absolute;
+        }
+    }
+
+    private DesignerControlFileModel? GetControl(string? id)
+    {
+        var normalizedId = NormalizeParentId(id);
+        if (string.IsNullOrWhiteSpace(normalizedId))
+            return null;
+
+        return _document.Controls.FirstOrDefault(control =>
+            string.Equals(control.Id, normalizedId, StringComparison.Ordinal));
+    }
+
+    private int GetImplicitCanvasLayer(DesignerControlFileModel control, IReadOnlyList<DesignerControlFileModel> siblings)
+    {
+        return IsBackgroundBorder(control, siblings) ? 0 : 1;
+    }
+
+    private bool IsBackgroundBorder(DesignerControlFileModel control, IReadOnlyList<DesignerControlFileModel> siblings)
+    {
+        if (!string.Equals(control.Type, DesignerControlTypes.Border, StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        if (GetChildControls(control.Id).Any())
+            return false;
+
+        var borderWidth = Math.Max(0, control.Width);
+        var borderHeight = Math.Max(0, control.Height);
+        if (borderWidth <= 0 || borderHeight <= 0)
+            return false;
+
+        return siblings.Any(sibling =>
+            !string.Equals(sibling.Id, control.Id, StringComparison.Ordinal)
+            && !string.Equals(sibling.Type, DesignerControlTypes.Border, StringComparison.OrdinalIgnoreCase)
+            && sibling.IsVisible
+            && CanvasBoundsContains(
+                control.X,
+                control.Y,
+                borderWidth,
+                borderHeight,
+                sibling.X,
+                sibling.Y,
+                Math.Max(0, sibling.Width),
+                Math.Max(0, sibling.Height)));
+    }
+
+    private static bool CanvasBoundsContains(
+        double outerX,
+        double outerY,
+        double outerWidth,
+        double outerHeight,
+        double innerX,
+        double innerY,
+        double innerWidth,
+        double innerHeight)
+    {
+        const double tolerance = 1.0;
+        return innerWidth > 0
+            && innerHeight > 0
+            && innerX >= outerX - tolerance
+            && innerY >= outerY - tolerance
+            && innerX + innerWidth <= outerX + outerWidth + tolerance
+            && innerY + innerHeight <= outerY + outerHeight + tolerance;
     }
 
     private IEnumerable<DesignerControlFileModel> GetChildControls(string? parentId)
