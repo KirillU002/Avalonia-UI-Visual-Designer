@@ -2,6 +2,7 @@
 using FormDesigner.DesignerSystem.BuiltIn;
 using FormDesigner.DesignerSystem.Infrastructure;
 using FormDesigner.Models;
+using FormDesigner.Services;
 using FormDesigner.ViewModels;
 using System.Diagnostics;
 using System.Text;
@@ -43,6 +44,14 @@ internal static class Program
             new("OpacityZeroDesignerOnlyOutline", ConfigureOpacityZeroDesignerOnlyOutline, AssertOpacityZeroDesignerOnlyOutline),
             new("PreviewExportBoundsMatchAfterResize", ConfigurePreviewExportBoundsMatchAfterResize, AssertPreviewExportBoundsMatchAfterResize),
             new("RealDataGridExport", ConfigureRealDataGridExport, AssertRealDataGridExport, RequiresRealDataGrid: true),
+            new("RealDataGridExportUsesValidColumnTags", ConfigureRealDataGridExport, AssertRealDataGridExportUsesValidColumnTags, RequiresRealDataGrid: true),
+            new("DataGridHeaderTemplateDoesNotGenerateEmptyBinding", ConfigureDataGridBindingSourceWorkflow, AssertDataGridHeaderTemplateDoesNotGenerateEmptyBinding, RequiresRealDataGrid: true),
+            new("GeneratedNugetConfigContainsAllowInsecureConnectionsForHttpSource", ConfigureSimpleFormExport, AssertGeneratedNugetConfigContainsAllowInsecureConnectionsForHttpSource),
+            new("BuildOutputDeduplicatesRepeatedNet6Warning", ConfigureSimpleFormExport, AssertBuildOutputDeduplicatesRepeatedNet6Warning),
+            new("ArtifactsCleanupDeletesOldExportRuns", ConfigureSimpleFormExport, AssertArtifactsCleanupDeletesOldExportRuns),
+            new("ExportGeneratesAtMostOneReadme", ConfigureRealDataGridExport, AssertExportGeneratesAtMostOneReadme, RequiresRealDataGrid: true),
+            new("GeneratedSolutionHasConsistentAvaloniaVersions", ConfigureRealDataGridExport, AssertGeneratedSolutionHasConsistentAvaloniaVersions, RequiresRealDataGrid: true),
+            new("GeneratedSolutionDoesNotIncludeDesignerOnlyPackages", ConfigureRealDataGridExport, AssertGeneratedSolutionDoesNotIncludeDesignerOnlyPackages, RequiresRealDataGrid: true),
             new("InteractionsExport", ConfigureInteractionsExport, AssertInteractionsExport, RequiresRealDataGrid: true),
             new("MultiFormOpenFormExport", ConfigureMultiFormOpenFormExport, AssertMultiFormOpenFormExport),
             new("MultiFormDocumentStateIsolation", ConfigureMultiFormDocumentStateIsolation, AssertMultiFormDocumentStateIsolation),
@@ -441,15 +450,133 @@ internal static class Program
 
     private static void AssertRealDataGridExport(SmokeContext context)
     {
-        RequireContains(context.Xaml, "xmlns:dataGrid=\"clr-namespace:Avalonia.Controls;assembly=Avalonia.Controls.DataGrid\"", "Real DataGrid XML namespace missing.");
-        RequireContains(context.Xaml, "<dataGrid:DataGrid", "Generated XAML should use real Avalonia DataGrid.");
+        RequireContains(context.Xaml, "<DataGrid", "Generated XAML should use real Avalonia DataGrid.");
+        RequireContains(context.Xaml, "<DataGrid.Columns>", "Generated XAML should define real DataGrid columns.");
         RequireContains(context.Xaml, "Title", "Generated XAML should contain BindingSource field Title.");
         RequireContains(context.Xaml, "Price", "Generated XAML should contain BindingSource field Price.");
         RequireContains(context.Xaml, "Count", "Generated XAML should contain BindingSource field Count.");
+        RequireContains(context.Xaml, "<DataGridTextColumn Header=\"Title\" Binding=\"{Binding Title}\"", "Real DataGrid should export TextColumn with attribute binding.");
+        RequireNotContains(context.Xaml, "<dataGrid:DataGridTextColumn", "Real DataGrid column tag must not use dataGrid prefix.");
         RequireContains(context.ChecklistText, "DataGrid: Real Avalonia DataGrid", "Checklist should report real DataGrid mode.");
         RequireContains(context.ChecklistText, "Avalonia.Controls.DataGrid", "Checklist should mention required DataGrid NuGet.");
         RequireNotContains(context.CSharp, "ObservableCollection", "Clean real DataGrid export should not generate fake demo models.");
         RequireNotContains(context.CSharp, "ProductRow", "Clean real DataGrid export should not generate demo row classes.");
+    }
+
+    private static void AssertRealDataGridExportUsesValidColumnTags(SmokeContext context)
+    {
+        RequireContains(context.Xaml, "<DataGridTextColumn", "Real DataGrid export should use unprefixed DataGridTextColumn.");
+        RequireNotContains(context.Xaml, "<dataGrid:DataGridTextColumn", "Real DataGrid export must not use invalid prefixed DataGridTextColumn.");
+        RequireNotContains(context.Xaml, "DataGridTextColumn.Binding", "Real DataGrid export should use simple attribute bindings.");
+        RequireNotContains(context.Xaml, "HeaderTemplate", "Real DataGrid export should not generate HeaderTemplate for simple text headers.");
+    }
+
+    private static void AssertDataGridHeaderTemplateDoesNotGenerateEmptyBinding(SmokeContext context)
+    {
+        RequireContains(context.Xaml, "<DataGrid", "BindingSource workflow should export a real DataGrid.");
+        RequireContains(context.Xaml, "Binding=\"{Binding Id}\"", "DataGrid should include BindingSource field Id.");
+        RequireContains(context.Xaml, "Binding=\"{Binding Name}\"", "DataGrid should include BindingSource field Name.");
+        RequireContains(context.Xaml, "Binding=\"{Binding Email}\"", "DataGrid should include BindingSource field Email.");
+        RequireContains(context.Xaml, "Binding=\"{Binding Status}\"", "DataGrid should include BindingSource field Status.");
+        RequireNotContains(context.Xaml, "{Binding }", "DataGrid export must not generate empty binding markup.");
+        RequireNotContains(context.Xaml, "Path=\"\"", "DataGrid export must not generate empty binding path.");
+        RequireNotContains(context.Xaml, "x:DataType=\"\"", "DataGrid export must not generate empty x:DataType.");
+        RequireNotContains(context.Xaml, "DataGridTextColumn.HeaderTemplate", "DataGrid export should not generate simple HeaderTemplate bindings.");
+        RequireNotContains(context.Xaml, "Text=\"{Binding}\"", "DataGrid export should not generate header TextBlock empty bindings.");
+    }
+
+    private static void AssertGeneratedNugetConfigContainsAllowInsecureConnectionsForHttpSource(SmokeContext context)
+    {
+        var nugetConfig = ExportPipelineService.BuildNuGetConfigForSources(new[]
+        {
+            new NuGetPackageSource("LocalHttp", "http://nuget.local/v3/index.json")
+        });
+
+        RequireContains(nugetConfig, "value=\"http://nuget.local/v3/index.json\"", "Generated NuGet.config should preserve HTTP source URL.");
+        RequireContains(nugetConfig, "allowInsecureConnections=\"true\"", "HTTP NuGet source should explicitly opt into insecure connections.");
+        RequireContains(nugetConfig, "https://api.nuget.org/v3/index.json", "Generated NuGet.config should still include nuget.org.");
+    }
+
+    private static void AssertBuildOutputDeduplicatesRepeatedNet6Warning(SmokeContext context)
+    {
+        const string warning = "NETSDK1138: The target framework 'net6.0' is out of support";
+        var output = ExportPipelineService.DeduplicateBuildOutput($"{warning}{Environment.NewLine}{warning}{Environment.NewLine}restore ok");
+        RequireContains(output, "[x2] NETSDK1138", "Repeated build warnings should be collapsed with a count.");
+        if (output.Split("NETSDK1138", StringSplitOptions.None).Length != 2)
+            throw new InvalidOperationException("Repeated NETSDK warning should appear once after deduplication.");
+    }
+
+    private static void AssertArtifactsCleanupDeletesOldExportRuns(SmokeContext context)
+    {
+        var fakeRepositoryRoot = Path.Combine(context.ProjectPath, "cleanup-root");
+        var exportRoot = Path.Combine(fakeRepositoryRoot, "artifacts", "export");
+        Directory.CreateDirectory(exportRoot);
+
+        for (var index = 0; index < 7; index++)
+        {
+            var run = Path.Combine(exportRoot, $"20250101-00000{index}");
+            Directory.CreateDirectory(run);
+            File.WriteAllText(Path.Combine(run, "generated.txt"), index.ToString(), Encoding.UTF8);
+            Directory.SetLastWriteTimeUtc(run, DateTime.UtcNow.AddMinutes(-index));
+        }
+
+        var cleanup = new ArtifactCleanupService().Clean(fakeRepositoryRoot, keepLatestRuns: 3, maxAge: TimeSpan.FromDays(365));
+        var remainingRuns = Directory.GetDirectories(exportRoot).Length;
+        if (remainingRuns != 3)
+            throw new InvalidOperationException($"Artifact cleanup should keep three latest export runs, got {remainingRuns}.");
+        if (cleanup.DirectoriesDeleted < 4)
+            throw new InvalidOperationException("Artifact cleanup should delete stale export run folders.");
+    }
+
+    private static void AssertExportGeneratesAtMostOneReadme(SmokeContext context)
+    {
+        var exportFolder = Path.Combine(Path.GetTempPath(), "FormDesignerSmokeExports", Guid.NewGuid().ToString("N"));
+        var service = new ExportPipelineService();
+        var result = service.CreateResult(
+            new ExportProfile
+            {
+                ProjectNamespace = context.ViewModel.ExportProjectNamespace,
+                TargetMode = context.ViewModel.ExportTarget,
+                DataGridExportMode = context.ViewModel.DataGridExportMode,
+                LayoutExportMode = context.ViewModel.LayoutExportMode
+            },
+            context.GeneratedFiles,
+            context.ViewModel.RequiredPackages,
+            context.ViewModel.ExportDiagnostics);
+
+        try
+        {
+            service.ExportToProjectAsync(result, exportFolder).GetAwaiter().GetResult();
+            var readmeCount = Directory.GetFiles(exportFolder, "README*.md", SearchOption.AllDirectories).Length;
+            if (readmeCount != 1)
+                throw new InvalidOperationException($"Export should write exactly one generated README, got {readmeCount}.");
+
+            var readme = File.ReadAllText(Path.Combine(exportFolder, "README.generated.md"), Encoding.UTF8);
+            RequireContains(readme, "dotnet restore", "Generated README should include restore instructions.");
+            RequireContains(readme, "11.1.1", "Generated README should document Avalonia version.");
+        }
+        finally
+        {
+            if (Directory.Exists(exportFolder))
+                Directory.Delete(exportFolder, recursive: true);
+        }
+    }
+
+    private static void AssertGeneratedSolutionHasConsistentAvaloniaVersions(SmokeContext context)
+    {
+        var projectFile = File.ReadAllText(Path.Combine(context.ProjectPath, $"{context.Scenario.Name}.csproj"), Encoding.UTF8);
+        RequireContains(projectFile, "Avalonia\" Version=\"11.1.1\"", "Generated solution should use Avalonia 11.1.1.");
+        RequireContains(projectFile, "Avalonia.Desktop\" Version=\"11.1.1\"", "Generated solution should use Avalonia.Desktop 11.1.1.");
+        RequireContains(projectFile, "Avalonia.Controls.DataGrid\" Version=\"11.1.1\"", "Generated solution should use DataGrid 11.1.1.");
+        RequireNotContains(projectFile, "11.3.11", "Generated solution should not mix Avalonia 11.3.11 packages.");
+    }
+
+    private static void AssertGeneratedSolutionDoesNotIncludeDesignerOnlyPackages(SmokeContext context)
+    {
+        var projectFile = File.ReadAllText(Path.Combine(context.ProjectPath, $"{context.Scenario.Name}.csproj"), Encoding.UTF8);
+        RequireNotContains(projectFile, "System.Reflection.MetadataLoadContext", "Generated runtime project should not include designer-only MetadataLoadContext.");
+        RequireNotContains(projectFile, "Avalonia.Controls.ColorPicker", "Generated runtime project should not include designer-only ColorPicker package.");
+        RequireNotContains(projectFile, "Avalonia.Diagnostics", "Generated runtime project should not include designer diagnostics package.");
     }
 
     private static void ConfigureInteractionsExport(MainWindowViewModel vm)
@@ -2021,11 +2148,13 @@ internal static class Program
 
     private static void AssertDataGridBindingSourceWorkflow(SmokeContext context)
     {
-        RequireContains(context.Xaml, "<dataGrid:DataGrid", "BindingSource workflow should export a real DataGrid.");
-        RequireContains(context.Xaml, "Binding Path=\"Id\"", "DataGrid should include BindingSource field Id.");
-        RequireContains(context.Xaml, "Binding Path=\"Name\"", "DataGrid should include BindingSource field Name.");
-        RequireContains(context.Xaml, "Binding Path=\"Email\"", "DataGrid should include BindingSource field Email.");
-        RequireContains(context.Xaml, "Binding Path=\"Status\"", "DataGrid should include BindingSource field Status.");
+        RequireContains(context.Xaml, "<DataGrid", "BindingSource workflow should export a real DataGrid.");
+        RequireContains(context.Xaml, "Binding=\"{Binding Id}\"", "DataGrid should include BindingSource field Id.");
+        RequireContains(context.Xaml, "Binding=\"{Binding Name}\"", "DataGrid should include BindingSource field Name.");
+        RequireContains(context.Xaml, "Binding=\"{Binding Email}\"", "DataGrid should include BindingSource field Email.");
+        RequireContains(context.Xaml, "Binding=\"{Binding Status}\"", "DataGrid should include BindingSource field Status.");
+        RequireNotContains(context.Xaml, "<dataGrid:DataGridTextColumn", "BindingSource workflow should not use prefixed DataGridTextColumn.");
+        RequireNotContains(context.Xaml, "{Binding }", "BindingSource workflow should not generate empty bindings.");
         RequireContains(context.ChecklistText, "DataGrid: Real Avalonia DataGrid", "Checklist should keep Real DataGrid mode.");
         RequireContains(context.ChecklistText, "Avalonia.Controls.DataGrid", "Checklist should report DataGrid package.");
         RequireNotContains(context.DiagnosticsText, "DataGrid without fields", "DataGrid with real BindingSource fields must not warn about missing fields.");

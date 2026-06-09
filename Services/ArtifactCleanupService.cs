@@ -54,6 +54,7 @@ public sealed class ArtifactCleanupService
 
         PruneTimestampedRuns(Path.Combine(artifactsRoot, "smoke-tests"), keepLatestRuns, DeleteDirectory);
         PruneTimestampedRuns(Path.Combine(artifactsRoot, "export-validation"), keepLatestRuns, DeleteDirectory);
+        PruneTimestampedRuns(Path.Combine(artifactsRoot, "export"), keepLatestRuns, DeleteDirectory);
 
         var threshold = DateTime.UtcNow - (maxAge ?? DefaultMaxAge);
         foreach (var directory in new DirectoryInfo(artifactsRoot).GetDirectories())
@@ -63,6 +64,9 @@ public sealed class ArtifactCleanupService
             {
                 continue;
             }
+
+            if (directory.Name.Equals("export", StringComparison.OrdinalIgnoreCase))
+                continue;
 
             if (directory.LastWriteTimeUtc < threshold)
                 DeleteDirectory(directory);

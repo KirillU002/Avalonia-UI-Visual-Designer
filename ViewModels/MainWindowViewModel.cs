@@ -11001,8 +11001,6 @@ public partial class MainWindowViewModel : ObservableObject
         sb.AppendLine($"        x:Class=\"{EscapeXml(exportNamespace)}.{EscapeXml(windowClassName)}\"");
         sb.AppendLine("        x:CompileBindings=\"False\"");
         sb.AppendLine("        xmlns:primitives=\"clr-namespace:Avalonia.Controls.Primitives;assembly=Avalonia.Controls\"");
-        if (ShouldExportRealDataGrid && Controls.Any(control => control.Type == DesignerControlTypes.DataGrid))
-            sb.AppendLine("        xmlns:dataGrid=\"clr-namespace:Avalonia.Controls;assembly=Avalonia.Controls.DataGrid\"");
         foreach (var xmlNamespace in exportContext.RegisteredNamespaces.OrderBy(entry => entry.Key, StringComparer.Ordinal))
             sb.AppendLine($"        xmlns:{EscapeXml(xmlNamespace.Key)}=\"{EscapeXml(xmlNamespace.Value)}\"");
         sb.AppendLine($"        Title=\"{EscapeXml(FormTitle)}\"");
@@ -14834,6 +14832,14 @@ public partial class MainWindowViewModel : ObservableObject
 
     private static bool CanFilterBindingField(BindingFieldModel field) => field.AllowFilter && field.IsVisible;
 
+    private static bool IsBooleanBindingField(BindingFieldModel field)
+    {
+        var typeName = field.TypeName?.Trim() ?? "";
+        return string.Equals(typeName, "bool", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(typeName, "boolean", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(typeName, "System.Boolean", StringComparison.OrdinalIgnoreCase);
+    }
+
     private string GetSourceFilterMode(string sourceId)
     {
         var grid = Controls
@@ -16493,8 +16499,8 @@ public partial class MainWindowViewModel : ObservableObject
         if (ShouldIncludeExportComments && !ShouldGenerateDemoRuntimeCode && source is not null)
             sb.AppendLine($"{Indent(dataGridIndent)}<!-- BindingSource '{EscapeXml(source.NameOrFallback())}' используется только как схема колонок в режиме «Чистый UI». Подключите ItemsSource в реальном ViewModel, когда будете готовы. -->");
 
-        sb.AppendLine($"{Indent(dataGridIndent)}<dataGrid:DataGrid{dataGridNameAttribute}{dataGridPlacement} Background=\"{rowBackground}\" RowBackground=\"{rowBackground}\" Foreground=\"{rowForeground}\" BorderBrush=\"{outerBorderBrush}\" BorderThickness=\"{ToInvariant(control.BorderThickness)}\" FontFamily=\"{EscapeXml(control.FontFamily)}\" FontSize=\"{ToInvariant(control.DataGridRowFontSize)}\" FontWeight=\"{EscapeXml(control.DataGridRowFontWeight)}\" AutoGenerateColumns=\"{BoolToXaml(control.AutoGenerateColumns)}\" HeadersVisibility=\"{headersVisibility}\" GridLinesVisibility=\"{gridLinesVisibility}\" ColumnHeaderHeight=\"{ToInvariant(headerHeight)}\" RowHeight=\"{ToInvariant(rowHeight)}\"{itemsSource}{selectedItem}{selectionChangedAttribute}{commonVisibilityAttributes}>");
-        sb.AppendLine($"{Indent(dataGridIndent + 1)}<dataGrid:DataGrid.Styles>");
+        sb.AppendLine($"{Indent(dataGridIndent)}<DataGrid{dataGridNameAttribute}{dataGridPlacement} Background=\"{rowBackground}\" RowBackground=\"{rowBackground}\" Foreground=\"{rowForeground}\" BorderBrush=\"{outerBorderBrush}\" BorderThickness=\"{ToInvariant(control.BorderThickness)}\" FontFamily=\"{EscapeXml(control.FontFamily)}\" FontSize=\"{ToInvariant(control.DataGridRowFontSize)}\" FontWeight=\"{EscapeXml(control.DataGridRowFontWeight)}\" AutoGenerateColumns=\"{BoolToXaml(control.AutoGenerateColumns)}\" HeadersVisibility=\"{headersVisibility}\" GridLinesVisibility=\"{gridLinesVisibility}\" ColumnHeaderHeight=\"{ToInvariant(headerHeight)}\" RowHeight=\"{ToInvariant(rowHeight)}\"{itemsSource}{selectedItem}{selectionChangedAttribute}{commonVisibilityAttributes}>");
+        sb.AppendLine($"{Indent(dataGridIndent + 1)}<DataGrid.Styles>");
         sb.AppendLine($"{Indent(dataGridIndent + 2)}<Style Selector=\"DataGridColumnHeader\">");
         sb.AppendLine($"{Indent(dataGridIndent + 3)}<Setter Property=\"Background\" Value=\"{headerBackground}\" />");
         sb.AppendLine($"{Indent(dataGridIndent + 3)}<Setter Property=\"Foreground\" Value=\"{headerForeground}\" />");
@@ -16523,7 +16529,7 @@ public partial class MainWindowViewModel : ObservableObject
         sb.AppendLine($"{Indent(dataGridIndent + 2)}<Style Selector=\"DataGridRow\">");
         sb.AppendLine($"{Indent(dataGridIndent + 3)}<Setter Property=\"MinHeight\" Value=\"{ToInvariant(rowHeight)}\" />");
         sb.AppendLine($"{Indent(dataGridIndent + 2)}</Style>");
-        sb.AppendLine($"{Indent(dataGridIndent + 1)}</dataGrid:DataGrid.Styles>");
+        sb.AppendLine($"{Indent(dataGridIndent + 1)}</DataGrid.Styles>");
 
         if (ShouldIncludeExportComments && (sortedFields.Count > 0 || groupedFields.Count > 0 || summaryFields.Count > 0))
         {
@@ -16542,37 +16548,46 @@ public partial class MainWindowViewModel : ObservableObject
 
         if (!control.AutoGenerateColumns && source is not null && visibleFields.Count > 0)
         {
-            sb.AppendLine($"{Indent(dataGridIndent + 1)}<dataGrid:DataGrid.Columns>");
+            sb.AppendLine($"{Indent(dataGridIndent + 1)}<DataGrid.Columns>");
             foreach (var field in visibleFields)
             {
-                var headerAlignment = BindingFieldModel.NormalizeAlignment(field.HeaderAlignment);
-                var textTrimming = BindingFieldModel.NormalizeTextTrimming(field.TextTrimming);
-                var textWrapping = BindingFieldModel.NormalizeTextWrapping(field.TextWrapping);
-                var maxLines = Math.Max(0, field.MaxLines);
                 var minWidth = Math.Max(0, field.MinWidth);
                 var maxWidth = Math.Max(0, field.MaxWidth);
                 var minWidthAttribute = minWidth > 0 ? $" MinWidth=\"{ToInvariant(minWidth)}\"" : "";
                 var maxWidthAttribute = maxWidth > 0 ? $" MaxWidth=\"{ToInvariant(Math.Max(minWidth, maxWidth))}\"" : "";
-                var stringFormat = ToBindingStringFormat(field.FormatString);
-                var stringFormatAttribute = string.IsNullOrWhiteSpace(stringFormat) ? "" : $" StringFormat=\"{EscapeXml(stringFormat)}\"";
-                var nullTextAttribute = string.IsNullOrWhiteSpace(field.NullText) ? "" : $" TargetNullValue=\"{EscapeXml(field.NullText)}\"";
-                var headerMaxLinesAttribute = maxLines > 0 ? $" MaxLines=\"{maxLines}\"" : "";
+                var header = string.IsNullOrWhiteSpace(field.Header)
+                    ? string.IsNullOrWhiteSpace(field.Path) ? "Column" : field.Path.Trim()
+                    : field.Header.Trim();
+                var bindingPath = field.Path?.Trim() ?? "";
+                var bindingAttribute = string.IsNullOrWhiteSpace(bindingPath)
+                    ? ""
+                    : $" Binding=\"{{Binding {EscapeXml(bindingPath)}}}\"";
+                var sortMemberPathAttribute = string.IsNullOrWhiteSpace(bindingPath)
+                    ? ""
+                    : $" SortMemberPath=\"{EscapeXml(bindingPath)}\"";
+                var canUserSort = !string.IsNullOrWhiteSpace(bindingPath) && CanSortBindingField(field);
+                var widthAttribute = string.IsNullOrWhiteSpace(field.Width) ? "" : $" Width=\"{EscapeXml(field.Width.Trim())}\"";
+                var columnTag = IsBooleanBindingField(field) ? "DataGridCheckBoxColumn" : "DataGridTextColumn";
 
-                sb.AppendLine($"{Indent(dataGridIndent + 2)}<dataGrid:DataGridTextColumn Header=\"{EscapeXml(field.Header)}\" SortMemberPath=\"{EscapeXml(field.Path)}\" Width=\"{EscapeXml(field.Width)}\" CanUserSort=\"{BoolToXaml(CanSortBindingField(field))}\" CanUserResize=\"{BoolToXaml(field.AllowResize)}\"{minWidthAttribute}{maxWidthAttribute}>");
-                sb.AppendLine($"{Indent(dataGridIndent + 3)}<dataGrid:DataGridTextColumn.Binding>");
-                sb.AppendLine($"{Indent(dataGridIndent + 4)}<Binding Path=\"{EscapeXml(field.Path)}\"{stringFormatAttribute}{nullTextAttribute} />");
-                sb.AppendLine($"{Indent(dataGridIndent + 3)}</dataGrid:DataGridTextColumn.Binding>");
-                sb.AppendLine($"{Indent(dataGridIndent + 3)}<dataGrid:DataGridTextColumn.HeaderTemplate>");
-                sb.AppendLine($"{Indent(dataGridIndent + 4)}<DataTemplate>");
-                sb.AppendLine($"{Indent(dataGridIndent + 5)}<TextBlock Text=\"{{Binding}}\" HorizontalAlignment=\"{headerAlignment}\" TextAlignment=\"{headerAlignment}\" TextTrimming=\"{textTrimming}\" TextWrapping=\"{textWrapping}\"{headerMaxLinesAttribute} />");
-                sb.AppendLine($"{Indent(dataGridIndent + 4)}</DataTemplate>");
-                sb.AppendLine($"{Indent(dataGridIndent + 3)}</dataGrid:DataGridTextColumn.HeaderTemplate>");
-                sb.AppendLine($"{Indent(dataGridIndent + 2)}</dataGrid:DataGridTextColumn>");
+                TraceDocumentDebug(
+                    "EXPORT_DATAGRID_COLUMN",
+                    $"grid={control.Name}; column={header}; type={field.TypeName}; generatedTag={columnTag}; bindingPath={bindingPath}",
+                    toOutput: false);
+                if (string.IsNullOrWhiteSpace(bindingPath))
+                {
+                    TraceDocumentDebug(
+                        "EXPORT_EMPTY_BINDING_SUPPRESSED",
+                        $"target={control.Name}.{header}; reason=Binding field path is empty",
+                        toOutput: false,
+                        warning: true);
+                }
+
+                sb.AppendLine($"{Indent(dataGridIndent + 2)}<{columnTag} Header=\"{EscapeXml(header)}\"{bindingAttribute}{sortMemberPathAttribute}{widthAttribute} CanUserSort=\"{BoolToXaml(canUserSort)}\" CanUserResize=\"{BoolToXaml(field.AllowResize)}\"{minWidthAttribute}{maxWidthAttribute} />");
             }
-            sb.AppendLine($"{Indent(dataGridIndent + 1)}</dataGrid:DataGrid.Columns>");
+            sb.AppendLine($"{Indent(dataGridIndent + 1)}</DataGrid.Columns>");
         }
 
-        sb.AppendLine($"{Indent(dataGridIndent)}</dataGrid:DataGrid>");
+        sb.AppendLine($"{Indent(dataGridIndent)}</DataGrid>");
         if (shouldExportHost)
             sb.AppendLine($"{Indent(indentLevel)}</Grid>");
     }

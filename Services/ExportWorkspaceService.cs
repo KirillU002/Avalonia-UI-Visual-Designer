@@ -39,7 +39,7 @@ public sealed class ExportWorkspaceService
 
     public IReadOnlyList<GeneratedFileModel> BuildProjectMetadataFiles(DesignerProjectModel project)
     {
-        var files = new List<GeneratedFileModel> { BuildProjectReadme(project) };
+        var files = new List<GeneratedFileModel>();
         files.AddRange(project.Resources.Select(resource => new GeneratedFileModel
         {
             Path = resource.RelativePath,

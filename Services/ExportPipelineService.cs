@@ -29,7 +29,7 @@ public sealed class ExportPipelineService
             Profile = profile,
             GeneratedFiles = generatedFiles.ToList(),
             RequiredPackages = requiredPackages.ToList(),
-            Diagnostics = diagnostics.ToList(),
+            Diagnostics = DeduplicateDiagnostics(diagnostics).ToList(),
             BuildValidation = buildValidation ?? new ExportBuildValidationResult(),
             GeneratedUtc = DateTime.UtcNow
         };
@@ -54,7 +54,7 @@ public sealed class ExportPipelineService
             Status = process.ExitCode == 0 ? ExportBuildValidationStatus.Passed : ExportBuildValidationStatus.Failed,
             ProjectPath = runRoot,
             ExitCode = process.ExitCode,
-            Output = process.Output,
+            Output = DeduplicateBuildOutput(process.Output),
             CompletedUtc = DateTime.UtcNow
         };
     }
@@ -67,7 +67,7 @@ public sealed class ExportPipelineService
     {
         Directory.CreateDirectory(targetFolder);
 
-        foreach (var file in result.GeneratedFiles)
+        foreach (var file in result.GeneratedFiles.Where(file => !IsGeneratedReadme(file.Path)))
         {
             cancellationToken.ThrowIfCancellationRequested();
             var filePath = Path.Combine(targetFolder, file.Path.Replace('/', Path.DirectorySeparatorChar));
@@ -98,7 +98,7 @@ public sealed class ExportPipelineService
 
         await using var stream = File.Create(zipPath);
         using var archive = new ZipArchive(stream, ZipArchiveMode.Create);
-        foreach (var file in result.GeneratedFiles)
+        foreach (var file in result.GeneratedFiles.Where(file => !IsGeneratedReadme(file.Path)))
         {
             cancellationToken.ThrowIfCancellationRequested();
             var entry = archive.CreateEntry(file.Path.Replace('\\', '/'));
@@ -135,17 +135,49 @@ public sealed class ExportPipelineService
 
     private static string BuildNuGetConfig()
     {
-        return @"<?xml version=""1.0"" encoding=""utf-8""?>
-<configuration>
-  <packageSources>
-    <clear />
-    <add key=""nuget.org"" value=""https://api.nuget.org/v3/index.json"" protocolVersion=""3"" />
-  </packageSources>
-  <packageSourceMapping>
-    <clear />
-  </packageSourceMapping>
-</configuration>
-";
+        return BuildNuGetConfigForSources(Array.Empty<NuGetPackageSource>());
+    }
+
+    public static string BuildNuGetConfigForSources(IEnumerable<NuGetPackageSource> additionalSources)
+    {
+        var sources = new List<NuGetPackageSource>
+        {
+            new("nuget.org", "https://api.nuget.org/v3/index.json")
+        };
+
+        foreach (var source in additionalSources)
+        {
+            if (string.IsNullOrWhiteSpace(source.Name) || string.IsNullOrWhiteSpace(source.Value))
+                continue;
+
+            if (sources.Any(item => string.Equals(item.Name, source.Name, StringComparison.OrdinalIgnoreCase)
+                                    || string.Equals(item.Value, source.Value, StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+
+            sources.Add(source);
+        }
+
+        var sb = new StringBuilder();
+        sb.AppendLine(@"<?xml version=""1.0"" encoding=""utf-8""?>");
+        sb.AppendLine("<configuration>");
+        sb.AppendLine("  <packageSources>");
+        sb.AppendLine("    <clear />");
+        foreach (var source in sources)
+        {
+            var protocol = source.Value.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ? " protocolVersion=\"3\"" : "";
+            var allowInsecure = source.Value.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+                ? " allowInsecureConnections=\"true\""
+                : "";
+            sb.AppendLine($"    <add key=\"{EscapeXml(source.Name)}\" value=\"{EscapeXml(source.Value)}\"{protocol}{allowInsecure} />");
+        }
+        sb.AppendLine("  </packageSources>");
+        sb.AppendLine("  <packageSourceMapping>");
+        sb.AppendLine("    <clear />");
+        sb.AppendLine("  </packageSourceMapping>");
+        sb.AppendLine("</configuration>");
+        return sb.ToString();
     }
 
     private static string BuildProjectFile(IEnumerable<RequiredPackageModel> requiredPackages)
@@ -251,6 +283,18 @@ Namespace: {result.Profile.ProjectNamespace}
 DataGrid: {result.Profile.DataGridExportMode}
 Layout: {result.Profile.LayoutExportMode}
 
+## Quick start
+1. Open this folder or solution in Visual Studio/Rider.
+2. Run `dotnet restore`.
+3. Run `dotnet build`.
+
+The generated project targets `net6.0` and uses Avalonia `11.1.1`.
+
+## NuGet notes
+- Real DataGrid export requires `Avalonia.Controls.DataGrid 11.1.1`.
+- Generated bindings are runtime bindings unless a real exported ViewModel type exists.
+- If your NuGet source is HTTP/intranet-only, the generated `NuGet.config` must mark that source with `allowInsecureConnections=""true""`.
+
 ## Files
 {string.Join(Environment.NewLine, result.GeneratedFiles.Select(file => $"- {file.Path} ({file.StatusText})"))}
 
@@ -260,6 +304,48 @@ Layout: {result.Profile.LayoutExportMode}
 ## Diagnostics
 {BuildDiagnosticsText(result)}
 ";
+    }
+
+    public static string DeduplicateBuildOutput(string output)
+    {
+        if (string.IsNullOrWhiteSpace(output))
+            return output;
+
+        var ordered = new List<string>();
+        var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var rawLine in output.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n'))
+        {
+            var line = rawLine.TrimEnd('\r');
+            if (string.IsNullOrWhiteSpace(line))
+                continue;
+
+            var key = NormalizeBuildOutputLine(line);
+            if (!counts.ContainsKey(key))
+            {
+                ordered.Add(line);
+                counts[key] = 0;
+            }
+
+            counts[key]++;
+        }
+
+        var sb = new StringBuilder();
+        foreach (var line in ordered)
+        {
+            var key = NormalizeBuildOutputLine(line);
+            var count = counts[key];
+            sb.AppendLine(count > 1 ? $"[x{count}] {line}" : line);
+        }
+
+        return sb.ToString();
+    }
+
+    private static string NormalizeBuildOutputLine(string line)
+    {
+        return line
+            .Trim()
+            .Replace("\\", "/", StringComparison.Ordinal)
+            .Replace("\t", " ", StringComparison.Ordinal);
     }
 
     private static string BuildPackagesText(ExportResult result)
@@ -276,6 +362,17 @@ Layout: {result.Profile.LayoutExportMode}
             : string.Join(Environment.NewLine, result.Diagnostics.Select(diagnostic => $"{diagnostic.SeverityText}: {diagnostic.Source} - {diagnostic.Message} {diagnostic.Details}".Trim()));
     }
 
+    private static IEnumerable<ExportDiagnosticModel> DeduplicateDiagnostics(IEnumerable<ExportDiagnosticModel> diagnostics)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var diagnostic in diagnostics)
+        {
+            var key = $"{diagnostic.Severity}|{diagnostic.Source}|{diagnostic.Message}|{diagnostic.Details}";
+            if (seen.Add(key))
+                yield return diagnostic;
+        }
+    }
+
     private static async Task WriteZipTextAsync(ZipArchive archive, string path, string text, CancellationToken cancellationToken)
     {
         var entry = archive.CreateEntry(path);
@@ -283,6 +380,11 @@ Layout: {result.Profile.LayoutExportMode}
         await using var writer = new StreamWriter(stream, Encoding.UTF8);
         cancellationToken.ThrowIfCancellationRequested();
         await writer.WriteAsync(text).ConfigureAwait(false);
+    }
+
+    private static bool IsGeneratedReadme(string path)
+    {
+        return string.Equals(path.Replace('\\', '/'), "README.generated.md", StringComparison.OrdinalIgnoreCase);
     }
 
     private static async Task<ProcessResult> RunProcessAsync(
@@ -393,4 +495,6 @@ Layout: {result.Profile.LayoutExportMode}
 
     private sealed record ProcessResult(int ExitCode, string Output);
 }
+
+public sealed record NuGetPackageSource(string Name, string Value);
 
