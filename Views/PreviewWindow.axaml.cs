@@ -10,6 +10,7 @@ using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using Avalonia.Styling;
+using Avalonia.Controls.Templates;
 using Avalonia.Threading;
 using FormDesigner.DesignerSystem.Binding;
 using FormDesigner.DesignerSystem.BuiltIn;
@@ -19,6 +20,7 @@ using FormDesigner.PluginContracts;
 using FormDesigner.Services;
 using FormDesigner.ViewModels;
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
@@ -1787,6 +1789,8 @@ public partial class PreviewWindow : Window
             return CreateDataGridEmptyStatePreview(control, "Все поля BindingSource скрыты", "Включите видимость хотя бы одной колонки.");
 
         var showSummaryFooter = ShouldShowPreviewDataGridSummaryFooter(control.ShowFooter, visibleFields);
+        var hasWrappedTextColumns = visibleFields.Any(field =>
+            string.Equals(BindingFieldModel.NormalizeTextWrapping(field.TextWrapping), BindingFieldModel.TextWrappingWrap, StringComparison.Ordinal));
 
         var themePalette = DesignerThemeCatalog.Get(_document.FormTheme);
         var headerBackgroundColor = ParseColor(control.DataGridHeaderBackground, themePalette.DataGridHeaderBackground);
@@ -1834,16 +1838,19 @@ public partial class PreviewWindow : Window
             FontFamily = new FontFamily(control.FontFamily),
             FontSize = Math.Max(10, control.DataGridRowFontSize),
             FontWeight = ParseFontWeight(control.DataGridRowFontWeight),
-            RowHeight = Math.Max(18, control.DataGridRowHeight),
             ColumnHeaderHeight = Math.Max(24, control.DataGridHeaderHeight),
             HeadersVisibility = control.DataGridShowHeader ? DataGridHeadersVisibility.Column : DataGridHeadersVisibility.None,
             GridLinesVisibility = ResolveDataGridLinesVisibility(control),
             CanUserResizeColumns = true,
             CanUserReorderColumns = true,
             CanUserSortColumns = true,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             SelectionMode = DataGridSelectionMode.Single,
             IsReadOnly = true
         };
+        if (!hasWrappedTextColumns)
+            dataGrid.RowHeight = Math.Max(18, control.DataGridRowHeight);
 
         dataGrid.SelectionChanged += (_, _) =>
         {
@@ -1870,17 +1877,7 @@ public partial class PreviewWindow : Window
 
         foreach (var field in visibleFields)
         {
-            var column = new DataGridTextColumn
-            {
-                Header = field.Header,
-                Binding = new Binding($"[{field.Path}]"),
-                Width = CreateRuntimeDataGridColumnWidth(field.Width),
-                MinWidth = Math.Max(0, field.MinWidth),
-                CanUserResize = field.AllowResize,
-                CanUserSort = field.AllowSort && field.IsSortable,
-                SortMemberPath = field.Path,
-                Tag = field
-            };
+            var column = CreateRuntimeDataGridColumn(control, field, new SolidColorBrush(rowForegroundColor));
 
             if (field.MaxWidth > 0)
                 column.MaxWidth = Math.Max(field.MinWidth, field.MaxWidth);
@@ -3048,6 +3045,83 @@ public partial class PreviewWindow : Window
         return cell;
     }
 
+    private static DataGridColumn CreateRuntimeDataGridColumn(
+        DesignerControlFileModel control,
+        BindingFieldFileModel field,
+        IBrush foreground)
+    {
+        var canUserSort = field.AllowSort && field.IsSortable && !string.IsNullOrWhiteSpace(field.Path);
+        DataGridColumn column;
+        if (ShouldUseRuntimeDataGridTemplateColumn(field))
+        {
+            column = new DataGridTemplateColumn
+            {
+                Header = field.Header,
+                CellTemplate = new FuncDataTemplate<Dictionary<string, string>>(
+                    (row, _) => CreateRuntimeDataGridCellTextBlock(control, field, row, foreground),
+                    supportsRecycling: true)
+            };
+        }
+        else
+        {
+            column = new DataGridTextColumn
+            {
+                Header = field.Header,
+                Binding = string.IsNullOrWhiteSpace(field.Path) ? null : new Binding($"[{field.Path}]"),
+                Foreground = foreground,
+                FontFamily = new FontFamily(control.FontFamily),
+                FontSize = Math.Max(10, control.DataGridRowFontSize),
+                FontWeight = ParseFontWeight(control.DataGridRowFontWeight)
+            };
+        }
+
+        column.Width = CreateRuntimeDataGridColumnWidth(field.Width);
+        column.MinWidth = Math.Max(0, field.MinWidth);
+        column.CanUserResize = field.AllowResize;
+        column.CanUserSort = canUserSort;
+        column.SortMemberPath = field.Path;
+        column.Tag = field;
+        column.CustomSortComparer = new PreviewDictionaryDataGridSortComparer(field);
+        return column;
+    }
+
+    private static TextBlock CreateRuntimeDataGridCellTextBlock(
+        DesignerControlFileModel control,
+        BindingFieldFileModel field,
+        IReadOnlyDictionary<string, string>? row,
+        IBrush foreground)
+    {
+        var rawText = row is not null && row.TryGetValue(field.Path, out var value)
+            ? value
+            : string.Empty;
+        var wrapping = GetPreviewDataGridTextWrapping(field.TextWrapping);
+        var textBlock = new TextBlock
+        {
+            Text = BindingFieldModel.FormatDisplayValue(rawText, field.FormatString, field.NullText, field.TypeName),
+            FontFamily = new FontFamily(control.FontFamily),
+            FontSize = Math.Max(10, control.DataGridRowFontSize),
+            FontWeight = ParseFontWeight(control.DataGridRowFontWeight),
+            Foreground = foreground,
+            HorizontalAlignment = GetPreviewDataGridHorizontalAlignment(field.CellAlignment),
+            TextAlignment = GetPreviewDataGridTextAlignment(field.CellAlignment),
+            TextTrimming = GetPreviewDataGridTextTrimming(field.TextTrimming),
+            TextWrapping = wrapping,
+            VerticalAlignment = wrapping == TextWrapping.Wrap ? VerticalAlignment.Top : VerticalAlignment.Center
+        };
+
+        if (field.MaxLines > 0 && (wrapping != TextWrapping.Wrap || field.MaxLines > 1))
+            textBlock.MaxLines = field.MaxLines;
+
+        return textBlock;
+    }
+
+    private static bool ShouldUseRuntimeDataGridTemplateColumn(BindingFieldFileModel field)
+    {
+        return string.Equals(BindingFieldModel.NormalizeTextWrapping(field.TextWrapping), BindingFieldModel.TextWrappingWrap, StringComparison.Ordinal)
+            || !string.Equals(BindingFieldModel.NormalizeTextTrimming(field.TextTrimming), BindingFieldModel.TextTrimmingCharacterEllipsis, StringComparison.Ordinal)
+            || field.MaxLines > 1;
+    }
+
     private static Border CreateRuntimeDataGridFooterCell(
         DesignerControlFileModel control,
         BindingFieldFileModel field,
@@ -4165,6 +4239,38 @@ public partial class PreviewWindow : Window
             }
 
             return "(пусто)";
+        }
+    }
+
+    private sealed class PreviewDictionaryDataGridSortComparer : IComparer
+    {
+        private readonly BindingFieldFileModel _field;
+        private readonly string _path;
+
+        public PreviewDictionaryDataGridSortComparer(BindingFieldFileModel field)
+        {
+            _field = field;
+            _path = field.Path;
+        }
+
+        public int Compare(object? x, object? y)
+        {
+            var left = GetValue(x);
+            var right = GetValue(y);
+            var leftKey = GetPreviewWindowSortKey(_field, left);
+            var rightKey = GetPreviewWindowSortKey(_field, right);
+            return Comparer<(int Kind, double Number, DateTime Date, string Text)>.Default.Compare(leftKey, rightKey);
+        }
+
+        private string GetValue(object? item)
+        {
+            if (item is IReadOnlyDictionary<string, string> row
+                && row.TryGetValue(_path, out var value))
+            {
+                return value ?? string.Empty;
+            }
+
+            return item?.ToString() ?? string.Empty;
         }
     }
 }

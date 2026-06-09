@@ -12172,6 +12172,30 @@ public partial class MainWindowViewModel : ObservableObject
                 Details = diagnostic.Recommendation
             };
         }
+
+        foreach (var control in Controls.Where(control => control.Type == DesignerControlTypes.DataGrid && control.AllowGrouping))
+        {
+            var source = GetBindingSource(control.BindingSourceId);
+            var groupedFields = source?.Fields
+                .Where(field => field.GroupOrder >= 0)
+                .OrderBy(field => field.GroupOrder)
+                .ThenBy(field => field.Header)
+                .ToList() ?? new List<BindingFieldModel>();
+
+            if (groupedFields.Count == 0)
+                continue;
+
+            if (!ShouldGenerateDemoRuntimeCode)
+            {
+                yield return new ExportDiagnosticModel
+                {
+                    Severity = ExportChecklistSeverity.Warning,
+                    Source = control.Name,
+                    Message = "DataGrid grouping exported as metadata only",
+                    Details = $"Для '{control.Name}' сохранена группировка по {string.Join(", ", groupedFields.Select(field => field.Path))}. В режиме Clean UI подключите ItemsSource к grouped collection view в runtime ViewModel."
+                };
+            }
+        }
     }
 
     private static string GetRecommendedPackageVersion(string packageId)
@@ -16382,6 +16406,8 @@ public partial class MainWindowViewModel : ObservableObject
         var visibleFields = source is null
             ? new List<BindingFieldModel>()
             : OrderBindingFieldsForDisplay(source.Fields.Where(field => field.IsVisible)).ToList();
+        var hasWrappedTextColumns = visibleFields.Any(field =>
+            string.Equals(BindingFieldModel.NormalizeTextWrapping(field.TextWrapping), BindingFieldModel.TextWrappingWrap, StringComparison.Ordinal));
         var sortedFields = source?.Fields
             .Where(CanSortBindingField)
             .Where(field => !string.Equals(field.SortDirection, BindingFieldModel.SortDirectionNone, StringComparison.OrdinalIgnoreCase))
@@ -16499,7 +16525,8 @@ public partial class MainWindowViewModel : ObservableObject
         if (ShouldIncludeExportComments && !ShouldGenerateDemoRuntimeCode && source is not null)
             sb.AppendLine($"{Indent(dataGridIndent)}<!-- BindingSource '{EscapeXml(source.NameOrFallback())}' используется только как схема колонок в режиме «Чистый UI». Подключите ItemsSource в реальном ViewModel, когда будете готовы. -->");
 
-        sb.AppendLine($"{Indent(dataGridIndent)}<DataGrid{dataGridNameAttribute}{dataGridPlacement} Background=\"{rowBackground}\" RowBackground=\"{rowBackground}\" Foreground=\"{rowForeground}\" BorderBrush=\"{outerBorderBrush}\" BorderThickness=\"{ToInvariant(control.BorderThickness)}\" FontFamily=\"{EscapeXml(control.FontFamily)}\" FontSize=\"{ToInvariant(control.DataGridRowFontSize)}\" FontWeight=\"{EscapeXml(control.DataGridRowFontWeight)}\" AutoGenerateColumns=\"{BoolToXaml(control.AutoGenerateColumns)}\" HeadersVisibility=\"{headersVisibility}\" GridLinesVisibility=\"{gridLinesVisibility}\" ColumnHeaderHeight=\"{ToInvariant(headerHeight)}\" RowHeight=\"{ToInvariant(rowHeight)}\"{itemsSource}{selectedItem}{selectionChangedAttribute}{commonVisibilityAttributes}>");
+        var rowHeightAttribute = hasWrappedTextColumns ? "" : $" RowHeight=\"{ToInvariant(rowHeight)}\"";
+        sb.AppendLine($"{Indent(dataGridIndent)}<DataGrid{dataGridNameAttribute}{dataGridPlacement} Background=\"{rowBackground}\" RowBackground=\"{rowBackground}\" Foreground=\"{rowForeground}\" BorderBrush=\"{outerBorderBrush}\" BorderThickness=\"{ToInvariant(control.BorderThickness)}\" FontFamily=\"{EscapeXml(control.FontFamily)}\" FontSize=\"{ToInvariant(control.DataGridRowFontSize)}\" FontWeight=\"{EscapeXml(control.DataGridRowFontWeight)}\" AutoGenerateColumns=\"{BoolToXaml(control.AutoGenerateColumns)}\" CanUserSortColumns=\"True\" CanUserResizeColumns=\"True\" CanUserReorderColumns=\"True\" HorizontalScrollBarVisibility=\"Auto\" VerticalScrollBarVisibility=\"Auto\" HeadersVisibility=\"{headersVisibility}\" GridLinesVisibility=\"{gridLinesVisibility}\" ColumnHeaderHeight=\"{ToInvariant(headerHeight)}\"{rowHeightAttribute}{itemsSource}{selectedItem}{selectionChangedAttribute}{commonVisibilityAttributes}>");
         sb.AppendLine($"{Indent(dataGridIndent + 1)}<DataGrid.Styles>");
         sb.AppendLine($"{Indent(dataGridIndent + 2)}<Style Selector=\"DataGridColumnHeader\">");
         sb.AppendLine($"{Indent(dataGridIndent + 3)}<Setter Property=\"Background\" Value=\"{headerBackground}\" />");
@@ -16567,7 +16594,12 @@ public partial class MainWindowViewModel : ObservableObject
                     : $" SortMemberPath=\"{EscapeXml(bindingPath)}\"";
                 var canUserSort = !string.IsNullOrWhiteSpace(bindingPath) && CanSortBindingField(field);
                 var widthAttribute = string.IsNullOrWhiteSpace(field.Width) ? "" : $" Width=\"{EscapeXml(field.Width.Trim())}\"";
-                var columnTag = IsBooleanBindingField(field) ? "DataGridCheckBoxColumn" : "DataGridTextColumn";
+                var useTemplateColumn = !IsBooleanBindingField(field) && ShouldExportDataGridTemplateColumn(field);
+                var columnTag = IsBooleanBindingField(field)
+                    ? "DataGridCheckBoxColumn"
+                    : useTemplateColumn
+                        ? "DataGridTemplateColumn"
+                        : "DataGridTextColumn";
 
                 TraceDocumentDebug(
                     "EXPORT_DATAGRID_COLUMN",
@@ -16582,7 +16614,24 @@ public partial class MainWindowViewModel : ObservableObject
                         warning: true);
                 }
 
-                sb.AppendLine($"{Indent(dataGridIndent + 2)}<{columnTag} Header=\"{EscapeXml(header)}\"{bindingAttribute}{sortMemberPathAttribute}{widthAttribute} CanUserSort=\"{BoolToXaml(canUserSort)}\" CanUserResize=\"{BoolToXaml(field.AllowResize)}\"{minWidthAttribute}{maxWidthAttribute} />");
+                if (useTemplateColumn)
+                {
+                    AppendDataGridTemplateColumnXaml(
+                        sb,
+                        field,
+                        header,
+                        bindingPath,
+                        sortMemberPathAttribute,
+                        widthAttribute,
+                        canUserSort,
+                        minWidthAttribute,
+                        maxWidthAttribute,
+                        dataGridIndent + 2);
+                }
+                else
+                {
+                    sb.AppendLine($"{Indent(dataGridIndent + 2)}<{columnTag} Header=\"{EscapeXml(header)}\"{bindingAttribute}{sortMemberPathAttribute}{widthAttribute} CanUserSort=\"{BoolToXaml(canUserSort)}\" CanUserResize=\"{BoolToXaml(field.AllowResize)}\"{minWidthAttribute}{maxWidthAttribute} />");
+                }
             }
             sb.AppendLine($"{Indent(dataGridIndent + 1)}</DataGrid.Columns>");
         }
@@ -16590,6 +16639,53 @@ public partial class MainWindowViewModel : ObservableObject
         sb.AppendLine($"{Indent(dataGridIndent)}</DataGrid>");
         if (shouldExportHost)
             sb.AppendLine($"{Indent(indentLevel)}</Grid>");
+    }
+
+    private static bool ShouldExportDataGridTemplateColumn(BindingFieldModel field)
+    {
+        return string.Equals(BindingFieldModel.NormalizeTextWrapping(field.TextWrapping), BindingFieldModel.TextWrappingWrap, StringComparison.Ordinal)
+            || !string.Equals(BindingFieldModel.NormalizeTextTrimming(field.TextTrimming), BindingFieldModel.TextTrimmingCharacterEllipsis, StringComparison.Ordinal)
+            || field.MaxLines > 1;
+    }
+
+    private void AppendDataGridTemplateColumnXaml(
+        StringBuilder sb,
+        BindingFieldModel field,
+        string header,
+        string bindingPath,
+        string sortMemberPathAttribute,
+        string widthAttribute,
+        bool canUserSort,
+        string minWidthAttribute,
+        string maxWidthAttribute,
+        int indentLevel)
+    {
+        var wrapping = BindingFieldModel.NormalizeTextWrapping(field.TextWrapping);
+        var trimming = BindingFieldModel.NormalizeTextTrimming(field.TextTrimming);
+        var alignment = BindingFieldModel.NormalizeAlignment(field.CellAlignment);
+        var textBindingAttribute = string.IsNullOrWhiteSpace(bindingPath)
+            ? " Text=\"\""
+            : $" Text=\"{{Binding {EscapeXml(bindingPath)}}}\"";
+        var maxLinesAttribute = field.MaxLines > 0 && (!string.Equals(wrapping, BindingFieldModel.TextWrappingWrap, StringComparison.Ordinal) || field.MaxLines > 1)
+            ? $" MaxLines=\"{field.MaxLines.ToString(CultureInfo.InvariantCulture)}\""
+            : "";
+
+        TraceDocumentDebug(
+            "DATAGRID_COLUMN_TEMPLATE_GENERATED",
+            $"column={header}; reason=wrapping:{wrapping}; trimming:{trimming}; maxLines={field.MaxLines}",
+            toOutput: false);
+        TraceDocumentDebug(
+            "DATAGRID_COLUMN_TEXT_SETTINGS_APPLIED",
+            $"column={header}; wrapping={wrapping}; trimming={trimming}; rowHeightMode={(string.Equals(wrapping, BindingFieldModel.TextWrappingWrap, StringComparison.Ordinal) ? "Auto" : "Fixed")}; generatedColumnType=DataGridTemplateColumn",
+            toOutput: false);
+
+        sb.AppendLine($"{Indent(indentLevel)}<DataGridTemplateColumn Header=\"{EscapeXml(header)}\"{sortMemberPathAttribute}{widthAttribute} CanUserSort=\"{BoolToXaml(canUserSort)}\" CanUserResize=\"{BoolToXaml(field.AllowResize)}\"{minWidthAttribute}{maxWidthAttribute}>");
+        sb.AppendLine($"{Indent(indentLevel + 1)}<DataGridTemplateColumn.CellTemplate>");
+        sb.AppendLine($"{Indent(indentLevel + 2)}<DataTemplate>");
+        sb.AppendLine($"{Indent(indentLevel + 3)}<TextBlock{textBindingAttribute} TextWrapping=\"{wrapping}\" TextTrimming=\"{trimming}\" HorizontalAlignment=\"{alignment}\" TextAlignment=\"{alignment}\"{maxLinesAttribute} />");
+        sb.AppendLine($"{Indent(indentLevel + 2)}</DataTemplate>");
+        sb.AppendLine($"{Indent(indentLevel + 1)}</DataGridTemplateColumn.CellTemplate>");
+        sb.AppendLine($"{Indent(indentLevel)}</DataGridTemplateColumn>");
     }
 
     private void AppendPortableDataGridPlaceholderXaml(

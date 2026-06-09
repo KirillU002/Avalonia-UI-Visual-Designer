@@ -46,6 +46,12 @@ internal static class Program
             new("RealDataGridExport", ConfigureRealDataGridExport, AssertRealDataGridExport, RequiresRealDataGrid: true),
             new("RealDataGridExportUsesValidColumnTags", ConfigureRealDataGridExport, AssertRealDataGridExportUsesValidColumnTags, RequiresRealDataGrid: true),
             new("DataGridHeaderTemplateDoesNotGenerateEmptyBinding", ConfigureDataGridBindingSourceWorkflow, AssertDataGridHeaderTemplateDoesNotGenerateEmptyBinding, RequiresRealDataGrid: true),
+            new("DataGridExportSettingsForSortResizeScroll", ConfigureRealDataGridExport, AssertDataGridExportSettingsForSortResizeScroll, RequiresRealDataGrid: true),
+            new("DataGridColumnWrapUsesTemplateColumn", ConfigureDataGridColumnWrapUsesTemplateColumn, AssertDataGridColumnWrapUsesTemplateColumn, RequiresRealDataGrid: true),
+            new("DataGridColumnTrimmingExportedCorrectly", ConfigureDataGridColumnTrimmingExportedCorrectly, AssertDataGridColumnTrimmingExportedCorrectly, RequiresRealDataGrid: true),
+            new("DataGridGroupingDoesNotGenerateInvalidBindings", ConfigureDataGridGroupingDoesNotGenerateInvalidBindings, AssertDataGridGroupingDoesNotGenerateInvalidBindings, RequiresRealDataGrid: true),
+            new("DataGridManyColumnsShowsHorizontalScroll", ConfigureDataGridManyColumnsShowsHorizontalScroll, AssertDataGridManyColumnsShowsHorizontalScroll, RequiresRealDataGrid: true),
+            new("DataGridPreviewExportSettingsMatch", ConfigureDataGridColumnWrapUsesTemplateColumn, AssertDataGridPreviewExportSettingsMatch, RequiresRealDataGrid: true),
             new("GeneratedNugetConfigContainsAllowInsecureConnectionsForHttpSource", ConfigureSimpleFormExport, AssertGeneratedNugetConfigContainsAllowInsecureConnectionsForHttpSource),
             new("BuildOutputDeduplicatesRepeatedNet6Warning", ConfigureSimpleFormExport, AssertBuildOutputDeduplicatesRepeatedNet6Warning),
             new("ArtifactsCleanupDeletesOldExportRuns", ConfigureSimpleFormExport, AssertArtifactsCleanupDeletesOldExportRuns),
@@ -483,6 +489,123 @@ internal static class Program
         RequireNotContains(context.Xaml, "x:DataType=\"\"", "DataGrid export must not generate empty x:DataType.");
         RequireNotContains(context.Xaml, "DataGridTextColumn.HeaderTemplate", "DataGrid export should not generate simple HeaderTemplate bindings.");
         RequireNotContains(context.Xaml, "Text=\"{Binding}\"", "DataGrid export should not generate header TextBlock empty bindings.");
+    }
+
+    private static void AssertDataGridExportSettingsForSortResizeScroll(SmokeContext context)
+    {
+        RequireContains(context.Xaml, "CanUserSortColumns=\"True\"", "Real DataGrid should allow header sorting.");
+        RequireContains(context.Xaml, "CanUserResizeColumns=\"True\"", "Real DataGrid should allow mouse column resize.");
+        RequireContains(context.Xaml, "HorizontalScrollBarVisibility=\"Auto\"", "Real DataGrid should expose horizontal scrolling for many columns.");
+        RequireContains(context.Xaml, "VerticalScrollBarVisibility=\"Auto\"", "Real DataGrid should expose vertical scrolling.");
+        RequireContains(context.Xaml, "SortMemberPath=\"Title\"", "Text columns should export SortMemberPath for sorting.");
+        RequireContains(context.Xaml, "CanUserResize=\"True\"", "Columns should preserve per-column resize setting.");
+        RequireContains(context.Xaml, "CanUserSort=\"True\"", "Columns should preserve per-column sort setting.");
+    }
+
+    private static void ConfigureDataGridColumnWrapUsesTemplateColumn(MainWindowViewModel vm)
+    {
+        var source = ProductsSource();
+        source.Fields[0].Header = "Description";
+        source.Fields[0].Path = "Description";
+        source.Fields[0].SampleValue = "Long wrapped description";
+        source.Fields[0].Width = "240";
+        source.Fields[0].TextWrapping = BindingFieldModel.TextWrappingWrap;
+        source.Fields[0].TextTrimming = BindingFieldModel.TextTrimmingNone;
+        source.Fields[0].MaxLines = 0;
+        vm.BindingSources.Add(source);
+        vm.DataGridExportMode = MainWindowViewModel.DataGridExportModeReal;
+        vm.Controls.Add(DataGrid("ProductsGrid", source.Id, 32, 42, 360, 220));
+    }
+
+    private static void AssertDataGridColumnWrapUsesTemplateColumn(SmokeContext context)
+    {
+        RequireContains(context.Xaml, "<DataGridTemplateColumn Header=\"Description\"", "Wrapped text columns should export a template column.");
+        RequireContains(context.Xaml, "SortMemberPath=\"Description\"", "Wrapped template column should keep SortMemberPath.");
+        RequireContains(context.Xaml, "Text=\"{Binding Description}\"", "Wrapped template column should bind cell TextBlock to the field path.");
+        RequireContains(context.Xaml, "TextWrapping=\"Wrap\"", "Wrapped template column should export TextWrapping=Wrap.");
+        RequireContains(context.Xaml, "TextTrimming=\"None\"", "Wrapped template column should export TextTrimming=None.");
+        RequireNotContains(context.Xaml, "RowHeight=\"", "Wrapped DataGrid should not force fixed row height.");
+        RequireNotContains(context.Xaml, "{Binding }", "Wrapped template column must not generate empty binding markup.");
+    }
+
+    private static void ConfigureDataGridColumnTrimmingExportedCorrectly(MainWindowViewModel vm)
+    {
+        var source = ProductsSource();
+        source.Fields[0].TextTrimming = BindingFieldModel.TextTrimmingWordEllipsis;
+        source.Fields[0].TextWrapping = BindingFieldModel.TextWrappingNoWrap;
+        source.Fields[0].MaxLines = 1;
+        vm.BindingSources.Add(source);
+        vm.DataGridExportMode = MainWindowViewModel.DataGridExportModeReal;
+        vm.Controls.Add(DataGrid("ProductsGrid", source.Id, 32, 42, 420, 220));
+    }
+
+    private static void AssertDataGridColumnTrimmingExportedCorrectly(SmokeContext context)
+    {
+        RequireContains(context.Xaml, "<DataGridTemplateColumn Header=\"Title\"", "Custom trimming should export a template column.");
+        RequireContains(context.Xaml, "TextWrapping=\"NoWrap\"", "NoWrap template column should keep TextWrapping=NoWrap.");
+        RequireContains(context.Xaml, "TextTrimming=\"WordEllipsis\"", "Custom trimming should be exported.");
+        RequireContains(context.Xaml, "MaxLines=\"1\"", "Single-line trimming should keep MaxLines=1.");
+    }
+
+    private static void ConfigureDataGridGroupingDoesNotGenerateInvalidBindings(MainWindowViewModel vm)
+    {
+        var source = ProductsSource();
+        source.Fields[0].GroupOrder = 0;
+        vm.BindingSources.Add(source);
+        vm.DataGridExportMode = MainWindowViewModel.DataGridExportModeReal;
+        var grid = DataGrid("ProductsGrid", source.Id, 32, 42, 520, 260);
+        grid.AllowGrouping = true;
+        grid.ShowGroupPanel = true;
+        vm.Controls.Add(grid);
+    }
+
+    private static void AssertDataGridGroupingDoesNotGenerateInvalidBindings(SmokeContext context)
+    {
+        RequireContains(context.Xaml, "Группировка:", "Export comments should preserve grouping metadata.");
+        RequireContains(context.Xaml, "Title (0)", "Grouping metadata should name the configured group column.");
+        RequireNotContains(context.Xaml, "{Binding }", "Grouping export must not generate empty binding markup.");
+        RequireNotContains(context.Xaml, "Path=\"\"", "Grouping export must not generate empty binding path.");
+        RequireNotContains(context.Xaml, "HeaderTemplate", "Grouping metadata should not generate invalid header templates.");
+        if (!context.ViewModel.ExportDiagnostics.Any(item =>
+                item.Message.Contains("DataGrid grouping exported as metadata only", StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new InvalidOperationException("Clean UI grouping should be reported as an explicit runtime-view warning.");
+        }
+    }
+
+    private static void ConfigureDataGridManyColumnsShowsHorizontalScroll(MainWindowViewModel vm)
+    {
+        var source = new BindingSourceModel
+        {
+            Id = "wide-source",
+            Name = "WideSource",
+            Path = "WideRows",
+            ItemTypeName = "WideRow"
+        };
+        for (var index = 1; index <= 12; index++)
+            source.Fields.Add(Field($"Column {index}", $"Column{index}", $"Value {index}", "string", "160"));
+
+        vm.BindingSources.Add(source);
+        vm.DataGridExportMode = MainWindowViewModel.DataGridExportModeReal;
+        vm.Controls.Add(DataGrid("WideGrid", source.Id, 32, 42, 360, 240));
+    }
+
+    private static void AssertDataGridManyColumnsShowsHorizontalScroll(SmokeContext context)
+    {
+        RequireContains(context.Xaml, "HorizontalScrollBarVisibility=\"Auto\"", "Many-column DataGrid should enable horizontal scroll.");
+        RequireContains(context.Xaml, "VerticalScrollBarVisibility=\"Auto\"", "Many-column DataGrid should enable vertical scroll.");
+        RequireContains(context.Xaml, "Width=\"160\"", "Column pixel widths should be exported.");
+        RequireContains(context.Xaml, "SortMemberPath=\"Column12\"", "All wide columns should be exported with sort paths.");
+    }
+
+    private static void AssertDataGridPreviewExportSettingsMatch(SmokeContext context)
+    {
+        RequireContains(context.Xaml, "CanUserSortColumns=\"True\"", "Preview/export DataGrid settings should include sorting.");
+        RequireContains(context.Xaml, "CanUserResizeColumns=\"True\"", "Preview/export DataGrid settings should include resizing.");
+        RequireContains(context.Xaml, "HorizontalScrollBarVisibility=\"Auto\"", "Preview/export DataGrid settings should include horizontal scroll.");
+        RequireContains(context.Xaml, "VerticalScrollBarVisibility=\"Auto\"", "Preview/export DataGrid settings should include vertical scroll.");
+        RequireContains(context.Xaml, "TextWrapping=\"Wrap\"", "Preview/export DataGrid settings should include wrapping.");
+        RequireContains(context.Xaml, "TextTrimming=\"None\"", "Preview/export DataGrid settings should include trimming.");
     }
 
     private static void AssertGeneratedNugetConfigContainsAllowInsecureConnectionsForHttpSource(SmokeContext context)
