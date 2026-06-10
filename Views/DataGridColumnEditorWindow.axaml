@@ -131,13 +131,23 @@
           <TextBlock Text="{Binding SummaryText}"
                      Foreground="#475569"
                      TextWrapping="Wrap"/>
+          <TextBlock Text="{Binding SourceIdentityText}"
+                     Foreground="#1D4ED8"
+                     FontSize="12"
+                     TextWrapping="Wrap"/>
         </StackPanel>
 
-        <Button Grid.Column="1"
-                Content="Закрыть"
-                Classes="editor-action"
-                VerticalAlignment="Center"
-                Click="CloseButton_Click"/>
+        <StackPanel Grid.Column="1"
+                    Orientation="Horizontal"
+                    Spacing="8"
+                    VerticalAlignment="Center">
+          <Button Content="Apply"
+                  Classes="editor-action"
+                  Click="ApplyButton_Click"/>
+          <Button Content="Cancel"
+                  Classes="editor-action"
+                  Click="CloseButton_Click"/>
+        </StackPanel>
       </Grid>
     </Border>
 
@@ -211,7 +221,7 @@
                     Classes="editor-action"
                     Margin="0,0,8,8"
                     Click="ResetColumnWidthsButton_Click"/>
-            <Button Content="Из BindingSource"
+            <Button Content="Sync schema"
                     Classes="editor-action"
                     Margin="0,0,8,8"
                     Click="CreateColumnsFromBindingSourceButton_Click"/>

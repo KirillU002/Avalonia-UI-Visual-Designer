@@ -1,6 +1,7 @@
 ﻿using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Avalonia.Threading;
+using FormDesigner.DesignerSystem.Binding;
 using FormDesigner.DesignerSystem.BuiltIn;
 using FormDesigner.DesignerSystem.Infrastructure;
 using FormDesigner.EditorCommands;
@@ -846,6 +847,17 @@ public partial class MainWindowViewModel : ObservableObject
     public bool IsCleanUiGenerationMode => string.Equals(GenerationMode, GenerationModeCleanUi, StringComparison.Ordinal);
     public bool IsDemoDataGenerationMode => !IsCleanUiGenerationMode;
     public bool ShouldGenerateDemoRuntimeCode => IsDemoDataGenerationMode || IncludeSampleData || IncludeCrudSkeleton;
+
+    private bool ShouldGenerateRuntimeDataBindingCode => ShouldGenerateDemoRuntimeCode || HasRuntimeDataGridBindingSource();
+
+    private bool HasRuntimeDataGridBindingSource()
+    {
+        return ShouldExportRealDataGrid
+            && Controls
+                .Where(control => control.Type == DesignerControlTypes.DataGrid)
+                .Any(control => GetBindingSource(control.BindingSourceId) is { } source
+                    && HasVisibleBindingFields(source));
+    }
     public bool ShouldExportPlaceholderDataGrid => string.Equals(NormalizeDataGridExportMode(DataGridExportMode), DataGridExportModePlaceholder, StringComparison.Ordinal);
     public bool ShouldExportVisualDataGrid => string.Equals(NormalizeDataGridExportMode(DataGridExportMode), DataGridExportModeVisual, StringComparison.Ordinal);
     public bool ShouldExportRealDataGrid => string.Equals(NormalizeDataGridExportMode(DataGridExportMode), DataGridExportModeReal, StringComparison.Ordinal);
@@ -1605,7 +1617,7 @@ public partial class MainWindowViewModel : ObservableObject
             if (source is null)
                 return "Выберите существующий BindingSource или создайте новый. После этого откройте Column Editor.";
 
-            return $"{source.Name} · {source.ItemTypeName} · {SelectedDataGridColumnCountText}";
+            return $"{DataSourceIdentity.BuildDisplayName(source)} · {source.ItemTypeName} · {SelectedDataGridColumnCountText}";
         }
     }
 
@@ -1855,6 +1867,8 @@ public partial class MainWindowViewModel : ObservableObject
             if (SelectedBindingSource is null)
                 return "Ручной источник привязки";
 
+            var sourceIdentity = DataSourceIdentity.BuildDisplayName(SelectedBindingSource);
+
             if (!string.IsNullOrWhiteSpace(SelectedBindingSource.SourceAssemblyPath))
             {
                 var assemblyName = Path.GetFileName(SelectedBindingSource.SourceAssemblyPath);
@@ -1862,7 +1876,7 @@ public partial class MainWindowViewModel : ObservableObject
                     ? ""
                     : $"  Таблица: {SelectedBindingSource.SourceTableName}";
 
-                return $"{SelectedBindingSource.SourceTypeFullName}  [{assemblyName}]{tablePart}";
+                return $"{sourceIdentity}  [{assemblyName}]{tablePart}";
             }
 
             if (!string.IsNullOrWhiteSpace(SelectedBindingSource.SourceConnectionString)
@@ -1874,10 +1888,10 @@ public partial class MainWindowViewModel : ObservableObject
                     ? "SQL-запрос"
                     : $"{NormalizeSqlSchemaName(SelectedBindingSource.SourceSchemaName)}.{NormalizeSqlTableName(SelectedBindingSource.SourceTableName)}";
 
-                return $"{sourceLabel}  [{objectLabel}]";
+                return $"{sourceIdentity}  [{sourceLabel}; {objectLabel}]";
             }
 
-            return "Ручной источник привязки";
+            return sourceIdentity;
         }
     }
 
@@ -4732,6 +4746,9 @@ public partial class MainWindowViewModel : ObservableObject
             foreach (var grid in Controls.Where(control => control.Type == DesignerControlTypes.DataGrid && !string.IsNullOrWhiteSpace(control.BindingSourceId)))
             {
                 var source = GetBindingSource(grid.BindingSourceId);
+                if (ShouldGenerateRuntimeBindingForSource(source))
+                    continue;
+
                 diagnostics.Add(new DocumentDiagnosticModel
                 {
                     Severity = DocumentDiagnosticSeverity.Warning,
@@ -11032,7 +11049,7 @@ public partial class MainWindowViewModel : ObservableObject
 
         if (ShouldIncludeExportComments && BindingSources.Count > 0)
         {
-            sb.AppendLine(ShouldGenerateDemoRuntimeCode
+            sb.AppendLine(ShouldGenerateRuntimeDataBindingCode
                 ? "    <!-- Runtime demo BindingSource коллекции, созданные опциональным demo-режимом:"
                 : "    <!-- BindingSource-схемы. Чистый UI использует их только для колонок DataGrid:");
             foreach (var source in BindingSources)
@@ -11054,7 +11071,7 @@ public partial class MainWindowViewModel : ObservableObject
                             : $"{field.Path} [{string.Join("; ", flags)}]";
                     }));
 
-                var sourceDescription = ShouldGenerateDemoRuntimeCode
+                var sourceDescription = ShouldGenerateRuntimeBindingForSource(source)
                     ? $"{source.Path} : ObservableCollection<{source.ItemTypeName}>"
                     : $"{source.NameOrFallback()} ({source.Path})";
                 sb.AppendLine($"         {EscapeXml(sourceDescription)} [{EscapeXml(fields)}]");
@@ -12185,7 +12202,7 @@ public partial class MainWindowViewModel : ObservableObject
             if (groupedFields.Count == 0)
                 continue;
 
-            if (!ShouldGenerateDemoRuntimeCode)
+            if (!ShouldGenerateRuntimeBindingForSource(source))
             {
                 yield return new ExportDiagnosticModel
                 {
@@ -12214,8 +12231,8 @@ public partial class MainWindowViewModel : ObservableObject
         return packageId switch
         {
             "Avalonia.Controls.DataGrid" => "Real Avalonia DataGrid export",
-            "CommunityToolkit.Mvvm" => IncludeCommunityToolkitAttributes ? "CommunityToolkit attributes requested" : "Demo runtime ViewModel generation",
-            "Microsoft.Data.SqlClient" => "SQL BindingSource demo runtime",
+            "CommunityToolkit.Mvvm" => IncludeCommunityToolkitAttributes ? "CommunityToolkit attributes requested" : "Generated DataGrid runtime ViewModel",
+            "Microsoft.Data.SqlClient" => "SQL BindingSource runtime loader",
             _ => "Export dependency"
         };
     }
@@ -12341,7 +12358,7 @@ public partial class MainWindowViewModel : ObservableObject
         if (ShouldExportPortableDataGrid && Controls.Any(control => control.Type == DesignerControlTypes.DataGrid))
             sb.AppendLine($"         {BuildDataGridExportSummary()}. Для рабочей таблицы выберите Real Avalonia DataGrid и установите NuGet.");
 
-        if (BindingSources.Count > 0 && !ShouldGenerateDemoRuntimeCode)
+        if (BindingSources.Count > 0 && !ShouldGenerateRuntimeDataBindingCode)
             sb.AppendLine("         BindingSource используется только как схема колонок. Тестовые модели и fake data не генерируются.");
 
         if (IncludePluginRuntimeReferences && Controls.Any(IsPluginRuntimeControl))
@@ -12355,10 +12372,10 @@ public partial class MainWindowViewModel : ObservableObject
         if (ShouldExportRealDataGrid && Controls.Any(control => control.Type == DesignerControlTypes.DataGrid))
             yield return "Avalonia.Controls.DataGrid";
 
-        if (ShouldGenerateDemoRuntimeCode || IncludeCommunityToolkitAttributes)
+        if (ShouldGenerateRuntimeDataBindingCode || IncludeCommunityToolkitAttributes)
             yield return "CommunityToolkit.Mvvm";
 
-        if (ShouldGenerateDemoRuntimeCode && BuildCrudGenerationContexts().Any(context => IsSqlServerSource(context.Source)))
+        if (ShouldGenerateRuntimeDataBindingCode && BuildCrudGenerationContexts().Any(context => IsSqlServerSource(context.Source)))
             yield return "Microsoft.Data.SqlClient";
     }
 
@@ -12452,7 +12469,7 @@ public partial class MainWindowViewModel : ObservableObject
             .Select(control => string.IsNullOrWhiteSpace(control.PluginId) ? control.Type : control.PluginId)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
-        var hasGeneratedViewModel = ShouldGenerateDemoRuntimeCode;
+        var hasGeneratedViewModel = ShouldGenerateRuntimeDataBindingCode;
         var nugetText = packages.Count == 0 ? "не нужны" : string.Join(", ", packages);
         var pluginText = IncludePluginRuntimeReferences && pluginControls.Count > 0
             ? string.Join(", ", pluginControls)
@@ -12834,7 +12851,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     private bool ShouldGenerateViewModelForExport()
     {
-        return ShouldGenerateDemoRuntimeCode
+        return ShouldGenerateRuntimeDataBindingCode
             && (BuildCrudGenerationContexts().Any()
                 || Controls.Any(control => control.Type == DesignerControlTypes.TextBox)
                 || BindingSources.Count > 0);
@@ -12915,7 +12932,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     private string BuildGeneratedBindingGuide()
     {
-        if (!ShouldGenerateDemoRuntimeCode)
+        if (!ShouldGenerateRuntimeDataBindingCode)
         {
             return "Режим «Чистый UI»: BindingSource используется только как схема колонок. XAML генерирует таблицу и колонки, но намеренно не добавляет ItemsSource, demo-классы, demo rows, фильтры, fake CRUD и runtime-модели. Включайте режим «С демонстрационными данными» только если действительно нужен sample ViewModel.";
         }
@@ -12929,7 +12946,9 @@ public partial class MainWindowViewModel : ObservableObject
         var textBoxControls = Controls.Where(control => control.Type == DesignerControlTypes.TextBox).ToList();
         var buttonControls = Controls.Where(control => control.Type == DesignerControlTypes.Button).ToList();
         var sb = new StringBuilder();
-        sb.AppendLine("Нажмите кнопку «Применить привязки», чтобы автоматически назначить рекомендованные биндинги для текущей формы.");
+        sb.AppendLine(ShouldGenerateDemoRuntimeCode
+            ? "Нажмите кнопку «Применить привязки», чтобы автоматически назначить рекомендованные биндинги для текущей формы."
+            : "Real DataGrid export с колонками создаст ItemsSource, DTO и sample rows даже в чистом UI. Это рабочая привязка, а не fake AXAML.");
         sb.AppendLine();
 
         foreach (var context in crudContexts)
@@ -13003,7 +13022,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     private string BuildGeneratedCSharp()
     {
-        return ShouldGenerateDemoRuntimeCode
+        return ShouldGenerateRuntimeDataBindingCode
             ? BuildGeneratedDemoCSharp()
             : BuildGeneratedCleanCSharp();
     }
@@ -13095,6 +13114,10 @@ public partial class MainWindowViewModel : ObservableObject
             }
         }
 
+        var extraInteractionHandlers = exportableInteractions
+            .Where(item => !string.Equals(item.EventName, InteractionModel.EventButtonClick, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
         if (hasSelectionInteractions)
         {
             sb.AppendLine();
@@ -13146,8 +13169,20 @@ public partial class MainWindowViewModel : ObservableObject
         var crudContexts = BuildCrudGenerationContexts();
         var sqlContexts = crudContexts.Where(context => IsSqlServerSource(context.Source)).ToList();
         var hasSqlContexts = sqlContexts.Count > 0;
+        var autoLoadSqlContexts = false;
         var primaryCrud = crudContexts.FirstOrDefault();
         var hasViewModel = crudContexts.Count > 0 || textBoxControls.Count > 0 || BindingSources.Count > 0;
+        foreach (var context in crudContexts)
+        {
+            TraceDocumentDebug(
+                "EXPORT_DATAGRID_VIEWMODEL_PROPERTY_GENERATED",
+                $"source={context.Source.Name}; sourceKind={context.Source.SourceKind}; property={context.ViewCollectionPropertyName}; rowType={context.ItemTypeName}; columns={context.Fields.Count}",
+                toOutput: false);
+            TraceDocumentDebug(
+                "EXPORT_DATAGRID_ROW_DTO_GENERATED",
+                $"source={context.Source.Name}; rowType={context.ItemTypeName}; properties={context.Fields.Count}",
+                toOutput: false);
+        }
         var anchorControls = Controls
             .Where(control => (control.AnchorRight || control.AnchorBottom) && IsAbsoluteLayoutParent(control.ParentId))
             .OrderBy(GetControlDepth)
@@ -13236,7 +13271,7 @@ public partial class MainWindowViewModel : ObservableObject
         if (hasViewModel)
         {
             sb.AppendLine($"        DataContext = new {viewModelClassName}();");
-            if (hasSqlContexts)
+            if (autoLoadSqlContexts)
                 sb.AppendLine("        Opened += Window_Opened;");
         }
         if (hasAnchoredControls)
@@ -13253,7 +13288,7 @@ public partial class MainWindowViewModel : ObservableObject
             sb.AppendLine($"    private {viewModelClassName} ViewModel => ({viewModelClassName})DataContext!;");
         }
 
-        if (hasSqlContexts)
+        if (autoLoadSqlContexts)
         {
             sb.AppendLine();
             sb.AppendLine("    private async void Window_Opened(object? sender, EventArgs e)");
@@ -13385,6 +13420,10 @@ public partial class MainWindowViewModel : ObservableObject
             }
         }
 
+        var extraInteractionHandlers = exportableInteractions
+            .Where(item => !string.Equals(item.EventName, InteractionModel.EventButtonClick, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
         if (hasSelectionInteractions)
         {
             sb.AppendLine();
@@ -13411,11 +13450,17 @@ public partial class MainWindowViewModel : ObservableObject
             AppendGeneratedInteractionHelpers(sb, includeShowMessageHelper: hasShowMessageInteractions);
         }
 
-        var extraInteractionHandlers = exportableInteractions
-            .Where(item => !string.Equals(item.EventName, InteractionModel.EventButtonClick, StringComparison.OrdinalIgnoreCase))
-            .ToList();
         if (extraInteractionHandlers.Count > 0)
-            AppendGeneratedInteractionHandlers(sb, extraInteractionHandlers, exportControlNames, formClassNames, currentFormId, skipButtonClickHandlers: false);
+            AppendGeneratedInteractionHandlers(
+                sb,
+                extraInteractionHandlers,
+                exportControlNames,
+                formClassNames,
+                currentFormId,
+                skipButtonClickHandlers: false,
+                includeShowMessageHelper: hasShowMessageInteractions && !hasSelectionInteractions);
+        else if (hasShowMessageInteractions && !hasSelectionInteractions)
+            AppendGeneratedInteractionHelpers(sb, includeShowMessageHelper: true);
 
         sb.AppendLine("}");
 
@@ -13461,7 +13506,7 @@ public partial class MainWindowViewModel : ObservableObject
             foreach (var context in sqlContexts)
             {
                 var sqlConstantBase = SanitizeIdentifier($"{context.ItemTypeName}Sql", "SqlSource");
-                sb.AppendLine($"    private const string {sqlConstantBase}ConnectionString = {ToVerbatimCSharpString(context.Source.SourceConnectionString)};");
+                sb.AppendLine($"    private const string {sqlConstantBase}ConnectionString = \"TODO: set SQL Server connection string\";");
                 sb.AppendLine($"    private const string {sqlConstantBase}CommandText = {ToVerbatimCSharpString(BuildSqlImportCommandText(context.Source.SourceSchemaName, context.Source.SourceTableName, context.Source.SourceQuery))};");
                 sb.AppendLine();
             }
@@ -13470,15 +13515,8 @@ public partial class MainWindowViewModel : ObservableObject
             sb.AppendLine("    {");
             foreach (var context in crudContexts)
             {
-                if (IsSqlServerSource(context.Source))
-                {
-                    sb.AppendLine($"        {context.CurrentItemPropertyName} = new {context.ItemTypeName}();");
-                }
-                else
-                {
-                    sb.AppendLine($"        Seed{context.ItemTypeName}();");
-                    sb.AppendLine($"        Apply{context.ItemTypeName}Filter();");
-                }
+                sb.AppendLine($"        Seed{context.ItemTypeName}();");
+                sb.AppendLine($"        Apply{context.ItemTypeName}Filter();");
             }
             sb.AppendLine("    }");
             sb.AppendLine();
@@ -13581,6 +13619,7 @@ public partial class MainWindowViewModel : ObservableObject
                 if (IsSqlServerSource(context.Source))
                 {
                     var sqlConstantBase = SanitizeIdentifier($"{context.ItemTypeName}Sql", "SqlSource");
+                    sb.AppendLine($"    // SQL loader is generated as a placeholder. The exported project starts with sample rows until you set a safe connection string and call this method.");
                     sb.AppendLine($"    public async Task Load{context.ItemTypeName}FromDatabaseAsync()");
                     sb.AppendLine("    {");
                     sb.AppendLine($"        var items = new List<{context.ItemTypeName}>();");
@@ -13608,22 +13647,20 @@ public partial class MainWindowViewModel : ObservableObject
                     sb.AppendLine("    }");
                     sb.AppendLine();
                 }
-                else
-                {
-                    sb.AppendLine($"    private void Seed{context.ItemTypeName}()");
-                    sb.AppendLine("    {");
-                    sb.AppendLine($"        {context.CollectionPropertyName}.Add(new {context.ItemTypeName}");
-                    sb.AppendLine("        {");
-                    AppendSeedAssignments(sb, context, 3, variantIndex: 0);
-                    sb.AppendLine("        });");
-                    sb.AppendLine();
-                    sb.AppendLine($"        {context.CollectionPropertyName}.Add(new {context.ItemTypeName}");
-                    sb.AppendLine("        {");
-                    AppendSeedAssignments(sb, context, 3, variantIndex: 1);
-                    sb.AppendLine("        });");
-                    sb.AppendLine("    }");
-                    sb.AppendLine();
-                }
+
+                sb.AppendLine($"    private void Seed{context.ItemTypeName}()");
+                sb.AppendLine("    {");
+                sb.AppendLine($"        {context.CollectionPropertyName}.Add(new {context.ItemTypeName}");
+                sb.AppendLine("        {");
+                AppendSeedAssignments(sb, context, 3, variantIndex: 0);
+                sb.AppendLine("        });");
+                sb.AppendLine();
+                sb.AppendLine($"        {context.CollectionPropertyName}.Add(new {context.ItemTypeName}");
+                sb.AppendLine("        {");
+                AppendSeedAssignments(sb, context, 3, variantIndex: 1);
+                sb.AppendLine("        });");
+                sb.AppendLine("    }");
+                sb.AppendLine();
             }
 
             sb.AppendLine("    private static bool ContainsText(object? value, string query)");
@@ -13972,6 +14009,7 @@ public partial class MainWindowViewModel : ObservableObject
 
         if (existing is null)
         {
+            NormalizeImportedBindingSourceRuntimeIdentity(importedSource);
             importedSource.Name = GetUniqueBindingSourceName(importedSource.Name);
             BindingSources.Add(importedSource);
             return importedSource;
@@ -14023,6 +14061,31 @@ public partial class MainWindowViewModel : ObservableObject
         }
 
         return existing;
+    }
+
+    private static void NormalizeImportedBindingSourceRuntimeIdentity(BindingSourceModel source)
+    {
+        if (!DataSourceIdentity.IsAssembly(source.SourceKind))
+            return;
+
+        var assemblyName = string.IsNullOrWhiteSpace(source.SourceAssemblyPath)
+            ? "Assembly"
+            : Path.GetFileNameWithoutExtension(source.SourceAssemblyPath);
+        var typeName = string.IsNullOrWhiteSpace(source.SourceTypeFullName)
+            ? source.SourceTableName
+            : source.SourceTypeFullName.Split('.', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).LastOrDefault() ?? source.SourceTypeFullName;
+        var fallback = SanitizeIdentifier($"{assemblyName}{typeName}", "Items");
+
+        if (string.IsNullOrWhiteSpace(source.Path)
+            || string.Equals(source.Path, source.Name, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(source.Path, source.SourceTableName, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(source.Path, typeName, StringComparison.OrdinalIgnoreCase))
+        {
+            source.Path = fallback;
+        }
+
+        if (string.IsNullOrWhiteSpace(source.Description))
+            source.Description = DataSourceIdentity.BuildDisplayName(source);
     }
 
     private void ApplyDatabaseSourceToSelectedBindingSource(BindingSourceModel importedSource)
@@ -14178,7 +14241,7 @@ public partial class MainWindowViewModel : ObservableObject
         var source = new BindingSourceModel
         {
             Name = baseName,
-            Path = baseName,
+            Path = SanitizeIdentifier($"{System.IO.Path.GetFileNameWithoutExtension(assemblyPath)}{type.Name}", baseName),
             ItemTypeName = type.Name,
             Description = $"Импортировано из {Path.GetFileName(assemblyPath)}",
             SourceKind = "Assembly",
@@ -15418,7 +15481,26 @@ public partial class MainWindowViewModel : ObservableObject
 
     private static bool IsSqlServerSource(BindingSourceModel source)
     {
-        return source.SourceKind.Equals("SqlServer", StringComparison.OrdinalIgnoreCase);
+        return DataSourceIdentity.IsSqlServer(source.SourceKind);
+    }
+
+    private static bool IsRuntimeGeneratedBindingSource(BindingSourceModel? source)
+    {
+        return source is not null
+            && (DataSourceIdentity.IsSqlServer(source.SourceKind)
+                || DataSourceIdentity.IsAssembly(source.SourceKind));
+    }
+
+    private static bool HasVisibleBindingFields(BindingSourceModel source)
+    {
+        return source.Fields.Any(field => field.IsVisible && !string.IsNullOrWhiteSpace(field.Path));
+    }
+
+    private bool ShouldGenerateRuntimeBindingForSource(BindingSourceModel? source)
+    {
+        return source is not null
+            && HasVisibleBindingFields(source)
+            && (ShouldGenerateDemoRuntimeCode || ShouldExportRealDataGrid || IsRuntimeGeneratedBindingSource(source));
     }
 
     private static string ToVerbatimCSharpString(string? value)
@@ -15432,7 +15514,8 @@ public partial class MainWindowViewModel : ObservableObject
         IReadOnlyDictionary<string, string> exportControlNames,
         IReadOnlyDictionary<string, string> formClassNames,
         string currentFormId,
-        bool skipButtonClickHandlers)
+        bool skipButtonClickHandlers,
+        bool includeShowMessageHelper = false)
     {
         if (interactions.Count == 0)
             return;
@@ -15484,8 +15567,9 @@ public partial class MainWindowViewModel : ObservableObject
         {
             AppendGeneratedInteractionHelpers(
                 sb,
-                includeShowMessageHelper: interactions.Any(item =>
-                    string.Equals(item.Interaction.ActionType, InteractionModel.ActionShowMessage, StringComparison.OrdinalIgnoreCase)));
+                includeShowMessageHelper: includeShowMessageHelper
+                    || interactions.Any(item =>
+                        string.Equals(item.Interaction.ActionType, InteractionModel.ActionShowMessage, StringComparison.OrdinalIgnoreCase)));
         }
     }
 
@@ -16426,15 +16510,30 @@ public partial class MainWindowViewModel : ObservableObject
                 .Where(field => BindingFieldModel.NormalizeSummaryType(field.SummaryType) != BindingFieldModel.SummaryTypeNone)
                 .ToList()
             : new List<BindingFieldModel>();
-        var crudContext = ShouldGenerateDemoRuntimeCode ? GetCrudGenerationContext(source) : null;
-        var itemsSourcePath = ShouldGenerateDemoRuntimeCode
+        var shouldGenerateRuntimeBindingForSource = ShouldGenerateRuntimeBindingForSource(source);
+        var crudContext = shouldGenerateRuntimeBindingForSource ? GetCrudGenerationContext(source) : null;
+        var itemsSourcePath = shouldGenerateRuntimeBindingForSource
             ? crudContext?.ViewCollectionPropertyName ?? source?.Path ?? ""
             : "";
-        var selectedItemPath = ShouldGenerateDemoRuntimeCode
+        var selectedItemPath = shouldGenerateRuntimeBindingForSource
             ? crudContext?.SelectedItemPropertyName ?? ""
             : "";
         var itemsSource = string.IsNullOrWhiteSpace(itemsSourcePath) ? "" : $" ItemsSource=\"{{Binding {EscapeXml(itemsSourcePath)}}}\"";
         var selectedItem = string.IsNullOrWhiteSpace(selectedItemPath) ? "" : $" SelectedItem=\"{{Binding {EscapeXml(selectedItemPath)}, Mode=TwoWay}}\"";
+        if (source is not null && shouldGenerateRuntimeBindingForSource)
+        {
+            TraceDocumentDebug(
+                "EXPORT_DATAGRID_BINDING_GENERATED",
+                $"grid={control.Name}; sourceKind={source.SourceKind}; sourceKey={DataSourceIdentity.BuildKey(source)}; itemsSource={itemsSourcePath}; rowType={crudContext?.ItemTypeName ?? source.ItemTypeName}; columns={visibleFields.Count}",
+                toOutput: false);
+        }
+        else if (source is not null)
+        {
+            TraceDocumentDebug(
+                "EXPORT_DATAGRID_BINDING_SKIPPED",
+                $"grid={control.Name}; sourceKind={source.SourceKind}; reason=no-exportable-fields-or-non-real-mode; columns={visibleFields.Count}",
+                toOutput: false);
+        }
         var rowBackground = ResolveBrushValue(control.DataGridRowBackground, themePalette.DataGridRowBackground, ThemeResourceKeys.DataGridRowBackgroundBrush);
         var alternatingRowBackground = control.DataGridShowAlternatingRows
             ? ResolveBrushValue(control.DataGridAlternateRowBackground, themePalette.DataGridAlternateRowBackground, ThemeResourceKeys.DataGridAlternateRowBackgroundBrush)
@@ -16499,7 +16598,7 @@ public partial class MainWindowViewModel : ObservableObject
         var shouldExportHost = shouldExportFilterRow || shouldExportGroupPanel;
         var hostRowCount = (shouldExportGroupPanel ? 1 : 0) + (shouldExportFilterRow ? 1 : 0);
         var dataGridIndent = shouldExportHost ? indentLevel + 1 : indentLevel;
-        var hostNameAttribute = ShouldGenerateDemoRuntimeCode ? $" x:Name=\"{EscapeXml(exportName)}Host\"" : "";
+        var hostNameAttribute = shouldGenerateRuntimeBindingForSource ? $" x:Name=\"{EscapeXml(exportName)}Host\"" : "";
         var dataGridNameAttribute = $" x:Name=\"{EscapeXml(exportName)}\"";
         var selectionChangedAttribute = shouldExportSelectionChanged ? $" SelectionChanged=\"{EscapeXml(exportName)}_SelectionChanged\"" : "";
         var dataGridPlacement = shouldExportHost
@@ -16522,8 +16621,8 @@ public partial class MainWindowViewModel : ObservableObject
                 AppendDataGridFilterRowXaml(sb, control, crudContext, visibleFields, headerBackground, gridLineBrush, cellPadding, indentLevel + 1, nextHostRow);
         }
 
-        if (ShouldIncludeExportComments && !ShouldGenerateDemoRuntimeCode && source is not null)
-            sb.AppendLine($"{Indent(dataGridIndent)}<!-- BindingSource '{EscapeXml(source.NameOrFallback())}' используется только как схема колонок в режиме «Чистый UI». Подключите ItemsSource в реальном ViewModel, когда будете готовы. -->");
+        if (ShouldIncludeExportComments && !shouldGenerateRuntimeBindingForSource && source is not null)
+            sb.AppendLine($"{Indent(dataGridIndent)}<!-- BindingSource '{EscapeXml(source.NameOrFallback())}' не содержит видимых полей с BindingPath, поэтому ItemsSource/ViewModel не сгенерированы. Откройте Column Editor и настройте колонки. -->");
 
         var rowHeightAttribute = hasWrappedTextColumns ? "" : $" RowHeight=\"{ToInvariant(rowHeight)}\"";
         sb.AppendLine($"{Indent(dataGridIndent)}<DataGrid{dataGridNameAttribute}{dataGridPlacement} Background=\"{rowBackground}\" RowBackground=\"{rowBackground}\" Foreground=\"{rowForeground}\" BorderBrush=\"{outerBorderBrush}\" BorderThickness=\"{ToInvariant(control.BorderThickness)}\" FontFamily=\"{EscapeXml(control.FontFamily)}\" FontSize=\"{ToInvariant(control.DataGridRowFontSize)}\" FontWeight=\"{EscapeXml(control.DataGridRowFontWeight)}\" AutoGenerateColumns=\"{BoolToXaml(control.AutoGenerateColumns)}\" CanUserSortColumns=\"True\" CanUserResizeColumns=\"True\" CanUserReorderColumns=\"True\" HorizontalScrollBarVisibility=\"Auto\" VerticalScrollBarVisibility=\"Auto\" HeadersVisibility=\"{headersVisibility}\" GridLinesVisibility=\"{gridLinesVisibility}\" ColumnHeaderHeight=\"{ToInvariant(headerHeight)}\"{rowHeightAttribute}{itemsSource}{selectedItem}{selectionChangedAttribute}{commonVisibilityAttributes}>");

@@ -46,7 +46,7 @@ public partial class PreviewWindow : Window
     private readonly Dictionary<string, DesignerFormDocument> _projectFormsById = new(StringComparer.OrdinalIgnoreCase);
     private string _currentFormId = "";
     private readonly Dictionary<string, Bitmap?> _imageCache = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, (string Signature, IReadOnlyList<Dictionary<string, string>> Rows)> _sqlPreviewRowsBySourceId = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, (string Signature, IReadOnlyList<Dictionary<string, string>> Rows)> _previewRowsBySourceKey = new(StringComparer.OrdinalIgnoreCase);
     private readonly PreviewRuntimeService _previewRuntimeService = new();
     private readonly IDesignerRegistry _registry;
     private RuntimeDataGridHeaderDragState? _runtimeDataGridHeaderDrag;
@@ -248,7 +248,7 @@ public partial class PreviewWindow : Window
         ShowLoading("Reload Preview", "Пересобираем runtime tree, bindings и interactions.");
         try
         {
-            _sqlPreviewRowsBySourceId.Clear();
+            _previewRowsBySourceKey.Clear();
             ReloadPreviewRuntimeContext();
             await PreloadBindingPreviewRowsAsync();
             RenderDocument();
@@ -306,36 +306,42 @@ public partial class PreviewWindow : Window
     {
         var sqlSources = _document.BindingSources
             .Where(SqlPreviewDataLoader.CanLoad)
-            .DistinctBy(source => source.Id)
+            .DistinctBy(DataSourceIdentity.BuildKey)
             .ToList();
 
         foreach (var source in sqlSources)
         {
-            var signature = SqlPreviewDataLoader.BuildSignature(source);
-            if (_sqlPreviewRowsBySourceId.TryGetValue(source.Id, out var cached)
+            var sourceKey = DataSourceIdentity.BuildKey(source);
+            var signature = sourceKey;
+            if (_previewRowsBySourceKey.TryGetValue(sourceKey, out var cached)
                 && string.Equals(cached.Signature, signature, StringComparison.Ordinal))
             {
+                Debug.WriteLine($"DATAGRID_PREVIEW_CACHE_HIT sourceKey={sourceKey}; rows={cached.Rows.Count}");
                 continue;
             }
 
             try
             {
                 var rows = await SqlPreviewDataLoader.LoadRowsAsync(source);
-                _sqlPreviewRowsBySourceId[source.Id] = (signature, rows);
+                _previewRowsBySourceKey[sourceKey] = (signature, rows);
+                Debug.WriteLine($"DATAGRID_PREVIEW_ROWS_LOADED sourceKey={sourceKey}; display={DataSourceIdentity.BuildDisplayName(source)}; rows={rows.Count}");
             }
             catch
             {
-                _sqlPreviewRowsBySourceId.Remove(source.Id);
+                _previewRowsBySourceKey.Remove(sourceKey);
+                Debug.WriteLine($"DATAGRID_PREVIEW_CACHE_INVALIDATED sourceKey={sourceKey}; reason=load-failed");
             }
         }
     }
 
     private IReadOnlyList<Dictionary<string, string>> GetCachedPreviewRows(string? bindingSourceId)
     {
-        if (string.IsNullOrWhiteSpace(bindingSourceId))
+        var source = GetBindingSource(bindingSourceId);
+        if (source is null)
             return Array.Empty<Dictionary<string, string>>();
 
-        return _sqlPreviewRowsBySourceId.TryGetValue(bindingSourceId, out var cached)
+        var sourceKey = DataSourceIdentity.BuildKey(source);
+        return _previewRowsBySourceKey.TryGetValue(sourceKey, out var cached)
             ? cached.Rows
             : Array.Empty<Dictionary<string, string>>();
     }
@@ -357,7 +363,8 @@ public partial class PreviewWindow : Window
         if (source is null)
             return null;
 
-        if (_sqlPreviewRowsBySourceId.TryGetValue(bindingSourceId, out var cached) && cached.Rows.Count > 0)
+        var sourceKey = DataSourceIdentity.BuildKey(source);
+        if (_previewRowsBySourceKey.TryGetValue(sourceKey, out var cached) && cached.Rows.Count > 0)
             return BindingPreviewItemsBuilder.ConvertRows(cached.Rows);
 
         return BindingPreviewItemsBuilder.BuildSampleItems(CreateRuntimeBindingSourceModel(source));

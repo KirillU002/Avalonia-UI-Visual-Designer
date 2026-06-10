@@ -5784,7 +5784,8 @@
                       </StackPanel>
                     </Border>
 
-                    <Grid ColumnDefinitions="*,Auto,Auto">
+                    <Grid ColumnDefinitions="*,Auto,Auto"
+                          IsVisible="False">
                       <TextBlock Text="Поля"
                                  FontSize="18"
                                  FontWeight="Bold"
@@ -5801,11 +5802,33 @@
                               Padding="14,10"/>
                     </Grid>
 
-                    <TextBlock Text="Флажок Visible скрывает колонку. Sort # задает порядок сортировки по нескольким полям, Group # задает порядок группировки. Значение -1 отключает сортировку или группировку."
+                    <TextBlock IsVisible="False"
+                               Text="Флажок Visible скрывает колонку. Sort # задает порядок сортировки по нескольким полям, Group # задает порядок группировки. Значение -1 отключает сортировку или группировку."
                                Foreground="#64748B"
                                TextWrapping="Wrap"/>
 
-                    <ItemsControl ItemsSource="{Binding SelectedBindingSource.Fields}">
+                    <Border Background="#F8FAFC"
+                            BorderBrush="#BFDBFE"
+                            BorderThickness="1"
+                            CornerRadius="10"
+                            Padding="10">
+                      <StackPanel Spacing="6">
+                        <TextBlock Text="Колонки DataGrid редактируются в Column Editor"
+                                   FontWeight="Bold"
+                                   Foreground="#1D4ED8"/>
+                        <TextBlock Text="Data mode теперь показывает источник, SQL/DLL metadata и sample/schema summary. Реальные колонки выбранного DataGrid меняются через отдельный редактор, чтобы Apply/Cancel были предсказуемыми."
+                                   Foreground="#475569"
+                                   TextWrapping="Wrap"/>
+                        <Button Content="Open Column Editor"
+                                Classes="data-action-button"
+                                HorizontalAlignment="Left"
+                                Padding="14,10"
+                                Click="OpenDataGridColumnEditorButton_Click"/>
+                      </StackPanel>
+                    </Border>
+
+                    <ItemsControl ItemsSource="{Binding SelectedBindingSource.Fields}"
+                                  IsVisible="False">
                       <!-- Каждое поле описывает одну колонку будущего DataGrid:
                            заголовок, путь привязки, пример значения, сортировку и группировку. -->
                       <ItemsControl.ItemTemplate>

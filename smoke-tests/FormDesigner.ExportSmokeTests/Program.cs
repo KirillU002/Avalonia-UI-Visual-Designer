@@ -4,6 +4,7 @@ using FormDesigner.DesignerSystem.Infrastructure;
 using FormDesigner.Models;
 using FormDesigner.Services;
 using FormDesigner.ViewModels;
+using FormDesigner.Views;
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
@@ -45,6 +46,10 @@ internal static class Program
             new("PreviewExportBoundsMatchAfterResize", ConfigurePreviewExportBoundsMatchAfterResize, AssertPreviewExportBoundsMatchAfterResize),
             new("RealDataGridExport", ConfigureRealDataGridExport, AssertRealDataGridExport, RequiresRealDataGrid: true),
             new("RealDataGridExportUsesValidColumnTags", ConfigureRealDataGridExport, AssertRealDataGridExportUsesValidColumnTags, RequiresRealDataGrid: true),
+            new("DataGridExportGeneratesItemsSourceProperty", ConfigureRealDataGridExport, AssertDataGridExportGeneratesItemsSourceProperty, RequiresRealDataGrid: true),
+            new("DataGridExportGeneratesRowDto", ConfigureRealDataGridExport, AssertDataGridExportGeneratesRowDto, RequiresRealDataGrid: true),
+            new("DataGridExportGeneratesSampleData", ConfigureRealDataGridExport, AssertDataGridExportGeneratesSampleData, RequiresRealDataGrid: true),
+            new("DataGridExportBuildsWithoutManualFix", ConfigureRealDataGridExport, AssertDataGridExportBuildsWithoutManualFix, RequiresRealDataGrid: true),
             new("DataGridHeaderTemplateDoesNotGenerateEmptyBinding", ConfigureDataGridBindingSourceWorkflow, AssertDataGridHeaderTemplateDoesNotGenerateEmptyBinding, RequiresRealDataGrid: true),
             new("DataGridExportSettingsForSortResizeScroll", ConfigureRealDataGridExport, AssertDataGridExportSettingsForSortResizeScroll, RequiresRealDataGrid: true),
             new("DataGridColumnWrapUsesTemplateColumn", ConfigureDataGridColumnWrapUsesTemplateColumn, AssertDataGridColumnWrapUsesTemplateColumn, RequiresRealDataGrid: true),
@@ -52,6 +57,25 @@ internal static class Program
             new("DataGridGroupingDoesNotGenerateInvalidBindings", ConfigureDataGridGroupingDoesNotGenerateInvalidBindings, AssertDataGridGroupingDoesNotGenerateInvalidBindings, RequiresRealDataGrid: true),
             new("DataGridManyColumnsShowsHorizontalScroll", ConfigureDataGridManyColumnsShowsHorizontalScroll, AssertDataGridManyColumnsShowsHorizontalScroll, RequiresRealDataGrid: true),
             new("DataGridPreviewExportSettingsMatch", ConfigureDataGridColumnWrapUsesTemplateColumn, AssertDataGridPreviewExportSettingsMatch, RequiresRealDataGrid: true),
+            new("SqlDataGridExportGeneratesItemsSourceProperty", ConfigureSqlDataGridExport, AssertSqlDataGridExportGeneratesItemsSourceProperty, RequiresRealDataGrid: true),
+            new("SqlDataGridExportGeneratesRowDto", ConfigureSqlDataGridExport, AssertSqlDataGridExportGeneratesRowDto, RequiresRealDataGrid: true),
+            new("DllTableDataGridExportGeneratesUnderstandableBinding", ConfigureDllTableDataGridExport, AssertDllTableDataGridExportGeneratesUnderstandableBinding, RequiresRealDataGrid: true),
+            new("DataGridExportDoesNotGenerateEmptyBindings", ConfigureSqlDataGridExport, AssertDataGridExportDoesNotGenerateEmptyBindings, RequiresRealDataGrid: true),
+            new("DataGridExportDoesNotGenerateInvalidXDataType", ConfigureSqlDataGridExport, AssertDataGridExportDoesNotGenerateInvalidXDataType, RequiresRealDataGrid: true),
+            new("DataGridExportDoesNotRequireManualAxamlFix", ConfigureDllTableDataGridExport, AssertDataGridExportDoesNotRequireManualAxamlFix, RequiresRealDataGrid: true),
+            new("DataGridExportSupportsManualColumns", ConfigureManualColumnsViaColumnEditor, AssertDataGridExportSupportsManualColumns, RequiresRealDataGrid: true),
+            new("DataGridExportSupportsSqlSchemaAsDto", ConfigureSqlDataGridExport, AssertDataGridExportSupportsSqlSchemaAsDto, RequiresRealDataGrid: true),
+            new("DataGridExportSupportsDllSchemaAsDtoOrReference", ConfigureDllTableDataGridExport, AssertDataGridExportSupportsDllSchemaAsDtoOrReference, RequiresRealDataGrid: true),
+            new("ColumnEditorApplyUpdatesDataGridModel", ConfigureColumnEditorApplyUpdatesDataGridModel, AssertColumnEditorApplyUpdatesDataGridModel, RequiresRealDataGrid: true),
+            new("ColumnEditorCancelDoesNotModifyModel", ConfigureColumnEditorCancelDoesNotModifyModel, AssertColumnEditorCancelDoesNotModifyModel, RequiresRealDataGrid: true),
+            new("ColumnEditorAddRemoveDuplicateWorks", ConfigureColumnEditorAddRemoveDuplicateWorks, AssertColumnEditorAddRemoveDuplicateWorks, RequiresRealDataGrid: true),
+            new("ColumnEditorReorderColumnsAffectsPreviewAndExport", ConfigureColumnEditorReorderColumnsAffectsPreviewAndExport, AssertColumnEditorReorderColumnsAffectsPreviewAndExport, RequiresRealDataGrid: true),
+            new("ColumnEditorDoesNotCallApplyDocument", ConfigureColumnEditorDoesNotCallApplyDocument, AssertColumnEditorDoesNotCallApplyDocument, RequiresRealDataGrid: true),
+            new("ColumnEditorDoesNotResetSelectedControl", ConfigureColumnEditorDoesNotResetSelectedControl, AssertColumnEditorDoesNotResetSelectedControl, RequiresRealDataGrid: true),
+            new("DataModeShowsSelectedDataGridSourceOnly", ConfigureDataModeShowsSelectedDataGridSourceOnly, AssertDataModeShowsSelectedDataGridSourceOnly, RequiresRealDataGrid: true),
+            new("DataModeDoesNotEditColumnsDirectly", ConfigureSimpleFormExport, AssertDataModeDoesNotEditColumnsDirectly),
+            new("DataModeOpensColumnEditorForSelectedGrid", ConfigureDataModeShowsSelectedDataGridSourceOnly, AssertDataModeOpensColumnEditorForSelectedGrid, RequiresRealDataGrid: true),
+            new("DataModeHandlesSameGridNamesAcrossForms", ConfigureDataModeHandlesSameGridNamesAcrossForms, AssertDataModeHandlesSameGridNamesAcrossForms, RequiresRealDataGrid: true),
             new("GeneratedNugetConfigContainsAllowInsecureConnectionsForHttpSource", ConfigureSimpleFormExport, AssertGeneratedNugetConfigContainsAllowInsecureConnectionsForHttpSource),
             new("BuildOutputDeduplicatesRepeatedNet6Warning", ConfigureSimpleFormExport, AssertBuildOutputDeduplicatesRepeatedNet6Warning),
             new("ArtifactsCleanupDeletesOldExportRuns", ConfigureSimpleFormExport, AssertArtifactsCleanupDeletesOldExportRuns),
@@ -465,8 +489,9 @@ internal static class Program
         RequireNotContains(context.Xaml, "<dataGrid:DataGridTextColumn", "Real DataGrid column tag must not use dataGrid prefix.");
         RequireContains(context.ChecklistText, "DataGrid: Real Avalonia DataGrid", "Checklist should report real DataGrid mode.");
         RequireContains(context.ChecklistText, "Avalonia.Controls.DataGrid", "Checklist should mention required DataGrid NuGet.");
-        RequireNotContains(context.CSharp, "ObservableCollection", "Clean real DataGrid export should not generate fake demo models.");
-        RequireNotContains(context.CSharp, "ProductRow", "Clean real DataGrid export should not generate demo row classes.");
+        RequireContains(context.Xaml, "ItemsSource=\"{Binding ProductsView}\"", "Real DataGrid export should include generated ItemsSource binding.");
+        RequireContains(context.CSharp, "public ObservableCollection<ProductRow> Products { get; } = new();", "Real DataGrid export should generate source collection.");
+        RequireContains(context.CSharp, "public partial class ProductRow : ObservableObject", "Real DataGrid export should generate row DTO.");
     }
 
     private static void AssertRealDataGridExportUsesValidColumnTags(SmokeContext context)
@@ -475,6 +500,38 @@ internal static class Program
         RequireNotContains(context.Xaml, "<dataGrid:DataGridTextColumn", "Real DataGrid export must not use invalid prefixed DataGridTextColumn.");
         RequireNotContains(context.Xaml, "DataGridTextColumn.Binding", "Real DataGrid export should use simple attribute bindings.");
         RequireNotContains(context.Xaml, "HeaderTemplate", "Real DataGrid export should not generate HeaderTemplate for simple text headers.");
+    }
+
+    private static void AssertDataGridExportGeneratesItemsSourceProperty(SmokeContext context)
+    {
+        RequireContains(context.Xaml, "ItemsSource=\"{Binding ProductsView}\"", "Manual/schema DataGrid should bind to generated ViewModel collection.");
+        RequireContains(context.Xaml, "SelectedItem=\"{Binding SelectedProductRow, Mode=TwoWay}\"", "DataGrid should bind SelectedItem to generated ViewModel state.");
+        RequireContains(context.CSharp, "public ObservableCollection<ProductRow> Products { get; } = new();", "Generated ViewModel should expose source collection.");
+        RequireContains(context.CSharp, "public ObservableCollection<ProductRow> ProductsView { get; } = new();", "Generated ViewModel should expose filtered/sorted view collection.");
+        RequireContains(GetRequiredPackagesText(context), "CommunityToolkit.Mvvm", "Generated runtime DataGrid binding should include CommunityToolkit package.");
+    }
+
+    private static void AssertDataGridExportGeneratesRowDto(SmokeContext context)
+    {
+        RequireContains(context.CSharp, "public partial class ProductRow : ObservableObject", "Generated project should include row DTO.");
+        RequireContains(context.CSharp, "private string title;", "DTO should include string field from DataGrid schema.");
+        RequireContains(context.CSharp, "private decimal price;", "DTO should include decimal field from DataGrid schema.");
+        RequireContains(context.CSharp, "private int count;", "DTO should include int field from DataGrid schema.");
+    }
+
+    private static void AssertDataGridExportGeneratesSampleData(SmokeContext context)
+    {
+        RequireContains(context.CSharp, "SeedProductRow();", "Generated ViewModel constructor should seed sample data.");
+        RequireContains(context.CSharp, "Products.Add(new ProductRow", "Generated sample loader should add sample rows.");
+        RequireContains(context.CSharp, "Title = \"Keyboard\"", "Generated sample data should preserve field sample values.");
+    }
+
+    private static void AssertDataGridExportBuildsWithoutManualFix(SmokeContext context)
+    {
+        RequireContains(context.Xaml, "<DataGridTextColumn Header=\"Title\" Binding=\"{Binding Title}\"", "Generated AXAML should be build-ready without manual column fixes.");
+        RequireContains(context.CSharp, "DataContext = new MainWindowViewModel();", "Generated code-behind should attach generated ViewModel.");
+        RequireNotContains(context.Xaml, "{Binding }", "Generated AXAML should not contain empty bindings.");
+        RequireNotContains(context.Xaml, "x:DataType=\"\"", "Generated AXAML should not contain empty x:DataType.");
     }
 
     private static void AssertDataGridHeaderTemplateDoesNotGenerateEmptyBinding(SmokeContext context)
@@ -566,10 +623,10 @@ internal static class Program
         RequireNotContains(context.Xaml, "{Binding }", "Grouping export must not generate empty binding markup.");
         RequireNotContains(context.Xaml, "Path=\"\"", "Grouping export must not generate empty binding path.");
         RequireNotContains(context.Xaml, "HeaderTemplate", "Grouping metadata should not generate invalid header templates.");
-        if (!context.ViewModel.ExportDiagnostics.Any(item =>
+        if (context.ViewModel.ExportDiagnostics.Any(item =>
                 item.Message.Contains("DataGrid grouping exported as metadata only", StringComparison.OrdinalIgnoreCase)))
         {
-            throw new InvalidOperationException("Clean UI grouping should be reported as an explicit runtime-view warning.");
+            throw new InvalidOperationException("Real DataGrid runtime binding should not warn that grouping is metadata-only.");
         }
     }
 
@@ -606,6 +663,308 @@ internal static class Program
         RequireContains(context.Xaml, "VerticalScrollBarVisibility=\"Auto\"", "Preview/export DataGrid settings should include vertical scroll.");
         RequireContains(context.Xaml, "TextWrapping=\"Wrap\"", "Preview/export DataGrid settings should include wrapping.");
         RequireContains(context.Xaml, "TextTrimming=\"None\"", "Preview/export DataGrid settings should include trimming.");
+    }
+
+    private static void ConfigureSqlDataGridExport(MainWindowViewModel vm)
+    {
+        var source = SqlCustomersSource();
+        vm.BindingSources.Add(source);
+        vm.DataGridExportMode = MainWindowViewModel.DataGridExportModeReal;
+        vm.Controls.Add(DataGrid("CustomersGrid", source.Id, 32, 42, 720, 360));
+    }
+
+    private static void AssertSqlDataGridExportGeneratesItemsSourceProperty(SmokeContext context)
+    {
+        RequireContains(context.Xaml, "ItemsSource=\"{Binding CustomersView}\"", "SQL DataGrid should bind to generated ViewModel collection.");
+        RequireContains(context.Xaml, "SelectedItem=\"{Binding SelectedCustomerRow, Mode=TwoWay}\"", "SQL DataGrid should bind SelectedItem to generated ViewModel property.");
+        RequireContains(context.CSharp, "public ObservableCollection<CustomerRow> Customers { get; } = new();", "SQL export should generate source collection.");
+        RequireContains(context.CSharp, "public ObservableCollection<CustomerRow> CustomersView { get; } = new();", "SQL export should generate view collection.");
+        RequireContains(context.CSharp, "private const string CustomerRowSqlConnectionString = \"TODO: set SQL Server connection string\";", "SQL export should not leak the designer connection string.");
+        RequireNotContains(context.CSharp, "Password=secret", "SQL export must not leak a password from the designer connection string.");
+        RequireContains(context.CSharp, "LoadCustomerRowFromDatabaseAsync", "SQL export should provide a placeholder loader method.");
+        RequireContains(context.CSharp, "SeedCustomerRow();", "SQL export should seed sample rows so generated app opens without a live database.");
+    }
+
+    private static void AssertSqlDataGridExportGeneratesRowDto(SmokeContext context)
+    {
+        RequireContains(context.CSharp, "public partial class CustomerRow : ObservableObject", "SQL export should generate row DTO.");
+        RequireContains(context.CSharp, "private int id;", "SQL DTO should include Id.");
+        RequireContains(context.CSharp, "private string name;", "SQL DTO should include Name.");
+        RequireContains(context.CSharp, "private string email;", "SQL DTO should include Email.");
+        RequireContains(context.CSharp, "private string status;", "SQL DTO should include Status.");
+        RequireContains(GetRequiredPackagesText(context), "CommunityToolkit.Mvvm", "Generated project should include CommunityToolkit for generated DTO/ViewModel.");
+        RequireContains(GetRequiredPackagesText(context), "Microsoft.Data.SqlClient", "Generated project should include SqlClient for optional SQL loader.");
+    }
+
+    private static void ConfigureDllTableDataGridExport(MainWindowViewModel vm)
+    {
+        var source = DllOrdersSource();
+        vm.BindingSources.Add(source);
+        vm.DataGridExportMode = MainWindowViewModel.DataGridExportModeReal;
+        vm.Controls.Add(DataGrid("OrdersGrid", source.Id, 32, 42, 720, 360));
+    }
+
+    private static void AssertDllTableDataGridExportGeneratesUnderstandableBinding(SmokeContext context)
+    {
+        RequireContains(context.Xaml, "ItemsSource=\"{Binding SalesOrdersView}\"", "DLL table DataGrid should bind to a generated ViewModel collection.");
+        RequireContains(context.CSharp, "public ObservableCollection<OrderRow> SalesOrders { get; } = new();", "DLL table export should generate source collection.");
+        RequireContains(context.CSharp, "public ObservableCollection<OrderRow> SalesOrdersView { get; } = new();", "DLL table export should generate view collection.");
+        RequireContains(context.CSharp, "public partial class OrderRow : ObservableObject", "DLL table export should generate portable DTO when runtime DLL reference is not exported.");
+        RequireContains(context.Xaml, "Binding=\"{Binding OrderId}\"", "DLL table export should bind OrderId column.");
+        RequireContains(context.Xaml, "Binding=\"{Binding CustomerName}\"", "DLL table export should bind CustomerName column.");
+        RequireNotContains(context.CSharp, "System.Reflection.MetadataLoadContext", "Generated runtime project must not include designer-only reflection packages.");
+    }
+
+    private static void AssertDataGridExportDoesNotGenerateEmptyBindings(SmokeContext context)
+    {
+        RequireNotContains(context.Xaml, "{Binding }", "DataGrid export must not generate empty binding markup.");
+        RequireNotContains(context.Xaml, "Path=\"\"", "DataGrid export must not generate empty binding path.");
+        RequireNotContains(context.Xaml, "x:DataType=\"\"", "DataGrid export must not generate empty x:DataType.");
+        RequireNotContains(context.Xaml, "HeaderTemplate", "Simple DataGrid export should not need HeaderTemplate.");
+    }
+
+    private static void AssertDataGridExportDoesNotRequireManualAxamlFix(SmokeContext context)
+    {
+        RequireContains(context.Xaml, "<DataGridTextColumn Header=\"OrderId\" Binding=\"{Binding OrderId}\"", "Generated AXAML should contain valid unprefixed DataGridTextColumn.");
+        RequireNotContains(context.Xaml, "<dataGrid:DataGridTextColumn", "Generated AXAML must not use invalid prefixed DataGridTextColumn.");
+        RequireNotContains(context.Xaml, "DataGridTextColumn.Binding", "Generated AXAML should use attribute bindings.");
+        RequireNotContains(context.Xaml, "{Binding }", "Generated AXAML must not need manual binding cleanup.");
+    }
+
+    private static void AssertDataGridExportDoesNotGenerateInvalidXDataType(SmokeContext context)
+    {
+        RequireNotContains(context.Xaml, "x:DataType=\"\"", "DataGrid export must not generate empty x:DataType.");
+        RequireNotContains(context.Xaml, "Unable to resolve symbol", "Generated files should not contain unresolved design-time type markers.");
+        RequireNotContains(context.Xaml, "CompiledBinding", "Dynamic DataGrid column bindings should stay classic unless a real row type is declared in XAML.");
+    }
+
+    private static void ConfigureManualColumnsViaColumnEditor(MainWindowViewModel vm)
+    {
+        vm.DataGridExportMode = MainWindowViewModel.DataGridExportModeReal;
+        var grid = DataGrid("ManualGrid", "", 32, 42, 520, 260);
+        vm.Controls.Add(grid);
+        vm.SelectControls(new[] { grid }, grid);
+
+        var editor = new DataGridColumnEditorViewModel(vm, grid, bindingSource: null);
+        editor.ApplyChanges();
+        editor.Dispose();
+    }
+
+    private static void AssertDataGridExportSupportsManualColumns(SmokeContext context)
+    {
+        RequireContains(context.Xaml, "ItemsSource=\"{Binding ManualGridItemsView}\"", "Manual DataGrid columns should export an ItemsSource binding.");
+        RequireContains(context.Xaml, "<DataGridTextColumn Header=\"Name\" Binding=\"{Binding Name}\"", "Manual text column should export valid binding.");
+        RequireContains(context.Xaml, "<DataGridCheckBoxColumn Header=\"IsActive\" Binding=\"{Binding IsActive}\"", "Manual bool column should export CheckBox column.");
+        RequireContains(context.CSharp, "public ObservableCollection<ManualGridRow> ManualGridItems { get; } = new();", "Manual columns should generate a ViewModel collection.");
+        RequireContains(context.CSharp, "public partial class ManualGridRow : ObservableObject", "Manual columns should generate a DTO row.");
+    }
+
+    private static void AssertDataGridExportSupportsSqlSchemaAsDto(SmokeContext context)
+    {
+        RequireContains(context.CSharp, "public partial class CustomerRow : ObservableObject", "SQL source should export DTO by schema.");
+        RequireContains(context.CSharp, "private const string CustomerRowSqlConnectionString = \"TODO: set SQL Server connection string\";", "SQL export should use placeholder connection string.");
+        RequireContains(context.CSharp, "LoadCustomerRowFromDatabaseAsync", "SQL export should include a clear placeholder loader.");
+    }
+
+    private static void AssertDataGridExportSupportsDllSchemaAsDtoOrReference(SmokeContext context)
+    {
+        RequireContains(context.CSharp, "public partial class OrderRow : ObservableObject", "DLL source should export portable DTO by schema.");
+        RequireContains(context.CSharp, "SalesOrdersView", "DLL source should export stable collection binding.");
+        RequireNotContains(context.CSharp, "MetadataLoadContext", "Generated project should not depend on designer-only DLL metadata packages.");
+    }
+
+    private static void ConfigureColumnEditorApplyUpdatesDataGridModel(MainWindowViewModel vm)
+    {
+        var source = ProductsSource();
+        vm.BindingSources.Add(source);
+        vm.DataGridExportMode = MainWindowViewModel.DataGridExportModeReal;
+        var grid = DataGrid("ProductsGrid", source.Id, 32, 42, 520, 260);
+        vm.Controls.Add(grid);
+        vm.SelectControls(new[] { grid }, grid);
+
+        var editor = new DataGridColumnEditorViewModel(vm, grid, source);
+        editor.SelectedField!.Header = "Product title";
+        editor.ApplyChanges();
+        editor.Dispose();
+    }
+
+    private static void AssertColumnEditorApplyUpdatesDataGridModel(SmokeContext context)
+    {
+        var source = context.ViewModel.BindingSources.Single(source => source.Id == "products-source");
+        if (source.Fields[0].Header != "Product title")
+            throw new InvalidOperationException("Column Editor Apply should update BindingSource fields.");
+        RequireContains(context.Xaml, "Header=\"Product title\"", "Column Editor Apply should affect export.");
+    }
+
+    private static void ConfigureColumnEditorCancelDoesNotModifyModel(MainWindowViewModel vm)
+    {
+        var source = ProductsSource();
+        vm.BindingSources.Add(source);
+        vm.DataGridExportMode = MainWindowViewModel.DataGridExportModeReal;
+        var grid = DataGrid("ProductsGrid", source.Id, 32, 42, 520, 260);
+        vm.Controls.Add(grid);
+        vm.SelectControls(new[] { grid }, grid);
+
+        var editor = new DataGridColumnEditorViewModel(vm, grid, source);
+        editor.SelectedField!.Header = "Should not apply";
+        editor.CancelChanges();
+        editor.Dispose();
+    }
+
+    private static void AssertColumnEditorCancelDoesNotModifyModel(SmokeContext context)
+    {
+        var source = context.ViewModel.BindingSources.Single(source => source.Id == "products-source");
+        if (source.Fields[0].Header != "Title")
+            throw new InvalidOperationException("Column Editor Cancel should not modify BindingSource fields.");
+        RequireContains(context.Xaml, "Header=\"Title\"", "Cancelled column edit should not affect export.");
+        RequireNotContains(context.Xaml, "Should not apply", "Cancelled column edit leaked into export.");
+    }
+
+    private static void ConfigureColumnEditorAddRemoveDuplicateWorks(MainWindowViewModel vm)
+    {
+        var source = ProductsSource();
+        vm.BindingSources.Add(source);
+        vm.DataGridExportMode = MainWindowViewModel.DataGridExportModeReal;
+        var grid = DataGrid("ProductsGrid", source.Id, 32, 42, 520, 260);
+        vm.Controls.Add(grid);
+        vm.SelectControls(new[] { grid }, grid);
+
+        var editor = new DataGridColumnEditorViewModel(vm, grid, source);
+        editor.AddColumn();
+        editor.DuplicateSelectedColumn();
+        editor.DeleteSelectedColumn();
+        editor.ApplyChanges();
+        editor.Dispose();
+    }
+
+    private static void AssertColumnEditorAddRemoveDuplicateWorks(SmokeContext context)
+    {
+        var source = context.ViewModel.BindingSources.Single(source => source.Id == "products-source");
+        if (source.Fields.Count != 4)
+            throw new InvalidOperationException($"Column Editor add/duplicate/remove should leave four fields, got {source.Fields.Count}.");
+        RequireContains(context.Xaml, "Field4", "Column Editor added field should export.");
+    }
+
+    private static void ConfigureColumnEditorReorderColumnsAffectsPreviewAndExport(MainWindowViewModel vm)
+    {
+        var source = ProductsSource();
+        vm.BindingSources.Add(source);
+        vm.DataGridExportMode = MainWindowViewModel.DataGridExportModeReal;
+        var grid = DataGrid("ProductsGrid", source.Id, 32, 42, 520, 260);
+        vm.Controls.Add(grid);
+        vm.SelectControls(new[] { grid }, grid);
+
+        var editor = new DataGridColumnEditorViewModel(vm, grid, source);
+        editor.MoveSelectedColumn(1);
+        editor.ApplyChanges();
+        editor.Dispose();
+    }
+
+    private static void AssertColumnEditorReorderColumnsAffectsPreviewAndExport(SmokeContext context)
+    {
+        var titleIndex = context.Xaml.IndexOf("Header=\"Title\"", StringComparison.Ordinal);
+        var priceIndex = context.Xaml.IndexOf("Header=\"Price\"", StringComparison.Ordinal);
+        if (titleIndex < 0 || priceIndex < 0 || priceIndex > titleIndex)
+            throw new InvalidOperationException("Column Editor reorder should place Price before Title in export.");
+    }
+
+    private static void ConfigureColumnEditorDoesNotCallApplyDocument(MainWindowViewModel vm)
+    {
+        var source = ProductsSource();
+        vm.BindingSources.Add(source);
+        vm.DataGridExportMode = MainWindowViewModel.DataGridExportModeReal;
+        var grid = DataGrid("ProductsGrid", source.Id, 32, 42, 520, 260);
+        vm.Controls.Add(grid);
+        vm.SelectControls(new[] { grid }, grid);
+        vm.InteractionTraceEntries.Clear();
+
+        var editor = new DataGridColumnEditorViewModel(vm, grid, source);
+        editor.SelectedField!.Header = "Updated";
+        editor.ApplyChanges();
+        editor.Dispose();
+    }
+
+    private static void AssertColumnEditorDoesNotCallApplyDocument(SmokeContext context)
+    {
+        if (context.ViewModel.InteractionTraceEntries.Any(entry => entry.EventName.Contains("ApplyDocument", StringComparison.OrdinalIgnoreCase)))
+        {
+            var trace = string.Join(" | ", context.ViewModel.InteractionTraceEntries.Select(entry => entry.Summary));
+            throw new InvalidOperationException($"Column Editor should not call ApplyDocument. Trace: {trace}");
+        }
+    }
+
+    private static void ConfigureColumnEditorDoesNotResetSelectedControl(MainWindowViewModel vm)
+    {
+        var source = ProductsSource();
+        vm.BindingSources.Add(source);
+        vm.DataGridExportMode = MainWindowViewModel.DataGridExportModeReal;
+        var grid = DataGrid("ProductsGrid", source.Id, 32, 42, 520, 260);
+        vm.Controls.Add(grid);
+        vm.SelectControls(new[] { grid }, grid);
+
+        var editor = new DataGridColumnEditorViewModel(vm, grid, source);
+        editor.SelectedField!.Header = "Updated";
+        editor.ApplyChanges();
+        editor.Dispose();
+    }
+
+    private static void AssertColumnEditorDoesNotResetSelectedControl(SmokeContext context)
+    {
+        if (context.ViewModel.SelectedControl?.Name != "ProductsGrid")
+            throw new InvalidOperationException("Column Editor Apply should not reset SelectedControl.");
+    }
+
+    private static void ConfigureDataModeShowsSelectedDataGridSourceOnly(MainWindowViewModel vm)
+    {
+        var products = ProductsSource();
+        var orders = DllOrdersSource();
+        vm.BindingSources.Add(products);
+        vm.BindingSources.Add(orders);
+        var grid1 = DataGrid("SharedGridName", products.Id, 32, 42, 520, 260);
+        var grid2 = DataGrid("SharedGridName", orders.Id, 32, 340, 520, 260);
+        vm.Controls.Add(grid1);
+        vm.Controls.Add(grid2);
+        vm.SelectControls(new[] { grid2 }, grid2);
+    }
+
+    private static void AssertDataModeShowsSelectedDataGridSourceOnly(SmokeContext context)
+    {
+        RequireContains(context.ViewModel.DataGridDataSetupSummary, "Orders", "Data mode should display the selected DataGrid source.");
+        RequireNotContains(context.ViewModel.DataGridDataSetupSummary, "ProductsSource", "Data mode should not show the first/random source when another DataGrid is selected.");
+    }
+
+    private static void AssertDataModeDoesNotEditColumnsDirectly(SmokeContext context)
+    {
+        RequireContains(File.ReadAllText(Path.Combine(FindRepositoryRoot(), "Views", "MainWindow.axaml"), Encoding.UTF8), "Колонки DataGrid редактируются в Column Editor", "Data mode should redirect column editing to Column Editor.");
+    }
+
+    private static void AssertDataModeOpensColumnEditorForSelectedGrid(SmokeContext context)
+    {
+        var grid = context.ViewModel.SelectedControl!;
+        var editor = new DataGridColumnEditorViewModel(context.ViewModel, grid, context.ViewModel.SelectedBindingSourceForControl);
+        if (!editor.SourceIdentityText.Contains("Orders", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Data mode should open Column Editor for the selected DataGrid source.");
+        editor.Dispose();
+    }
+
+    private static void ConfigureDataModeHandlesSameGridNamesAcrossForms(MainWindowViewModel vm)
+    {
+        var products = ProductsSource();
+        vm.BindingSources.Add(products);
+        var grid1 = DataGrid("OrdersGrid", products.Id, 32, 42, 520, 260);
+        vm.Controls.Add(grid1);
+        var form2 = vm.CreateNewForm();
+        form2.Name = "Form2";
+        var orders = DllOrdersSource();
+        vm.BindingSources.Add(orders);
+        var grid2 = DataGrid("OrdersGrid", orders.Id, 32, 42, 520, 260);
+        vm.Controls.Add(grid2);
+        vm.SelectControls(new[] { grid2 }, grid2);
+    }
+
+    private static void AssertDataModeHandlesSameGridNamesAcrossForms(SmokeContext context)
+    {
+        RequireContains(context.ViewModel.DataGridDataSetupSummary, "Orders", "Data mode should resolve selected grid by active document/control, not by duplicate name.");
     }
 
     private static void AssertGeneratedNugetConfigContainsAllowInsecureConnectionsForHttpSource(SmokeContext context)
@@ -760,7 +1119,7 @@ internal static class Program
         RequireContains(context.CSharp, "private void DetailsCheckBox_Unchecked", "Unchecked handler missing.");
         RequireContains(context.CSharp, "private void ProductsGrid_SelectionChanged", "SelectionChanged handler missing.");
         RequireContains(context.CSharp, "ShowMessageAsync", "ShowMessage helper missing.");
-        RequireNotContains(context.CSharp, "ObservableCollection", "Interactions clean export should not generate demo classes.");
+        RequireContains(context.CSharp, "ObservableCollection<ProductRow>", "Real DataGrid interactions should keep generated runtime binding classes.");
     }
 
     private static void ConfigureMultiFormOpenFormExport(MainWindowViewModel vm)
@@ -2483,6 +2842,42 @@ internal static class Program
         return source;
     }
 
+    private static BindingSourceModel SqlCustomersSource()
+    {
+        var source = CustomersSource();
+        source.Id = "sql-customers-source";
+        source.Name = "SqlCustomers";
+        source.Path = "Customers";
+        source.ItemTypeName = "CustomerRow";
+        source.Description = "SQL customers source.";
+        source.SourceKind = "SqlServer";
+        source.SourceConnectionString = "Server=.;Database=Demo;User Id=designer;Password=secret;TrustServerCertificate=True";
+        source.SourceSchemaName = "dbo";
+        source.SourceTableName = "Customers";
+        source.SourceQuery = "SELECT Id, Name, Email, Status FROM dbo.Customers";
+        return source;
+    }
+
+    private static BindingSourceModel DllOrdersSource()
+    {
+        var source = new BindingSourceModel
+        {
+            Id = "dll-orders-source",
+            Name = "Orders",
+            Path = "SalesOrders",
+            ItemTypeName = "OrderRow",
+            Description = "DLL table source.",
+            SourceKind = "Assembly",
+            SourceAssemblyPath = @"C:\DataSources\Sales.dll",
+            SourceTypeFullName = "Contoso.Sales.Order",
+            SourceTableName = "Orders"
+        };
+        source.Fields.Add(Field("OrderId", "OrderId", "1001", "int", "90"));
+        source.Fields.Add(Field("CustomerName", "CustomerName", "Ada Lovelace", "string", "2*"));
+        source.Fields.Add(Field("Status", "Status", "Open", "string", "*"));
+        return source;
+    }
+
     private static void SwitchToForm(MainWindowViewModel vm, string formId)
     {
         if (!vm.SetActiveForm(formId, "SmokeSwitchToForm"))
@@ -2967,6 +3362,23 @@ internal static class Program
         GC.Collect();
     }
 
+    private static string FindRepositoryRoot()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null)
+        {
+            if (Directory.Exists(Path.Combine(directory.FullName, "Views"))
+                && Directory.Exists(Path.Combine(directory.FullName, "ViewModels")))
+            {
+                return directory.FullName;
+            }
+
+            directory = directory.Parent;
+        }
+
+        return Directory.GetCurrentDirectory();
+    }
+
     private static void WriteAvaloniaProject(SmokeContext context)
     {
         Directory.CreateDirectory(context.ProjectPath);
@@ -2990,7 +3402,7 @@ internal static class Program
         File.WriteAllText(Path.Combine(context.ProjectPath, "App.axaml"), BuildAppXaml(context.ViewModel.ExportProjectNamespace), Encoding.UTF8);
         File.WriteAllText(Path.Combine(context.ProjectPath, "App.axaml.cs"), BuildAppCode(context.ViewModel.ExportProjectNamespace), Encoding.UTF8);
         File.WriteAllText(Path.Combine(context.ProjectPath, "Program.cs"), BuildProgramCode(context.ViewModel.ExportProjectNamespace), Encoding.UTF8);
-        File.WriteAllText(Path.Combine(context.ProjectPath, $"{context.Scenario.Name}.csproj"), BuildProjectFile(context.Scenario), Encoding.UTF8);
+        File.WriteAllText(Path.Combine(context.ProjectPath, $"{context.Scenario.Name}.csproj"), BuildProjectFile(context), Encoding.UTF8);
         File.WriteAllText(Path.Combine(context.ProjectPath, "NuGet.config"), BuildNuGetConfig(), Encoding.UTF8);
         File.WriteAllText(Path.Combine(context.ProjectPath, "smoke-summary.txt"), BuildSummary(context), Encoding.UTF8);
     }
@@ -3010,11 +3422,28 @@ internal static class Program
 ";
     }
 
-    private static string BuildProjectFile(SmokeScenario scenario)
+    private static string BuildProjectFile(SmokeContext context)
     {
-        var dataGridPackage = scenario.RequiresRealDataGrid
-            ? $@"    <PackageReference Include=""Avalonia.Controls.DataGrid"" Version=""{AvaloniaVersion}"" />"
-            : "";
+        var requiredPackages = context.ViewModel.RequiredPackages
+            .GroupBy(package => package.Id, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .ToList();
+        if (context.Scenario.RequiresRealDataGrid
+            && !requiredPackages.Any(package => string.Equals(package.Id, "Avalonia.Controls.DataGrid", StringComparison.OrdinalIgnoreCase)))
+        {
+            requiredPackages.Add(new RequiredPackageModel
+            {
+                Id = "Avalonia.Controls.DataGrid",
+                Version = AvaloniaVersion
+            });
+        }
+
+        var packageLines = new StringBuilder();
+        foreach (var package in requiredPackages)
+        {
+            var version = string.IsNullOrWhiteSpace(package.Version) ? AvaloniaVersion : package.Version;
+            packageLines.AppendLine($@"    <PackageReference Include=""{package.Id}"" Version=""{version}"" />");
+        }
 
         return $@"<Project Sdk=""Microsoft.NET.Sdk"">
   <PropertyGroup>
@@ -3029,7 +3458,7 @@ internal static class Program
     <PackageReference Include=""Avalonia.Desktop"" Version=""{AvaloniaDesktopVersion}"" />
     <PackageReference Include=""Avalonia.Themes.Fluent"" Version=""{AvaloniaVersion}"" />
     <PackageReference Include=""Avalonia.Fonts.Inter"" Version=""{AvaloniaDesktopVersion}"" />
-{dataGridPackage}
+{packageLines.ToString().TrimEnd()}
   </ItemGroup>
 </Project>
 ";
@@ -3165,6 +3594,16 @@ Diagnostics:
     {
         if (text.Contains(unexpected, StringComparison.Ordinal))
             throw new InvalidOperationException(message);
+    }
+
+    private static string GetGeneratedFilesText(SmokeContext context)
+    {
+        return string.Join(Environment.NewLine, context.GeneratedFiles.Select(file => file.Content));
+    }
+
+    private static string GetRequiredPackagesText(SmokeContext context)
+    {
+        return string.Join(Environment.NewLine, context.ViewModel.RequiredPackages.Select(package => $"{package.Id} {package.Version}"));
     }
 
     private static void RequireGeneratedFile(SmokeContext context, string path)

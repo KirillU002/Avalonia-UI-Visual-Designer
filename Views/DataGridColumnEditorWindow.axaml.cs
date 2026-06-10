@@ -1,6 +1,7 @@
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using CommunityToolkit.Mvvm.ComponentModel;
+using FormDesigner.DesignerSystem.Binding;
 using FormDesigner.Models;
 using FormDesigner.ViewModels;
 using System;
@@ -37,6 +38,13 @@ public partial class DataGridColumnEditorWindow : Window
 
     private void CloseButton_Click(object? sender, RoutedEventArgs e)
     {
+        _editor?.CancelChanges();
+        Close();
+    }
+
+    private void ApplyButton_Click(object? sender, RoutedEventArgs e)
+    {
+        _editor?.ApplyChanges();
         Close();
     }
 
@@ -109,8 +117,10 @@ public sealed partial class DataGridColumnEditorViewModel : ObservableObject, ID
 {
     private readonly MainWindowViewModel _owner;
     private readonly DesignControlModel _dataGrid;
-    private readonly BindingSourceModel? _bindingSource;
+    private readonly BindingSourceModel? _targetBindingSource;
+    private readonly BindingSourceModel _bindingSource;
     private readonly Dictionary<BindingFieldModel, DataGridColumnEditorFieldItem> _itemsByField = new();
+    private readonly bool _isNewManualBindingSource;
     private bool _isDisposed;
 
     [ObservableProperty]
@@ -126,7 +136,9 @@ public sealed partial class DataGridColumnEditorViewModel : ObservableObject, ID
     {
         _owner = owner;
         _dataGrid = dataGrid;
-        _bindingSource = bindingSource;
+        _targetBindingSource = bindingSource;
+        _isNewManualBindingSource = bindingSource is null;
+        _bindingSource = bindingSource?.Clone() ?? CreateManualBindingSource(dataGrid, owner.BindingSources);
 
         if (_bindingSource is not null)
         {
@@ -137,6 +149,10 @@ public sealed partial class DataGridColumnEditorViewModel : ObservableObject, ID
 
         RebuildFilteredFields();
         SelectedItem = FilteredFields.FirstOrDefault();
+        _owner.TraceDocumentDebug(
+            "DATAGRID_COLUMN_EDITOR_OPENED",
+            $"grid={ControlDisplayName(dataGrid)}; sourceKey={DataSourceIdentity.BuildKey(_bindingSource!)}; newManual={_isNewManualBindingSource}; columns={_bindingSource!.Fields.Count}",
+            toOutput: false);
     }
 
     public ObservableCollection<DataGridColumnEditorFieldItem> FilteredFields { get; } = new();
@@ -206,6 +222,10 @@ public sealed partial class DataGridColumnEditorViewModel : ObservableObject, ID
     public bool CanRemoveSelectedGrouping => SelectedField?.GroupOrder >= 0;
 
     public BindingFieldModel? SelectedField => SelectedItem?.Field;
+
+    public string SourceIdentityText => _bindingSource is null
+        ? "Source: none"
+        : DataSourceIdentity.BuildDisplayName(_bindingSource);
 
     public string HeaderText
     {
@@ -392,6 +412,7 @@ public sealed partial class DataGridColumnEditorViewModel : ObservableObject, ID
         if (_bindingSource is null)
             return;
 
+        var beforeCount = _bindingSource.Fields.Count;
         _owner.BeginUndoBatch();
         try
         {
@@ -440,14 +461,92 @@ public sealed partial class DataGridColumnEditorViewModel : ObservableObject, ID
                 field.VisibleIndex = index++;
             }
 
-            _dataGrid.AutoGenerateColumns = false;
             RebuildFilteredFields(SelectedItem?.Field);
+            _owner.TraceDocumentDebug(
+                "DATAGRID_COLUMNS_SYNCED_FROM_SOURCE",
+                $"sourceKey={DataSourceIdentity.BuildKey(_bindingSource)}; schemaColumns={_bindingSource.Fields.Count}; added={Math.Max(0, _bindingSource.Fields.Count - beforeCount)}; removed=0; kept={Math.Min(beforeCount, _bindingSource.Fields.Count)}",
+                toOutput: false);
             _owner.StatusText = $"Колонки DataGrid собраны из BindingSource «{_bindingSource.Name}»";
         }
         finally
         {
             _owner.CommitUndoBatch();
         }
+    }
+
+    public void ApplyChanges()
+    {
+        if (_bindingSource is null)
+            return;
+
+        var target = _targetBindingSource;
+        var previousFields = target?.Fields.Select(field => field.Clone()).ToList() ?? new List<BindingFieldModel>();
+        var nextCount = _bindingSource.Fields.Count;
+        _owner.BeginUndoBatch();
+        try
+        {
+            if (target is null)
+            {
+                target = _bindingSource.Clone();
+                _owner.BindingSources.Add(target);
+                _dataGrid.BindingSourceId = target.Id;
+                _owner.SelectedBindingSource = target;
+                if (_owner.SelectedControl?.Id == _dataGrid.Id)
+                    _owner.SelectedBindingSourceForControl = target;
+                _owner.TraceDocumentDebug(
+                    "DATAGRID_MANUAL_BINDING_SOURCE_CREATED",
+                    $"grid={ControlDisplayName(_dataGrid)}; sourceKey={DataSourceIdentity.BuildKey(target)}; columns={target.Fields.Count}",
+                    toOutput: false);
+            }
+            else
+            {
+                target.Name = _bindingSource.Name;
+                target.Path = _bindingSource.Path;
+                target.ItemTypeName = _bindingSource.ItemTypeName;
+                target.Description = _bindingSource.Description;
+                target.SourceKind = _bindingSource.SourceKind;
+                target.SourceAssemblyPath = _bindingSource.SourceAssemblyPath;
+                target.SourceTypeFullName = _bindingSource.SourceTypeFullName;
+                target.SourceTableName = _bindingSource.SourceTableName;
+                target.SourceConnectionString = _bindingSource.SourceConnectionString;
+                target.SourceSchemaName = _bindingSource.SourceSchemaName;
+                target.SourceQuery = _bindingSource.SourceQuery;
+                target.Fields.Clear();
+                foreach (var field in _bindingSource.Fields)
+                    target.Fields.Add(field.Clone());
+                _owner.SelectedBindingSource = target;
+                if (_owner.SelectedControl?.Id == _dataGrid.Id)
+                    _owner.SelectedBindingSourceForControl = target;
+            }
+
+            _dataGrid.AutoGenerateColumns = false;
+
+            var added = _bindingSource.Fields.Count(field => previousFields.All(previous => !string.Equals(previous.Path, field.Path, StringComparison.OrdinalIgnoreCase)));
+            var removed = previousFields.Count(field => _bindingSource.Fields.All(next => !string.Equals(next.Path, field.Path, StringComparison.OrdinalIgnoreCase)));
+            var updated = _bindingSource.Fields.Count(field => previousFields.Any(previous => string.Equals(previous.Path, field.Path, StringComparison.OrdinalIgnoreCase) && !AreFieldsEquivalent(previous, field)));
+            var reordered = HasColumnOrderChanged(previousFields, _bindingSource.Fields);
+
+            _owner.TraceDocumentDebug(
+                "DATAGRID_COLUMN_EDITOR_APPLY",
+                $"grid={ControlDisplayName(_dataGrid)}; sourceKey={DataSourceIdentity.BuildKey(target)}; added={added}; removed={removed}; updated={updated}; reordered={reordered}; newManual={_isNewManualBindingSource}",
+                toOutput: false);
+            _owner.StatusText = $"DataGrid columns applied: {previousFields.Count} -> {nextCount}";
+        }
+        finally
+        {
+            _owner.CommitUndoBatch();
+        }
+    }
+
+    public void CancelChanges()
+    {
+        if (_bindingSource is null)
+            return;
+
+        _owner.TraceDocumentDebug(
+            "DATAGRID_COLUMN_EDITOR_CANCELLED",
+            $"grid={ControlDisplayName(_dataGrid)}; sourceKey={DataSourceIdentity.BuildKey(_bindingSource)}; newManual={_isNewManualBindingSource}; columns={_bindingSource.Fields.Count}",
+            toOutput: false);
     }
 
     public void ClearGrouping()
@@ -718,6 +817,107 @@ public sealed partial class DataGridColumnEditorViewModel : ObservableObject, ID
             suffix++;
 
         return $"{candidate} {suffix}";
+    }
+
+    private static BindingSourceModel CreateManualBindingSource(DesignControlModel dataGrid, IEnumerable<BindingSourceModel> existingSources)
+    {
+        var gridName = string.IsNullOrWhiteSpace(dataGrid.Name) ? "DataGrid" : dataGrid.Name.Trim();
+        var sourceName = CreateUniqueName($"{gridName}Source", existingSources.Select(source => source.Name));
+        var path = CreateUniqueName($"{gridName}Items", existingSources.Select(source => source.Path));
+        var source = new BindingSourceModel
+        {
+            Name = sourceName,
+            Path = path,
+            ItemTypeName = SanitizeIdentifier($"{gridName}Row", "DataGridRow"),
+            Description = "Manual DataGrid columns created from Column Editor.",
+            SourceKind = "Manual"
+        };
+
+        source.Fields.Add(new BindingFieldModel
+        {
+            Header = "Id",
+            Path = "Id",
+            SampleValue = "1",
+            Width = "80",
+            TypeName = "int",
+            VisibleIndex = 0
+        });
+        source.Fields.Add(new BindingFieldModel
+        {
+            Header = "Name",
+            Path = "Name",
+            SampleValue = "Sample",
+            Width = "2*",
+            TypeName = "string",
+            VisibleIndex = 1
+        });
+        source.Fields.Add(new BindingFieldModel
+        {
+            Header = "IsActive",
+            Path = "IsActive",
+            SampleValue = "true",
+            Width = "*",
+            TypeName = "bool",
+            VisibleIndex = 2
+        });
+
+        return source;
+    }
+
+    private static string CreateUniqueName(string baseName, IEnumerable<string> existingNames)
+    {
+        var used = existingNames
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (!used.Contains(baseName))
+            return baseName;
+
+        var index = 2;
+        while (used.Contains($"{baseName}{index}"))
+            index++;
+
+        return $"{baseName}{index}";
+    }
+
+    private static string SanitizeIdentifier(string value, string fallback)
+    {
+        var text = string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
+        var chars = text.Where(char.IsLetterOrDigit).ToArray();
+        var result = chars.Length == 0 ? fallback : new string(chars);
+        return char.IsDigit(result[0]) ? fallback : result;
+    }
+
+    private static string ControlDisplayName(DesignControlModel control)
+    {
+        return string.IsNullOrWhiteSpace(control.Name) ? control.Type : control.Name;
+    }
+
+    private static bool AreFieldsEquivalent(BindingFieldModel left, BindingFieldModel right)
+    {
+        return string.Equals(left.Header, right.Header, StringComparison.Ordinal)
+            && string.Equals(left.Path, right.Path, StringComparison.Ordinal)
+            && string.Equals(left.SampleValue, right.SampleValue, StringComparison.Ordinal)
+            && string.Equals(left.Width, right.Width, StringComparison.Ordinal)
+            && string.Equals(left.TypeName, right.TypeName, StringComparison.Ordinal)
+            && left.IsVisible == right.IsVisible
+            && left.AllowResize == right.AllowResize
+            && left.AllowSort == right.AllowSort
+            && left.VisibleIndex == right.VisibleIndex
+            && string.Equals(left.TextWrapping, right.TextWrapping, StringComparison.Ordinal)
+            && string.Equals(left.TextTrimming, right.TextTrimming, StringComparison.Ordinal);
+    }
+
+    private static bool HasColumnOrderChanged(IReadOnlyList<BindingFieldModel> previous, IEnumerable<BindingFieldModel> next)
+    {
+        var previousOrder = previous
+            .OrderBy(field => field.VisibleIndex < 0 ? int.MaxValue : field.VisibleIndex)
+            .Select(field => field.Path)
+            .ToList();
+        var nextOrder = next
+            .OrderBy(field => field.VisibleIndex < 0 ? int.MaxValue : field.VisibleIndex)
+            .Select(field => field.Path)
+            .ToList();
+        return !previousOrder.SequenceEqual(nextOrder, StringComparer.OrdinalIgnoreCase);
     }
 }
 

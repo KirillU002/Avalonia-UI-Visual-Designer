@@ -62,7 +62,7 @@ public partial class MainWindow : Window
     private readonly Dictionary<string, Bitmap?> _imageCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, Border> _wrapperByControlId = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, Point> _dragRootStartPositions = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, (string Signature, IReadOnlyList<Dictionary<string, string>> Rows)> _sqlPreviewRowsBySourceId = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, (string Signature, IReadOnlyList<Dictionary<string, string>> Rows)> _previewRowsBySourceKey = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _sqlPreviewRowsLoading = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<TextBox, SimpleInspectorEditContext> _simpleInspectorEditContexts = new();
     private readonly List<DesignControlModel> _dragSelectionRoots = new();
@@ -943,7 +943,7 @@ public partial class MainWindow : Window
     {
         _previewFilterRefreshTimer.Stop();
         _sqlPreviewRowsLoading.Clear();
-        _sqlPreviewRowsBySourceId.Clear();
+        _previewRowsBySourceKey.Clear();
 
         if (DataContext is MainWindowViewModel viewModel)
             viewModel.ClearPreviewRuntimeDiagnostics();
@@ -2605,7 +2605,7 @@ public partial class MainWindow : Window
             VM.MarkCanvasRenderedDocument(
                 "RenderDesigner",
                 _wrapperByControlId.Count,
-                _sqlPreviewRowsBySourceId.Values.Sum(item => item.Rows.Count));
+                _previewRowsBySourceKey.Values.Sum(item => item.Rows.Count));
         }
         finally
         {
@@ -7941,15 +7941,51 @@ public partial class MainWindow : Window
 
     private async Task EnsureInteractivePreviewDataAsync()
     {
-        await Task.CompletedTask;
+        var sqlSources = GetActiveBindingSources()
+            .Where(SqlPreviewDataLoader.CanLoad)
+            .DistinctBy(DataSourceIdentity.BuildKey)
+            .ToList();
+
+        foreach (var source in sqlSources)
+        {
+            var sourceKey = DataSourceIdentity.BuildKey(source);
+            if (_sqlPreviewRowsLoading.Contains(sourceKey))
+                continue;
+
+            if (_previewRowsBySourceKey.TryGetValue(sourceKey, out var cached)
+                && string.Equals(cached.Signature, sourceKey, StringComparison.Ordinal))
+            {
+                Debug.WriteLine($"DATAGRID_PREVIEW_CACHE_HIT sourceKey={sourceKey}; rows={cached.Rows.Count}");
+                continue;
+            }
+
+            _sqlPreviewRowsLoading.Add(sourceKey);
+            try
+            {
+                var rows = await SqlPreviewDataLoader.LoadRowsAsync(source);
+                _previewRowsBySourceKey[sourceKey] = (sourceKey, rows);
+                Debug.WriteLine($"DATAGRID_PREVIEW_ROWS_LOADED sourceKey={sourceKey}; display={DataSourceIdentity.BuildDisplayName(source)}; rows={rows.Count}");
+            }
+            catch
+            {
+                _previewRowsBySourceKey.Remove(sourceKey);
+                Debug.WriteLine($"DATAGRID_PREVIEW_CACHE_INVALIDATED sourceKey={sourceKey}; reason=load-failed");
+            }
+            finally
+            {
+                _sqlPreviewRowsLoading.Remove(sourceKey);
+            }
+        }
     }
 
     private IReadOnlyList<Dictionary<string, string>> GetCachedInteractivePreviewRows(string? bindingSourceId)
     {
-        if (string.IsNullOrWhiteSpace(bindingSourceId))
+        var source = GetActiveBindingSource(bindingSourceId);
+        if (source is null)
             return Array.Empty<Dictionary<string, string>>();
 
-        return _sqlPreviewRowsBySourceId.TryGetValue(bindingSourceId, out var cached)
+        var sourceKey = DataSourceIdentity.BuildKey(source);
+        return _previewRowsBySourceKey.TryGetValue(sourceKey, out var cached)
             ? cached.Rows
             : Array.Empty<Dictionary<string, string>>();
     }
@@ -7959,6 +7995,10 @@ public partial class MainWindow : Window
         var source = GetActiveBindingSource(bindingSourceId);
         if (source is null)
             return null;
+
+        var sourceKey = DataSourceIdentity.BuildKey(source);
+        if (_previewRowsBySourceKey.TryGetValue(sourceKey, out var cached) && cached.Rows.Count > 0)
+            return BindingPreviewItemsBuilder.ConvertRows(cached.Rows);
 
         return BindingPreviewItemsBuilder.BuildSampleItems(source);
     }
@@ -9553,6 +9593,10 @@ public partial class MainWindow : Window
             return;
         }
 
+        VM.TraceDocumentDebug(
+            "DATA_MODE_OPEN_COLUMN_EDITOR_REQUESTED",
+            $"grid={VM.SelectedControl.NameOrFallback()}; form={VM.ActiveDocumentName}; sourceKey={DataSourceIdentity.BuildKey(VM.SelectedBindingSourceForControl)}",
+            toOutput: false);
         var editor = new DataGridColumnEditorWindow(
             VM,
             VM.SelectedControl,

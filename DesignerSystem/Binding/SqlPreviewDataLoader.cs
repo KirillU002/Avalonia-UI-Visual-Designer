@@ -12,10 +12,12 @@ namespace FormDesigner.DesignerSystem.Binding;
 
 internal static class SqlPreviewDataLoader
 {
+    public const int MaxPreviewRows = 100;
+
     public static bool CanLoad(BindingSourceModel? source)
     {
         return source is not null
-            && IsSqlServerSource(source.SourceKind)
+            && DataSourceIdentity.IsSqlServer(source.SourceKind)
             && !string.IsNullOrWhiteSpace(source.SourceConnectionString)
             && (!string.IsNullOrWhiteSpace(source.SourceQuery) || !string.IsNullOrWhiteSpace(source.SourceTableName));
     }
@@ -23,7 +25,7 @@ internal static class SqlPreviewDataLoader
     public static bool CanLoad(BindingSourceFileModel? source)
     {
         return source is not null
-            && IsSqlServerSource(source.SourceKind)
+            && DataSourceIdentity.IsSqlServer(source.SourceKind)
             && !string.IsNullOrWhiteSpace(source.SourceConnectionString)
             && (!string.IsNullOrWhiteSpace(source.SourceQuery) || !string.IsNullOrWhiteSpace(source.SourceTableName));
     }
@@ -64,11 +66,6 @@ internal static class SqlPreviewDataLoader
             source.SourceSchemaName,
             source.SourceTableName,
             source.SourceQuery);
-    }
-
-    private static bool IsSqlServerSource(string? sourceKind)
-    {
-        return string.Equals(sourceKind, "SqlServer", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string Normalize(string? value)
@@ -114,9 +111,9 @@ internal static class SqlPreviewDataLoader
     private static string BuildSqlCommandText(string schemaName, string tableName, string? sourceQuery)
     {
         if (!string.IsNullOrWhiteSpace(sourceQuery))
-            return sourceQuery.Trim().TrimEnd(';');
+            return $"SELECT TOP ({MaxPreviewRows.ToString(CultureInfo.InvariantCulture)}) * FROM ({sourceQuery.Trim().TrimEnd(';')}) AS DesignerPreviewSource";
 
-        return $"SELECT * FROM {BuildSqlObjectReference(schemaName, tableName)}";
+        return $"SELECT TOP ({MaxPreviewRows.ToString(CultureInfo.InvariantCulture)}) * FROM {BuildSqlObjectReference(schemaName, tableName)}";
     }
 
     private static string BuildSqlObjectReference(string schemaName, string tableName)
