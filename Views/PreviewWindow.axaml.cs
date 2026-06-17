@@ -169,6 +169,9 @@ public partial class PreviewWindow : Window
             TargetProperty = interaction.TargetProperty,
             SourcePath = interaction.SourcePath,
             TextTemplate = interaction.TextTemplate,
+            MissingValueBehavior = InteractionModel.NormalizeMissingValueBehavior(interaction.MissingValueBehavior),
+            NoSelectionBehavior = InteractionModel.NormalizeNoSelectionBehavior(interaction.NoSelectionBehavior),
+            NoSelectionText = interaction.NoSelectionText,
             MessageTitle = interaction.MessageTitle,
             TargetFormId = interaction.TargetFormId,
             TargetFormName = interaction.TargetFormName,
@@ -1866,13 +1869,8 @@ public partial class PreviewWindow : Window
                 : null;
             if (rowValues is null)
             {
-                EnsurePreviewRuntimeContext().AddWarning(
-                    control.Name,
-                    "Preview warnings",
-                    $"DataGrid selected item is null for '{control.Name}'.",
-                    "Select a row with runtime data before testing SelectionChanged.",
-                    CreateRuntimeControlModel(control));
-                SyncPreviewRuntimeDiagnostics();
+                if (ApplyRuntimeInteractions(control, InteractionModel.EventDataGridSelectionChanged, new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)))
+                    Dispatcher.UIThread.Post(ScheduleRenderDocument, DispatcherPriority.Background);
                 return;
             }
 

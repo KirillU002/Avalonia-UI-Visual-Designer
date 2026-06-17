@@ -173,6 +173,9 @@ public class InteractionFileModel
     public string TargetProperty { get; set; } = InteractionModel.TargetPropertyText;
     public string SourcePath { get; set; } = "";
     public string TextTemplate { get; set; } = "";
+    public string MissingValueBehavior { get; set; } = InteractionModel.MissingValueEmpty;
+    public string NoSelectionBehavior { get; set; } = InteractionModel.NoSelectionClearTarget;
+    public string NoSelectionText { get; set; } = "";
     public string MessageTitle { get; set; } = "";
     public string TargetFormId { get; set; } = "";
     public string TargetFormName { get; set; } = "";
@@ -204,6 +207,11 @@ public class BindingFieldFileModel
     public string SampleValue { get; set; } = "Value";
     public string Width { get; set; } = "*";
     public string TypeName { get; set; } = "string";
+    public string DbType { get; set; } = "";
+    public bool IsPrimaryKey { get; set; }
+    public bool IsNullable { get; set; } = true;
+    public bool CanRead { get; set; } = true;
+    public bool CanWrite { get; set; } = true;
     public bool IsVisible { get; set; } = true;
     public bool IsSortable { get; set; } = true;
     public string SortDirection { get; set; } = BindingFieldModel.SortDirectionNone;

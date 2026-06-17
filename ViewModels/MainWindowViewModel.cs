@@ -5,6 +5,7 @@ using FormDesigner.DesignerSystem.Binding;
 using FormDesigner.DesignerSystem.BuiltIn;
 using FormDesigner.DesignerSystem.Infrastructure;
 using FormDesigner.EditorCommands;
+using FormDesigner.Localization;
 using FormDesigner.Models;
 using FormDesigner.PluginContracts;
 using FormDesigner.Services;
@@ -26,6 +27,7 @@ using System.Runtime.Loader;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace FormDesigner.ViewModels;
@@ -267,6 +269,7 @@ public partial class MainWindowViewModel : ObservableObject
     public ObservableCollection<GeneratedFileTreeNodeModel> GeneratedFileTreeNodes { get; } = new();
     public ObservableCollection<RequiredPackageModel> RequiredPackages { get; } = new();
     public ObservableCollection<ExportDiagnosticModel> ExportDiagnostics { get; } = new();
+    public UiTextCatalog Texts { get; } = UiText.Current;
     public ObservableCollection<string> AvailableOutputCategories { get; } = new()
     {
         OutputCategoryAll,
@@ -607,6 +610,16 @@ public partial class MainWindowViewModel : ObservableObject
 
     [ObservableProperty]
     private InteractionModel? selectedInteraction;
+
+    [ObservableProperty]
+    private string logicTemplateDraft = "";
+
+    [ObservableProperty]
+    private bool isLogicTemplateEditing;
+
+    private bool _isSyncingLogicTemplateDraft;
+    private InteractionModel? _trackedSelectedInteractionForLogic;
+    private int _logicTemplatePreviewRefreshVersion;
 
     [ObservableProperty]
     private string generatedXaml = "";
@@ -1583,6 +1596,9 @@ public partial class MainWindowViewModel : ObservableObject
             if (source is null)
                 return "BindingSource не выбран. DataGrid будет экспортирован как placeholder или визуальный макет без рабочих колонок.";
 
+            if (IsDetachedBindingSource(source))
+                return "Источник данных удалён. Колонки сохранены как manual; выберите новый источник или очистите привязку.";
+
             if (source.Fields.Count == 0)
                 return "BindingSource выбран, но fields пустые. Добавьте поля или создайте sample fields.";
 
@@ -1640,6 +1656,7 @@ public partial class MainWindowViewModel : ObservableObject
     }
 
     public IReadOnlyList<string> InteractionTargetControlNames => Controls
+        .Where(IsSupportedInteractionTargetForSelectedInteraction)
         .Select(control => control.Name)
         .Where(name => !string.IsNullOrWhiteSpace(name))
         .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -1707,6 +1724,180 @@ public partial class MainWindowViewModel : ObservableObject
                 .ThenBy(interaction => interaction.ActionType)
                 .ToList();
         }
+    }
+
+    public bool IsSelectedInteractionDataGridSelectedRowAction => SelectedInteraction is not null
+        && IsDataGridSelectionChangedEvent(SelectedInteraction.EventName)
+        && string.Equals(SelectedInteraction.ActionType, InteractionModel.ActionSetProperty, StringComparison.OrdinalIgnoreCase);
+
+    public bool HasLogicTemplateAvailablePlaceholders => LogicTemplateAvailablePlaceholders.Count > 0;
+    public bool HasNoLogicTemplateAvailablePlaceholders => !HasLogicTemplateAvailablePlaceholders;
+
+    public IReadOnlyList<string> LogicTemplateAvailablePlaceholders
+    {
+        get
+        {
+            var source = GetBindingSourceForSelectedInteraction();
+            return source is null
+                ? Array.Empty<string>()
+                : OrderBindingFieldsForDisplay(source.Fields)
+                    .Select(field => field.Path)
+                    .Where(path => !string.IsNullOrWhiteSpace(path))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+        }
+    }
+
+    public IReadOnlyList<string> LogicTemplateInvalidPlaceholders
+    {
+        get
+        {
+            var available = LogicTemplateAvailablePlaceholders.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            if (available.Count == 0)
+                return ExtractInteractionTemplateTokens(LogicTemplateDraft).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
+            return ExtractInteractionTemplateTokens(LogicTemplateDraft)
+                .Where(token => !available.Contains(token))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(token => token, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+    }
+
+    public bool HasLogicTemplateInvalidPlaceholders => LogicTemplateInvalidPlaceholders.Count > 0;
+
+    public string LogicTemplateValidationText
+    {
+        get
+        {
+            if (SelectedInteraction is null)
+                return "Выберите action, чтобы проверить шаблон.";
+
+            var invalid = LogicTemplateInvalidPlaceholders;
+            if (invalid.Count > 0)
+                return $"Unknown placeholders: {string.Join(", ", invalid.Select(token => "{" + token + "}"))}";
+
+            var source = GetBindingSourceForSelectedInteraction();
+            if (source is null)
+                return "У выбранного DataGrid нет BindingSource/schema.";
+
+            return "OK: все placeholders найдены в schema выбранного DataGrid.";
+        }
+    }
+
+    public string LogicTemplatePreviewText
+    {
+        get
+        {
+            var source = GetBindingSourceForSelectedInteraction();
+            if (source is null)
+                return string.IsNullOrWhiteSpace(LogicTemplateDraft) ? "" : LogicTemplateDraft;
+
+            var sample = source.Fields
+                .Where(field => !string.IsNullOrWhiteSpace(field.Path))
+                .ToDictionary(
+                    field => field.Path,
+                    field => string.IsNullOrWhiteSpace(field.SampleValue)
+                        ? string.IsNullOrWhiteSpace(field.Header) ? field.Path : field.Header
+                        : field.SampleValue,
+                    StringComparer.OrdinalIgnoreCase);
+
+            if (sample.Count == 0)
+                return string.IsNullOrWhiteSpace(LogicTemplateDraft) ? "" : LogicTemplateDraft;
+
+            var stopwatch = Stopwatch.StartNew();
+            var result = string.IsNullOrWhiteSpace(LogicTemplateDraft)
+                ? GetInteractionRowValue(sample, SelectedInteraction?.SourcePath, InteractionModel.MissingValueEmpty)
+                : ApplyInteractionTemplate(LogicTemplateDraft, sample, InteractionModel.MissingValueKeepPlaceholder);
+            stopwatch.Stop();
+            if (stopwatch.ElapsedMilliseconds > 25)
+            {
+                TraceDocumentDebug(
+                    "LOGIC_TEMPLATE_PREVIEW_UPDATED",
+                    $"elapsedMs={stopwatch.ElapsedMilliseconds}; placeholders={ExtractInteractionTemplateTokens(LogicTemplateDraft).Count}; invalid={LogicTemplateInvalidPlaceholders.Count}",
+                    toOutput: false);
+            }
+
+            return result;
+        }
+    }
+
+    public string LogicTemplateDraftStatus => IsLogicTemplateEditing
+        ? "Draft editing: Apply сохранит шаблон в action, Cancel откатит изменения."
+        : "Шаблон синхронизирован с выбранным action.";
+
+    private bool IsSupportedInteractionTargetForSelectedInteraction(DesignControlModel control)
+    {
+        if (IsSelectedInteractionDataGridSelectedRowAction)
+            return control.Type is DesignerControlTypes.TextBox or DesignerControlTypes.TextBlock;
+
+        return IsSupportedInteractionTarget(control);
+    }
+
+    private BindingSourceModel? GetBindingSourceForSelectedInteraction()
+    {
+        if (SelectedInteraction is null)
+            return null;
+
+        var sourceControl = FindControlByName(SelectedInteraction.SourceControlName);
+        return sourceControl?.Type == DesignerControlTypes.DataGrid
+            ? GetBindingSource(sourceControl.BindingSourceId)
+            : null;
+    }
+
+    private static IReadOnlyList<string> ExtractInteractionTemplateTokens(string? template)
+    {
+        if (string.IsNullOrWhiteSpace(template))
+            return Array.Empty<string>();
+
+        return System.Text.RegularExpressions.Regex
+            .Matches(template, "\\{(?<name>[^{}]+)\\}")
+            .Select(match => match.Groups["name"].Value.Trim())
+            .Where(token => !string.IsNullOrWhiteSpace(token))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static string ApplyInteractionTemplate(
+        string template,
+        IReadOnlyDictionary<string, string> rowValues,
+        string missingValueBehavior)
+    {
+        return System.Text.RegularExpressions.Regex.Replace(
+            template,
+            "\\{(?<name>[^{}]+)\\}",
+            match =>
+            {
+                var name = match.Groups["name"].Value.Trim();
+                var value = GetInteractionRowValue(rowValues, name, missingValueBehavior);
+                return string.Equals(value, "\u001FKEEP_PLACEHOLDER", StringComparison.Ordinal)
+                    ? match.Value
+                    : value;
+            });
+    }
+
+    private static string GetInteractionRowValue(
+        IReadOnlyDictionary<string, string> rowValues,
+        string? path,
+        string missingValueBehavior)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return string.Empty;
+
+        var trimmedPath = path.Trim();
+        if (rowValues.TryGetValue(trimmedPath, out var directValue))
+            return directValue;
+
+        var match = rowValues.FirstOrDefault(pair => string.Equals(pair.Key, trimmedPath, StringComparison.OrdinalIgnoreCase));
+        if (!string.IsNullOrEmpty(match.Key))
+            return match.Value;
+
+        return InteractionModel.NormalizeMissingValueBehavior(missingValueBehavior) switch
+        {
+            InteractionModel.MissingValueKeepPlaceholder => "\u001FKEEP_PLACEHOLDER",
+            InteractionModel.MissingValueShowNull => "null",
+            _ => string.Empty
+        };
     }
 
     public bool HasSelectedControlInteractions => SelectedControlInteractions.Count > 0;
@@ -1778,6 +1969,20 @@ public partial class MainWindowViewModel : ObservableObject
         .Distinct(StringComparer.OrdinalIgnoreCase)
         .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
         .ToList();
+
+    public IReadOnlyList<string> AvailableMissingValueBehaviors { get; } = new[]
+    {
+        InteractionModel.MissingValueEmpty,
+        InteractionModel.MissingValueKeepPlaceholder,
+        InteractionModel.MissingValueShowNull
+    };
+
+    public IReadOnlyList<string> AvailableNoSelectionBehaviors { get; } = new[]
+    {
+        InteractionModel.NoSelectionClearTarget,
+        InteractionModel.NoSelectionKeepPrevious,
+        InteractionModel.NoSelectionSetText
+    };
 
     public IReadOnlyList<string> SelectedInteractionSourcePaths
     {
@@ -2033,23 +2238,24 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void RegisterEditorCommands()
     {
-        RegisterEditorCommand(EditorCommandId.New, "New Document", "Create a new form document.", "\uE710", "Ctrl+N", EditorCommandCategory.File, () => RequestExternalEditorCommand(EditorCommandId.New));
-        RegisterEditorCommand(EditorCommandId.NewProject, "New Project", "Create a new workspace project with one form.", "", "", EditorCommandCategory.File, NewProject);
-        RegisterEditorCommand(EditorCommandId.Open, "Open...", "Open an existing .formdesigner.json document.", "\uE8E5", "Ctrl+O", EditorCommandCategory.File, () => RequestExternalEditorCommand(EditorCommandId.Open));
-        RegisterEditorCommand(EditorCommandId.OpenProject, "Open Project", "Open a designer project/workspace file.", "", "", EditorCommandCategory.File, () => RequestExternalEditorCommand(EditorCommandId.OpenProject));
-        RegisterEditorCommand(EditorCommandId.Save, "Save", "Save the current document.", "\uE74E", "Ctrl+S", EditorCommandCategory.File, () => RequestExternalEditorCommand(EditorCommandId.Save));
-        RegisterEditorCommand(EditorCommandId.SaveProject, "Save Project", "Save the current project workspace.", "", "", EditorCommandCategory.File, () => RequestExternalEditorCommand(EditorCommandId.SaveProject));
-        RegisterEditorCommand(EditorCommandId.SaveAs, "Save As...", "Save the current document to a new file.", "\uE792", "Ctrl+Shift+S", EditorCommandCategory.File, () => RequestExternalEditorCommand(EditorCommandId.SaveAs));
-        RegisterEditorCommand(EditorCommandId.RecentFiles, "Recent Files", "Open the recent files flyout.", "", "", EditorCommandCategory.File, () => RequestExternalEditorCommand(EditorCommandId.RecentFiles), () => StateWhen(HasRecentFiles, "No recent files."));
-        RegisterEditorCommand(EditorCommandId.RestoreAutosave, "Restore Autosave", "Open autosave recovery if a draft exists.", "", "", EditorCommandCategory.File, () => RequestExternalEditorCommand(EditorCommandId.RestoreAutosave));
+        var text = Texts;
+        RegisterEditorCommand(EditorCommandId.New, text.NewProject, "Создать новый проект конструктора с одной Form.", "\uE710", "Ctrl+N", EditorCommandCategory.File, () => RequestExternalEditorCommand(EditorCommandId.New));
+        RegisterEditorCommand(EditorCommandId.NewProject, text.NewProject, "Создать новый workspace project с одной Form.", "", "", EditorCommandCategory.File, NewProject);
+        RegisterEditorCommand(EditorCommandId.Open, text.OpenProject, "Открыть существующий .formdesigner.json документ.", "\uE8E5", "Ctrl+O", EditorCommandCategory.File, () => RequestExternalEditorCommand(EditorCommandId.Open));
+        RegisterEditorCommand(EditorCommandId.OpenProject, text.OpenProject, "Открыть designer project/workspace файл.", "", "", EditorCommandCategory.File, () => RequestExternalEditorCommand(EditorCommandId.OpenProject));
+        RegisterEditorCommand(EditorCommandId.Save, text.Save, "Сохранить текущий документ.", "\uE74E", "Ctrl+S", EditorCommandCategory.File, () => RequestExternalEditorCommand(EditorCommandId.Save));
+        RegisterEditorCommand(EditorCommandId.SaveProject, text.Save, "Сохранить текущий project workspace.", "", "", EditorCommandCategory.File, () => RequestExternalEditorCommand(EditorCommandId.SaveProject));
+        RegisterEditorCommand(EditorCommandId.SaveAs, text.SaveAs, "Сохранить текущий документ в новый файл.", "\uE792", "Ctrl+Shift+S", EditorCommandCategory.File, () => RequestExternalEditorCommand(EditorCommandId.SaveAs));
+        RegisterEditorCommand(EditorCommandId.RecentFiles, text.RecentFiles, "Открыть список последних файлов.", "", "", EditorCommandCategory.File, () => RequestExternalEditorCommand(EditorCommandId.RecentFiles), () => StateWhen(HasRecentFiles, "Недавних файлов нет."));
+        RegisterEditorCommand(EditorCommandId.RestoreAutosave, text.RestoreBackup, "Открыть восстановление autosave, если найден черновик.", "", "", EditorCommandCategory.File, () => RequestExternalEditorCommand(EditorCommandId.RestoreAutosave));
 
-        RegisterEditorCommand(EditorCommandId.Undo, "Undo", "Undo the last document change.", "\uE7A7", "Ctrl+Z", EditorCommandCategory.Edit, Undo, () => StateWhen(HasUndo, "Undo stack is empty."));
-        RegisterEditorCommand(EditorCommandId.Redo, "Redo", "Redo the last undone document change.", "\uE7A6", "Ctrl+Y", EditorCommandCategory.Edit, Redo, () => StateWhen(HasRedo, "Redo stack is empty."));
-        RegisterEditorCommand(EditorCommandId.Cut, "Cut", "Copy and delete the selected elements.", "\uE8C6", "Ctrl+X", EditorCommandCategory.Edit, () => { CopySelection(); DeleteSelected(); }, () => StateWhen(CanCopySelection, "Select at least one element."));
-        RegisterEditorCommand(EditorCommandId.Copy, "Copy", "Copy selected elements.", "\uE8C8", "Ctrl+C", EditorCommandCategory.Edit, CopySelection, () => StateWhen(CanCopySelection, "Select at least one element."));
-        RegisterEditorCommand(EditorCommandId.Paste, "Paste", "Paste copied elements.", "\uE77F", "Ctrl+V", EditorCommandCategory.Edit, PasteSelection, () => StateWhen(CanPasteSelection, "Clipboard is empty."));
-        RegisterEditorCommand(EditorCommandId.Delete, "Delete", "Delete selected elements.", "\uE74D", "Delete", EditorCommandCategory.Edit, DeleteSelected, () => StateWhen(HasSelectedControl, "Select an element to delete."), isDangerous: true);
-        RegisterEditorCommand(EditorCommandId.Duplicate, "Duplicate", "Duplicate selected elements.", "\uE8C8", "Ctrl+D", EditorCommandCategory.Edit, DuplicateSelected, () => StateWhen(CanDuplicateSelected, "Select an element to duplicate."));
+        RegisterEditorCommand(EditorCommandId.Undo, text.Undo, "Отменить последнее изменение документа.", "\uE7A7", "Ctrl+Z", EditorCommandCategory.Edit, Undo, () => StateWhen(HasUndo, "Undo stack пуст."));
+        RegisterEditorCommand(EditorCommandId.Redo, text.Redo, "Повторить последнее отменённое изменение.", "\uE7A6", "Ctrl+Y", EditorCommandCategory.Edit, Redo, () => StateWhen(HasRedo, "Redo stack пуст."));
+        RegisterEditorCommand(EditorCommandId.Cut, "Вырезать", "Копировать и удалить выбранные элементы.", "\uE8C6", "Ctrl+X", EditorCommandCategory.Edit, () => { CopySelection(); DeleteSelected(); }, () => StateWhen(CanCopySelection, "Выберите хотя бы один элемент."));
+        RegisterEditorCommand(EditorCommandId.Copy, "Копировать", "Копировать выбранные элементы.", "\uE8C8", "Ctrl+C", EditorCommandCategory.Edit, CopySelection, () => StateWhen(CanCopySelection, "Выберите хотя бы один элемент."));
+        RegisterEditorCommand(EditorCommandId.Paste, "Вставить", "Вставить скопированные элементы.", "\uE77F", "Ctrl+V", EditorCommandCategory.Edit, PasteSelection, () => StateWhen(CanPasteSelection, "Clipboard пуст."));
+        RegisterEditorCommand(EditorCommandId.Delete, text.Delete, "Удалить выбранные элементы.", "\uE74D", "Delete", EditorCommandCategory.Edit, DeleteSelected, () => StateWhen(HasSelectedControl, "Выберите элемент для удаления."), isDangerous: true);
+        RegisterEditorCommand(EditorCommandId.Duplicate, "Дублировать", "Дублировать выбранные элементы.", "\uE8C8", "Ctrl+D", EditorCommandCategory.Edit, DuplicateSelected, () => StateWhen(CanDuplicateSelected, "Выберите элемент для дублирования."));
         RegisterEditorCommand(EditorCommandId.SelectAll, "Select All", "Select every top-level element on the form.", "", "Ctrl+A", EditorCommandCategory.Edit, SelectAllControls, () => StateWhen(Controls.Count > 0, "The form is empty."));
 
         RegisterEditorCommand(EditorCommandId.BringToFront, "Bring to Front", "Move selection to the front.", "", "PageUp", EditorCommandCategory.Arrange, BringSelectionToFront, () => StateWhen(CanChangeZOrder, "Select an editable element."));
@@ -2070,14 +2276,14 @@ public partial class MainWindowViewModel : ObservableObject
         RegisterEditorCommand(EditorCommandId.Unlock, "Unlock", "Unlock selected elements.", "", "Ctrl+Shift+L", EditorCommandCategory.Group, UnlockSelected, () => StateWhen(CanUnlockSelected, "Selection is not locked."));
         RegisterEditorCommand(EditorCommandId.ToggleVisibility, "Toggle Visibility", "Show or hide selected elements.", "", "", EditorCommandCategory.Group, ToggleSelectedVisibility, () => StateWhen(HasSelectedControl, "Select an element."));
 
-        RegisterEditorCommand(EditorCommandId.ToggleLeftPanel, "Toggle Left Panel", "Show or hide the left dock panel.", "", "", EditorCommandCategory.View, ToggleLeftDockPanel);
-        RegisterEditorCommand(EditorCommandId.ToggleRightPanel, "Toggle Right Panel", "Show or hide the inspector panel.", "", "", EditorCommandCategory.View, ToggleRightDockPanel);
-        RegisterEditorCommand(EditorCommandId.ToggleProblemsPanel, "Toggle Problems", "Show or hide diagnostics/problems.", "", "", EditorCommandCategory.View, ToggleBottomDockPanel);
-        RegisterEditorCommand(EditorCommandId.OpenOutputPanel, "Open Output", "Open the workspace output panel.", "", "", EditorCommandCategory.View, OpenOutputPanel);
-        RegisterEditorCommand(EditorCommandId.ToggleOutputPanel, "Toggle Output", "Show or hide workspace output.", "", "", EditorCommandCategory.View, ToggleOutputPanel);
-        RegisterEditorCommand(EditorCommandId.ClearOutput, "Clear Output", "Clear output log entries.", "", "", EditorCommandCategory.View, ClearOutput, () => StateWhen(OutputEntries.Count > 0, "Output is empty."));
-        RegisterEditorCommand(EditorCommandId.CleanArtifacts, "Clean Artifacts", "Remove old smoke/export validation artifacts.", "", "", EditorCommandCategory.Tools, CleanArtifacts);
-        RegisterEditorCommand(EditorCommandId.ResetLayout, "Reset Layout", "Restore default dock panel layout.", "", "", EditorCommandCategory.View, ResetEditorShellLayout);
+        RegisterEditorCommand(EditorCommandId.ToggleLeftPanel, "Левая панель", "Показать или скрыть левую dock-панель.", "", "", EditorCommandCategory.View, ToggleLeftDockPanel);
+        RegisterEditorCommand(EditorCommandId.ToggleRightPanel, "Правая панель", "Показать или скрыть inspector-панель.", "", "", EditorCommandCategory.View, ToggleRightDockPanel);
+        RegisterEditorCommand(EditorCommandId.ToggleProblemsPanel, "Problems", "Показать или скрыть Diagnostics/Problems.", "", "", EditorCommandCategory.View, ToggleBottomDockPanel);
+        RegisterEditorCommand(EditorCommandId.OpenOutputPanel, "Открыть Output", "Открыть панель Output workspace.", "", "", EditorCommandCategory.View, OpenOutputPanel);
+        RegisterEditorCommand(EditorCommandId.ToggleOutputPanel, "Output", "Показать или скрыть Output workspace.", "", "", EditorCommandCategory.View, ToggleOutputPanel);
+        RegisterEditorCommand(EditorCommandId.ClearOutput, "Очистить Output", "Очистить записи Output log.", "", "", EditorCommandCategory.View, ClearOutput, () => StateWhen(OutputEntries.Count > 0, "Output пуст."));
+        RegisterEditorCommand(EditorCommandId.CleanArtifacts, "Очистить artifacts", "Удалить старые smoke/export validation artifacts.", "", "", EditorCommandCategory.Tools, CleanArtifacts);
+        RegisterEditorCommand(EditorCommandId.ResetLayout, "Сбросить Layout", "Вернуть стандартный layout dock-панелей.", "", "", EditorCommandCategory.View, ResetEditorShellLayout);
         RegisterEditorCommand(EditorCommandId.ZoomIn, "Zoom In", "Increase canvas zoom.", "", "Ctrl++", EditorCommandCategory.View, () => RequestExternalEditorCommand(EditorCommandId.ZoomIn));
         RegisterEditorCommand(EditorCommandId.ZoomOut, "Zoom Out", "Decrease canvas zoom.", "", "Ctrl+-", EditorCommandCategory.View, () => RequestExternalEditorCommand(EditorCommandId.ZoomOut));
         RegisterEditorCommand(EditorCommandId.Zoom100, "Zoom 100%", "Reset canvas zoom to 100%.", "", "Ctrl+0", EditorCommandCategory.View, () => RequestExternalEditorCommand(EditorCommandId.Zoom100));
@@ -2096,48 +2302,48 @@ public partial class MainWindowViewModel : ObservableObject
         RegisterEditorCommand(EditorCommandId.NudgeLargeDown, "Nudge Large Down", "Move selected elements down by 10 px.", "", "Shift+Down", EditorCommandCategory.Arrange, () => NudgeSelection(0, 10), () => StateWhen(CanChangeZOrder, "Select an editable element."));
         RegisterEditorCommand(EditorCommandId.ClearSelection, "Clear Selection", "Clear the active canvas selection.", "", "Esc", EditorCommandCategory.Edit, ClearSelection, () => StateWhen(SelectedControlIds.Count > 0, "Selection is empty."));
         RegisterEditorCommand(EditorCommandId.ToggleDesignFrames, "Toggle Design Frames", "Hide or show designer frames.", "", "F12", EditorCommandCategory.View, ToggleUserPreviewMode);
-        RegisterEditorCommand(EditorCommandId.TogglePreviewMode, "Launch Preview", "Open runtime preview window.", "", "F5", EditorCommandCategory.View, () => RequestExternalEditorCommand(EditorCommandId.TogglePreviewMode));
+        RegisterEditorCommand(EditorCommandId.TogglePreviewMode, text.Preview, "Открыть runtime Preview window.", "", "F5", EditorCommandCategory.View, () => RequestExternalEditorCommand(EditorCommandId.TogglePreviewMode));
 
-        RegisterEditorCommand(EditorCommandId.OpenColumnEditor, "Open Column Editor", "Edit DataGrid columns.", "", "", EditorCommandCategory.Tools, () => RequestExternalEditorCommand(EditorCommandId.OpenColumnEditor), () => StateWhen(SelectedControl?.Type == DesignerControlTypes.DataGrid, "Selected element is not DataGrid."));
-        RegisterEditorCommand(EditorCommandId.OpenBindingSourceEditor, "Open BindingSource Editor", "Switch to Data tools.", "", "", EditorCommandCategory.Tools, () => WorkspaceMode = WorkspaceModeData);
-        RegisterEditorCommand(EditorCommandId.OpenInteractionDesigner, "Open Interaction Designer", "Switch to Logic tools.", "", "", EditorCommandCategory.Tools, () => WorkspaceMode = WorkspaceModeLogic);
-        RegisterEditorCommand(EditorCommandId.OpenPluginDiagnostics, "Open Plugin Diagnostics", "Switch to plugin diagnostics.", "", "", EditorCommandCategory.Tools, () => WorkspaceMode = WorkspaceModePlugins);
-        RegisterEditorCommand(EditorCommandId.AddForm, "Add Form", "Add a new form document to the project.", "", "", EditorCommandCategory.Tools, AddForm);
-        RegisterEditorCommand(EditorCommandId.AddAsset, "Add Asset", "Import/register an asset in the project.", "", "", EditorCommandCategory.Tools, () => RequestExternalEditorCommand(EditorCommandId.AddAsset));
-        RegisterEditorCommand(EditorCommandId.AddResource, "Add Resource", "Add a project ResourceDictionary.", "", "", EditorCommandCategory.Tools, AddResource);
-        RegisterEditorCommand(EditorCommandId.NewForm, "New Form", "Create and open a new form in the designer project.", "", "", EditorCommandCategory.Tools, AddForm);
-        RegisterEditorCommand(EditorCommandId.OpenForm, "Open Form", "Open the selected form document.", "", "", EditorCommandCategory.Tools, OpenSelectedProjectForm, () => StateWhen(SelectedProjectExplorerItem?.Source is DesignerFormDocument, "Select a form in Project Explorer."));
-        RegisterEditorCommand(EditorCommandId.RenameForm, "Rename Form", "Rename the selected form in Project Explorer.", "", "", EditorCommandCategory.Tools, RenameSelectedProjectForm, () => StateWhen(SelectedProjectExplorerItem?.Source is DesignerFormDocument, "Select a form in Project Explorer."));
-        RegisterEditorCommand(EditorCommandId.DuplicateForm, "Duplicate Form", "Duplicate the selected form document.", "", "", EditorCommandCategory.Tools, DuplicateSelectedProjectForm, () => StateWhen(SelectedProjectExplorerItem?.Source is DesignerFormDocument, "Select a form in Project Explorer."));
-        RegisterEditorCommand(EditorCommandId.DeleteForm, "Delete Form", "Delete the selected form document.", "", "", EditorCommandCategory.Tools, DeleteSelectedProjectForm, () => StateWhen(SelectedProjectExplorerItem?.Source is DesignerFormDocument && CurrentProject.Forms.Count > 1, "Select a form; projects must keep at least one form."), isDangerous: true);
+        RegisterEditorCommand(EditorCommandId.OpenColumnEditor, "Открыть Column Editor", "Редактировать колонки DataGrid.", "", "", EditorCommandCategory.Tools, () => RequestExternalEditorCommand(EditorCommandId.OpenColumnEditor), () => StateWhen(SelectedControl?.Type == DesignerControlTypes.DataGrid, "Выбранный элемент не DataGrid."));
+        RegisterEditorCommand(EditorCommandId.OpenBindingSourceEditor, "Открыть BindingSource Editor", "Перейти в Data tools.", "", "", EditorCommandCategory.Tools, () => WorkspaceMode = WorkspaceModeData);
+        RegisterEditorCommand(EditorCommandId.OpenInteractionDesigner, "Открыть Logic Designer", "Перейти в Logic tools.", "", "", EditorCommandCategory.Tools, () => WorkspaceMode = WorkspaceModeLogic);
+        RegisterEditorCommand(EditorCommandId.OpenPluginDiagnostics, "Открыть Plugin Diagnostics", "Перейти к диагностике plugins.", "", "", EditorCommandCategory.Tools, () => WorkspaceMode = WorkspaceModePlugins);
+        RegisterEditorCommand(EditorCommandId.AddForm, text.AddForm, "Добавить новый Form document в project.", "", "", EditorCommandCategory.Tools, AddForm);
+        RegisterEditorCommand(EditorCommandId.AddAsset, text.AddAsset, "Импортировать/register asset в project.", "", "", EditorCommandCategory.Tools, () => RequestExternalEditorCommand(EditorCommandId.AddAsset));
+        RegisterEditorCommand(EditorCommandId.AddResource, "Добавить Resource", "Добавить project ResourceDictionary.", "", "", EditorCommandCategory.Tools, AddResource);
+        RegisterEditorCommand(EditorCommandId.NewForm, "Новая Form", "Создать и открыть новую Form в designer project.", "", "", EditorCommandCategory.Tools, AddForm);
+        RegisterEditorCommand(EditorCommandId.OpenForm, "Открыть Form", "Открыть выбранный Form document.", "", "", EditorCommandCategory.Tools, OpenSelectedProjectForm, () => StateWhen(SelectedProjectExplorerItem?.Source is DesignerFormDocument, "Выберите Form в Project Explorer."));
+        RegisterEditorCommand(EditorCommandId.RenameForm, "Переименовать Form", "Переименовать выбранную Form в Project Explorer.", "", "", EditorCommandCategory.Tools, RenameSelectedProjectForm, () => StateWhen(SelectedProjectExplorerItem?.Source is DesignerFormDocument, "Выберите Form в Project Explorer."));
+        RegisterEditorCommand(EditorCommandId.DuplicateForm, text.DuplicateForm, "Дублировать выбранный Form document.", "", "", EditorCommandCategory.Tools, DuplicateSelectedProjectForm, () => StateWhen(SelectedProjectExplorerItem?.Source is DesignerFormDocument, "Выберите Form в Project Explorer."));
+        RegisterEditorCommand(EditorCommandId.DeleteForm, "Удалить Form", "Удалить выбранный Form document.", "", "", EditorCommandCategory.Tools, DeleteSelectedProjectForm, () => StateWhen(SelectedProjectExplorerItem?.Source is DesignerFormDocument && CurrentProject.Forms.Count > 1, "Выберите Form; project должен содержать хотя бы одну Form."), isDangerous: true);
         RegisterEditorCommand(EditorCommandId.CloseDocument, "Close Document", "Close the active document tab.", "", "Ctrl+F4", EditorCommandCategory.File, CloseActiveDocument, () => StateWhen(HasOpenDocuments, "No open document."));
         RegisterEditorCommand(EditorCommandId.SwitchDocument, "Switch Document", "Switch to a document tab.", "", "", EditorCommandCategory.File, () => { });
         RegisterEditorCommand(EditorCommandId.ReopenClosedDocument, "Reopen Closed Document", "Reopen the most recently closed document.", "", "", EditorCommandCategory.File, ReopenClosedDocument, () => StateWhen(Workspace.Session.RecentlyClosedDocumentIds.Count > 0, "No recently closed document."));
         RegisterEditorCommand(EditorCommandId.OpenProjectSettings, "Open Project Settings", "Show project settings in the explorer.", "", "", EditorCommandCategory.Tools, OpenProjectSettings);
         RegisterEditorCommand(EditorCommandId.OpenExplorer, "Open Explorer", "Show the project explorer.", "", "", EditorCommandCategory.View, OpenExplorer);
 
-        RegisterEditorCommand(EditorCommandId.OpenExportPipeline, "Open Export Pipeline", "Open the central Code / Export workspace.", "", "", EditorCommandCategory.Export, () => WorkspaceMode = WorkspaceModeCode);
-        RegisterEditorCommand(EditorCommandId.RefreshGeneratedCode, "Refresh Generated Code", "Regenerate XAML/C# export.", "", "", EditorCommandCategory.Export, GenerateXaml);
-        RegisterEditorCommand(EditorCommandId.CopyCurrentGeneratedFile, "Copy Current Generated File", "Copy selected generated file content.", "", "", EditorCommandCategory.Export, () => RequestExternalEditorCommand(EditorCommandId.CopyCurrentGeneratedFile), () => StateWhen(SelectedGeneratedFile is not null, "Select a generated file."));
-        RegisterEditorCommand(EditorCommandId.ValidateExportBuild, "Validate Export Build", "Build generated files in a temporary Avalonia project.", "", "", EditorCommandCategory.Export, () => RequestExternalEditorCommand(EditorCommandId.ValidateExportBuild), () => StateWhen(!HasExportNamespaceError(), "Fix export namespace first."));
-        RegisterEditorCommand(EditorCommandId.ExportToProject, "Export to Avalonia Project", "Write generated files and export metadata into a project folder.", "", "", EditorCommandCategory.Export, () => RequestExternalEditorCommand(EditorCommandId.ExportToProject), () => StateWhen(!HasExportNamespaceError(), "Fix export namespace first."));
-        RegisterEditorCommand(EditorCommandId.ExportAsZip, "Export as ZIP", "Save generated files, packages and diagnostics as a ZIP archive.", "", "", EditorCommandCategory.Export, () => RequestExternalEditorCommand(EditorCommandId.ExportAsZip), () => StateWhen(!HasExportNamespaceError(), "Fix export namespace first."));
-        RegisterEditorCommand(EditorCommandId.OpenValidationFolder, "Open Validation Folder", "Open the temporary project used for the last build validation.", "", "", EditorCommandCategory.Export, () => RequestExternalEditorCommand(EditorCommandId.OpenValidationFolder), () => StateWhen(HasExportValidationProjectPath, "Run Validate Build first."));
-        RegisterEditorCommand(EditorCommandId.CopyXaml, "Copy XAML", "Generate and copy XAML.", "", "", EditorCommandCategory.Export, () => RequestExternalEditorCommand(EditorCommandId.CopyXaml));
-        RegisterEditorCommand(EditorCommandId.CopyCSharp, "Copy C#", "Generate and copy C#.", "", "", EditorCommandCategory.Export, () => RequestExternalEditorCommand(EditorCommandId.CopyCSharp));
-        RegisterEditorCommand(EditorCommandId.RunSmokeTests, "Run Smoke Tests", "Run export smoke tests from the repository.", "", "", EditorCommandCategory.Export, () => RequestExternalEditorCommand(EditorCommandId.RunSmokeTests));
-        RegisterEditorCommand(EditorCommandId.OpenExportDiagnostics, "Open Export Diagnostics", "Open export/code diagnostics.", "", "", EditorCommandCategory.Export, () => WorkspaceMode = WorkspaceModeCode);
+        RegisterEditorCommand(EditorCommandId.OpenExportPipeline, "Открыть Export Pipeline", "Открыть центральный Code / Export workspace.", "", "", EditorCommandCategory.Export, () => WorkspaceMode = WorkspaceModeCode);
+        RegisterEditorCommand(EditorCommandId.RefreshGeneratedCode, "Обновить generated code", "Перегенерировать XAML/C# export.", "", "", EditorCommandCategory.Export, GenerateXaml);
+        RegisterEditorCommand(EditorCommandId.CopyCurrentGeneratedFile, "Копировать generated file", "Копировать содержимое выбранного generated file.", "", "", EditorCommandCategory.Export, () => RequestExternalEditorCommand(EditorCommandId.CopyCurrentGeneratedFile), () => StateWhen(SelectedGeneratedFile is not null, "Выберите generated file."));
+        RegisterEditorCommand(EditorCommandId.ValidateExportBuild, text.ValidateBuild, "Собрать generated files во временном Avalonia project.", "", "", EditorCommandCategory.Export, () => RequestExternalEditorCommand(EditorCommandId.ValidateExportBuild), () => StateWhen(!HasExportNamespaceError(), "Сначала исправьте export namespace."));
+        RegisterEditorCommand(EditorCommandId.ExportToProject, text.ExportToProject, "Записать generated files и export metadata в project folder.", "", "", EditorCommandCategory.Export, () => RequestExternalEditorCommand(EditorCommandId.ExportToProject), () => StateWhen(!HasExportNamespaceError(), "Сначала исправьте export namespace."));
+        RegisterEditorCommand(EditorCommandId.ExportAsZip, text.ExportZip, "Сохранить generated files, packages и diagnostics как ZIP archive.", "", "", EditorCommandCategory.Export, () => RequestExternalEditorCommand(EditorCommandId.ExportAsZip), () => StateWhen(!HasExportNamespaceError(), "Сначала исправьте export namespace."));
+        RegisterEditorCommand(EditorCommandId.OpenValidationFolder, text.OpenValidationFolder, "Открыть temporary project последней Build-проверки.", "", "", EditorCommandCategory.Export, () => RequestExternalEditorCommand(EditorCommandId.OpenValidationFolder), () => StateWhen(HasExportValidationProjectPath, "Сначала запустите Validate Build."));
+        RegisterEditorCommand(EditorCommandId.CopyXaml, "Копировать XAML", "Сгенерировать и скопировать XAML.", "", "", EditorCommandCategory.Export, () => RequestExternalEditorCommand(EditorCommandId.CopyXaml));
+        RegisterEditorCommand(EditorCommandId.CopyCSharp, "Копировать C#", "Сгенерировать и скопировать C#.", "", "", EditorCommandCategory.Export, () => RequestExternalEditorCommand(EditorCommandId.CopyCSharp));
+        RegisterEditorCommand(EditorCommandId.RunSmokeTests, "Запустить smoke tests", "Запустить export smoke tests из repository.", "", "", EditorCommandCategory.Export, () => RequestExternalEditorCommand(EditorCommandId.RunSmokeTests));
+        RegisterEditorCommand(EditorCommandId.OpenExportDiagnostics, "Открыть diagnostics Export", "Открыть export/code diagnostics.", "", "", EditorCommandCategory.Export, () => WorkspaceMode = WorkspaceModeCode);
 
-        RegisterEditorCommand(EditorCommandId.OpenHelp, "Open Help", "Open product documentation.", "", "F1", EditorCommandCategory.Help, () => RequestExternalEditorCommand(EditorCommandId.OpenHelp));
-        RegisterEditorCommand(EditorCommandId.OpenQuickStart, "Open Quick Start", "Open the onboarding help.", "", "", EditorCommandCategory.Help, () => RequestExternalEditorCommand(EditorCommandId.OpenQuickStart));
-        RegisterEditorCommand(EditorCommandId.OpenPluginSdkDocs, "Open Plugin SDK Docs", "Open plugin developer documentation.", "", "", EditorCommandCategory.Help, () => RequestExternalEditorCommand(EditorCommandId.OpenPluginSdkDocs));
-        RegisterEditorCommand(EditorCommandId.OpenCommandPalette, "Command Palette", "Search and run editor commands.", "", "Ctrl+Shift+P", EditorCommandCategory.Tools, OpenCommandPalette);
-        RegisterEditorCommand(EditorCommandId.ReopenLastWorkspace, "Reopen Last Workspace", "Open the last saved workspace document.", "", "", EditorCommandCategory.File, () => RequestExternalEditorCommand(EditorCommandId.ReopenLastWorkspace));
-        RegisterEditorCommand(EditorCommandId.ToggleReopenLastWorkspace, "Toggle Reopen Last Workspace", "Enable or disable reopening the last document on startup.", "", "", EditorCommandCategory.File, ToggleReopenLastWorkspace, () => new EditorCommandState { IsChecked = ReopenLastWorkspaceOnStartup });
-        RegisterEditorCommand(EditorCommandId.OpenStartScreen, "Open Start Screen", "Show the welcome screen with recent files and templates.", "", "", EditorCommandCategory.View, OpenStartScreen);
-        RegisterEditorCommand(EditorCommandId.CancelBackgroundTask, "Cancel Background Task", "Cancel the current background task when possible.", "", "", EditorCommandCategory.Tools, CancelActiveWorkspaceTask, () => StateWhen(_workspaceTaskService.ActiveTask is not null, "No background task is running."));
-        RegisterEditorCommand(EditorCommandId.DumpEditorState, "Dump Editor State", "Write active document, inspector and edit flags to Output.", "", "", EditorCommandCategory.Tools, () => DumpEditorState("CommandPalette"));
-        RegisterEditorCommand(EditorCommandId.ResetInteractionState, "Reset Interaction State", "Reset stuck editor interaction flags without changing the document.", "", "", EditorCommandCategory.Tools, () => RequestExternalEditorCommand(EditorCommandId.ResetInteractionState));
+        RegisterEditorCommand(EditorCommandId.OpenHelp, "Открыть справку", "Открыть документацию продукта.", "", "F1", EditorCommandCategory.Help, () => RequestExternalEditorCommand(EditorCommandId.OpenHelp));
+        RegisterEditorCommand(EditorCommandId.OpenQuickStart, "Открыть Quick Start", "Открыть onboarding help.", "", "", EditorCommandCategory.Help, () => RequestExternalEditorCommand(EditorCommandId.OpenQuickStart));
+        RegisterEditorCommand(EditorCommandId.OpenPluginSdkDocs, "Открыть Plugin SDK docs", "Открыть документацию для plugin-разработчика.", "", "", EditorCommandCategory.Help, () => RequestExternalEditorCommand(EditorCommandId.OpenPluginSdkDocs));
+        RegisterEditorCommand(EditorCommandId.OpenCommandPalette, "Command Palette", "Искать и запускать editor commands.", "", "Ctrl+Shift+P", EditorCommandCategory.Tools, OpenCommandPalette);
+        RegisterEditorCommand(EditorCommandId.ReopenLastWorkspace, "Открыть последний workspace", "Открыть последний сохранённый workspace document.", "", "", EditorCommandCategory.File, () => RequestExternalEditorCommand(EditorCommandId.ReopenLastWorkspace));
+        RegisterEditorCommand(EditorCommandId.ToggleReopenLastWorkspace, "Открывать последний workspace", "Включить или отключить открытие последнего документа при старте.", "", "", EditorCommandCategory.File, ToggleReopenLastWorkspace, () => new EditorCommandState { IsChecked = ReopenLastWorkspaceOnStartup });
+        RegisterEditorCommand(EditorCommandId.OpenStartScreen, "Открыть стартовый экран", "Показать welcome screen с recent files и templates.", "", "", EditorCommandCategory.View, OpenStartScreen);
+        RegisterEditorCommand(EditorCommandId.CancelBackgroundTask, "Отменить background task", "Отменить текущую background task, если возможно.", "", "", EditorCommandCategory.Tools, CancelActiveWorkspaceTask, () => StateWhen(_workspaceTaskService.ActiveTask is not null, "Background task не запущена."));
+        RegisterEditorCommand(EditorCommandId.DumpEditorState, "Dump Editor State", "Записать active document, inspector и edit flags в Output.", "", "", EditorCommandCategory.Tools, () => DumpEditorState("CommandPalette"));
+        RegisterEditorCommand(EditorCommandId.ResetInteractionState, text.ResetInteractionState, "Сбросить зависшие editor interaction flags без изменения документа.", "", "", EditorCommandCategory.Tools, () => RequestExternalEditorCommand(EditorCommandId.ResetInteractionState));
     }
 
     private EditorCommand RegisterEditorCommand(
@@ -2712,37 +2918,31 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void RebuildImportedDllCatalog()
     {
+        var existingByPath = ImportedDllCatalog
+            .Where(item => !string.IsNullOrWhiteSpace(item.AssemblyPath))
+            .GroupBy(item => NormalizeDllPathKey(item.AssemblyPath), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
+
         var groupedDlls = BindingSources
             .Where(source => !string.IsNullOrWhiteSpace(source.SourceAssemblyPath))
             .GroupBy(source => source.SourceAssemblyPath.Trim(), StringComparer.OrdinalIgnoreCase)
             .OrderBy(group => Path.GetFileName(group.Key), StringComparer.OrdinalIgnoreCase)
             .Select(group =>
             {
-                var sourceNames = group
-                    .Select(source => source.Name)
-                    .Where(name => !string.IsNullOrWhiteSpace(name))
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
-                    .ToList();
-
-                var typeNames = group
-                    .Select(source => source.ItemTypeName)
-                    .Where(name => !string.IsNullOrWhiteSpace(name))
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
-                    .ToList();
-
-                return new ImportedDllInfoModel
-                {
-                    FileName = Path.GetFileName(group.Key),
-                    AssemblyPath = group.Key,
-                    SourceCount = group.Count(),
-                    SourceNames = sourceNames.Count == 0 ? "Источники не определены" : string.Join(", ", sourceNames),
-                    TypeNames = typeNames.Count == 0 ? "Типы не определены" : string.Join(", ", typeNames),
-                    Summary = $"Источников: {group.Count()} • Типов: {typeNames.Count}"
-                };
+                existingByPath.TryGetValue(NormalizeDllPathKey(group.Key), out var existing);
+                return BuildImportedDllInfo(group.Key, group.ToList(), existing, null);
             })
             .ToList();
+
+        foreach (var orphanFailure in existingByPath.Values
+            .Where(item => item.IsFailed && groupedDlls.All(current => !PathsEqual(current.AssemblyPath, item.AssemblyPath)))
+            .OrderBy(item => item.FileName, StringComparer.OrdinalIgnoreCase))
+        {
+            groupedDlls.Add(orphanFailure);
+        }
+
+        QualifyDuplicateImportedDllTableNames(groupedDlls);
+        TraceDllSearchIndexStats(groupedDlls, "RebuildImportedDllCatalog");
 
         ImportedDllCatalog.Clear();
         foreach (var dll in groupedDlls)
@@ -2754,21 +2954,701 @@ public partial class MainWindowViewModel : ObservableObject
     private void RefreshImportedDllCatalogFilter()
     {
         var search = ImportedDllSearchText?.Trim();
-        var filtered = string.IsNullOrWhiteSpace(search)
-            ? ImportedDllCatalog
-            : new ObservableCollection<ImportedDllInfoModel>(ImportedDllCatalog.Where(item =>
-                item.FileName.Contains(search, StringComparison.OrdinalIgnoreCase)
-                || item.AssemblyPath.Contains(search, StringComparison.OrdinalIgnoreCase)
-                || item.SourceNames.Contains(search, StringComparison.OrdinalIgnoreCase)
-                || item.TypeNames.Contains(search, StringComparison.OrdinalIgnoreCase)));
+        var tokens = string.IsNullOrWhiteSpace(search)
+            ? Array.Empty<string>()
+            : search.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var filtered = tokens.Length == 0
+            ? ImportedDllCatalog.ToList()
+            : ImportedDllCatalog
+                .Where(item => MatchesImportedDllSearch(item, tokens))
+                .ToList();
 
         FilteredImportedDllCatalog.Clear();
         foreach (var dll in filtered)
+        {
+            dll.MatchCount = tokens.Length == 0 ? 0 : CountImportedDllMatches(dll, tokens);
             FilteredImportedDllCatalog.Add(dll);
+        }
 
+        TraceDocumentDebug(
+            "DLL_SEARCH_REQUEST",
+            $"query={search ?? ""}; resultCount={FilteredImportedDllCatalog.Count}; itemCount={ImportedDllCatalog.Count}",
+            toOutput: false);
         OnPropertyChanged(nameof(HasImportedDllCatalog));
         OnPropertyChanged(nameof(HasAnyImportedDllCatalogEntries));
         OnPropertyChanged(nameof(ImportedDllCatalogSummary));
+    }
+
+    private ImportedDllInfoModel BuildImportedDllInfo(
+        string assemblyPath,
+        IReadOnlyList<BindingSourceModel> sources,
+        ImportedDllInfoModel? existing,
+        BindingSourceDiscoveryResult? discoveryResult)
+    {
+        var diagnostics = discoveryResult is null ? null : GetPrimaryBindingImportDiagnostics(discoveryResult);
+        var fileName = string.IsNullOrWhiteSpace(assemblyPath) ? "Unknown.dll" : Path.GetFileName(assemblyPath);
+        var status = DetermineDllImportStatus(sources, diagnostics, discoveryResult, existing);
+        var model = new ImportedDllInfoModel
+        {
+            DllId = existing?.DllId ?? BuildStableDllId(assemblyPath),
+            FileName = fileName,
+            AssemblyName = Path.GetFileNameWithoutExtension(fileName),
+            AssemblyPath = assemblyPath,
+            LoadedAt = existing?.LoadedAt ?? DateTime.UtcNow,
+            LoadStatus = status,
+            SourceCount = sources.Count,
+            TypeCount = diagnostics?.ScannedTypeCount ?? existing?.TypeCount ?? sources.Count,
+            TableCount = diagnostics?.TableAttributedTypeCount > 0
+                ? diagnostics.TableAttributedTypeCount
+                : sources.Count(source => !string.IsNullOrWhiteSpace(source.SourceTableName)),
+            ColumnCount = sources.Sum(source => source.Fields.Count),
+            ErrorCount = diagnostics?.LoaderExceptionCount ?? existing?.ErrorCount ?? 0,
+            ErrorMessage = BuildDllImportErrorMessage(discoveryResult, diagnostics, existing),
+            ErrorDetails = BuildDllImportErrorDetails(discoveryResult, diagnostics, existing)
+        };
+
+        var sourceNames = sources
+            .Select(source => source.Name)
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var typeNames = sources
+            .Select(source => string.IsNullOrWhiteSpace(source.SourceTypeFullName) ? source.ItemTypeName : source.SourceTypeFullName)
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        model.SourceNames = sourceNames.Count == 0 ? "Источники не определены" : string.Join(", ", sourceNames);
+        model.TypeNames = typeNames.Count == 0 ? "Типы не определены" : string.Join(", ", typeNames);
+
+        foreach (var source in sources.OrderBy(source => source.SourceTypeFullName, StringComparer.OrdinalIgnoreCase))
+        {
+            var (namespaceName, typeName) = SplitFullTypeName(source.SourceTypeFullName);
+            var tableName = string.IsNullOrWhiteSpace(source.SourceTableName)
+                ? typeName
+                : source.SourceTableName;
+            var sourceKey = DataSourceIdentity.BuildKey(source);
+            var isLinqToSql = IsLinqToSqlSource(source);
+            var typeInfo = new ImportedDllTypeInfoModel
+            {
+                TypeId = source.Id,
+                NamespaceName = namespaceName,
+                TypeName = string.IsNullOrWhiteSpace(typeName) ? source.ItemTypeName : typeName,
+                FullName = source.SourceTypeFullName,
+                DisplayName = BuildDllTypeDisplayName(source, namespaceName, typeName, tableName),
+                SourceKind = string.IsNullOrWhiteSpace(source.SourceKind) ? "DllTable" : source.SourceKind,
+                TableName = tableName,
+                IsLinqToSqlTable = isLinqToSql,
+                ColumnCount = source.Fields.Count
+            };
+            model.Types.Add(typeInfo);
+
+            var tableInfo = new ImportedDllTableInfoModel
+            {
+                TableId = source.Id,
+                SourceKey = sourceKey,
+                DisplayName = BuildDllTableDisplayName(namespaceName, typeName, tableName),
+                TableName = tableName,
+                NamespaceName = namespaceName,
+                TypeName = string.IsNullOrWhiteSpace(typeName) ? source.ItemTypeName : typeName,
+                FullTypeName = source.SourceTypeFullName,
+                IsLinqToSqlTable = isLinqToSql,
+                ColumnCount = source.Fields.Count
+            };
+
+            foreach (var field in source.Fields)
+            {
+                tableInfo.Columns.Add(new ImportedDllColumnInfoModel
+                {
+                    ColumnId = $"{source.Id}:{field.Path}",
+                    ColumnName = string.IsNullOrWhiteSpace(field.Header) ? field.Path : field.Header,
+                    PropertyName = field.Path,
+                    ClrType = field.TypeName,
+                    DbType = field.DbType,
+                    IsPrimaryKey = field.IsPrimaryKey,
+                    IsNullable = field.IsNullable,
+                    CanRead = field.CanRead,
+                    CanWrite = field.CanWrite
+                });
+            }
+
+            model.Tables.Add(tableInfo);
+
+            TraceDocumentDebug(
+                "DATASOURCE_KEY_CREATED",
+                $"kind=DllTable; display={tableInfo.DisplayName}; key={sourceKey}",
+                toOutput: false);
+        }
+
+        AppendDllImportErrors(model, discoveryResult, diagnostics, existing);
+        model.RefreshComputedState();
+        return model;
+    }
+
+    private static string DetermineDllImportStatus(
+        IReadOnlyList<BindingSourceModel> sources,
+        BindingImportDiagnostics? diagnostics,
+        BindingSourceDiscoveryResult? discoveryResult,
+        ImportedDllInfoModel? existing)
+    {
+        if (sources.Count == 0)
+            return ImportedDllInfoModel.StatusFailed;
+
+        var hasErrors = discoveryResult?.ProviderErrors.Count > 0
+            || !string.IsNullOrWhiteSpace(diagnostics?.FailureMessage)
+            || diagnostics?.LoaderExceptionCount > 0
+            || diagnostics?.FailedCandidateTypeCount > 0
+            || existing?.HasErrors == true;
+        return hasErrors ? ImportedDllInfoModel.StatusPartial : ImportedDllInfoModel.StatusLoaded;
+    }
+
+    private static string BuildDllImportErrorMessage(
+        BindingSourceDiscoveryResult? discoveryResult,
+        BindingImportDiagnostics? diagnostics,
+        ImportedDllInfoModel? existing)
+    {
+        if (discoveryResult?.ProviderErrors.Count > 0)
+            return discoveryResult.ProviderErrors[0];
+
+        if (!string.IsNullOrWhiteSpace(diagnostics?.FailureMessage))
+            return diagnostics.FailureMessage;
+
+        if (diagnostics?.LoaderExceptionCount > 0)
+            return $"Не загрузилось типов: {diagnostics.LoaderExceptionCount}";
+
+        if (diagnostics?.FailedCandidateTypeCount > 0)
+            return $"Пропущено проблемных сущностей: {diagnostics.FailedCandidateTypeCount}";
+
+        return existing?.ErrorMessage ?? "";
+    }
+
+    private static string BuildDllImportErrorDetails(
+        BindingSourceDiscoveryResult? discoveryResult,
+        BindingImportDiagnostics? diagnostics,
+        ImportedDllInfoModel? existing)
+    {
+        var details = new List<string>();
+        if (diagnostics is not null)
+        {
+            details.Add($"Provider: {diagnostics.ProviderId}");
+            details.Add($"Assembly: {diagnostics.AssemblyPath}");
+            details.Add($"Scanned types: {diagnostics.ScannedTypeCount}");
+            details.Add($"Candidates: {diagnostics.CandidateTypeCount}");
+            details.Add($"Imported sources: {diagnostics.ImportedSourceCount}");
+            details.Add($"[Table] types: {diagnostics.TableAttributedTypeCount}");
+            details.Add($"[Column] types: {diagnostics.ColumnAttributedTypeCount}");
+            details.Add($"Loader exceptions: {diagnostics.LoaderExceptionCount}");
+            if (!string.IsNullOrWhiteSpace(diagnostics.FailureMessage))
+                details.Add($"Failure: {diagnostics.FailureMessage}");
+            if (!string.IsNullOrWhiteSpace(diagnostics.ExceptionType))
+                details.Add($"Exception type: {diagnostics.ExceptionType}");
+            if (!string.IsNullOrWhiteSpace(diagnostics.ExceptionMessage))
+                details.Add($"Exception message: {diagnostics.ExceptionMessage}");
+            if (diagnostics.LoaderExceptionMessages.Count > 0)
+            {
+                details.Add("Loader exceptions:");
+                details.AddRange(diagnostics.LoaderExceptionMessages.Select(message => $"  - {message}"));
+            }
+            if (!string.IsNullOrWhiteSpace(diagnostics.ExceptionDetails))
+                details.Add($"Exception details:{Environment.NewLine}{diagnostics.ExceptionDetails}");
+        }
+
+        if (discoveryResult?.ProviderErrors.Count > 0)
+            details.AddRange(discoveryResult.ProviderErrors.Select(error => $"Provider error: {error}"));
+
+        if (!string.IsNullOrWhiteSpace(existing?.ErrorDetails))
+            details.Add(existing.ErrorDetails);
+
+        return string.Join(Environment.NewLine, details.Where(value => !string.IsNullOrWhiteSpace(value)).Distinct());
+    }
+
+    private void AppendDllImportErrors(
+        ImportedDllInfoModel model,
+        BindingSourceDiscoveryResult? discoveryResult,
+        BindingImportDiagnostics? diagnostics,
+        ImportedDllInfoModel? existing)
+    {
+        if (!string.IsNullOrWhiteSpace(model.ErrorMessage))
+        {
+            model.Errors.Add(new ImportedDllErrorInfoModel
+            {
+                Title = model.LoadStatus,
+                Message = model.ErrorMessage,
+                Details = model.ErrorDetails
+            });
+        }
+
+        if (discoveryResult is not null)
+        {
+            foreach (var error in discoveryResult.ProviderErrors)
+            {
+                model.Errors.Add(new ImportedDllErrorInfoModel
+                {
+                    Title = "Provider error",
+                    Message = error,
+                    Details = model.ErrorDetails
+                });
+            }
+        }
+
+        if (existing is not null && existing.Errors.Count > 0 && model.Errors.Count == 0)
+        {
+            foreach (var error in existing.Errors)
+                model.Errors.Add(error);
+        }
+
+        if (diagnostics?.LoaderExceptionCount > 0)
+        {
+            TraceDocumentDebug(
+                "DLL_LOAD_ERROR_REPORTED_TO_UI",
+                $"path={model.AssemblyPath}; message={model.ErrorMessage}; loaderExceptions={diagnostics.LoaderExceptionCount}",
+                toOutput: false,
+                warning: true);
+        }
+
+        if (model.HasErrors)
+        {
+            TraceDocumentDebug(
+                "DLL_LOAD_FAILED",
+                $"path={model.AssemblyPath}; exceptionType={diagnostics?.ExceptionType ?? ""}; message={model.ErrorMessage}; loaderExceptions={diagnostics?.LoaderExceptionCount ?? 0}",
+                toOutput: false,
+                warning: true);
+        }
+    }
+
+    private static bool IsLinqToSqlSource(BindingSourceModel source)
+    {
+        return !string.IsNullOrWhiteSpace(source.SourceTableName)
+            || source.Fields.Any(field => field.IsPrimaryKey || !string.IsNullOrWhiteSpace(field.DbType));
+    }
+
+    private static string BuildDllTypeDisplayName(BindingSourceModel source, string namespaceName, string typeName, string tableName)
+    {
+        var displayType = string.IsNullOrWhiteSpace(source.SourceTypeFullName)
+            ? source.ItemTypeName
+            : source.SourceTypeFullName;
+        return string.IsNullOrWhiteSpace(tableName) || string.Equals(tableName, typeName, StringComparison.OrdinalIgnoreCase)
+            ? displayType
+            : $"{displayType} -> {tableName}";
+    }
+
+    private static string BuildDllTableDisplayName(string assemblyName, string namespaceName, string typeName, string tableName)
+    {
+        return BuildQualifiedDllTableDisplayName(assemblyName, namespaceName, typeName, tableName);
+    }
+
+    private static string BuildDllTableDisplayName(string namespaceName, string typeName, string tableName)
+    {
+        return string.IsNullOrWhiteSpace(tableName)
+            ? typeName
+            : tableName;
+    }
+
+    private static string BuildQualifiedDllTableDisplayName(string assemblyName, string namespaceName, string typeName, string tableName)
+    {
+        var typePart = string.IsNullOrWhiteSpace(namespaceName)
+            ? typeName
+            : $"{namespaceName}.{typeName}";
+        var tablePart = string.IsNullOrWhiteSpace(tableName) ? typeName : tableName;
+        return $"{assemblyName} / {typePart} / {tablePart}";
+    }
+
+    private void QualifyDuplicateImportedDllTableNames(IReadOnlyList<ImportedDllInfoModel> dlls)
+    {
+        var tableGroups = dlls
+            .SelectMany(dll => dll.Tables.Select(table => (Dll: dll, Table: table)))
+            .Where(entry => !string.IsNullOrWhiteSpace(entry.Table.TableName))
+            .GroupBy(entry => entry.Table.TableName, StringComparer.OrdinalIgnoreCase)
+            .Where(group => group.Count() > 1)
+            .ToList();
+
+        foreach (var group in tableGroups)
+        {
+            TraceDocumentDebug(
+                "DLL_DUPLICATE_TABLE_NAME_DETECTED",
+                $"table={group.Key}; sources={group.Count()}",
+                toOutput: false,
+                warning: false);
+
+            foreach (var entry in group)
+            {
+                var qualified = BuildQualifiedDllTableDisplayName(
+                    entry.Dll.FileName,
+                    entry.Table.NamespaceName,
+                    entry.Table.TypeName,
+                    entry.Table.TableName);
+                entry.Table.DisplayName = qualified;
+                TraceDocumentDebug(
+                    "DLL_TABLE_DISPLAY_NAME_QUALIFIED",
+                    $"table={entry.Table.TableName}; display={qualified}; dll={entry.Dll.FileName}; namespace={entry.Table.NamespaceName}; type={entry.Table.TypeName}",
+                    toOutput: false);
+            }
+        }
+
+        foreach (var dll in dlls)
+            dll.RefreshComputedState();
+    }
+
+    private void TraceDllSearchIndexStats(IReadOnlyList<ImportedDllInfoModel> dlls, string reason)
+    {
+        var itemCount = dlls.Count
+            + dlls.Sum(dll => dll.Types.Count)
+            + dlls.Sum(dll => dll.Tables.Count)
+            + dlls.Sum(dll => dll.Tables.Sum(table => table.Columns.Count))
+            + dlls.Sum(dll => dll.Errors.Count);
+        var textBytes = dlls.Sum(dll => Encoding.UTF8.GetByteCount(dll.SearchText ?? string.Empty));
+        TraceDocumentDebug(
+            "DLL_SEARCH_INDEX_STATS",
+            $"reason={reason}; dlls={dlls.Count}; items={itemCount}; estimatedBytes={textBytes}",
+            toOutput: false);
+    }
+
+    private static (string NamespaceName, string TypeName) SplitFullTypeName(string? fullTypeName)
+    {
+        if (string.IsNullOrWhiteSpace(fullTypeName))
+            return (string.Empty, string.Empty);
+
+        var normalized = fullTypeName.Trim();
+        var lastDot = normalized.LastIndexOf('.');
+        if (lastDot <= 0 || lastDot >= normalized.Length - 1)
+            return (string.Empty, normalized);
+
+        return (normalized[..lastDot], normalized[(lastDot + 1)..]);
+    }
+
+    private static string BuildStableDllId(string assemblyPath)
+    {
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(NormalizeDllPathKey(assemblyPath))));
+    }
+
+    private static string NormalizeDllPathKey(string? assemblyPath)
+    {
+        if (string.IsNullOrWhiteSpace(assemblyPath))
+            return string.Empty;
+
+        try
+        {
+            return Path.GetFullPath(assemblyPath).Trim().ToUpperInvariant();
+        }
+        catch
+        {
+            return assemblyPath.Trim().ToUpperInvariant();
+        }
+    }
+
+    private static bool PathsEqual(string? left, string? right)
+    {
+        return string.Equals(NormalizeDllPathKey(left), NormalizeDllPathKey(right), StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool MatchesImportedDllSearch(ImportedDllInfoModel item, IReadOnlyList<string> tokens)
+    {
+        var searchText = item.SearchText ?? "";
+        return tokens.All(token => searchText.Contains(token, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static int CountImportedDllMatches(ImportedDllInfoModel item, IReadOnlyList<string> tokens)
+    {
+        var count = 0;
+        foreach (var token in tokens)
+        {
+            if (item.FileName.Contains(token, StringComparison.OrdinalIgnoreCase)
+                || item.AssemblyPath.Contains(token, StringComparison.OrdinalIgnoreCase)
+                || item.AssemblyName.Contains(token, StringComparison.OrdinalIgnoreCase))
+            {
+                count++;
+            }
+
+            count += item.Types.Count(type => type.SearchText.Contains(token, StringComparison.OrdinalIgnoreCase));
+            count += item.Tables.Count(table => table.SearchText.Contains(token, StringComparison.OrdinalIgnoreCase));
+            count += item.Errors.Count(error => $"{error.Title} {error.Message} {error.Details}".Contains(token, StringComparison.OrdinalIgnoreCase));
+        }
+
+        return count;
+    }
+
+    private void UpsertImportedDllCatalogEntry(
+        string assemblyPath,
+        BindingSourceDiscoveryResult discoveryResult,
+        IReadOnlyList<BindingSourceModel> sources)
+    {
+        var existing = ImportedDllCatalog.FirstOrDefault(item => PathsEqual(item.AssemblyPath, assemblyPath));
+        var model = BuildImportedDllInfo(assemblyPath, sources, existing, discoveryResult);
+        if (existing is not null)
+        {
+            var index = ImportedDllCatalog.IndexOf(existing);
+            ImportedDllCatalog[index] = model;
+        }
+        else
+        {
+            ImportedDllCatalog.Add(model);
+        }
+
+        QualifyDuplicateImportedDllTableNames(ImportedDllCatalog.ToList());
+        TraceDllSearchIndexStats(ImportedDllCatalog.ToList(), "UpsertImportedDllCatalogEntry");
+        LogDllImportDiagnostics(model, discoveryResult);
+        RefreshImportedDllCatalogFilter();
+    }
+
+    private void LogDllImportDiagnostics(ImportedDllInfoModel model, BindingSourceDiscoveryResult discoveryResult)
+    {
+        var diagnostics = GetPrimaryBindingImportDiagnostics(discoveryResult);
+        TraceDocumentDebug(
+            "DLL_IMPORT_END",
+            $"path={model.AssemblyPath}; assemblies=1; types={model.TypeCount}; tables={model.TableCount}; columns={model.ColumnCount}; errors={model.ErrorCount}",
+            toOutput: false,
+            warning: model.HasErrors);
+
+        if (model.IsFailed)
+        {
+            TraceDocumentDebug(
+                "DLL_IMPORT_FAILED",
+                $"path={model.AssemblyPath}; message={model.ErrorMessage}; details={model.ErrorDetails}",
+                toOutput: true,
+                warning: true);
+        }
+
+        foreach (var table in model.Tables.Where(table => table.IsLinqToSqlTable))
+        {
+            TraceDocumentDebug(
+                "LINQ_TO_SQL_TABLE_DETECTED",
+                $"dll={model.FileName}; namespace={table.NamespaceName}; type={table.TypeName}; table={table.TableName}; columns={table.ColumnCount}",
+                toOutput: false);
+
+            foreach (var column in table.Columns)
+            {
+                TraceDocumentDebug(
+                    "LINQ_TO_SQL_COLUMN_DETECTED",
+                    $"table={table.TableName}; property={column.PropertyName}; column={column.ColumnName}; clrType={column.ClrType}; dbType={column.DbType}; primaryKey={column.IsPrimaryKey}; nullable={column.IsNullable}",
+                    toOutput: false);
+            }
+        }
+
+        if (diagnostics.TableAttributedTypeCount == 0 && diagnostics.ColumnAttributedTypeCount == 0 && model.Tables.Count > 0)
+        {
+            TraceDocumentDebug(
+                "LINQ_TO_SQL_METADATA_SKIPPED",
+                $"path={model.AssemblyPath}; reason=no Table/Column attributes found; importedTypes={model.Tables.Count}",
+                toOutput: false);
+        }
+    }
+
+    public void RemoveImportedDll(ImportedDllInfoModel? dll)
+    {
+        if (dll is null)
+            return;
+
+        var stopwatch = Stopwatch.StartNew();
+        TraceDocumentDebug("DLL_UI_REMOVE_REQUESTED", $"dllId={dll.DllId}; path={dll.AssemblyPath}", toOutput: false);
+        TraceDocumentDebug(
+            "DLL_REMOVE_REQUESTED",
+            $"dllId={dll.DllId}; path={dll.AssemblyPath}; display={dll.FileName}",
+            toOutput: false);
+        var removedSourceIds = BindingSources
+            .Where(source => PathsEqual(source.SourceAssemblyPath, dll.AssemblyPath))
+            .Select(source => source.Id)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var removedSourcesById = BindingSources
+            .Where(source => removedSourceIds.Contains(source.Id))
+            .ToDictionary(source => source.Id, source => source, StringComparer.OrdinalIgnoreCase);
+        var affectedControls = Controls
+            .Where(control => removedSourceIds.Contains(control.BindingSourceId))
+            .ToList();
+        var affectedDocumentControls = CurrentProject.Forms
+            .SelectMany(form => (form.Document?.Controls ?? new List<DesignerControlFileModel>())
+                .Select(control => (Form: form, Control: control)))
+            .Where(entry => removedSourceIds.Contains(entry.Control.BindingSourceId))
+            .ToList();
+
+        TraceDocumentDebug(
+            "DLL_REMOVE_STARTED",
+            $"dllId={dll.DllId}; tables={dll.TableCount}; types={dll.TypeCount}; sources={removedSourceIds.Count}; affectedDataGrids={affectedControls.Count + affectedDocumentControls.Count}",
+            toOutput: false);
+
+        BeginUndoBatch();
+        try
+        {
+            var detachedSourcesByOldId = new Dictionary<string, BindingSourceModel>(StringComparer.OrdinalIgnoreCase);
+            foreach (var control in affectedControls)
+            {
+                if (!removedSourcesById.TryGetValue(control.BindingSourceId, out var removedSource))
+                {
+                    control.BindingSourceId = "";
+                    continue;
+                }
+
+                if (!detachedSourcesByOldId.TryGetValue(removedSource.Id, out var detachedSource))
+                {
+                    detachedSource = CreateDetachedBindingSourceFromRemovedDll(removedSource, dll.FileName);
+                    BindingSources.Add(detachedSource);
+                    detachedSourcesByOldId[removedSource.Id] = detachedSource;
+                }
+
+                control.BindingSourceId = detachedSource.Id;
+                TraceDocumentDebug(
+                    "DLL_REMOVE_DATAGRID_SOURCE_DETACHED",
+                    $"grid={control.Name}; oldSourceKey={DataSourceIdentity.BuildKey(removedSource)}; detachedSourceId={detachedSource.Id}; form={ActiveDocumentName}",
+                    toOutput: false,
+                    warning: true);
+            }
+
+            foreach (var entry in affectedDocumentControls)
+            {
+                if (!removedSourcesById.TryGetValue(entry.Control.BindingSourceId, out var removedSource))
+                {
+                    entry.Control.BindingSourceId = "";
+                    continue;
+                }
+
+                if (!detachedSourcesByOldId.TryGetValue(removedSource.Id, out var detachedSource))
+                {
+                    detachedSource = CreateDetachedBindingSourceFromRemovedDll(removedSource, dll.FileName);
+                    BindingSources.Add(detachedSource);
+                    detachedSourcesByOldId[removedSource.Id] = detachedSource;
+                }
+
+                entry.Control.BindingSourceId = detachedSource.Id;
+                TraceDocumentDebug(
+                    "DLL_REMOVE_DATAGRID_SOURCE_DETACHED",
+                    $"grid={entry.Control.Name}; oldSourceKey={DataSourceIdentity.BuildKey(removedSource)}; detachedSourceId={detachedSource.Id}; form={entry.Form.DisplayName}",
+                    toOutput: false,
+                    warning: true);
+            }
+
+            foreach (var source in removedSourcesById.Values.ToList())
+                BindingSources.Remove(source);
+
+            ImportedDllCatalog.Remove(dll);
+            FilteredImportedDllCatalog.Remove(dll);
+            if (SelectedBindingSource is not null && removedSourceIds.Contains(SelectedBindingSource.Id))
+                SelectedBindingSource = BindingSources.FirstOrDefault(source => source.Description.Contains("Detached", StringComparison.OrdinalIgnoreCase))
+                    ?? BindingSources.FirstOrDefault();
+
+            TraceDocumentDebug(
+                "DLL_REMOVE_CACHE_CLEARED",
+                $"dllId={dll.DllId}; metadataRemoved={removedSourceIds.Count}; schemaCacheRemoved={removedSourceIds.Count}; previewCacheRemoved=0; searchIndexRemoved=1",
+                toOutput: false);
+
+            var affectedCount = affectedControls.Count + affectedDocumentControls.Count;
+            StatusText = affectedCount == 0
+                ? $"DLL removed: {dll.FileName}."
+                : $"DLL removed: {dll.FileName}. {affectedCount} DataGrid source(s) detached; columns kept as manual.";
+        }
+        finally
+        {
+            CommitUndoBatch();
+        }
+
+        stopwatch.Stop();
+        RebuildImportedDllCatalog();
+        RefreshImportedDllCatalogFilter();
+        RaiseBindingEditorProperties();
+        OnPropertyChanged(nameof(SelectedDataGridBindingSummary));
+        TraceDocumentDebug(
+            "DLL_REMOVE_COMPLETED",
+            $"dllId={dll.DllId}; remainingDlls={ImportedDllCatalog.Count}; elapsedMs={stopwatch.ElapsedMilliseconds}",
+            toOutput: false);
+        ReportMemorySnapshot("AfterRemoveDll", forceFullCollection: false);
+    }
+
+    public int ReloadImportedDll(ImportedDllInfoModel? dll)
+    {
+        if (dll is null || string.IsNullOrWhiteSpace(dll.AssemblyPath))
+            return 0;
+
+        TraceDocumentDebug("DLL_UI_RELOAD_REQUESTED", $"dllId={dll.DllId}; path={dll.AssemblyPath}", toOutput: false);
+        return ImportBindingSourcesFromAssembly(dll.AssemblyPath);
+    }
+
+    public Task<int> ReloadImportedDllAsync(ImportedDllInfoModel? dll, CancellationToken cancellationToken = default)
+    {
+        if (dll is null || string.IsNullOrWhiteSpace(dll.AssemblyPath))
+            return Task.FromResult(0);
+
+        TraceDocumentDebug("DLL_UI_RELOAD_REQUESTED", $"dllId={dll.DllId}; path={dll.AssemblyPath}; async=True", toOutput: false);
+        return ImportBindingSourcesFromAssemblyAsync(dll.AssemblyPath, cancellationToken);
+    }
+
+    [RelayCommand]
+    private void RemoveDll(ImportedDllInfoModel? dll)
+    {
+        RemoveImportedDll(dll);
+    }
+
+    [RelayCommand]
+    private void ReloadDll(ImportedDllInfoModel? dll)
+    {
+        ReloadImportedDll(dll);
+    }
+
+    [RelayCommand]
+    private void ClearMissingDataSource(DesignControlModel? control)
+    {
+        if (control is null || string.IsNullOrWhiteSpace(control.BindingSourceId))
+            return;
+
+        var source = GetBindingSource(control.BindingSourceId);
+        if (source is null || !IsDetachedBindingSource(source))
+            return;
+
+        control.BindingSourceId = "";
+        if (SelectedBindingSource == source)
+            SelectedBindingSource = BindingSources.FirstOrDefault();
+        StatusText = $"Missing data source cleared for {control.Name}.";
+        RaiseBindingEditorProperties();
+    }
+
+    private BindingSourceModel CreateDetachedBindingSourceFromRemovedDll(BindingSourceModel removedSource, string dllFileName)
+    {
+        var detached = removedSource.Clone();
+        detached.Id = Guid.NewGuid().ToString("N");
+        detached.SourceKind = "ManualDetached";
+        detached.SourceAssemblyPath = "";
+        detached.SourceConnectionString = "";
+        detached.SourceQuery = "";
+        detached.SourceSchemaName = "";
+        detached.Description = $"Detached from removed DLL {dllFileName}. Источник данных удалён. Выберите новый источник или очистите привязку.";
+        detached.Name = GetUniqueBindingSourceName($"{removedSource.Name} Detached");
+        detached.Path = string.IsNullOrWhiteSpace(removedSource.Path)
+            ? SanitizeIdentifier($"{removedSource.Name}Items", "DetachedItems")
+            : removedSource.Path;
+        return detached;
+    }
+
+    private static bool IsDetachedBindingSource(BindingSourceModel source)
+    {
+        return source.SourceKind.Contains("Detached", StringComparison.OrdinalIgnoreCase)
+            || source.Description.Contains("Источник данных удалён", StringComparison.OrdinalIgnoreCase)
+            || source.Description.Contains("removed DLL", StringComparison.OrdinalIgnoreCase);
+    }
+
+    public void ShowImportedDllDetails(ImportedDllInfoModel? dll)
+    {
+        if (dll is null)
+            return;
+
+        var details = new StringBuilder();
+        details.AppendLine($"{dll.FileName} - {dll.StatusSummary}");
+        details.AppendLine(dll.CountsSummary);
+        details.AppendLine(dll.AssemblyPath);
+        if (!string.IsNullOrWhiteSpace(dll.ErrorDetails))
+            details.AppendLine(dll.ErrorDetails);
+        foreach (var table in dll.Tables)
+            details.AppendLine($"{table.DisplayName}: {table.ColumnCount} columns");
+
+        LogWorkspace(
+            dll.HasErrors ? WorkspaceLogLevel.Warning : WorkspaceLogLevel.Info,
+            OutputCategoryDiagnostics,
+            $"DLL details: {dll.FileName}",
+            details.ToString());
+        TraceDocumentDebug(
+            "DLL_LOAD_ERROR_DETAILS_OPENED",
+            $"path={dll.AssemblyPath}; detailsLength={details.Length}",
+            toOutput: false,
+            warning: dll.HasErrors);
+        StatusText = $"DLL details opened in Output: {dll.FileName}";
     }
 
     public BindingSourceModel? GetBindingSource(string? bindingSourceId)
@@ -6205,21 +7085,78 @@ public partial class MainWindowViewModel : ObservableObject
 
     public int ImportBindingSourcesFromAssembly(string assemblyPath)
     {
+        var stopwatch = Stopwatch.StartNew();
+        var memoryBefore = GC.GetTotalMemory(false);
+
+        TraceDocumentDebug("DLL_IMPORT_START", $"path={assemblyPath}", toOutput: false);
+        TraceDocumentDebug(
+            "DLL_IMPORT_PERF_START",
+            $"dllCount=1; paths={assemblyPath}; memoryBefore={memoryBefore}",
+            toOutput: false);
+
         if (string.IsNullOrWhiteSpace(assemblyPath) || !File.Exists(assemblyPath))
-            throw new FileNotFoundException("Файл сборки не найден.", assemblyPath);
+        {
+            var discoveryFailure = CreateFailedBindingSourceDiscoveryResult(
+                assemblyPath,
+                new FileNotFoundException("Файл сборки не найден.", assemblyPath));
+            StatusText = BuildBindingImportFailureStatus(assemblyPath, discoveryFailure);
+            UpsertImportedDllCatalogEntry(assemblyPath, discoveryFailure, Array.Empty<BindingSourceModel>());
+            LogDllImportPerfEnd(stopwatch, memoryBefore, 0);
+            return 0;
+        }
 
         // Одна DLL может содержать сразу несколько сущностей,
         // поэтому импорт возвращает набор BindingSourceModel, а не один объект.
         var discoveryResult = DiscoverBindingSourcesFromAssembly(assemblyPath);
+        var importedCount = ApplyBindingSourceDiscoveryResult(assemblyPath, discoveryResult);
+        LogDllImportPerfEnd(stopwatch, memoryBefore, importedCount);
+        return importedCount;
+    }
+
+    public async Task<int> ImportBindingSourcesFromAssemblyAsync(string assemblyPath, CancellationToken cancellationToken = default)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        var memoryBefore = GC.GetTotalMemory(false);
+        TraceDocumentDebug("DLL_IMPORT_START", $"path={assemblyPath}", toOutput: false);
+        TraceDocumentDebug(
+            "DLL_IMPORT_PERF_START",
+            $"dllCount=1; paths={assemblyPath}; async=True; memoryBefore={memoryBefore}",
+            toOutput: false);
+
+        BindingSourceDiscoveryResult discoveryResult;
+        if (string.IsNullOrWhiteSpace(assemblyPath) || !File.Exists(assemblyPath))
+        {
+            discoveryResult = CreateFailedBindingSourceDiscoveryResult(
+                assemblyPath,
+                new FileNotFoundException("Файл сборки не найден.", assemblyPath));
+        }
+        else
+        {
+            discoveryResult = await Task.Run(() =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                return DiscoverBindingSourcesFromAssembly(assemblyPath);
+            }, cancellationToken);
+        }
+
+        var importedCount = ApplyBindingSourceDiscoveryResult(assemblyPath, discoveryResult);
+        LogDllImportPerfEnd(stopwatch, memoryBefore, importedCount);
+        return importedCount;
+    }
+
+    private int ApplyBindingSourceDiscoveryResult(string assemblyPath, BindingSourceDiscoveryResult discoveryResult)
+    {
         var importedSources = discoveryResult.Sources;
         if (importedSources.Count == 0)
         {
             StatusText = BuildBindingImportFailureStatus(assemblyPath, discoveryResult);
+            UpsertImportedDllCatalogEntry(assemblyPath, discoveryResult, Array.Empty<BindingSourceModel>());
             return 0;
         }
 
         var importedCount = 0;
         BindingSourceModel? firstImported = null;
+        var mergedSources = new List<BindingSourceModel>();
 
         BeginUndoBatch();
         try
@@ -6227,6 +7164,7 @@ public partial class MainWindowViewModel : ObservableObject
             foreach (var importedSource in importedSources)
             {
                 var bindingSource = MergeImportedBindingSource(importedSource);
+                mergedSources.Add(bindingSource);
                 firstImported ??= bindingSource;
                 importedCount++;
             }
@@ -6235,6 +7173,7 @@ public partial class MainWindowViewModel : ObservableObject
                 SelectedBindingSource = firstImported;
 
             StatusText = BuildBindingImportSuccessStatus(assemblyPath, importedCount, discoveryResult);
+            UpsertImportedDllCatalogEntry(assemblyPath, discoveryResult, mergedSources);
         }
         finally
         {
@@ -6242,6 +7181,26 @@ public partial class MainWindowViewModel : ObservableObject
         }
 
         return importedCount;
+    }
+
+    private void LogDllImportPerfEnd(Stopwatch stopwatch, long memoryBefore, int importedCount)
+    {
+        stopwatch.Stop();
+        var memoryAfter = GC.GetTotalMemory(false);
+        var tableCount = ImportedDllCatalog.Sum(dll => dll.TableCount);
+        var columnCount = ImportedDllCatalog.Sum(dll => dll.ColumnCount);
+        TraceDocumentDebug(
+            "DLL_IMPORT_PERF_END",
+            $"elapsedMs={stopwatch.ElapsedMilliseconds}; imported={importedCount}; dlls={ImportedDllCatalog.Count}; tables={tableCount}; columns={columnCount}; memoryBefore={memoryBefore}; memoryAfter={memoryAfter}",
+            toOutput: false);
+        TraceDocumentDebug(
+            "DLL_METADATA_CACHE_STATS",
+            $"dllCount={ImportedDllCatalog.Count}; tableCount={tableCount}; columnCount={columnCount}; bindingSources={BindingSources.Count}; previewRows=0",
+            toOutput: false);
+        TraceDocumentDebug(
+            "MEMORY_SNAPSHOT",
+            $"reason=AfterDllImport; totalMemory={memoryAfter}; dllCount={ImportedDllCatalog.Count}; tableCount={tableCount}; previewRowsCount=0; bindingSources={BindingSources.Count}",
+            toOutput: false);
     }
 
     public async Task<int> RefreshSelectedBindingSourceFromDatabaseAsync()
@@ -9383,7 +10342,7 @@ public partial class MainWindowViewModel : ObservableObject
         }
 
         var target = Controls
-            .Where(IsSupportedInteractionTarget)
+            .Where(control => control.Type is DesignerControlTypes.TextBox or DesignerControlTypes.TextBlock)
             .FirstOrDefault(control => !string.Equals(control.Id, SelectedControl.Id, StringComparison.OrdinalIgnoreCase));
         var sourcePath = InteractionSourceFieldPaths.FirstOrDefault() ?? "";
 
@@ -9488,6 +10447,138 @@ public partial class MainWindowViewModel : ObservableObject
         WorkspaceMode = WorkspaceModeLogic;
         StatusText = "Interaction added.";
         DumpInteractionState($"AfterLogicAdd:Preset:{actionType}");
+    }
+
+    [RelayCommand]
+    private void InsertLogicTemplatePlaceholder(string? placeholder)
+    {
+        if (string.IsNullOrWhiteSpace(placeholder) || SelectedInteraction is null)
+            return;
+
+        BeginLogicTemplateEditIfNeeded();
+        var token = "{" + placeholder.Trim().Trim('{', '}') + "}";
+        LogicTemplateDraft = string.IsNullOrEmpty(LogicTemplateDraft)
+            ? token
+            : $"{LogicTemplateDraft}{Environment.NewLine}{token}";
+        TraceDocumentDebug(
+            "LOGIC_TEMPLATE_TEXT_CHANGED",
+            $"action={SelectedInteraction.Id}; textLength={LogicTemplateDraft.Length}; debounceScheduled=True; insertPlaceholder={token}",
+            toOutput: false);
+    }
+
+    [RelayCommand]
+    private void ApplyLogicTemplateEdit()
+    {
+        if (SelectedInteraction is null)
+            return;
+
+        BeginUndoBatch();
+        try
+        {
+            SelectedInteraction.TextTemplate = LogicTemplateDraft;
+            IsLogicTemplateEditing = false;
+            StatusText = "Logic template applied.";
+            TraceDocumentDebug(
+                "LOGIC_TEMPLATE_EDIT_APPLY",
+                $"action={SelectedInteraction.Id}; source={SelectedInteraction.SourceControlName}; target={SelectedInteraction.TargetControlName}; textLength={LogicTemplateDraft.Length}",
+                toOutput: false);
+            NotifyDesignerStateChanged();
+            RefreshLogicTemplatePreviewNow("Apply");
+        }
+        finally
+        {
+            CommitUndoBatch();
+        }
+
+        RaiseInteractionDesignerProperties();
+    }
+
+    [RelayCommand]
+    private void CancelLogicTemplateEdit()
+    {
+        if (SelectedInteraction is null)
+            return;
+
+        LogicTemplateDraft = SelectedInteraction.TextTemplate;
+        IsLogicTemplateEditing = false;
+        StatusText = "Logic template edit cancelled.";
+        TraceDocumentDebug(
+            "LOGIC_TEMPLATE_EDIT_CANCEL",
+            $"action={SelectedInteraction.Id}; source={SelectedInteraction.SourceControlName}; target={SelectedInteraction.TargetControlName}",
+            toOutput: false);
+        RefreshLogicTemplatePreviewNow("Cancel");
+        RaiseInteractionDesignerProperties();
+    }
+
+    private void BeginLogicTemplateEditIfNeeded()
+    {
+        if (SelectedInteraction is null || IsLogicTemplateEditing)
+            return;
+
+        IsLogicTemplateEditing = true;
+        TraceDocumentDebug(
+            "LOGIC_TEMPLATE_EDIT_BEGIN",
+            $"action={SelectedInteraction.Id}; sourceGrid={SelectedInteraction.SourceControlName}; target={SelectedInteraction.TargetControlName}",
+            toOutput: false);
+    }
+
+    private void ScheduleLogicTemplatePreviewRefresh(string reason)
+    {
+        var version = Interlocked.Increment(ref _logicTemplatePreviewRefreshVersion);
+        _ = Task.Run(async () =>
+        {
+            var stopwatch = Stopwatch.StartNew();
+            try
+            {
+                await Task.Delay(250).ConfigureAwait(false);
+                if (version != Volatile.Read(ref _logicTemplatePreviewRefreshVersion))
+                    return;
+
+                void Raise()
+                {
+                    RaiseLogicTemplatePreviewProperties();
+                    TraceDocumentDebug(
+                        "LOGIC_TEMPLATE_PREVIEW_UPDATED",
+                        $"reason={reason}; elapsedMs={stopwatch.ElapsedMilliseconds}; placeholders={ExtractInteractionTemplateTokens(LogicTemplateDraft).Count}; invalid={LogicTemplateInvalidPlaceholders.Count}",
+                        toOutput: false);
+                    TraceDocumentDebug(
+                        "LOGIC_TEMPLATE_VALIDATION_UPDATED",
+                        $"reason={reason}; elapsedMs={stopwatch.ElapsedMilliseconds}; invalidPlaceholders={LogicTemplateInvalidPlaceholders.Count}",
+                        toOutput: false);
+                }
+
+                if (Dispatcher.UIThread.CheckAccess())
+                    Raise();
+                else
+                    Dispatcher.UIThread.Post(Raise);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        });
+    }
+
+    private void RefreshLogicTemplatePreviewNow(string reason)
+    {
+        Interlocked.Increment(ref _logicTemplatePreviewRefreshVersion);
+        RaiseLogicTemplatePreviewProperties();
+        TraceDocumentDebug(
+            "LOGIC_TEMPLATE_PREVIEW_UPDATED",
+            $"reason={reason}; elapsedMs=0; placeholders={ExtractInteractionTemplateTokens(LogicTemplateDraft).Count}; invalid={LogicTemplateInvalidPlaceholders.Count}",
+            toOutput: false);
+        TraceDocumentDebug(
+            "LOGIC_TEMPLATE_VALIDATION_UPDATED",
+            $"reason={reason}; elapsedMs=0; invalidPlaceholders={LogicTemplateInvalidPlaceholders.Count}",
+            toOutput: false);
+    }
+
+    private void RaiseLogicTemplatePreviewProperties()
+    {
+        OnPropertyChanged(nameof(LogicTemplatePreviewText));
+        OnPropertyChanged(nameof(LogicTemplateInvalidPlaceholders));
+        OnPropertyChanged(nameof(HasLogicTemplateInvalidPlaceholders));
+        OnPropertyChanged(nameof(LogicTemplateValidationText));
+        OnPropertyChanged(nameof(LogicTemplateDraftStatus));
     }
 
     private void ApplyInteractionActionDefaults(InteractionModel interaction, DesignControlModel? source)
@@ -13885,6 +14976,29 @@ public partial class MainWindowViewModel : ObservableObject
         return result;
     }
 
+    private static BindingSourceDiscoveryResult CreateFailedBindingSourceDiscoveryResult(string? assemblyPath, Exception exception)
+    {
+        var normalizedPath = assemblyPath ?? string.Empty;
+        var result = new BindingSourceDiscoveryResult
+        {
+            HasHandledProvider = true
+        };
+        var baseException = exception.GetBaseException();
+        result.ProviderErrors.Add($"{baseException.GetType().Name}: {baseException.Message}");
+        result.Diagnostics.Add(new BindingImportDiagnostics
+        {
+            ProviderId = "file-system",
+            AssemblyPath = normalizedPath,
+            FailureMessage = baseException.Message,
+            ExceptionType = baseException.GetType().FullName ?? baseException.GetType().Name,
+            ExceptionMessage = baseException.Message,
+            ExceptionDetails = exception.ToString(),
+            LoaderExceptionCount = 1,
+            LoaderExceptionMessages = new[] { $"{baseException.GetType().Name}: {baseException.Message}" }
+        });
+        return result;
+    }
+
     private static string BuildBindingImportFailureStatus(string assemblyPath, BindingSourceDiscoveryResult discoveryResult)
     {
         var fileName = Path.GetFileName(assemblyPath);
@@ -14003,7 +15117,7 @@ public partial class MainWindowViewModel : ObservableObject
     private BindingSourceModel MergeImportedBindingSource(BindingSourceModel importedSource)
     {
         var existing = BindingSources.FirstOrDefault(source =>
-            source.SourceKind.Equals("Assembly", StringComparison.OrdinalIgnoreCase)
+            DataSourceIdentity.IsAssembly(source.SourceKind)
             && source.SourceAssemblyPath.Equals(importedSource.SourceAssemblyPath, StringComparison.OrdinalIgnoreCase)
             && source.SourceTypeFullName.Equals(importedSource.SourceTypeFullName, StringComparison.Ordinal));
 
@@ -14272,6 +15386,11 @@ public partial class MainWindowViewModel : ObservableObject
                 : GetSampleValue(dataType),
             Width = IsCompactColumnType(dataType) ? "120" : "*",
             TypeName = GetFriendlyTypeName(dataType),
+            DbType = column.DataTypeName ?? "",
+            IsPrimaryKey = column.IsKey ?? false,
+            IsNullable = column.AllowDBNull ?? true,
+            CanRead = true,
+            CanWrite = !(column.IsReadOnly ?? false),
             IsVisible = true,
             IsSortable = IsSortablePropertyType(dataType),
             AllowSort = IsSortablePropertyType(dataType),
@@ -15630,7 +16749,18 @@ public partial class MainWindowViewModel : ObservableObject
     {
         var interaction = item.Interaction;
         var indent = Indent(indentLevel);
-        var valueExpression = $"ResolveInteractionValue({sourceExpression}, {ToVerbatimCSharpString(interaction.SourcePath)}, {ToVerbatimCSharpString(interaction.TextTemplate)})";
+        var isNoSelection = string.Equals(sourceExpression, "null", StringComparison.Ordinal);
+        if (isNoSelection
+            && string.Equals(InteractionModel.NormalizeNoSelectionBehavior(interaction.NoSelectionBehavior), InteractionModel.NoSelectionKeepPrevious, StringComparison.Ordinal))
+        {
+            sb.AppendLine($"{indent}// No row selected: keep previous target value.");
+            return;
+        }
+
+        var valueExpression = isNoSelection
+            && string.Equals(InteractionModel.NormalizeNoSelectionBehavior(interaction.NoSelectionBehavior), InteractionModel.NoSelectionSetText, StringComparison.Ordinal)
+                ? ToVerbatimCSharpString(interaction.NoSelectionText)
+                : $"ResolveInteractionValue({sourceExpression}, {ToVerbatimCSharpString(interaction.SourcePath)}, {ToVerbatimCSharpString(interaction.TextTemplate)}, {ToVerbatimCSharpString(InteractionModel.NormalizeMissingValueBehavior(interaction.MissingValueBehavior))})";
 
         if (string.Equals(interaction.ActionType, InteractionModel.ActionShowMessage, StringComparison.OrdinalIgnoreCase))
         {
@@ -15745,6 +16875,13 @@ public partial class MainWindowViewModel : ObservableObject
 
         if (string.Equals(selectedItemExpression, "null", StringComparison.Ordinal))
         {
+            var noSelectionBehavior = InteractionModel.NormalizeNoSelectionBehavior(interaction.NoSelectionBehavior);
+            if (string.Equals(noSelectionBehavior, InteractionModel.NoSelectionKeepPrevious, StringComparison.Ordinal))
+            {
+                sb.AppendLine($"{indent}// No row selected: keep previous target value.");
+                return;
+            }
+
             if (target.Type == DesignerControlTypes.CheckBox
                 && string.Equals(property, InteractionModel.TargetPropertyIsChecked, StringComparison.OrdinalIgnoreCase))
             {
@@ -15752,14 +16889,17 @@ public partial class MainWindowViewModel : ObservableObject
                 return;
             }
 
-            sb.AppendLine($"{indent}{targetExportName}.{property} = string.Empty;");
+            var noSelectionText = string.Equals(noSelectionBehavior, InteractionModel.NoSelectionSetText, StringComparison.Ordinal)
+                ? ToVerbatimCSharpString(interaction.NoSelectionText)
+                : "string.Empty";
+            sb.AppendLine($"{indent}{targetExportName}.{property} = {noSelectionText};");
             return;
         }
 
         var sourcePathLiteral = ToVerbatimCSharpString(interaction.SourcePath);
         var textExpression = string.IsNullOrWhiteSpace(interaction.TextTemplate)
             ? $"GetSelectedValue({selectedItemExpression}, {sourcePathLiteral})"
-            : $"ApplySelectedTemplate({selectedItemExpression}, {ToVerbatimCSharpString(interaction.TextTemplate)})";
+            : $"ApplySelectedTemplate({selectedItemExpression}, {ToVerbatimCSharpString(interaction.TextTemplate)}, {ToVerbatimCSharpString(InteractionModel.NormalizeMissingValueBehavior(interaction.MissingValueBehavior))})";
 
         if (target.Type == DesignerControlTypes.CheckBox
             && string.Equals(property, InteractionModel.TargetPropertyIsChecked, StringComparison.OrdinalIgnoreCase))
@@ -15794,14 +16934,14 @@ public partial class MainWindowViewModel : ObservableObject
 
     private static void AppendGeneratedInteractionHelpers(StringBuilder sb, bool includeShowMessageHelper)
     {
-        sb.AppendLine("    private static string ResolveInteractionValue(object? source, string propertyName, string template)");
+        sb.AppendLine("    private static string ResolveInteractionValue(object? source, string propertyName, string template, string missingValueBehavior = \"Empty\")");
         sb.AppendLine("    {");
         sb.AppendLine("        return string.IsNullOrWhiteSpace(template)");
-        sb.AppendLine("            ? GetSelectedValue(source, propertyName)");
-        sb.AppendLine("            : ApplySelectedTemplate(source, template);");
+        sb.AppendLine("            ? GetSelectedValue(source, propertyName, missingValueBehavior)");
+        sb.AppendLine("            : ApplySelectedTemplate(source, template, missingValueBehavior);");
         sb.AppendLine("    }");
         sb.AppendLine();
-        sb.AppendLine("    private static string GetSelectedValue(object? item, string propertyName)");
+        sb.AppendLine("    private static string GetSelectedValue(object? item, string propertyName, string missingValueBehavior = \"Empty\")");
         sb.AppendLine("    {");
         sb.AppendLine("        if (item is null)");
         sb.AppendLine("            return string.Empty;");
@@ -15813,7 +16953,15 @@ public partial class MainWindowViewModel : ObservableObject
         sb.AppendLine("            return dictionary[propertyName]?.ToString() ?? string.Empty;");
         sb.AppendLine();
         sb.AppendLine("        var property = item.GetType().GetProperty(propertyName, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.IgnoreCase);");
-        sb.AppendLine("        return property?.GetValue(item)?.ToString() ?? string.Empty;");
+        sb.AppendLine("        if (property is not null)");
+        sb.AppendLine("            return property.GetValue(item)?.ToString() ?? string.Empty;");
+        sb.AppendLine();
+        sb.AppendLine("        return missingValueBehavior switch");
+        sb.AppendLine("        {");
+        sb.AppendLine("            \"KeepPlaceholder\" => \"{\" + propertyName + \"}\",");
+        sb.AppendLine("            \"ShowNull\" => \"null\",");
+        sb.AppendLine("            _ => string.Empty");
+        sb.AppendLine("        };");
         sb.AppendLine("    }");
         sb.AppendLine();
         sb.AppendLine("    private static bool? GetSelectedBool(object? item, string propertyName)");
@@ -15832,12 +16980,12 @@ public partial class MainWindowViewModel : ObservableObject
         sb.AppendLine("        return null;");
         sb.AppendLine("    }");
         sb.AppendLine();
-        sb.AppendLine("    private static string ApplySelectedTemplate(object? item, string template)");
+        sb.AppendLine("    private static string ApplySelectedTemplate(object? item, string template, string missingValueBehavior = \"Empty\")");
         sb.AppendLine("    {");
         sb.AppendLine("        if (string.IsNullOrWhiteSpace(template))");
         sb.AppendLine("            return string.Empty;");
         sb.AppendLine();
-        sb.AppendLine("        return System.Text.RegularExpressions.Regex.Replace(template, \"\\\\{(?<name>[^{}]+)\\\\}\", match => GetSelectedValue(item, match.Groups[\"name\"].Value.Trim()));");
+        sb.AppendLine("        return System.Text.RegularExpressions.Regex.Replace(template, \"\\\\{(?<name>[^{}]+)\\\\}\", match => GetSelectedValue(item, match.Groups[\"name\"].Value.Trim(), missingValueBehavior));");
         sb.AppendLine("    }");
 
         if (!includeShowMessageHelper)
@@ -17179,6 +18327,9 @@ public partial class MainWindowViewModel : ObservableObject
             TargetProperty = string.IsNullOrWhiteSpace(interaction.TargetProperty) ? InteractionModel.TargetPropertyText : interaction.TargetProperty,
             SourcePath = interaction.SourcePath,
             TextTemplate = interaction.TextTemplate,
+            MissingValueBehavior = InteractionModel.NormalizeMissingValueBehavior(interaction.MissingValueBehavior),
+            NoSelectionBehavior = InteractionModel.NormalizeNoSelectionBehavior(interaction.NoSelectionBehavior),
+            NoSelectionText = interaction.NoSelectionText,
             MessageTitle = interaction.MessageTitle,
             TargetFormId = interaction.TargetFormId,
             TargetFormName = interaction.TargetFormName,
@@ -17199,6 +18350,9 @@ public partial class MainWindowViewModel : ObservableObject
             TargetProperty = string.IsNullOrWhiteSpace(interactionFile.TargetProperty) ? InteractionModel.TargetPropertyText : interactionFile.TargetProperty,
             SourcePath = interactionFile.SourcePath,
             TextTemplate = interactionFile.TextTemplate,
+            MissingValueBehavior = InteractionModel.NormalizeMissingValueBehavior(interactionFile.MissingValueBehavior),
+            NoSelectionBehavior = InteractionModel.NormalizeNoSelectionBehavior(interactionFile.NoSelectionBehavior),
+            NoSelectionText = interactionFile.NoSelectionText,
             MessageTitle = interactionFile.MessageTitle,
             TargetFormId = interactionFile.TargetFormId,
             TargetFormName = interactionFile.TargetFormName,
@@ -17328,6 +18482,11 @@ public partial class MainWindowViewModel : ObservableObject
             SampleValue = field.SampleValue,
             Width = field.Width,
             TypeName = field.TypeName,
+            DbType = field.DbType,
+            IsPrimaryKey = field.IsPrimaryKey,
+            IsNullable = field.IsNullable,
+            CanRead = field.CanRead,
+            CanWrite = field.CanWrite,
             IsVisible = field.IsVisible,
             IsSortable = allowSort,
             SortDirection = field.SortDirection,
@@ -17361,6 +18520,11 @@ public partial class MainWindowViewModel : ObservableObject
             SampleValue = fieldFile.SampleValue,
             Width = fieldFile.Width,
             TypeName = fieldFile.TypeName,
+            DbType = fieldFile.DbType,
+            IsPrimaryKey = fieldFile.IsPrimaryKey,
+            IsNullable = fieldFile.IsNullable,
+            CanRead = fieldFile.CanRead,
+            CanWrite = fieldFile.CanWrite,
             IsVisible = fieldFile.IsVisible,
             IsSortable = allowSort,
             SortDirection = string.IsNullOrWhiteSpace(fieldFile.SortDirection) ? BindingFieldModel.SortDirectionNone : fieldFile.SortDirection,
@@ -18556,9 +19720,18 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(CanQuickAddDataGridFillInteraction));
         OnPropertyChanged(nameof(HasLogicQuickActions));
         OnPropertyChanged(nameof(CanEditSelectedInteraction));
+        OnPropertyChanged(nameof(IsSelectedInteractionDataGridSelectedRowAction));
         OnPropertyChanged(nameof(IsSelectedInteractionOpenForm));
         OnPropertyChanged(nameof(IsSelectedInteractionMessageVisible));
         OnPropertyChanged(nameof(IsSelectedInteractionControlTargetVisible));
+        OnPropertyChanged(nameof(LogicTemplateAvailablePlaceholders));
+        OnPropertyChanged(nameof(HasLogicTemplateAvailablePlaceholders));
+        OnPropertyChanged(nameof(HasNoLogicTemplateAvailablePlaceholders));
+        OnPropertyChanged(nameof(LogicTemplateInvalidPlaceholders));
+        OnPropertyChanged(nameof(HasLogicTemplateInvalidPlaceholders));
+        OnPropertyChanged(nameof(LogicTemplateValidationText));
+        OnPropertyChanged(nameof(LogicTemplatePreviewText));
+        OnPropertyChanged(nameof(LogicTemplateDraftStatus));
         OnPropertyChanged(nameof(HasOpenFormTargets));
         OnPropertyChanged(nameof(OpenFormTargetHint));
         OnPropertyChanged(nameof(LogicDesignerSummary));
@@ -19149,9 +20322,82 @@ public partial class MainWindowViewModel : ObservableObject
 
     partial void OnSelectedInteractionChanged(InteractionModel? value)
     {
+        if (_trackedSelectedInteractionForLogic is not null)
+            _trackedSelectedInteractionForLogic.PropertyChanged -= SelectedInteractionForLogic_PropertyChanged;
+        _trackedSelectedInteractionForLogic = value;
+        if (_trackedSelectedInteractionForLogic is not null)
+            _trackedSelectedInteractionForLogic.PropertyChanged += SelectedInteractionForLogic_PropertyChanged;
+
         if (value is not null)
             EnsureOpenFormInteractionDefaults(value);
+        _isSyncingLogicTemplateDraft = true;
+        try
+        {
+            LogicTemplateDraft = value?.TextTemplate ?? "";
+        }
+        finally
+        {
+            _isSyncingLogicTemplateDraft = false;
+        }
+        IsLogicTemplateEditing = false;
+        if (value is not null)
+        {
+            TraceDocumentDebug(
+                "LOGIC_UI_ACTION_SELECTED",
+                $"action={value.Id}; source={value.SourceControlName}; target={value.TargetControlName}; event={value.EventName}; actionType={value.ActionType}",
+                toOutput: false);
+        }
         RaiseInteractionDesignerProperties();
+    }
+
+    private void SelectedInteractionForLogic_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (sender is not InteractionModel interaction)
+            return;
+
+        if (e.PropertyName == nameof(InteractionModel.TextTemplate) && !_isSyncingLogicTemplateDraft && !IsLogicTemplateEditing)
+        {
+            _isSyncingLogicTemplateDraft = true;
+            try
+            {
+                LogicTemplateDraft = interaction.TextTemplate;
+            }
+            finally
+            {
+                _isSyncingLogicTemplateDraft = false;
+            }
+        }
+
+        TraceDocumentDebug(
+            "LOGIC_UI_VALIDATION_STATE_CHANGED",
+            $"action={interaction.Id}; property={e.PropertyName}; status={LogicTemplateValidationText}; errors={LogicTemplateInvalidPlaceholders.Count}",
+            toOutput: false);
+        RaiseInteractionDesignerProperties();
+    }
+
+    partial void OnLogicTemplateDraftChanged(string value)
+    {
+        if (_isSyncingLogicTemplateDraft)
+        {
+            RefreshLogicTemplatePreviewNow("SyncDraft");
+            return;
+        }
+
+        if (SelectedInteraction is null)
+            return;
+
+        BeginLogicTemplateEditIfNeeded();
+        TraceDocumentDebug(
+            "LOGIC_TEMPLATE_TEXT_CHANGED",
+            $"action={SelectedInteraction.Id}; textLength={value?.Length ?? 0}; debounceScheduled=True",
+            toOutput: false);
+        OnPropertyChanged(nameof(LogicTemplateDraftStatus));
+        ScheduleLogicTemplatePreviewRefresh("Typing");
+    }
+
+    partial void OnIsLogicTemplateEditingChanged(bool value)
+    {
+        OnPropertyChanged(nameof(LogicTemplateDraftStatus));
     }
 
     partial void OnSelectedControlChanging(DesignControlModel? oldValue, DesignControlModel? newValue)

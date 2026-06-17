@@ -24,7 +24,7 @@ internal static class DataSourceIdentity
             source.SourceConnectionString,
             source.SourceSchemaName,
             source.SourceQuery,
-            source.Fields.Select(field => (field.Path, field.TypeName, field.IsVisible)));
+            source.Fields.Select(field => (field.Path, field.TypeName, field.IsVisible, field.DbType, field.IsPrimaryKey, field.IsNullable)));
     }
 
     public static string BuildKey(BindingSourceFileModel? source)
@@ -41,7 +41,7 @@ internal static class DataSourceIdentity
             source.SourceConnectionString,
             source.SourceSchemaName,
             source.SourceQuery,
-            source.Fields.Select(field => (field.Path, field.TypeName, field.IsVisible)));
+            source.Fields.Select(field => (field.Path, field.TypeName, field.IsVisible, field.DbType, field.IsPrimaryKey, field.IsNullable)));
     }
 
     public static string BuildDisplayName(BindingSourceModel? source)
@@ -121,12 +121,12 @@ internal static class DataSourceIdentity
         string connectionString,
         string schemaName,
         string query,
-        IEnumerable<(string Path, string TypeName, bool IsVisible)> fields)
+        IEnumerable<(string Path, string TypeName, bool IsVisible, string DbType, bool IsPrimaryKey, bool IsNullable)> fields)
     {
         var kind = Normalize(sourceKind, "Manual");
         var schemaHash = Hash(string.Join("\n", fields
             .OrderBy(field => Normalize(field.Path, string.Empty), StringComparer.OrdinalIgnoreCase)
-            .Select(field => $"{Normalize(field.Path, string.Empty)}:{Normalize(field.TypeName, "string")}:{field.IsVisible}")));
+            .Select(field => $"{Normalize(field.Path, string.Empty)}:{Normalize(field.TypeName, "string")}:{field.IsVisible}:{Normalize(field.DbType, string.Empty)}:{field.IsPrimaryKey}:{field.IsNullable}")));
 
         if (IsSqlServer(kind))
         {
@@ -142,11 +142,18 @@ internal static class DataSourceIdentity
 
         if (IsAssembly(kind))
         {
+            var normalizedPath = NormalizePath(assemblyPath);
+            var assemblyName = string.IsNullOrWhiteSpace(assemblyPath)
+                ? "assembly"
+                : Path.GetFileNameWithoutExtension(assemblyPath);
+            var (namespaceName, typeName) = SplitTypeName(typeFullName);
+
             return string.Join("|",
                 "DLL",
-                Normalize(id, string.Empty),
-                NormalizePath(assemblyPath),
-                Normalize(typeFullName, string.Empty),
+                Normalize(assemblyName, "assembly"),
+                Hash(normalizedPath),
+                Normalize(namespaceName, string.Empty),
+                Normalize(typeName, string.Empty),
                 Normalize(tableName, string.Empty),
                 schemaHash);
         }
@@ -163,6 +170,19 @@ internal static class DataSourceIdentity
         var schema = Normalize(schemaName, "dbo");
         var table = Normalize(tableName, "table");
         return $"{schema}.{table}";
+    }
+
+    private static (string NamespaceName, string TypeName) SplitTypeName(string? typeFullName)
+    {
+        var normalized = Normalize(typeFullName, string.Empty);
+        if (string.IsNullOrWhiteSpace(normalized))
+            return (string.Empty, string.Empty);
+
+        var lastDot = normalized.LastIndexOf('.');
+        if (lastDot <= 0 || lastDot >= normalized.Length - 1)
+            return (string.Empty, normalized);
+
+        return (normalized[..lastDot], normalized[(lastDot + 1)..]);
     }
 
     private static string NormalizePath(string? value)

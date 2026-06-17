@@ -9396,7 +9396,7 @@ public partial class MainWindow : Window
 
             VM.BeginBusy("Импортируем BindingSource", "Читаем типы из выбранной сборки и подготавливаем источники данных.");
             await Task.Delay(120);
-            var importedCount = VM.ImportBindingSourcesFromAssembly(localPath);
+            var importedCount = await VM.ImportBindingSourcesFromAssemblyAsync(localPath);
             VM.EndBusy();
             if (importedCount > 0)
                 VM.StatusText = $"Импортировано источников: {importedCount} из {System.IO.Path.GetFileName(localPath)}";
@@ -9406,6 +9406,40 @@ public partial class MainWindow : Window
             VM.EndBusy();
             VM.StatusText = $"Ошибка импорта сборки: {ex.Message}";
         }
+    }
+
+    private void ShowImportedDllDetailsButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is Avalonia.Controls.Control { Tag: ImportedDllInfoModel dll })
+            VM.ShowImportedDllDetails(dll);
+    }
+
+    private async void CopyImportedDllPathButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is Avalonia.Controls.Control { Tag: ImportedDllInfoModel dll })
+            await CopyTextToClipboardAsync(dll.AssemblyPath, $"DLL path copied: {dll.FileName}");
+    }
+
+    private async void ReloadImportedDllButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is Avalonia.Controls.Control { Tag: ImportedDllInfoModel dll })
+        {
+            try
+            {
+                VM.BeginBusy("Перезагружаем DLL", $"Читаем metadata из {dll.FileName}.");
+                await VM.ReloadImportedDllAsync(dll);
+            }
+            finally
+            {
+                VM.EndBusy();
+            }
+        }
+    }
+
+    private void RemoveImportedDllButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is Avalonia.Controls.Control { Tag: ImportedDllInfoModel dll })
+            VM.RemoveImportedDll(dll);
     }
 
     private async void InstallPluginButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)

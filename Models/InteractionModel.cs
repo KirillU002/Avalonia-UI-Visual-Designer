@@ -21,6 +21,14 @@ public partial class InteractionModel : ObservableObject
     public const string ActionShowMessage = "ShowMessage";
     public const string ActionOpenForm = "OpenForm";
 
+    public const string MissingValueEmpty = "Empty";
+    public const string MissingValueKeepPlaceholder = "KeepPlaceholder";
+    public const string MissingValueShowNull = "ShowNull";
+
+    public const string NoSelectionClearTarget = "ClearTarget";
+    public const string NoSelectionKeepPrevious = "KeepPrevious";
+    public const string NoSelectionSetText = "SetText";
+
     public const string OpenModeShow = "Show";
     public const string OpenModeShowDialog = "ShowDialog";
 
@@ -53,6 +61,15 @@ public partial class InteractionModel : ObservableObject
 
     [ObservableProperty]
     private string textTemplate = "";
+
+    [ObservableProperty]
+    private string missingValueBehavior = MissingValueEmpty;
+
+    [ObservableProperty]
+    private string noSelectionBehavior = NoSelectionClearTarget;
+
+    [ObservableProperty]
+    private string noSelectionText = "";
 
     [ObservableProperty]
     private string messageTitle = "";
@@ -119,6 +136,9 @@ public partial class InteractionModel : ObservableObject
             TargetProperty = TargetProperty,
             SourcePath = SourcePath,
             TextTemplate = TextTemplate,
+            MissingValueBehavior = NormalizeMissingValueBehavior(MissingValueBehavior),
+            NoSelectionBehavior = NormalizeNoSelectionBehavior(NoSelectionBehavior),
+            NoSelectionText = NoSelectionText,
             MessageTitle = MessageTitle,
             TargetFormId = TargetFormId,
             TargetFormName = TargetFormName,
@@ -172,6 +192,26 @@ public partial class InteractionModel : ObservableObject
             : OpenModeShow;
     }
 
+    public static string NormalizeMissingValueBehavior(string? value)
+    {
+        return value?.Trim() switch
+        {
+            MissingValueKeepPlaceholder => MissingValueKeepPlaceholder,
+            MissingValueShowNull => MissingValueShowNull,
+            _ => MissingValueEmpty
+        };
+    }
+
+    public static string NormalizeNoSelectionBehavior(string? value)
+    {
+        return value?.Trim() switch
+        {
+            NoSelectionKeepPrevious => NoSelectionKeepPrevious,
+            NoSelectionSetText => NoSelectionSetText,
+            _ => NoSelectionClearTarget
+        };
+    }
+
     public static string GetTargetPropertyDisplayName(string? targetProperty)
     {
         return targetProperty switch
@@ -207,6 +247,19 @@ public partial class InteractionModel : ObservableObject
     }
     partial void OnSourcePathChanged(string value) => OnPropertyChanged(nameof(Summary));
     partial void OnTextTemplateChanged(string value) => OnPropertyChanged(nameof(Summary));
+    partial void OnMissingValueBehaviorChanged(string value)
+    {
+        var normalized = NormalizeMissingValueBehavior(value);
+        if (!string.Equals(value, normalized, StringComparison.Ordinal))
+            MissingValueBehavior = normalized;
+    }
+    partial void OnNoSelectionBehaviorChanged(string value)
+    {
+        var normalized = NormalizeNoSelectionBehavior(value);
+        if (!string.Equals(value, normalized, StringComparison.Ordinal))
+            NoSelectionBehavior = normalized;
+    }
+    partial void OnNoSelectionTextChanged(string value) => OnPropertyChanged(nameof(Summary));
     partial void OnMessageTitleChanged(string value) => OnPropertyChanged(nameof(Summary));
     partial void OnTargetFormIdChanged(string value)
     {

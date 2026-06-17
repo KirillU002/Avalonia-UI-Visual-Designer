@@ -73,6 +73,10 @@ public sealed class BindingImportDiagnostics
     public int ColumnAttributedTypeCount { get; init; }
     public int LoaderExceptionCount { get; init; }
     public string FailureMessage { get; init; } = "";
+    public string ExceptionType { get; init; } = "";
+    public string ExceptionMessage { get; init; } = "";
+    public string ExceptionDetails { get; init; } = "";
+    public IReadOnlyList<string> LoaderExceptionMessages { get; init; } = Array.Empty<string>();
     public IReadOnlyList<string> CandidateTypeNames { get; init; } = Array.Empty<string>();
     public IReadOnlyList<string> InfrastructureTypeNames { get; init; } = Array.Empty<string>();
 }
@@ -107,6 +111,11 @@ public sealed class BindingFieldMetadata
     public string SampleValue { get; init; } = "Value";
     public string Width { get; init; } = "*";
     public string TypeName { get; init; } = "string";
+    public string DbType { get; init; } = "";
+    public bool IsPrimaryKey { get; init; }
+    public bool IsNullable { get; init; } = true;
+    public bool CanRead { get; init; } = true;
+    public bool CanWrite { get; init; } = true;
     public bool IsVisible { get; init; } = true;
     public bool IsSortable { get; init; } = true;
     public string SortDirection { get; init; } = "None";

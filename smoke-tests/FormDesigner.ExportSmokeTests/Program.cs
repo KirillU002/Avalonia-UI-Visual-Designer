@@ -1,6 +1,7 @@
 ﻿using FormDesigner.DesignerSystem.Binding;
 using FormDesigner.DesignerSystem.BuiltIn;
 using FormDesigner.DesignerSystem.Infrastructure;
+using FormDesigner.Localization;
 using FormDesigner.Models;
 using FormDesigner.Services;
 using FormDesigner.ViewModels;
@@ -16,6 +17,7 @@ internal static class Program
     private const string AvaloniaVersion = "11.1.1";
     private const string AvaloniaDesktopVersion = "11.1.1";
     private const int SmokeRunsToKeep = 5;
+    private static readonly Dictionary<string, string> LinqToSqlSmokeDllCache = new(StringComparer.OrdinalIgnoreCase);
 
     public static int Main(string[] args)
     {
@@ -31,6 +33,11 @@ internal static class Program
 
         var scenarios = new SmokeScenario[]
         {
+            new("LocalizationKeysExistForMainUi", ConfigureSimpleFormExport, AssertLocalizationKeysExistForMainUi),
+            new("PropertyNamesAreNotLocalized", ConfigureSimpleFormExport, AssertPropertyNamesAreNotLocalized),
+            new("ControlNamesAreNotLocalized", ConfigureSimpleFormExport, AssertControlNamesAreNotLocalized),
+            new("RussianUiTextAppliedToMainButtons", ConfigureSimpleFormExport, AssertRussianUiTextAppliedToMainButtons),
+            new("MissingLocalizationFallsBackToEnglishOrKey", ConfigureSimpleFormExport, AssertMissingLocalizationFallsBackToEnglishOrKey),
             new("SimpleFormExport", ConfigureSimpleFormExport, AssertSimpleFormExport),
             new("CanvasBorderBackgroundZOrderExport", ConfigureCanvasBorderBackgroundZOrderExport, AssertCanvasBorderBackgroundZOrderExport),
             new("PreviewAndExportUseSameControlOrder", ConfigurePreviewExportConsistencyForm, AssertPreviewAndExportUseSameControlOrder),
@@ -76,12 +83,35 @@ internal static class Program
             new("DataModeDoesNotEditColumnsDirectly", ConfigureSimpleFormExport, AssertDataModeDoesNotEditColumnsDirectly),
             new("DataModeOpensColumnEditorForSelectedGrid", ConfigureDataModeShowsSelectedDataGridSourceOnly, AssertDataModeOpensColumnEditorForSelectedGrid, RequiresRealDataGrid: true),
             new("DataModeHandlesSameGridNamesAcrossForms", ConfigureDataModeHandlesSameGridNamesAcrossForms, AssertDataModeHandlesSameGridNamesAcrossForms, RequiresRealDataGrid: true),
+            new("DllImportDetectsLinqToSqlTableAttribute", ConfigureLinqToSqlDllImport, AssertDllImportDetectsLinqToSqlTableAttribute),
+            new("DllImportDetectsLinqToSqlColumnAttributes", ConfigureLinqToSqlDllImport, AssertDllImportDetectsLinqToSqlColumnAttributes),
+            new("DllImportSupportsDuplicateTableNamesAcrossDlls", ConfigureDuplicateTableDllImport, AssertDllImportSupportsDuplicateTableNamesAcrossDlls),
+            new("DllImportBuildsStableSourceKey", ConfigureLinqToSqlDllImport, AssertDllImportBuildsStableSourceKey),
+            new("DllSearchFindsTypeTableAndColumn", ConfigureLinqToSqlDllImport, AssertDllSearchFindsTypeTableAndColumn),
+            new("LoadedDllPanelShowsCounts", ConfigureLinqToSqlDllImport, AssertLoadedDllPanelShowsCounts),
+            new("RemoveDllRemovesMetadataAndSources", ConfigureLinqToSqlDllImport, AssertRemoveDllRemovesMetadataAndSources),
+            new("RemoveDllDetachesDataGridSourceWithoutCrash", ConfigureLinqToSqlDllImport, AssertRemoveDllDetachesDataGridSourceWithoutCrash),
+            new("FailedDllCanBeRemoved", ConfigureFailedDllImport, AssertFailedDllCanBeRemoved),
+            new("DllLoadFailureShowsErrorInUi", ConfigureFailedDllImport, AssertDllLoadFailureShowsErrorInUi),
+            new("DuplicateTableNamesDisplayDllName", ConfigureDuplicateTableDllImport, AssertDuplicateTableNamesDisplayDllName),
+            new("SearchManyTablesIsDebouncedAndFast", ConfigureManyTableDllImport, AssertSearchManyTablesIsDebouncedAndFast),
+            new("ImportManyDllsDoesNotLoadPreviewRowsAutomatically", ConfigureManyTableDllImport, AssertImportManyDllsDoesNotLoadPreviewRowsAutomatically),
+            new("RemoveDllReleasesMetadataAndCaches", ConfigureManyTableDllImport, AssertRemoveDllReleasesMetadataAndCaches),
+            new("DataGridBindingUsesFullDllSourceKey", ConfigureLinqToSqlDllImport, AssertDataGridBindingUsesFullDllSourceKey),
             new("GeneratedNugetConfigContainsAllowInsecureConnectionsForHttpSource", ConfigureSimpleFormExport, AssertGeneratedNugetConfigContainsAllowInsecureConnectionsForHttpSource),
             new("BuildOutputDeduplicatesRepeatedNet6Warning", ConfigureSimpleFormExport, AssertBuildOutputDeduplicatesRepeatedNet6Warning),
             new("ArtifactsCleanupDeletesOldExportRuns", ConfigureSimpleFormExport, AssertArtifactsCleanupDeletesOldExportRuns),
             new("ExportGeneratesAtMostOneReadme", ConfigureRealDataGridExport, AssertExportGeneratesAtMostOneReadme, RequiresRealDataGrid: true),
             new("GeneratedSolutionHasConsistentAvaloniaVersions", ConfigureRealDataGridExport, AssertGeneratedSolutionHasConsistentAvaloniaVersions, RequiresRealDataGrid: true),
             new("GeneratedSolutionDoesNotIncludeDesignerOnlyPackages", ConfigureRealDataGridExport, AssertGeneratedSolutionDoesNotIncludeDesignerOnlyPackages, RequiresRealDataGrid: true),
+            new("LogicTemplateTypingDoesNotCallApplyDocument", ConfigureLogicTemplateEditor, AssertLogicTemplateTypingDoesNotCallApplyDocument, RequiresRealDataGrid: true),
+            new("LogicTemplateTypingDoesNotRebuildPropertyGrid", ConfigureLogicTemplateEditor, AssertLogicTemplateTypingDoesNotRebuildPropertyGrid, RequiresRealDataGrid: true),
+            new("LogicTemplateApplyUpdatesModel", ConfigureLogicTemplateEditor, AssertLogicTemplateApplyUpdatesModel, RequiresRealDataGrid: true),
+            new("LogicTemplateCancelDoesNotModifyModel", ConfigureLogicTemplateEditor, AssertLogicTemplateCancelDoesNotModifyModel, RequiresRealDataGrid: true),
+            new("ExportDataGridSelectionToTextBoxBuilds", ConfigureDataGridSelectionToTextBoxExport, AssertExportDataGridSelectionToTextBoxBuilds, RequiresRealDataGrid: true),
+            new("ExportDataGridSelectionToTextBlockBuilds", ConfigureDataGridSelectionToTextBlockExport, AssertExportDataGridSelectionToTextBlockBuilds, RequiresRealDataGrid: true),
+            new("ExportLogicInvalidPlaceholderShowsWarning", ConfigureDataGridSelectionInvalidPlaceholder, AssertExportLogicInvalidPlaceholderShowsWarning, RequiresRealDataGrid: true),
+            new("ExportLogicUsesGeneratedRowDtoProperties", ConfigureDataGridSelectionToTextBoxExport, AssertExportLogicUsesGeneratedRowDtoProperties, RequiresRealDataGrid: true),
             new("InteractionsExport", ConfigureInteractionsExport, AssertInteractionsExport, RequiresRealDataGrid: true),
             new("MultiFormOpenFormExport", ConfigureMultiFormOpenFormExport, AssertMultiFormOpenFormExport),
             new("MultiFormDocumentStateIsolation", ConfigureMultiFormDocumentStateIsolation, AssertMultiFormDocumentStateIsolation),
@@ -219,6 +249,76 @@ internal static class Program
         vm.Controls.Add(Control(DesignerControlTypes.CheckBox, "EnabledCheckBox", 36, 148, 180, 32, text: "Enabled"));
         vm.Controls.Add(Control(DesignerControlTypes.Border, "ContentCard", 340, 86, 260, 110, background: "#F8FAFC", border: "#CBD5E1", radius: 12));
         vm.Controls.Add(Control(DesignerControlTypes.Button, "SaveButton", 36, 220, 150, 42, text: "Save", background: "#2563EB", foreground: "#FFFFFF", border: "#1D4ED8", radius: 10));
+    }
+
+    private static void AssertLocalizationKeysExistForMainUi(SmokeContext context)
+    {
+        var text = UiText.Current;
+        if (text.Language != UiLanguage.Russian)
+            throw new InvalidOperationException("Default UI language must be Russian.");
+        if (text.KeyCount < 70)
+            throw new InvalidOperationException($"Localization catalog is unexpectedly small: {text.KeyCount}.");
+
+        RequireEqual("Новый проект", text.NewProject, "New Project must be localized.");
+        RequireEqual("Открыть проект", text.OpenProject, "Open Project must be localized.");
+        RequireEqual("Сохранить", text.Save, "Save must be localized.");
+        RequireEqual("Настройки", text.Settings, "Settings must be localized.");
+        RequireEqual("Проверить Build", text.ValidateBuild, "Validate Build must keep Build technical term.");
+    }
+
+    private static void AssertPropertyNamesAreNotLocalized(SmokeContext context)
+    {
+        RequireTechnicalName(UiText.TechnicalPropertyNames, "Name");
+        RequireTechnicalName(UiText.TechnicalPropertyNames, "Text");
+        RequireTechnicalName(UiText.TechnicalPropertyNames, "Width");
+        RequireTechnicalName(UiText.TechnicalPropertyNames, "Height");
+        RequireTechnicalName(UiText.TechnicalPropertyNames, "Background");
+        RequireTechnicalName(UiText.TechnicalPropertyNames, "Foreground");
+
+        if (UiText.TechnicalPropertyNames.Contains("Ширина") || UiText.TechnicalPropertyNames.Contains("Имя"))
+            throw new InvalidOperationException("Technical property names must not be localized.");
+    }
+
+    private static void AssertControlNamesAreNotLocalized(SmokeContext context)
+    {
+        RequireTechnicalName(UiText.TechnicalControlNames, "Button");
+        RequireTechnicalName(UiText.TechnicalControlNames, "TextBox");
+        RequireTechnicalName(UiText.TechnicalControlNames, "TextBlock");
+        RequireTechnicalName(UiText.TechnicalControlNames, "DataGrid");
+        RequireTechnicalName(UiText.TechnicalControlNames, "Border");
+
+        if (UiText.TechnicalControlNames.Contains("Кнопка") || UiText.TechnicalControlNames.Contains("Текстовое поле"))
+            throw new InvalidOperationException("Technical control names must not be localized.");
+    }
+
+    private static void AssertRussianUiTextAppliedToMainButtons(SmokeContext context)
+    {
+        var vm = context.ViewModel;
+        RequireEqual(UiText.Current.NewProject, vm.NewEditorCommand?.Title ?? "", "New command title should use UiText.");
+        RequireEqual(UiText.Current.OpenProject, vm.OpenEditorCommand?.Title ?? "", "Open command title should use UiText.");
+        RequireEqual(UiText.Current.Save, vm.SaveEditorCommand?.Title ?? "", "Save command title should use UiText.");
+        RequireEqual(UiText.Current.Preview, vm.PreviewEditorCommand?.Title ?? "", "Preview command title should use UiText.");
+        if (!((vm.OpenExportPipelineEditorCommand?.Title ?? "").Contains("Export", StringComparison.Ordinal)))
+            throw new InvalidOperationException("Export command title should keep the Export technical term.");
+        RequireEqual(UiText.Current.Settings, vm.Texts.Settings, "MainWindowViewModel should expose UiText catalog.");
+    }
+
+    private static void AssertMissingLocalizationFallsBackToEnglishOrKey(SmokeContext context)
+    {
+        const string missingKey = "MissingLocalizationSmokeKey";
+        RequireEqual(missingKey, UiText.Current.Get(missingKey), "Missing localization should fall back to the key.");
+    }
+
+    private static void RequireTechnicalName(IReadOnlySet<string> names, string expected)
+    {
+        if (!names.Contains(expected))
+            throw new InvalidOperationException($"Technical name '{expected}' is missing.");
+    }
+
+    private static void RequireEqual(string expected, string actual, string message)
+    {
+        if (!string.Equals(expected, actual, StringComparison.Ordinal))
+            throw new InvalidOperationException($"{message} Expected '{expected}', got '{actual}'.");
     }
 
     private static void AssertSimpleFormExport(SmokeContext context)
@@ -967,6 +1067,275 @@ internal static class Program
         RequireContains(context.ViewModel.DataGridDataSetupSummary, "Orders", "Data mode should resolve selected grid by active document/control, not by duplicate name.");
     }
 
+    private static void ConfigureLinqToSqlDllImport(MainWindowViewModel vm)
+    {
+        var assemblyPath = CreateLinqToSqlMetadataAssembly(
+            "SmokeLinqCustomers",
+            "Smoke.Data.Customers",
+            "Customer",
+            "dbo.Customers");
+        var imported = vm.ImportBindingSourcesFromAssembly(assemblyPath);
+        if (imported <= 0)
+            throw new InvalidOperationException("Expected LINQ to SQL smoke DLL to import at least one source.");
+    }
+
+    private static void AssertDllImportDetectsLinqToSqlTableAttribute(SmokeContext context)
+    {
+        var source = context.ViewModel.BindingSources.Single(source => source.SourceTypeFullName == "Smoke.Data.Customers.Customer");
+        if (!string.Equals(source.SourceKind, "DllTable", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException($"Expected source kind DllTable, got {source.SourceKind}.");
+
+        if (!string.Equals(source.SourceTableName, "dbo.Customers", StringComparison.Ordinal))
+            throw new InvalidOperationException($"Expected TableAttribute name dbo.Customers, got {source.SourceTableName}.");
+
+        var dll = context.ViewModel.ImportedDllCatalog.Single();
+        if (!dll.HasTables || dll.TableCount < 1)
+            throw new InvalidOperationException("Loaded DLL catalog should expose table metadata.");
+
+        if (!dll.Tables.Any(table => table.IsLinqToSqlTable && table.TableName == "dbo.Customers"))
+            throw new InvalidOperationException("DLL catalog should mark LINQ to SQL table metadata.");
+    }
+
+    private static void AssertDllImportDetectsLinqToSqlColumnAttributes(SmokeContext context)
+    {
+        var source = context.ViewModel.BindingSources.Single(source => source.SourceTypeFullName == "Smoke.Data.Customers.Customer");
+        var id = source.Fields.Single(field => field.Path == "Id");
+        var email = source.Fields.Single(field => field.Path == "Email");
+
+        if (id.Header != "CustomerId" || !id.IsPrimaryKey || id.IsNullable || id.DbType != "Int NOT NULL")
+            throw new InvalidOperationException($"Id column metadata was not imported correctly: {id.Header}, pk={id.IsPrimaryKey}, nullable={id.IsNullable}, db={id.DbType}.");
+
+        if (email.Header != "EmailAddress" || email.DbType != "NVarChar(256)" || !email.IsNullable)
+            throw new InvalidOperationException("Email column metadata was not imported correctly.");
+
+        var table = context.ViewModel.ImportedDllCatalog.Single().Tables.Single(table => table.TableName == "dbo.Customers");
+        if (!table.Columns.Any(column => column.ColumnName == "CustomerId" && column.IsPrimaryKey && !column.IsNullable))
+            throw new InvalidOperationException("DLL UI metadata should include primary key column details.");
+    }
+
+    private static void ConfigureDuplicateTableDllImport(MainWindowViewModel vm)
+    {
+        var first = CreateLinqToSqlMetadataAssembly(
+            "SmokeLinqCustomersA",
+            "Smoke.Data.First",
+            "Customer",
+            "dbo.Customers");
+        var second = CreateLinqToSqlMetadataAssembly(
+            "SmokeLinqCustomersB",
+            "Smoke.Data.Second",
+            "Customer",
+            "dbo.Customers");
+
+        vm.ImportBindingSourcesFromAssembly(first);
+        vm.ImportBindingSourcesFromAssembly(second);
+    }
+
+    private static void AssertDllImportSupportsDuplicateTableNamesAcrossDlls(SmokeContext context)
+    {
+        if (context.ViewModel.BindingSources.Count(source => source.SourceTableName == "dbo.Customers") != 2)
+            throw new InvalidOperationException("Duplicate table names from different DLLs should import as separate sources.");
+
+        var sourceKeys = context.ViewModel.ImportedDllCatalog
+            .SelectMany(dll => dll.Tables.Select(table => table.SourceKey))
+            .ToList();
+        if (sourceKeys.Count != 2 || sourceKeys.Distinct(StringComparer.OrdinalIgnoreCase).Count() != 2)
+            throw new InvalidOperationException("Duplicate table names should have distinct source keys.");
+
+        if (!context.ViewModel.ImportedDllCatalog.Any(dll => dll.Tables.Any(table => table.DisplayName.Contains("SmokeLinqCustomersA", StringComparison.OrdinalIgnoreCase)))
+            || !context.ViewModel.ImportedDllCatalog.Any(dll => dll.Tables.Any(table => table.DisplayName.Contains("SmokeLinqCustomersB", StringComparison.OrdinalIgnoreCase))))
+        {
+            throw new InvalidOperationException("Duplicate table display names should be qualified by DLL name.");
+        }
+    }
+
+    private static void AssertDllImportBuildsStableSourceKey(SmokeContext context)
+    {
+        var table = context.ViewModel.ImportedDllCatalog.Single().Tables.Single();
+        RequireContains(table.SourceKey, "DLL|", "DLL source key should include source kind.");
+        RequireContains(table.SourceKey, "SmokeLinqCustomers", "DLL source key should include assembly identity.");
+        RequireContains(table.SourceKey, "Smoke.Data.Customers", "DLL source key should include namespace identity.");
+        RequireContains(table.SourceKey, "Customer", "DLL source key should include type identity.");
+        RequireContains(table.SourceKey, "dbo.Customers", "DLL source key should include table identity.");
+    }
+
+    private static void AssertDllSearchFindsTypeTableAndColumn(SmokeContext context)
+    {
+        var vm = context.ViewModel;
+        vm.ImportedDllSearchText = "Customers";
+        if (vm.FilteredImportedDllCatalog.Count != 1)
+            throw new InvalidOperationException("DLL search should find by table name.");
+
+        vm.ImportedDllSearchText = "Smoke.Data.Customers";
+        if (vm.FilteredImportedDllCatalog.Count != 1)
+            throw new InvalidOperationException("DLL search should find by namespace.");
+
+        vm.ImportedDllSearchText = "EmailAddress";
+        if (vm.FilteredImportedDllCatalog.Count != 1)
+            throw new InvalidOperationException("DLL search should find by column name.");
+    }
+
+    private static void AssertLoadedDllPanelShowsCounts(SmokeContext context)
+    {
+        var dll = context.ViewModel.ImportedDllCatalog.Single();
+        if (dll.TypeCount <= 0 || dll.TableCount <= 0 || dll.ColumnCount <= 0)
+            throw new InvalidOperationException($"DLL card counts should be populated. {dll.CountsSummary}");
+
+        if (dll.SourceNames.Contains(",", StringComparison.Ordinal) && dll.Tables.Count == 0)
+            throw new InvalidOperationException("DLL card should not be only comma text without table nodes.");
+    }
+
+    private static void AssertRemoveDllRemovesMetadataAndSources(SmokeContext context)
+    {
+        var vm = context.ViewModel;
+        var dll = vm.ImportedDllCatalog.Single();
+        vm.RemoveImportedDll(dll);
+
+        if (vm.ImportedDllCatalog.Count != 0 || vm.FilteredImportedDllCatalog.Count != 0 || vm.BindingSources.Count != 0)
+            throw new InvalidOperationException("Remove DLL should clear metadata, filtered catalog and imported BindingSources.");
+    }
+
+    private static void AssertRemoveDllDetachesDataGridSourceWithoutCrash(SmokeContext context)
+    {
+        var vm = context.ViewModel;
+        var source = vm.BindingSources.Single();
+        var grid = DataGrid("CustomersGrid", source.Id, 32, 42, 520, 260);
+        vm.Controls.Add(grid);
+        vm.SelectControls(new[] { grid }, grid);
+
+        var dll = vm.ImportedDllCatalog.Single();
+        vm.RemoveImportedDll(dll);
+
+        if (vm.ImportedDllCatalog.Count != 0)
+            throw new InvalidOperationException("Removed DLL should disappear from catalog.");
+        if (string.IsNullOrWhiteSpace(grid.BindingSourceId))
+            throw new InvalidOperationException("DataGrid should be detached to a manual source instead of losing columns.");
+        var detached = vm.BindingSources.SingleOrDefault(source => source.Id == grid.BindingSourceId)
+            ?? throw new InvalidOperationException("Detached BindingSource was not created.");
+        if (!detached.SourceKind.Contains("Detached", StringComparison.OrdinalIgnoreCase)
+            || detached.SourceAssemblyPath.Length != 0
+            || detached.Fields.Count == 0)
+        {
+            throw new InvalidOperationException("Detached BindingSource should keep columns and clear DLL assembly identity.");
+        }
+        if (!vm.SelectedDataGridBindingWarning.Contains("Источник данных удал", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("DataGrid should show a missing/deleted source warning after DLL removal.");
+    }
+
+    private static void ConfigureFailedDllImport(MainWindowViewModel vm)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "FormDesignerSmokeDlls", "FailedDll");
+        Directory.CreateDirectory(root);
+        var badDllPath = Path.Combine(root, "NotARealAssembly.dll");
+        File.WriteAllText(badDllPath, "this is not a managed assembly", Encoding.UTF8);
+        vm.ImportBindingSourcesFromAssembly(badDllPath);
+    }
+
+    private static void AssertFailedDllCanBeRemoved(SmokeContext context)
+    {
+        var vm = context.ViewModel;
+        var failed = vm.ImportedDllCatalog.SingleOrDefault()
+            ?? throw new InvalidOperationException("Failed DLL should still be visible in the loaded DLL catalog.");
+        if (!failed.IsFailed && !failed.HasErrors)
+            throw new InvalidOperationException("Invalid DLL should be marked failed or errored.");
+        vm.RemoveImportedDll(failed);
+        if (vm.ImportedDllCatalog.Count != 0 || vm.FilteredImportedDllCatalog.Count != 0)
+            throw new InvalidOperationException("Failed DLL entry should be removable.");
+    }
+
+    private static void AssertDllLoadFailureShowsErrorInUi(SmokeContext context)
+    {
+        var failed = context.ViewModel.ImportedDllCatalog.SingleOrDefault()
+            ?? throw new InvalidOperationException("Failed DLL should produce a catalog item.");
+        if (!failed.HasErrors || string.IsNullOrWhiteSpace(failed.ErrorMessage) || failed.Errors.Count == 0)
+            throw new InvalidOperationException("Failed DLL should expose visible error message and details in UI model.");
+        if (!failed.ErrorDetails.Contains("Exception", StringComparison.OrdinalIgnoreCase)
+            && !failed.ErrorDetails.Contains("BadImageFormat", StringComparison.OrdinalIgnoreCase)
+            && !failed.ErrorDetails.Contains("Metadata", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException($"Failed DLL details should contain exception information. Details: {failed.ErrorDetails}");
+        }
+    }
+
+    private static void AssertDuplicateTableNamesDisplayDllName(SmokeContext context)
+    {
+        var duplicateDisplays = context.ViewModel.ImportedDllCatalog
+            .SelectMany(dll => dll.Tables.Select(table => table.DisplayName))
+            .Where(name => name.Contains("dbo.Customers", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        if (duplicateDisplays.Count != 2)
+            throw new InvalidOperationException("Expected two duplicate table display names.");
+        if (duplicateDisplays.Any(name => name.EndsWith("1", StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidOperationException("Duplicate table names should not be disambiguated with meaningless numeric suffixes.");
+        if (!duplicateDisplays.Any(name => name.Contains("SmokeLinqCustomersA", StringComparison.OrdinalIgnoreCase))
+            || !duplicateDisplays.Any(name => name.Contains("SmokeLinqCustomersB", StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new InvalidOperationException("Duplicate table display names should include the DLL name.");
+        }
+    }
+
+    private static void ConfigureManyTableDllImport(MainWindowViewModel vm)
+    {
+        for (var index = 0; index < 4; index++)
+        {
+            var assemblyPath = CreateManyTableMetadataAssembly($"SmokeManyTables{index}", $"Smoke.Many{index}", 30);
+            vm.ImportBindingSourcesFromAssembly(assemblyPath);
+        }
+    }
+
+    private static void AssertSearchManyTablesIsDebouncedAndFast(SmokeContext context)
+    {
+        var vm = context.ViewModel;
+        var stopwatch = Stopwatch.StartNew();
+        vm.ImportedDllSearchText = "Table29";
+        stopwatch.Stop();
+        if (vm.FilteredImportedDllCatalog.Count == 0)
+            throw new InvalidOperationException("DLL search should find table names across large catalogs.");
+        if (stopwatch.ElapsedMilliseconds > 750)
+            throw new InvalidOperationException($"DLL search should stay fast for 100+ tables. Elapsed {stopwatch.ElapsedMilliseconds} ms.");
+    }
+
+    private static void AssertImportManyDllsDoesNotLoadPreviewRowsAutomatically(SmokeContext context)
+    {
+        var vm = context.ViewModel;
+        if (vm.ImportedDllCatalog.Count != 4)
+            throw new InvalidOperationException("Expected four imported DLL catalog cards.");
+        if (vm.ImportedDllCatalog.Sum(dll => dll.TableCount) < 100)
+            throw new InvalidOperationException("Many-table test should import at least 100 tables.");
+        if (vm.SelectedBindingPreviewFields.Count > 6)
+            throw new InvalidOperationException("DLL import should not load unlimited preview rows/fields automatically.");
+    }
+
+    private static void AssertRemoveDllReleasesMetadataAndCaches(SmokeContext context)
+    {
+        var vm = context.ViewModel;
+        var dll = vm.ImportedDllCatalog.First();
+        var removedPath = dll.AssemblyPath;
+        vm.RemoveImportedDll(dll);
+        if (vm.ImportedDllCatalog.Any(item => string.Equals(item.AssemblyPath, removedPath, StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidOperationException("Removed DLL should not remain in catalog/search cache.");
+        if (vm.BindingSources.Any(source => string.Equals(source.SourceAssemblyPath, removedPath, StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidOperationException("Removed DLL sources should not remain in BindingSources.");
+        vm.ImportedDllSearchText = Path.GetFileNameWithoutExtension(removedPath);
+        if (vm.FilteredImportedDllCatalog.Any(item => string.Equals(item.AssemblyPath, removedPath, StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidOperationException("Removed DLL should not remain searchable.");
+    }
+
+    private static void AssertDataGridBindingUsesFullDllSourceKey(SmokeContext context)
+    {
+        var source = context.ViewModel.BindingSources.Single();
+        var grid = DataGrid("CustomersGrid", source.Id, 32, 42, 520, 260);
+        context.ViewModel.Controls.Add(grid);
+        context.ViewModel.SelectControls(new[] { grid }, grid);
+        var table = context.ViewModel.ImportedDllCatalog.Single().Tables.Single();
+
+        if (!table.SourceKey.Contains("SmokeLinqCustomers", StringComparison.OrdinalIgnoreCase)
+            || !table.SourceKey.Contains("Smoke.Data.Customers", StringComparison.OrdinalIgnoreCase)
+            || !table.SourceKey.Contains("dbo.Customers", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException($"DataGrid DLL binding should use full source key, got {table.SourceKey}.");
+        }
+    }
+
     private static void AssertGeneratedNugetConfigContainsAllowInsecureConnectionsForHttpSource(SmokeContext context)
     {
         var nugetConfig = ExportPipelineService.BuildNuGetConfigForSources(new[]
@@ -1059,6 +1428,151 @@ internal static class Program
         RequireNotContains(projectFile, "System.Reflection.MetadataLoadContext", "Generated runtime project should not include designer-only MetadataLoadContext.");
         RequireNotContains(projectFile, "Avalonia.Controls.ColorPicker", "Generated runtime project should not include designer-only ColorPicker package.");
         RequireNotContains(projectFile, "Avalonia.Diagnostics", "Generated runtime project should not include designer diagnostics package.");
+    }
+
+    private static void ConfigureLogicTemplateEditor(MainWindowViewModel vm)
+    {
+        ConfigureDataGridSelectionToTextBoxExport(vm);
+        vm.SelectedInteraction = vm.Interactions.Single(interaction =>
+            string.Equals(interaction.SourceControlName, "ProductsGrid", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static void AssertLogicTemplateTypingDoesNotCallApplyDocument(SmokeContext context)
+    {
+        var vm = context.ViewModel;
+        vm.InteractionTraceEntries.Clear();
+        vm.LogicTemplateDraft = "ID: {Title}";
+        vm.LogicTemplateDraft += Environment.NewLine + "Price: {Price}";
+
+        var forbidden = vm.InteractionTraceEntries
+            .Where(entry => entry.EventName.Contains("ApplyDocument", StringComparison.OrdinalIgnoreCase)
+                            || entry.EventName.Contains("APPLY_DOCUMENT", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        if (forbidden.Count > 0)
+            throw new InvalidOperationException($"Typing a Logic template must not call ApplyDocument: {string.Join(" | ", forbidden.Select(entry => entry.Summary))}");
+    }
+
+    private static void AssertLogicTemplateTypingDoesNotRebuildPropertyGrid(SmokeContext context)
+    {
+        var vm = context.ViewModel;
+        vm.InteractionTraceEntries.Clear();
+        vm.LogicTemplateDraft = "Title: {Title}";
+        vm.LogicTemplateDraft += " / Count: {Count}";
+
+        var forbidden = vm.InteractionTraceEntries
+            .Where(entry => entry.EventName.Contains("RebuildPropertyGrid", StringComparison.OrdinalIgnoreCase)
+                            || entry.EventName.Contains("BuildGeneratedFiles", StringComparison.OrdinalIgnoreCase)
+                            || entry.EventName.Contains("RefreshExportPipelineResult", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        if (forbidden.Count > 0)
+            throw new InvalidOperationException($"Typing a Logic template must stay local: {string.Join(" | ", forbidden.Select(entry => entry.Summary))}");
+    }
+
+    private static void AssertLogicTemplateApplyUpdatesModel(SmokeContext context)
+    {
+        var vm = context.ViewModel;
+        var interaction = vm.SelectedInteraction ?? throw new InvalidOperationException("Logic template test interaction was not selected.");
+        vm.LogicTemplateDraft = "Product: {Title}";
+        if (string.Equals(interaction.TextTemplate, vm.LogicTemplateDraft, StringComparison.Ordinal))
+            throw new InvalidOperationException("Typing a Logic template should not update the model before Apply.");
+
+        vm.ApplyLogicTemplateEditCommand.Execute(null);
+        if (!string.Equals(interaction.TextTemplate, "Product: {Title}", StringComparison.Ordinal))
+            throw new InvalidOperationException("Apply should copy the draft template into the interaction model.");
+    }
+
+    private static void AssertLogicTemplateCancelDoesNotModifyModel(SmokeContext context)
+    {
+        var vm = context.ViewModel;
+        var interaction = vm.SelectedInteraction ?? throw new InvalidOperationException("Logic template test interaction was not selected.");
+        var original = interaction.TextTemplate;
+        vm.LogicTemplateDraft = "Should not persist {Price}";
+        vm.CancelLogicTemplateEditCommand.Execute(null);
+
+        if (!string.Equals(interaction.TextTemplate, original, StringComparison.Ordinal))
+            throw new InvalidOperationException("Cancel should leave the interaction model unchanged.");
+        if (!string.Equals(vm.LogicTemplateDraft, original, StringComparison.Ordinal))
+            throw new InvalidOperationException("Cancel should restore the draft from the interaction model.");
+    }
+
+    private static void ConfigureDataGridSelectionToTextBoxExport(MainWindowViewModel vm)
+    {
+        var source = ProductsSource();
+        vm.BindingSources.Add(source);
+        vm.DataGridExportMode = MainWindowViewModel.DataGridExportModeReal;
+        vm.Controls.Add(DataGrid("ProductsGrid", source.Id, 32, 36, 520, 250));
+        vm.Controls.Add(Control(DesignerControlTypes.TextBox, "SelectedTitleTextBox", 590, 44, 260, 38, placeholder: "Selected title"));
+        vm.Interactions.Add(new InteractionModel
+        {
+            SourceControlName = "ProductsGrid",
+            EventName = InteractionModel.EventDataGridSelectionChanged,
+            ActionType = InteractionModel.ActionSetProperty,
+            TargetControlName = "SelectedTitleTextBox",
+            TargetProperty = InteractionModel.TargetPropertyText,
+            SourcePath = "Title",
+            TextTemplate = "Title: {Title}\nPrice: {Price}",
+            MissingValueBehavior = InteractionModel.MissingValueKeepPlaceholder,
+            NoSelectionBehavior = InteractionModel.NoSelectionClearTarget
+        });
+    }
+
+    private static void AssertExportDataGridSelectionToTextBoxBuilds(SmokeContext context)
+    {
+        RequireContains(context.Xaml, "SelectionChanged=\"ProductsGrid_SelectionChanged\"", "DataGrid selected-row action should wire SelectionChanged.");
+        RequireContains(context.CSharp, "private void ProductsGrid_SelectionChanged", "DataGrid selected-row action should generate a handler.");
+        RequireContains(context.CSharp, "SelectedTitleTextBox.Text = ResolveInteractionValue(selectedItem", "Selected row should write to the target TextBox.Text.");
+        RequireContains(context.CSharp, "Title: {Title}", "Generated handler should include the configured template.");
+        RequireContains(context.CSharp, "@\"KeepPlaceholder\"", "Generated handler should preserve the missing-value behavior.");
+    }
+
+    private static void ConfigureDataGridSelectionToTextBlockExport(MainWindowViewModel vm)
+    {
+        var source = ProductsSource();
+        vm.BindingSources.Add(source);
+        vm.DataGridExportMode = MainWindowViewModel.DataGridExportModeReal;
+        vm.Controls.Add(DataGrid("ProductsGrid", source.Id, 32, 36, 520, 250));
+        vm.Controls.Add(Control(DesignerControlTypes.TextBlock, "SelectedTitleTextBlock", 590, 44, 300, 80, text: "Selected row"));
+        vm.Interactions.Add(new InteractionModel
+        {
+            SourceControlName = "ProductsGrid",
+            EventName = InteractionModel.EventDataGridSelectionChanged,
+            ActionType = InteractionModel.ActionSetProperty,
+            TargetControlName = "SelectedTitleTextBlock",
+            TargetProperty = InteractionModel.TargetPropertyText,
+            SourcePath = "Title",
+            TextTemplate = "Title: {Title}\nCount: {Count}",
+            MissingValueBehavior = InteractionModel.MissingValueEmpty,
+            NoSelectionBehavior = InteractionModel.NoSelectionSetText,
+            NoSelectionText = "No row"
+        });
+    }
+
+    private static void AssertExportDataGridSelectionToTextBlockBuilds(SmokeContext context)
+    {
+        RequireContains(context.Xaml, "SelectionChanged=\"ProductsGrid_SelectionChanged\"", "DataGrid selected-row TextBlock action should wire SelectionChanged.");
+        RequireContains(context.CSharp, "SelectedTitleTextBlock.Text =", "Selected row should write to the target TextBlock.Text.");
+        RequireContains(context.CSharp, "@\"No row\"", "Generated handler should include configured no-selection text.");
+        RequireContains(context.CSharp, "Title: {Title}", "Generated handler should include the TextBlock template.");
+    }
+
+    private static void ConfigureDataGridSelectionInvalidPlaceholder(MainWindowViewModel vm)
+    {
+        ConfigureDataGridSelectionToTextBoxExport(vm);
+        vm.Interactions[0].TextTemplate = "Unknown: {DoesNotExist}";
+    }
+
+    private static void AssertExportLogicInvalidPlaceholderShowsWarning(SmokeContext context)
+    {
+        RequireContains(context.DiagnosticsText, "{DoesNotExist}", "Invalid Logic template placeholders should be reported before export.");
+        RequireContains(context.DiagnosticsText, "BindingSource", "Invalid placeholder diagnostics should name the DataGrid BindingSource context.");
+    }
+
+    private static void AssertExportLogicUsesGeneratedRowDtoProperties(SmokeContext context)
+    {
+        RequireContains(context.CSharp, "public partial class ProductRow : ObservableObject", "DataGrid selected-row export should keep the generated row DTO.");
+        RequireContains(context.CSharp, "private string title;", "Generated DTO should include the Title property used by the template.");
+        RequireContains(context.CSharp, "private decimal price;", "Generated DTO should include the Price property used by the template.");
+        RequireContains(context.CSharp, "private static string ResolveInteractionValue", "Generated interaction code should use the shared template resolver.");
     }
 
     private static void ConfigureInteractionsExport(MainWindowViewModel vm)
@@ -2607,7 +3121,7 @@ internal static class Program
         RequireContains(context.Xaml, "SelectionChanged=\"CustomersGrid_SelectionChanged\"", "Alpha DataGrid.SelectionChanged handler should be wired in XAML.");
         RequireContains(context.Xaml, "Checked=\"DetailsCheckBox_Checked\"", "Alpha CheckBox.Checked handler should be wired in XAML.");
         RequireContains(context.CSharp, "var windowForm2 = new Form2();", "Alpha OpenForm handler should instantiate Form2.");
-        RequireContains(context.CSharp, "SelectedNameTextBox.Text = ResolveInteractionValue(selectedItem, @\"Name\", @\"\");", "Alpha DataGrid selection should fill TextBox from Name.");
+        RequireContains(context.CSharp, "SelectedNameTextBox.Text = ResolveInteractionValue(selectedItem, @\"Name\", @\"\", @\"Empty\");", "Alpha DataGrid selection should fill TextBox from Name.");
         RequireContains(context.ChecklistText, "Forms exported: 2/2", "Alpha export should include both forms.");
         RequireContains(context.ChecklistText, "Interactions exported: 4/4", "Alpha export should include all configured interactions.");
         RequireContains(context.ChecklistText, "OpenForm interactions: 1", "Alpha checklist should report OpenForm.");
@@ -2867,7 +3381,7 @@ internal static class Program
             Path = "SalesOrders",
             ItemTypeName = "OrderRow",
             Description = "DLL table source.",
-            SourceKind = "Assembly",
+            SourceKind = "DllTable",
             SourceAssemblyPath = @"C:\DataSources\Sales.dll",
             SourceTypeFullName = "Contoso.Sales.Order",
             SourceTableName = "Orders"
@@ -3548,6 +4062,159 @@ Diagnostics:
         var result = RunProcess("dotnet", $"build \"{projectFile}\"", projectPath);
         if (result.ExitCode != 0)
             throw new InvalidOperationException($"dotnet build failed.{Environment.NewLine}{result.Output}");
+    }
+
+    private static string CreateLinqToSqlMetadataAssembly(string assemblyName, string namespaceName, string typeName, string tableName)
+    {
+        var cacheKey = $"{assemblyName}|{namespaceName}|{typeName}|{tableName}";
+        if (LinqToSqlSmokeDllCache.TryGetValue(cacheKey, out var cachedPath) && File.Exists(cachedPath))
+            return cachedPath;
+
+        var root = Path.Combine(Path.GetTempPath(), "FormDesignerSmokeDlls", assemblyName);
+        if (Directory.Exists(root))
+            Directory.Delete(root, recursive: true);
+
+        Directory.CreateDirectory(root);
+        File.WriteAllText(
+            Path.Combine(root, $"{assemblyName}.csproj"),
+            "<Project Sdk=\"Microsoft.NET.Sdk\">" + Environment.NewLine +
+            "  <PropertyGroup>" + Environment.NewLine +
+            "    <TargetFramework>net6.0</TargetFramework>" + Environment.NewLine +
+            "    <Nullable>enable</Nullable>" + Environment.NewLine +
+            "  </PropertyGroup>" + Environment.NewLine +
+            "</Project>" + Environment.NewLine,
+            Encoding.UTF8);
+
+        File.WriteAllText(
+            Path.Combine(root, "Models.cs"),
+            "using System;" + Environment.NewLine +
+            Environment.NewLine +
+            "namespace System.Data.Linq.Mapping" + Environment.NewLine +
+            "{" + Environment.NewLine +
+            "    [AttributeUsage(AttributeTargets.Class, AllowMultiple = false)]" + Environment.NewLine +
+            "    public sealed class TableAttribute : Attribute" + Environment.NewLine +
+            "    {" + Environment.NewLine +
+            "        public string Name { get; set; } = \"\";" + Environment.NewLine +
+            "    }" + Environment.NewLine +
+            Environment.NewLine +
+            "    [AttributeUsage(AttributeTargets.Property | AttributeTargets.Field, AllowMultiple = false)]" + Environment.NewLine +
+            "    public sealed class ColumnAttribute : Attribute" + Environment.NewLine +
+            "    {" + Environment.NewLine +
+            "        public string Name { get; set; } = \"\";" + Environment.NewLine +
+            "        public string DbType { get; set; } = \"\";" + Environment.NewLine +
+            "        public bool IsPrimaryKey { get; set; }" + Environment.NewLine +
+            "        public bool CanBeNull { get; set; } = true;" + Environment.NewLine +
+            "    }" + Environment.NewLine +
+            Environment.NewLine +
+            "    [AttributeUsage(AttributeTargets.Property | AttributeTargets.Field, AllowMultiple = false)]" + Environment.NewLine +
+            "    public sealed class AssociationAttribute : Attribute" + Environment.NewLine +
+            "    {" + Environment.NewLine +
+            "        public string Name { get; set; } = \"\";" + Environment.NewLine +
+            "    }" + Environment.NewLine +
+            "}" + Environment.NewLine +
+            Environment.NewLine +
+            $"namespace {namespaceName}" + Environment.NewLine +
+            "{" + Environment.NewLine +
+            "    using System.Data.Linq.Mapping;" + Environment.NewLine +
+            Environment.NewLine +
+            $"    [Table(Name = \"{tableName}\")]" + Environment.NewLine +
+            $"    public sealed class {typeName}" + Environment.NewLine +
+            "    {" + Environment.NewLine +
+            "        [Column(Name = \"CustomerId\", DbType = \"Int NOT NULL\", IsPrimaryKey = true, CanBeNull = false)]" + Environment.NewLine +
+            "        public int Id { get; set; }" + Environment.NewLine +
+            Environment.NewLine +
+            "        [Column(Name = \"CustomerName\", DbType = \"NVarChar(100)\", CanBeNull = false)]" + Environment.NewLine +
+            "        public string Name { get; set; } = \"\";" + Environment.NewLine +
+            Environment.NewLine +
+            "        [Column(Name = \"EmailAddress\", DbType = \"NVarChar(256)\", CanBeNull = true)]" + Environment.NewLine +
+            "        public string? Email { get; set; }" + Environment.NewLine +
+            Environment.NewLine +
+            "        [Association(Name = \"FK_Customers_Orders\")]" + Environment.NewLine +
+            "        public object? Orders { get; set; }" + Environment.NewLine +
+            "    }" + Environment.NewLine +
+            "}" + Environment.NewLine,
+            Encoding.UTF8);
+
+        DotnetBuild(root);
+        var assemblyPath = Path.Combine(root, "bin", "Debug", "net6.0", $"{assemblyName}.dll");
+        if (!File.Exists(assemblyPath))
+            throw new InvalidOperationException($"Smoke LINQ to SQL DLL was not built: {assemblyPath}");
+
+        LinqToSqlSmokeDllCache[cacheKey] = assemblyPath;
+        return assemblyPath;
+    }
+
+    private static string CreateManyTableMetadataAssembly(string assemblyName, string namespaceName, int tableCount)
+    {
+        var cacheKey = $"{assemblyName}|{namespaceName}|many|{tableCount}";
+        if (LinqToSqlSmokeDllCache.TryGetValue(cacheKey, out var cachedPath) && File.Exists(cachedPath))
+            return cachedPath;
+
+        var root = Path.Combine(Path.GetTempPath(), "FormDesignerSmokeDlls", assemblyName);
+        if (Directory.Exists(root))
+            Directory.Delete(root, recursive: true);
+
+        Directory.CreateDirectory(root);
+        File.WriteAllText(
+            Path.Combine(root, $"{assemblyName}.csproj"),
+            "<Project Sdk=\"Microsoft.NET.Sdk\">" + Environment.NewLine +
+            "  <PropertyGroup>" + Environment.NewLine +
+            "    <TargetFramework>net6.0</TargetFramework>" + Environment.NewLine +
+            "    <Nullable>enable</Nullable>" + Environment.NewLine +
+            "  </PropertyGroup>" + Environment.NewLine +
+            "</Project>" + Environment.NewLine,
+            Encoding.UTF8);
+
+        var code = new StringBuilder();
+        code.AppendLine("using System;");
+        code.AppendLine();
+        code.AppendLine("namespace System.Data.Linq.Mapping");
+        code.AppendLine("{");
+        code.AppendLine("    [AttributeUsage(AttributeTargets.Class, AllowMultiple = false)]");
+        code.AppendLine("    public sealed class TableAttribute : Attribute");
+        code.AppendLine("    {");
+        code.AppendLine("        public string Name { get; set; } = \"\";");
+        code.AppendLine("    }");
+        code.AppendLine();
+        code.AppendLine("    [AttributeUsage(AttributeTargets.Property | AttributeTargets.Field, AllowMultiple = false)]");
+        code.AppendLine("    public sealed class ColumnAttribute : Attribute");
+        code.AppendLine("    {");
+        code.AppendLine("        public string Name { get; set; } = \"\";");
+        code.AppendLine("        public string DbType { get; set; } = \"\";");
+        code.AppendLine("        public bool IsPrimaryKey { get; set; }");
+        code.AppendLine("        public bool CanBeNull { get; set; } = true;");
+        code.AppendLine("    }");
+        code.AppendLine("}");
+        code.AppendLine();
+        code.AppendLine($"namespace {namespaceName}");
+        code.AppendLine("{");
+        code.AppendLine("    using System.Data.Linq.Mapping;");
+        for (var index = 0; index < tableCount; index++)
+        {
+            code.AppendLine();
+            code.AppendLine($"    [Table(Name = \"dbo.Table{index:D2}\")]");
+            code.AppendLine($"    public sealed class Table{index:D2}Row");
+            code.AppendLine("    {");
+            code.AppendLine("        [Column(Name = \"Id\", DbType = \"Int NOT NULL\", IsPrimaryKey = true, CanBeNull = false)]");
+            code.AppendLine("        public int Id { get; set; }");
+            code.AppendLine();
+            code.AppendLine("        [Column(Name = \"Name\", DbType = \"NVarChar(100)\", CanBeNull = false)]");
+            code.AppendLine("        public string Name { get; set; } = \"\";");
+            code.AppendLine();
+            code.AppendLine("        [Column(Name = \"Amount\", DbType = \"Decimal(18,2)\", CanBeNull = true)]");
+            code.AppendLine("        public decimal? Amount { get; set; }");
+            code.AppendLine("    }");
+        }
+        code.AppendLine("}");
+
+        File.WriteAllText(Path.Combine(root, "Models.cs"), code.ToString(), Encoding.UTF8);
+        DotnetBuild(root);
+        var assemblyPath = Path.Combine(root, "bin", "Debug", "net6.0", $"{assemblyName}.dll");
+        if (!File.Exists(assemblyPath))
+            throw new InvalidOperationException($"Smoke many-table DLL was not built: {assemblyPath}");
+
+        LinqToSqlSmokeDllCache[cacheKey] = assemblyPath;
+        return assemblyPath;
     }
 
     private static ProcessResult RunProcess(string fileName, string arguments, string workingDirectory)

@@ -557,44 +557,44 @@
                    Margin="0,0,8,0"/>
 
         <Button Grid.Column="1"
-                Content="New"
+                Content="{Binding NewEditorCommand.Title}"
                 Classes="toolbar-button"
                 Command="{Binding NewEditorCommand}"
                 ToolTip.Tip="{Binding NewEditorCommand.Hint}"/>
         <Button Grid.Column="2"
-                Content="Open"
+                Content="{Binding OpenEditorCommand.Title}"
                 Classes="toolbar-button"
                 Command="{Binding OpenEditorCommand}"
                 ToolTip.Tip="{Binding OpenEditorCommand.Hint}"/>
         <Button Grid.Column="3"
-                Content="Save"
+                Content="{Binding SaveEditorCommand.Title}"
                 Classes="toolbar-button"
                 Command="{Binding SaveEditorCommand}"
                 ToolTip.Tip="{Binding SaveEditorCommand.Hint}"/>
 
         <Button Grid.Column="5"
-                Content="Undo"
+                Content="{Binding UndoEditorCommand.Title}"
                 Classes="toolbar-button"
                 Command="{Binding UndoEditorCommand}"
                 ToolTip.Tip="{Binding UndoEditorCommand.Hint}"/>
         <Button Grid.Column="6"
-                Content="Redo"
+                Content="{Binding RedoEditorCommand.Title}"
                 Classes="toolbar-button"
                 Command="{Binding RedoEditorCommand}"
                 ToolTip.Tip="{Binding RedoEditorCommand.Hint}"/>
 
         <Button Grid.Column="8"
-                Content="Preview"
+                Content="{Binding PreviewEditorCommand.Title}"
                 Classes="toolbar-button"
                 Command="{Binding PreviewEditorCommand}"
                 ToolTip.Tip="{Binding PreviewEditorCommand.Hint}"/>
         <Button Grid.Column="9"
-                Content="Export"
+                Content="{Binding OpenExportPipelineEditorCommand.Title}"
                 Classes="toolbar-button"
                 Command="{Binding OpenExportPipelineEditorCommand}"
                 ToolTip.Tip="{Binding OpenExportPipelineEditorCommand.Hint}"/>
         <Button Grid.Column="10"
-                Content="Help"
+                Content="{Binding HelpEditorCommand.Title}"
                 Classes="toolbar-button"
                 Command="{Binding HelpEditorCommand}"
                 ToolTip.Tip="Открыть подробную справку по конструктору форм (F1)"/>
@@ -614,7 +614,7 @@
                 Padding="6,2"
                 VerticalAlignment="Center"
                 IsVisible="{Binding HasUnsavedChanges}">
-          <TextBlock Text="Unsaved"
+          <TextBlock Text="{Binding Texts.UnsavedChanges}"
                      Foreground="White"
                      FontSize="10"
                      FontWeight="SemiBold"/>
@@ -630,7 +630,7 @@
           <StackPanel Orientation="Horizontal"
                       Spacing="4"
                       VerticalAlignment="Center">
-            <TextBlock Text="Mode"
+            <TextBlock Text="{Binding Texts.Mode}"
                        Foreground="#BFDBFE"
                        FontWeight="SemiBold"
                        FontSize="11"
@@ -644,27 +644,27 @@
         </Border>
 
         <Button Grid.Column="14"
-                Content="More"
+                Content="{Binding Texts.More}"
                 Classes="toolbar-button">
           <Button.Flyout>
             <Flyout>
               <Border Padding="10"
                       MaxWidth="440">
                 <StackPanel Spacing="8">
-                  <Button Content="Save as..."
+                  <Button Content="{Binding SaveAsEditorCommand.Title}"
                           Classes="data-action-button"
                           Command="{Binding SaveAsEditorCommand}"
                           HorizontalAlignment="Stretch"/>
-                  <Button Content="Restore backup..."
+                  <Button Content="{Binding Texts.RestoreBackup}"
                           Classes="data-action-button"
                           Click="RestoreBackupButton_Click"
                           HorizontalAlignment="Stretch"/>
-                  <Button Content="Reset Interaction State"
+                  <Button Content="{Binding ResetInteractionStateEditorCommand.Title}"
                           Classes="data-action-button"
                           Command="{Binding ResetInteractionStateEditorCommand}"
                           HorizontalAlignment="Stretch"
                           ToolTip.Tip="Diagnostic reset for stuck PropertyGrid/Canvas interaction state."/>
-                  <Button Content="Open Interaction Trace"
+                  <Button Content="{Binding Texts.OpenInteractionTrace}"
                           Classes="data-action-button"
                           Command="{Binding OpenInteractionTracePanelCommand}"
                           HorizontalAlignment="Stretch"
@@ -780,7 +780,7 @@
                 <TextBlock Text="{Binding LeftDockHeaderTitle}"
                            FontWeight="Bold"
                            FontSize="14"/>
-                <TextBlock Text="Toolbox · Templates · Structure"
+                <TextBlock Text="Компоненты · Templates · Структура"
                            Foreground="#64748B"
                            FontSize="11"
                            TextTrimming="CharacterEllipsis"/>
@@ -799,7 +799,7 @@
                     Margin="8,0,8,8"
                     TabStripPlacement="Top"
                     SelectedIndex="{Binding LeftRailSelectedIndex, Mode=OneWay}">
-          <TabItem Header="Explorer"
+          <TabItem Header="{Binding Texts.Explorer}"
                    IsVisible="{Binding IsDesignMode}">
             <Grid RowDefinitions="Auto,*"
                   Margin="0,6,0,0">
@@ -816,13 +816,13 @@
                              ToolTip.Tip="{Binding ProjectExplorerScopeHint}"/>
                 </StackPanel>
                 <WrapPanel Grid.Row="1">
-                <Button Content="+ Form"
+                <Button Content="{Binding Texts.AddForm}"
                         Command="{Binding NewFormEditorCommand}"
                         Classes="data-action-button"
                         Margin="0,0,6,0"
                         Padding="8,5"
                         MinHeight="26"/>
-                <Button Content="+ Asset"
+                <Button Content="{Binding Texts.AddAsset}"
                         Command="{Binding AddAssetEditorCommand}"
                         Classes="data-action-button"
                         Padding="8,5"
@@ -892,7 +892,7 @@
                           <StackPanel Grid.Column="2"
                                       Orientation="Horizontal"
                                       Spacing="4">
-                            <Button Content="Done"
+                            <Button Content="{Binding #RootWindow.DataContext.Texts.Done}"
                                     Command="{Binding #RootWindow.DataContext.CommitProjectExplorerRenameCommand}"
                                     CommandParameter="{Binding}"
                                     Classes="data-action-button"
@@ -903,47 +903,47 @@
                         </Grid>
                         <Border.ContextMenu>
                           <ContextMenu>
-                            <MenuItem Header="Open"
+                            <MenuItem Header="{Binding #RootWindow.DataContext.Texts.Open}"
                                       Command="{Binding #RootWindow.DataContext.OpenProjectExplorerItemCommand}"
                                       CommandParameter="{Binding}"
                                       IsVisible="{Binding CanOpenForm}"/>
-                            <MenuItem Header="Preview"
+                            <MenuItem Header="{Binding #RootWindow.DataContext.Texts.Preview}"
                                       Command="{Binding #RootWindow.DataContext.PreviewProjectAssetCommand}"
                                       CommandParameter="{Binding}"
                                       IsVisible="{Binding CanPreviewAsset}"/>
-                            <MenuItem Header="Rename"
+                            <MenuItem Header="{Binding #RootWindow.DataContext.Texts.Rename}"
                                       Command="{Binding #RootWindow.DataContext.BeginRenameProjectExplorerItemCommand}"
                                       CommandParameter="{Binding}"
                                       IsVisible="{Binding CanRename}"/>
-                            <MenuItem Header="Duplicate Form"
+                            <MenuItem Header="{Binding #RootWindow.DataContext.Texts.DuplicateForm}"
                                       Command="{Binding #RootWindow.DataContext.DuplicateProjectExplorerItemCommand}"
                                       CommandParameter="{Binding}"
                                       IsVisible="{Binding CanDuplicate}"/>
-                            <MenuItem Header="Delete"
+                            <MenuItem Header="{Binding #RootWindow.DataContext.Texts.Delete}"
                                       Command="{Binding #RootWindow.DataContext.DeleteProjectExplorerItemCommand}"
                                       CommandParameter="{Binding}"
                                       IsVisible="{Binding CanDelete}"/>
-                            <MenuItem Header="Open Export Pipeline"
+                            <MenuItem Header="{Binding #RootWindow.DataContext.Texts.ExportPipeline}"
                                       Command="{Binding #RootWindow.DataContext.OpenProjectExplorerItemCommand}"
                                       CommandParameter="{Binding}"
                                       IsVisible="{Binding CanOpenExportPipeline}"/>
-                            <MenuItem Header="Validate Build"
+                            <MenuItem Header="{Binding #RootWindow.DataContext.Texts.ValidateBuild}"
                                       Command="{Binding #RootWindow.DataContext.ValidateExportBuildEditorCommand}"
                                       IsVisible="{Binding CanOpenExportPipeline}"/>
-                            <MenuItem Header="Export to Project"
+                            <MenuItem Header="{Binding #RootWindow.DataContext.Texts.ExportToProject}"
                                       Command="{Binding #RootWindow.DataContext.ExportToProjectEditorCommand}"
                                       IsVisible="{Binding CanOpenExportPipeline}"/>
                             <Separator/>
-                            <MenuItem Header="New Form"
+                            <MenuItem Header="Новая Form"
                                       Command="{Binding #RootWindow.DataContext.NewFormEditorCommand}"
                                       IsVisible="{Binding CanAddForm}"/>
-                            <MenuItem Header="Add Asset"
+                            <MenuItem Header="{Binding #RootWindow.DataContext.Texts.AddAsset}"
                                       Command="{Binding #RootWindow.DataContext.AddAssetEditorCommand}"
                                       IsVisible="{Binding CanAddAsset}"/>
-                            <MenuItem Header="Project Settings"
+                            <MenuItem Header="Настройки проекта"
                                       Command="{Binding #RootWindow.DataContext.OpenProjectSettingsEditorCommand}"
                                       IsVisible="{Binding CanOpenProjectSettings}"/>
-                            <MenuItem Header="Clean Artifacts"
+                            <MenuItem Header="Очистить artifacts"
                                       Command="{Binding #RootWindow.DataContext.CleanArtifactsEditorCommand}"
                                       IsVisible="{Binding CanOpenProjectSettings}"/>
                           </ContextMenu>
@@ -1449,14 +1449,14 @@
             <ScrollViewer Margin="0,12,0,0"
                           VerticalScrollBarVisibility="Auto">
               <StackPanel Spacing="10">
-                <TextBlock Text="Загруженные DLL"
+                <TextBlock Text="{Binding Texts.LoadedDlls}"
                            FontSize="18"
                            FontWeight="Bold"/>
                 <TextBlock Text="Если DLL нужна как источник моделей и метаданных, импортируйте её через кнопку «Импорт DLL...» во вкладке «Данные» справа. Здесь показываются уже подключённые сборки."
                            Foreground="#475569"
                            TextWrapping="Wrap"/>
 
-                <TextBox Watermark="Поиск по имени DLL, типу или источнику..."
+                <TextBox Watermark="{Binding Texts.DllSearchWatermark}"
                          Text="{Binding ImportedDllSearchText, Mode=TwoWay}"/>
 
                 <Border Background="#F8FAFC"
@@ -1478,7 +1478,7 @@
                               BorderBrush="#D7E2EE"
                               BorderThickness="1"
                               CornerRadius="14">
-                        <StackPanel Spacing="6">
+                        <StackPanel Spacing="8">
                           <DockPanel LastChildFill="True">
                             <TextBlock Text="{Binding FileName}"
                                        FontSize="16"
@@ -1494,13 +1494,51 @@
                             </Border>
                           </DockPanel>
 
+                          <TextBlock Text="{Binding CountsSummary}"
+                                     Foreground="#475569"
+                                     FontSize="12"/>
+
                           <TextBlock Text="{Binding AssemblyPath}"
                                      Foreground="#64748B"
                                      FontSize="12"
-                                     TextWrapping="Wrap"/>
+                                     TextTrimming="CharacterEllipsis"
+                                     ToolTip.Tip="{Binding AssemblyPath}"/>
+
+                          <TextBlock Text="{Binding StatusSummary}"
+                                     Foreground="#B45309"
+                                     FontSize="12"
+                                     TextWrapping="Wrap"
+                                     IsVisible="{Binding HasErrors}"/>
+
+                          <WrapPanel Orientation="Horizontal">
+                            <Button Content="{Binding #RootWindow.DataContext.Texts.Details}"
+                                    Classes="data-action-button"
+                                    Tag="{Binding}"
+                                    Click="ShowImportedDllDetailsButton_Click"
+                                    Margin="0,0,6,6"
+                                    Padding="10,6"/>
+                            <Button Content="{Binding #RootWindow.DataContext.Texts.CopyPath}"
+                                    Classes="data-action-button"
+                                    Tag="{Binding}"
+                                    Click="CopyImportedDllPathButton_Click"
+                                    Margin="0,0,6,6"
+                                    Padding="10,6"/>
+                            <Button Content="{Binding #RootWindow.DataContext.Texts.Reload}"
+                                    Classes="data-action-button"
+                                    Tag="{Binding}"
+                                    Click="ReloadImportedDllButton_Click"
+                                    Margin="0,0,6,6"
+                                    Padding="10,6"/>
+                            <Button Content="{Binding #RootWindow.DataContext.Texts.Remove}"
+                                    Classes="data-action-button"
+                                    Tag="{Binding}"
+                                    Click="RemoveImportedDllButton_Click"
+                                    Margin="0,0,6,6"
+                                    Padding="10,6"/>
+                          </WrapPanel>
 
                           <StackPanel Spacing="2">
-                            <TextBlock Text="Источники"
+                            <TextBlock Text="{Binding #RootWindow.DataContext.Texts.Sources}"
                                        FontWeight="SemiBold"
                                        Foreground="#0F172A"/>
                             <TextBlock Text="{Binding SourceNames}"
@@ -1509,13 +1547,81 @@
                           </StackPanel>
 
                           <StackPanel Spacing="2">
-                            <TextBlock Text="Типы"
+                            <TextBlock Text="{Binding #RootWindow.DataContext.Texts.Types}"
                                        FontWeight="SemiBold"
                                        Foreground="#0F172A"/>
                             <TextBlock Text="{Binding TypeNames}"
                                        Foreground="#475569"
                                        TextWrapping="Wrap"/>
                           </StackPanel>
+
+                          <Expander Header="{Binding #RootWindow.DataContext.Texts.Tables}"
+                                    IsVisible="{Binding HasTables}">
+                            <ItemsControl ItemsSource="{Binding Tables}">
+                              <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="models:ImportedDllTableInfoModel">
+                                  <Border Margin="0,4,0,0"
+                                          Padding="8"
+                                          Background="#F8FAFC"
+                                          BorderBrush="#E2E8F0"
+                                          BorderThickness="1"
+                                          CornerRadius="8">
+                                    <StackPanel Spacing="4">
+                                      <TextBlock Text="{Binding QualifiedDisplayName}"
+                                                 FontWeight="SemiBold"
+                                                 TextTrimming="CharacterEllipsis"
+                                                 ToolTip.Tip="{Binding QualifiedDisplayName}"/>
+                                      <TextBlock Text="{Binding SourceKey}"
+                                                 Foreground="#64748B"
+                                                 FontSize="11"
+                                                 TextTrimming="CharacterEllipsis"
+                                                 ToolTip.Tip="{Binding SourceKey}"/>
+                                      <ItemsControl ItemsSource="{Binding Columns}">
+                                        <ItemsControl.ItemTemplate>
+                                          <DataTemplate x:DataType="models:ImportedDllColumnInfoModel">
+                                            <TextBlock FontSize="11"
+                                                       Foreground="#475569"
+                                                       Text="{Binding DisplaySummary}"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       ToolTip.Tip="{Binding SearchText}"/>
+                                          </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                      </ItemsControl>
+                                    </StackPanel>
+                                  </Border>
+                                </DataTemplate>
+                              </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                          </Expander>
+
+                          <Expander Header="{Binding #RootWindow.DataContext.Texts.ErrorsWarnings}"
+                                    IsVisible="{Binding HasErrors}">
+                            <ItemsControl ItemsSource="{Binding Errors}">
+                              <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="models:ImportedDllErrorInfoModel">
+                                  <Border Margin="0,4,0,0"
+                                          Padding="8"
+                                          Background="#FFF7ED"
+                                          BorderBrush="#FED7AA"
+                                          BorderThickness="1"
+                                          CornerRadius="8">
+                                    <StackPanel Spacing="3">
+                                      <TextBlock Text="{Binding Title}"
+                                                 FontWeight="SemiBold"
+                                                 Foreground="#9A3412"/>
+                                      <TextBlock Text="{Binding Message}"
+                                                 Foreground="#7C2D12"
+                                                 TextWrapping="Wrap"/>
+                                      <TextBlock Text="{Binding Details}"
+                                                 Foreground="#9A3412"
+                                                 FontSize="11"
+                                                 TextWrapping="Wrap"/>
+                                    </StackPanel>
+                                  </Border>
+                                </DataTemplate>
+                              </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                          </Expander>
                         </StackPanel>
                       </Border>
                     </DataTemplate>
@@ -2023,7 +2129,7 @@
                     Padding="14">
               <Grid ColumnDefinitions="*,Auto">
                 <StackPanel Spacing="4">
-                  <TextBlock Text="Export Pipeline"
+                  <TextBlock Text="{Binding Texts.ExportPipeline}"
                              FontSize="22"
                              FontWeight="Bold"/>
                   <TextBlock Text="{Binding ExportPipelineSummary}"
@@ -2059,22 +2165,22 @@
 
                 <WrapPanel Grid.Column="1"
                            VerticalAlignment="Center">
-                  <Button Content="Refresh"
+                  <Button Content="{Binding Texts.Refresh}"
                           Classes="export-secondary"
                           Command="{Binding RefreshGeneratedCodeEditorCommand}"
                           ToolTip.Tip="{Binding RefreshGeneratedCodeEditorCommand.Hint}"
                           Margin="0,0,8,8"/>
-                  <Button Content="Validate build"
+                  <Button Content="{Binding Texts.ValidateBuild}"
                           Classes="export-secondary"
                           Command="{Binding ValidateExportBuildEditorCommand}"
                           ToolTip.Tip="{Binding ValidateExportBuildEditorCommand.Hint}"
                           Margin="0,0,8,8"/>
-                  <Button Content="Export to project..."
+                  <Button Content="{Binding Texts.ExportToProject}"
                           Classes="export-primary"
                           Command="{Binding ExportToProjectEditorCommand}"
                           ToolTip.Tip="{Binding ExportToProjectEditorCommand.Hint}"
                           Margin="0,0,8,8"/>
-                  <Button Content="Export ZIP"
+                  <Button Content="{Binding Texts.ExportZip}"
                           Classes="export-secondary"
                           Command="{Binding ExportAsZipEditorCommand}"
                           ToolTip.Tip="{Binding ExportAsZipEditorCommand.Hint}"
@@ -2091,7 +2197,7 @@
                       CornerRadius="12"
                       Padding="12">
                 <Grid RowDefinitions="Auto,*">
-                  <TextBlock Text="Generated files"
+                  <TextBlock Text="{Binding Texts.GeneratedFiles}"
                              FontSize="14"
                              FontWeight="Bold"/>
                   <TreeView Grid.Row="1"
@@ -2164,7 +2270,7 @@
                                  TextTrimming="CharacterEllipsis"/>
                     </StackPanel>
                     <Button Grid.Column="1"
-                            Content="Copy file"
+                            Content="{Binding Texts.CopyFile}"
                             Classes="export-secondary"
                             Command="{Binding CopyCurrentGeneratedFileEditorCommand}"
                             ToolTip.Tip="{Binding CopyCurrentGeneratedFileEditorCommand.Hint}"
@@ -2193,7 +2299,7 @@
                           CornerRadius="12"
                           Padding="12">
                     <StackPanel Spacing="8">
-                      <TextBlock Text="Build validation"
+                      <TextBlock Text="{Binding Texts.BuildValidation}"
                                  FontSize="14"
                                  FontWeight="Bold"/>
                       <Border Background="#F8FAFC"
@@ -2209,7 +2315,7 @@
                                      Foreground="#64748B"
                                      FontSize="12"
                                      TextWrapping="Wrap"/>
-                          <Button Content="Open validation folder"
+                          <Button Content="{Binding Texts.OpenValidationFolder}"
                                   Classes="export-secondary"
                                   Command="{Binding OpenValidationFolderEditorCommand}"
                                   ToolTip.Tip="{Binding OpenValidationFolderEditorCommand.Hint}"
@@ -2217,7 +2323,7 @@
                                   Margin="0,4,0,0"/>
                         </StackPanel>
                       </Border>
-                      <Button Content="Open full output"
+                      <Button Content="{Binding Texts.OpenFullOutput}"
                               Classes="export-secondary"
                               Command="{Binding OpenFullOutputPanelCommand}"
                               HorizontalAlignment="Left"/>
@@ -2230,7 +2336,7 @@
                           CornerRadius="12"
                           Padding="12">
                     <StackPanel Spacing="8">
-                      <TextBlock Text="Required packages"
+                      <TextBlock Text="{Binding Texts.RequiredPackages}"
                                  FontSize="14"
                                  FontWeight="Bold"/>
                       <Border Background="#F0FDF4"
@@ -2239,7 +2345,7 @@
                               CornerRadius="10"
                               Padding="9"
                               IsVisible="{Binding HasNoRequiredPackages}">
-                        <TextBlock Text="No additional packages required."
+                        <TextBlock Text="{Binding Texts.NoAdditionalPackagesRequired}"
                                    Foreground="#166534"
                                    FontWeight="SemiBold"/>
                       </Border>
@@ -2281,7 +2387,7 @@
                           CornerRadius="12"
                           Padding="12">
                     <StackPanel Spacing="8">
-                      <TextBlock Text="Export diagnostics"
+                      <TextBlock Text="{Binding Texts.ExportDiagnostics}"
                                  FontSize="14"
                                  FontWeight="Bold"/>
                       <Border Background="#F0FDF4"
@@ -2290,7 +2396,7 @@
                               CornerRadius="10"
                               Padding="9"
                               IsVisible="{Binding HasNoExportPipelineDiagnostics}">
-                        <TextBlock Text="No export warnings or errors."
+                        <TextBlock Text="{Binding Texts.NoExportWarningsOrErrors}"
                                    Foreground="#166534"
                                    FontWeight="SemiBold"/>
                       </Border>
@@ -2387,25 +2493,25 @@
                            TextTrimming="CharacterEllipsis"/>
               </StackPanel>
               <Button Grid.Column="1"
-                      Content="Reset view"
+                      Content="{Binding Texts.ResetView}"
                       Classes="property-header-action"
                       Command="{Binding ResetPropertyGridViewCommand}"
-                      ToolTip.Tip="Reset property view for this control type"/>
+                      ToolTip.Tip="Сбросить вид свойств для выбранного control type"/>
               <Button Grid.Column="2"
-                      Content="Basic"
+                      Content="{Binding Texts.Basic}"
                       Classes="property-header-action"
                       Command="{Binding ExpandBasicPropertyGridCategoriesCommand}"
-                      ToolTip.Tip="Expand common property groups"/>
+                      ToolTip.Tip="Развернуть основные группы свойств"/>
               <Button Grid.Column="3"
-                      Content="Collapse"
+                      Content="{Binding Texts.Collapse}"
                       Classes="property-header-action"
                       Command="{Binding CollapseAllPropertyGridCategoriesCommand}"
-                      ToolTip.Tip="Collapse all property groups"/>
+                      ToolTip.Tip="Свернуть группы свойств"/>
               <Button Grid.Column="4"
                       Content=">"
                       Classes="dock-collapse"
                       Command="{Binding ToggleRightPanelEditorCommand}"
-                      ToolTip.Tip="Hide right panel"/>
+                      ToolTip.Tip="Скрыть правую панель"/>
             </Grid>
           </Border>
 
@@ -2416,7 +2522,7 @@
                     SelectedIndex="{Binding RightInspectorSelectedIndex, Mode=TwoWay}">
           <!-- Главная вкладка настройки:
                сверху свойства формы, ниже режимы дизайнера и затем свойства выделенного контрола. -->
-          <TabItem Header="Properties">
+          <TabItem Header="{Binding Texts.Properties}">
             <Grid RowDefinitions="Auto,*"
                   Margin="0,6,0,0">
               <Border Background="White"
@@ -2441,7 +2547,7 @@
                     ColumnDefinitions="*,Auto"
                     IsVisible="False">
                 <TextBox Classes="property-editor"
-                         Watermark="Search properties..."
+                         Watermark="{Binding Texts.SearchProperties}"
                          Text="{Binding PropertyGridSearchText, Mode=TwoWay}"/>
                 <Button Grid.Column="1"
                         Classes="property-header-action"
@@ -2478,9 +2584,9 @@
                           Padding="10"
                           IsVisible="{Binding HasNoSelectedControl}">
                     <StackPanel Spacing="6">
-                      <TextBlock Text="No control selected"
+                      <TextBlock Text="Control не выбран"
                                  FontWeight="SemiBold"/>
-                      <TextBlock Text="Select a control on the canvas to edit Name, Text, size and colors."
+                      <TextBlock Text="Выберите control на Canvas, чтобы редактировать Name, Text, размер и цвета."
                                  FontSize="12"
                                  Foreground="#64748B"
                                  TextWrapping="Wrap"/>
@@ -4009,8 +4115,15 @@
                                                       Spacing="4">
                                             <TextBlock Text="Шаблон"
                                                        FontWeight="SemiBold"/>
-                                            <TextBox Text="{Binding TextTemplate, Mode=TwoWay}"
-                                                     Watermark="Клиент: {Name}, Email: {Email}"/>
+                                            <TextBlock Text="{Binding TextTemplate}"
+                                                       MinHeight="28"
+                                                       TextWrapping="Wrap"
+                                                       Foreground="#334155"/>
+                                            <Button Content="Редактировать в Logic"
+                                                    Command="{Binding #RootWindow.DataContext.SelectInteractionCommand}"
+                                                    CommandParameter="{Binding}"
+                                                    Padding="10,6"
+                                                    HorizontalAlignment="Left"/>
                                           </StackPanel>
                                         </Grid>
                                       </StackPanel>
@@ -5469,7 +5582,7 @@
             </Grid>
           </TabItem>
 
-          <TabItem Header="Data">
+          <TabItem Header="{Binding Texts.Data}">
             <ScrollViewer Margin="0,12,0,0"
                           VerticalScrollBarVisibility="Auto">
               <StackPanel Spacing="12">
@@ -5518,12 +5631,12 @@
                         </ComboBox.ItemTemplate>
                       </ComboBox>
                       <Button Grid.Column="1"
-                              Content="Create"
+                              Content="{Binding Texts.Create}"
                               Classes="property-header-action"
                               Command="{Binding CreateBindingSourceForSelectedControlCommand}"
                               ToolTip.Tip="Create BindingSource and attach it to this DataGrid"/>
                       <Button Grid.Column="2"
-                              Content="Fields"
+                              Content="{Binding Texts.Fields}"
                               Classes="property-header-action"
                               Command="{Binding CreateColumnsFromSelectedBindingSourceCommand}"
                               ToolTip.Tip="Create/normalize columns from the selected BindingSource"/>
@@ -5536,7 +5649,7 @@
                                 Click="SelectedCheckBox_Click"
                                 VerticalAlignment="Center"/>
                       <Button Grid.Column="1"
-                              Content="Edit columns..."
+                              Content="{Binding Texts.EditColumns}"
                               Classes="data-action-button"
                               Padding="8,4"
                               Click="OpenDataGridColumnEditorButton_Click"/>
@@ -5556,11 +5669,11 @@
 
                     <StackPanel Orientation="Horizontal"
                                 Spacing="6">
-                      <Button Content="Open Logic"
+                      <Button Content="{Binding Texts.OpenLogic}"
                               Classes="property-header-action"
                               Command="{Binding OpenLogicForSelectedControlCommand}"
                               ToolTip.Tip="Open interactions for this DataGrid"/>
-                      <Button Content="Open full data tools"
+                      <Button Content="{Binding Texts.OpenFullDataTools}"
                               Classes="property-header-action"
                               Command="{Binding OpenBindingSourceEditorCommand}"
                               ToolTip.Tip="Go to the full BindingSource editor"/>
@@ -6057,7 +6170,7 @@
             </ScrollViewer>
           </TabItem>
 
-          <TabItem Header="Layout">
+          <TabItem Header="{Binding Texts.Layout}">
             <Grid RowDefinitions="Auto,*"
                   Margin="0,8,0,0">
               <Grid ColumnDefinitions="*,Auto">
@@ -6206,7 +6319,7 @@
             </Grid>
           </TabItem>
 
-          <TabItem Header="Plugins">
+          <TabItem Header="{Binding Texts.Plugins}">
             <ScrollViewer Margin="0,12,0,0"
                           VerticalScrollBarVisibility="Auto">
               <StackPanel Spacing="12">
@@ -6402,14 +6515,14 @@
             </ScrollViewer>
           </TabItem>
 
-          <TabItem Header="Export">
+          <TabItem Header="{Binding Texts.Export}">
             <ScrollViewer Margin="0,10,0,0"
                           HorizontalScrollBarVisibility="Disabled"
                           VerticalScrollBarVisibility="Auto">
               <StackPanel Spacing="10">
                 <Border Classes="export-card">
                   <StackPanel Spacing="8">
-                    <TextBlock Text="Export summary"
+                    <TextBlock Text="Сводка Export"
                                FontSize="16"
                                FontWeight="Bold"/>
                     <TextBlock Text="{Binding ExportPipelineCompactSummary}"
@@ -6435,7 +6548,7 @@
                                    FontWeight="SemiBold"/>
                       </Border>
                     </WrapPanel>
-                    <Button Content="Open Export Pipeline"
+                    <Button Content="{Binding Texts.ExportPipeline}"
                             Classes="export-primary"
                             Command="{Binding OpenExportPipelineEditorCommand}"
                             ToolTip.Tip="{Binding OpenExportPipelineEditorCommand.Hint}"
@@ -6445,18 +6558,18 @@
 
                 <Border Classes="export-card">
                   <StackPanel Spacing="8">
-                    <TextBlock Text="Quick actions"
+                    <TextBlock Text="Быстрые действия"
                                FontWeight="Bold"
                                FontSize="14"/>
                     <WrapPanel>
-                      <Button Content="Refresh"
+                      <Button Content="{Binding Texts.Refresh}"
                               Classes="export-secondary"
                               Command="{Binding RefreshGeneratedCodeEditorCommand}"
                               ToolTip.Tip="{Binding RefreshGeneratedCodeEditorCommand.Hint}"
                               MinWidth="84"
                               Padding="10,6"
                               Margin="0,0,6,6"/>
-                      <Button Content="Validate"
+                      <Button Content="{Binding Texts.ValidateBuild}"
                               Classes="export-secondary"
                               Command="{Binding ValidateExportBuildEditorCommand}"
                               ToolTip.Tip="{Binding ValidateExportBuildEditorCommand.Hint}"
@@ -6541,7 +6654,7 @@
                                Foreground="#64748B"
                                FontSize="12"
                                TextWrapping="Wrap"/>
-                    <Button Content="Open validation folder"
+                    <Button Content="{Binding Texts.OpenValidationFolder}"
                             Classes="export-secondary"
                             Command="{Binding OpenValidationFolderEditorCommand}"
                             ToolTip.Tip="{Binding OpenValidationFolderEditorCommand.Hint}"
@@ -6552,7 +6665,7 @@
             </ScrollViewer>
           </TabItem>
 
-          <TabItem Header="Logic">
+          <TabItem Header="{Binding Texts.Logic}">
             <ScrollViewer Margin="0,12,0,0"
                           VerticalScrollBarVisibility="Auto">
               <StackPanel Spacing="12">
@@ -6581,26 +6694,26 @@
                 <Border Classes="card"
                         IsVisible="{Binding HasLogicQuickActions}">
                   <StackPanel Spacing="8">
-                    <TextBlock Text="Quick actions"
+                    <TextBlock Text="Быстрые действия"
                                FontSize="14"
                                FontWeight="Bold"/>
                     <WrapPanel>
-                      <Button Content="Show message"
+                      <Button Content="Показать сообщение"
                               Command="{Binding AddShowMessageInteractionForSelectedCommand}"
                               IsVisible="{Binding CanQuickAddButtonShowMessageInteraction}"
                               Padding="10,7"
                               Margin="0,0,8,8"/>
-                      <Button Content="Open another form"
+                      <Button Content="Открыть другую Form"
                               Command="{Binding AddOpenFormInteractionForSelectedCommand}"
                               IsVisible="{Binding CanQuickAddButtonOpenFormInteraction}"
                               Padding="10,7"
                               Margin="0,0,8,8"/>
-                      <Button Content="Toggle visibility"
+                      <Button Content="Переключить видимость"
                               Command="{Binding AddToggleVisibilityInteractionForSelectedCommand}"
                               IsVisible="{Binding CanQuickAddToggleVisibilityInteraction}"
                               Padding="10,7"
                               Margin="0,0,8,8"/>
-                      <Button Content="Fill TextBox from row"
+                      <Button Content="Заполнить TextBox из строки"
                               Command="{Binding AddDataGridFillInteractionForSelectedCommand}"
                               IsVisible="{Binding CanQuickAddDataGridFillInteraction}"
                               Padding="10,7"
@@ -6806,10 +6919,28 @@
                                  GotFocus="LogicEditor_GotFocus"
                                  LostFocus="LogicEditor_LostFocus"
                                  Watermark="Заголовок сообщения, например: Готово"/>
-                        <TextBox Text="{Binding SelectedInteraction.TextTemplate, Mode=TwoWay}"
+                        <TextBox Text="{Binding LogicTemplateDraft, Mode=TwoWay}"
                                  GotFocus="LogicEditor_GotFocus"
                                  LostFocus="LogicEditor_LostFocus"
+                                 AcceptsReturn="True"
+                                 TextWrapping="Wrap"
+                                 MinHeight="78"
                                  Watermark="Например: Клиент: {Name}, Email: {Email}"/>
+                        <Grid ColumnDefinitions="*,Auto,Auto">
+                          <TextBlock Text="{Binding LogicTemplateDraftStatus}"
+                                     Foreground="#64748B"
+                                     FontSize="11"
+                                     TextWrapping="Wrap"
+                                     VerticalAlignment="Center"/>
+                          <Button Grid.Column="1"
+                                  Content="{Binding Texts.Apply}"
+                                  Command="{Binding ApplyLogicTemplateEditCommand}"
+                                  Padding="10,6"/>
+                          <Button Grid.Column="2"
+                                  Content="{Binding Texts.Cancel}"
+                                  Command="{Binding CancelLogicTemplateEditCommand}"
+                                  Padding="10,6"/>
+                        </Grid>
                         <TextBlock Text="Если шаблон заполнен, он используется вместо одиночного поля. Пример: Клиент: {Name}, Email: {Email}."
                                    Foreground="#64748B"
                                    FontSize="12"
@@ -6851,6 +6982,139 @@
                                    TextWrapping="Wrap"/>
                       </StackPanel>
                     </Grid>
+
+                    <Border Background="#F8FAFC"
+                            BorderBrush="#BFDBFE"
+                            BorderThickness="1"
+                            CornerRadius="12"
+                            Padding="12"
+                            IsVisible="{Binding IsSelectedInteractionDataGridSelectedRowAction}">
+                      <Grid ColumnDefinitions="*,160"
+                            RowDefinitions="Auto,Auto,Auto,Auto">
+                        <StackPanel Spacing="4">
+                          <TextBlock Text="DataGrid selected row -> Text"
+                                     FontSize="14"
+                                     FontWeight="Bold"
+                                     Foreground="#1D4ED8"/>
+                          <TextBlock Text="Настройте, какие поля выбранной строки записывать в TextBox/TextBlock. Изменения остаются черновиком до Apply."
+                                     Foreground="#475569"
+                                     FontSize="12"
+                                     TextWrapping="Wrap"/>
+                        </StackPanel>
+
+                        <StackPanel Grid.Column="1"
+                                    Margin="12,0,0,0"
+                                    Spacing="4">
+                          <TextBlock Text="Доступные поля"
+                                     FontWeight="SemiBold"/>
+                          <ItemsControl ItemsSource="{Binding LogicTemplateAvailablePlaceholders}">
+                            <ItemsControl.ItemTemplate>
+                              <DataTemplate>
+                                <Button Content="{Binding}"
+                                        Command="{Binding #RootWindow.DataContext.InsertLogicTemplatePlaceholderCommand}"
+                                        CommandParameter="{Binding}"
+                                        HorizontalAlignment="Stretch"
+                                        Padding="8,4"
+                                        Margin="0,0,0,4"/>
+                              </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                          </ItemsControl>
+                          <TextBlock Text="Нет schema для выбранного DataGrid."
+                                     IsVisible="{Binding HasNoLogicTemplateAvailablePlaceholders}"
+                                     Foreground="#B45309"
+                                     FontSize="11"
+                                     TextWrapping="Wrap"/>
+                        </StackPanel>
+
+                        <StackPanel Grid.Row="1"
+                                    Margin="0,10,0,0"
+                                    Spacing="4">
+                          <TextBlock Text="Template"
+                                     FontWeight="SemiBold"/>
+                          <TextBox Text="{Binding LogicTemplateDraft, Mode=TwoWay}"
+                                   GotFocus="LogicEditor_GotFocus"
+                                   LostFocus="LogicEditor_LostFocus"
+                                   AcceptsReturn="True"
+                                   TextWrapping="Wrap"
+                                   MinHeight="110"
+                                   Watermark="ID: {Id}&#x0a;Name: {Name}&#x0a;Price: {Price}"/>
+                          <Grid ColumnDefinitions="*,Auto,Auto">
+                            <TextBlock Text="{Binding LogicTemplateDraftStatus}"
+                                       Foreground="#64748B"
+                                       FontSize="11"
+                                       TextWrapping="Wrap"
+                                       VerticalAlignment="Center"/>
+                            <Button Grid.Column="1"
+                                    Content="{Binding Texts.Apply}"
+                                    Command="{Binding ApplyLogicTemplateEditCommand}"
+                                    Padding="10,6"/>
+                            <Button Grid.Column="2"
+                                    Content="{Binding Texts.Cancel}"
+                                    Command="{Binding CancelLogicTemplateEditCommand}"
+                                    Padding="10,6"/>
+                          </Grid>
+                        </StackPanel>
+
+                        <StackPanel Grid.Row="1"
+                                    Grid.Column="1"
+                                    Margin="12,10,0,0"
+                                    Spacing="4">
+                          <TextBlock Text="Preview"
+                                     FontWeight="SemiBold"/>
+                          <Border Background="White"
+                                  BorderBrush="#D7E2EE"
+                                  BorderThickness="1"
+                                  CornerRadius="8"
+                                  Padding="8"
+                                  MinHeight="110">
+                            <TextBlock Text="{Binding LogicTemplatePreviewText}"
+                                       TextWrapping="Wrap"
+                                       Foreground="#0F172A"/>
+                          </Border>
+                        </StackPanel>
+
+                        <Grid Grid.Row="2"
+                              ColumnDefinitions="*,*,*"
+                              Margin="0,10,0,0">
+                          <StackPanel Spacing="4">
+                            <TextBlock Text="Missing value"
+                                       FontWeight="SemiBold"/>
+                            <ComboBox ItemsSource="{Binding AvailableMissingValueBehaviors}"
+                                      SelectedItem="{Binding SelectedInteraction.MissingValueBehavior, Mode=TwoWay}"
+                                      DropDownOpened="LogicComboBox_DropDownOpened"
+                                      DropDownClosed="LogicComboBox_DropDownClosed"/>
+                          </StackPanel>
+                          <StackPanel Grid.Column="1"
+                                      Margin="8,0,0,0"
+                                      Spacing="4">
+                            <TextBlock Text="No selection"
+                                       FontWeight="SemiBold"/>
+                            <ComboBox ItemsSource="{Binding AvailableNoSelectionBehaviors}"
+                                      SelectedItem="{Binding SelectedInteraction.NoSelectionBehavior, Mode=TwoWay}"
+                                      DropDownOpened="LogicComboBox_DropDownOpened"
+                                      DropDownClosed="LogicComboBox_DropDownClosed"/>
+                          </StackPanel>
+                          <StackPanel Grid.Column="2"
+                                      Margin="8,0,0,0"
+                                      Spacing="4">
+                            <TextBlock Text="No selection text"
+                                       FontWeight="SemiBold"/>
+                            <TextBox Text="{Binding SelectedInteraction.NoSelectionText, Mode=TwoWay}"
+                                     GotFocus="LogicEditor_GotFocus"
+                                     LostFocus="LogicEditor_LostFocus"
+                                     Watermark="Нет выбранной строки"/>
+                          </StackPanel>
+                        </Grid>
+
+                        <TextBlock Grid.Row="3"
+                                   Grid.ColumnSpan="2"
+                                   Margin="0,10,0,0"
+                                   Text="{Binding LogicTemplateValidationText}"
+                                   Foreground="#B45309"
+                                   FontSize="12"
+                                   TextWrapping="Wrap"/>
+                      </Grid>
+                    </Border>
                   </StackPanel>
                 </Border>
               </StackPanel>
@@ -6907,7 +7171,7 @@
               <StackPanel Orientation="Horizontal"
                           Spacing="6"
                           VerticalAlignment="Center">
-                <Button Content="Problems"
+                <Button Content="{Binding Texts.Problems}"
                         Command="{Binding OpenProblemsPanelCommand}"
                         Classes="problem-filter"
                         Padding="8,3"/>
@@ -6919,7 +7183,7 @@
                         Command="{Binding OpenInteractionTracePanelCommand}"
                         Classes="problem-filter"
                         Padding="8,3"/>
-                <TextBlock Text="Diagnostics"
+                <TextBlock Text="{Binding Texts.Diagnostics}"
                            Foreground="#64748B"
                            FontWeight="SemiBold"
                            FontSize="11"
@@ -7529,29 +7793,29 @@
                            FontSize="24"
                            FontWeight="Bold"
                            Foreground="#0F172A"/>
-                <TextBlock Text="Start a form, reopen recent work, or jump into docs."
+                <TextBlock Text="{Binding Texts.StartScreenDescription}"
                            Foreground="#64748B"/>
               </StackPanel>
               <Button Grid.Column="1"
-                      Content="Close"
+                      Content="{Binding Texts.Close}"
                       Command="{Binding CloseStartScreenCommand}"
                       Classes="editor-ghost-button"/>
             </Grid>
 
             <WrapPanel Grid.Row="1">
-              <Button Content="New Form"
+              <Button Content="{Binding NewEditorCommand.Title}"
                       Command="{Binding NewEditorCommand}"
                       Classes="editor-primary-button"
                       Margin="0,0,8,8"/>
-              <Button Content="Open Form"
+              <Button Content="{Binding OpenEditorCommand.Title}"
                       Command="{Binding OpenEditorCommand}"
                       Classes="editor-secondary-button"
                       Margin="0,0,8,8"/>
-              <Button Content="Templates"
+              <Button Content="{Binding Texts.Templates}"
                       Command="{Binding ToggleLeftPanelEditorCommand}"
                       Classes="editor-secondary-button"
                       Margin="0,0,8,8"/>
-              <Button Content="Help"
+              <Button Content="{Binding HelpEditorCommand.Title}"
                       Command="{Binding HelpEditorCommand}"
                       Classes="editor-secondary-button"
                       Margin="0,0,8,8"/>
@@ -7564,7 +7828,7 @@
                       CornerRadius="12"
                       Padding="12">
                 <StackPanel Spacing="10">
-                  <TextBlock Text="Recent Projects"
+                  <TextBlock Text="{Binding Texts.RecentProjects}"
                              FontWeight="Bold"
                              FontSize="16"/>
                   <ItemsControl ItemsSource="{Binding RecentFiles}">

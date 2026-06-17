@@ -197,7 +197,10 @@ public sealed class ReflectionBindingMetadataProvider : IBindingMetadataProvider
                 {
                     ProviderId = Id,
                     AssemblyPath = assemblyPath,
-                    FailureMessage = string.Join(" | ", failureMessages)
+                    FailureMessage = string.Join(" | ", failureMessages),
+                    ExceptionType = ex.GetBaseException().GetType().FullName ?? ex.GetBaseException().GetType().Name,
+                    ExceptionMessage = ex.GetBaseException().Message,
+                    ExceptionDetails = ex.ToString()
                 }
             };
         }
@@ -255,6 +258,7 @@ public sealed class ReflectionBindingMetadataProvider : IBindingMetadataProvider
                 TableAttributedTypeCount = analyses.Count(analysis => analysis.HasTableAttribute),
                 ColumnAttributedTypeCount = analyses.Count(analysis => analysis.HasColumnAttributes),
                 LoaderExceptionCount = loadableTypes.LoaderExceptionCount,
+                LoaderExceptionMessages = loadableTypes.LoaderExceptionMessages,
                 CandidateTypeNames = candidateAnalyses
                     .Select(analysis => analysis.Type.FullName ?? analysis.Type.Name)
                     .Take(5)
@@ -465,7 +469,11 @@ public sealed class ReflectionBindingMetadataProvider : IBindingMetadataProvider
             TypeName = NormalizePortableTypeName(typeName),
             IsPublicReadable = isPublicReadable && !isIndexer,
             HasColumnAttribute = HasPortableAttribute(reader, customAttributes, ColumnAttributeFullName),
-            HasAssociationAttribute = HasPortableAttribute(reader, customAttributes, AssociationAttributeFullName)
+            HasAssociationAttribute = HasPortableAttribute(reader, customAttributes, AssociationAttributeFullName),
+            ColumnName = ReadPortableNamedStringAttributeValue(reader, customAttributes, ColumnAttributeFullName, "Name"),
+            DbType = ReadPortableNamedStringAttributeValue(reader, customAttributes, ColumnAttributeFullName, "DbType"),
+            IsPrimaryKey = ReadPortableNamedBooleanAttributeValue(reader, customAttributes, ColumnAttributeFullName, "IsPrimaryKey"),
+            IsNullable = !ReadPortableNamedBooleanAttributeValue(reader, customAttributes, ColumnAttributeFullName, "CanBeNull", defaultValue: true) ? false : true
         };
     }
 
@@ -525,6 +533,33 @@ public sealed class ReflectionBindingMetadataProvider : IBindingMetadataProvider
         string attributeFullName,
         string memberName)
     {
+        return TryReadPortableNamedAttributeValue(reader, handles, attributeFullName, memberName, out var value)
+            && value is string stringValue
+            ? stringValue
+            : string.Empty;
+    }
+
+    private static bool ReadPortableNamedBooleanAttributeValue(
+        MetadataReader reader,
+        CustomAttributeHandleCollection handles,
+        string attributeFullName,
+        string memberName,
+        bool defaultValue = false)
+    {
+        return TryReadPortableNamedAttributeValue(reader, handles, attributeFullName, memberName, out var value)
+            && value is bool boolValue
+            ? boolValue
+            : defaultValue;
+    }
+
+    private static bool TryReadPortableNamedAttributeValue(
+        MetadataReader reader,
+        CustomAttributeHandleCollection handles,
+        string attributeFullName,
+        string memberName,
+        out object? value)
+    {
+        value = null;
         foreach (var handle in handles)
         {
             if (!string.Equals(GetPortableAttributeTypeFullName(reader, handle), attributeFullName, StringComparison.Ordinal))
@@ -534,29 +569,49 @@ public sealed class ReflectionBindingMetadataProvider : IBindingMetadataProvider
             {
                 var blobReader = reader.GetBlobReader(reader.GetCustomAttribute(handle).Value);
                 if (blobReader.ReadUInt16() != 1 || blobReader.RemainingBytes < 2)
-                    return string.Empty;
+                    return false;
 
                 var namedArgumentCount = blobReader.ReadUInt16();
                 for (var index = 0; index < namedArgumentCount && blobReader.RemainingBytes > 0; index++)
                 {
                     _ = blobReader.ReadByte(); // FIELD or PROPERTY marker.
                     var fieldOrPropertyType = blobReader.ReadByte();
-                    if (fieldOrPropertyType != 0x0E) // ELEMENT_TYPE_STRING
-                        return string.Empty;
-
                     var currentMemberName = ReadPortableSerializedString(ref blobReader);
-                    var value = ReadPortableSerializedString(ref blobReader);
+                    var currentValue = ReadPortableFixedArgument(ref blobReader, fieldOrPropertyType);
                     if (string.Equals(currentMemberName, memberName, StringComparison.Ordinal))
-                        return value;
+                    {
+                        value = currentValue;
+                        return true;
+                    }
                 }
             }
             catch
             {
-                return string.Empty;
+                return false;
             }
         }
 
-        return string.Empty;
+        return false;
+    }
+
+    private static object? ReadPortableFixedArgument(ref BlobReader blobReader, byte elementType)
+    {
+        return elementType switch
+        {
+            0x02 => blobReader.ReadByte() != 0, // ELEMENT_TYPE_BOOLEAN
+            0x03 => blobReader.ReadSByte(),
+            0x04 => blobReader.ReadByte(),
+            0x05 => blobReader.ReadInt16(),
+            0x06 => blobReader.ReadUInt16(),
+            0x07 => blobReader.ReadInt32(),
+            0x08 => blobReader.ReadUInt32(),
+            0x09 => blobReader.ReadInt64(),
+            0x0A => blobReader.ReadUInt64(),
+            0x0B => blobReader.ReadSingle(),
+            0x0C => blobReader.ReadDouble(),
+            0x0E => ReadPortableSerializedString(ref blobReader),
+            _ => string.Empty
+        };
     }
 
     private static string ReadPortableSerializedString(ref BlobReader blobReader)
@@ -776,7 +831,7 @@ public sealed class ReflectionBindingMetadataProvider : IBindingMetadataProvider
             Path = baseName,
             ItemTypeName = type.Name,
             Description = $"Импортировано из {Path.GetFileName(assemblyPath)}{targetFrameworkSuffix}",
-            SourceKind = "Assembly",
+            SourceKind = "DllTable",
             SourceAssemblyPath = assemblyPath,
             SourceTypeFullName = type.FullName,
             SourceTableName = type.TableName,
@@ -792,11 +847,16 @@ public sealed class ReflectionBindingMetadataProvider : IBindingMetadataProvider
     {
         return new BindingFieldMetadata
         {
-            Header = property.Name,
+            Header = string.IsNullOrWhiteSpace(property.ColumnName) ? property.Name : property.ColumnName,
             Path = property.Name,
             SampleValue = GetPortableSampleValue(property.TypeName, enumTypeNames),
             Width = IsCompactPortableColumnType(property.TypeName, enumTypeNames) ? "120" : "*",
             TypeName = GetPortableFriendlyTypeName(property.TypeName),
+            DbType = property.DbType,
+            IsPrimaryKey = property.IsPrimaryKey,
+            IsNullable = property.IsNullable,
+            CanRead = property.IsPublicReadable,
+            CanWrite = true,
             IsVisible = true,
             IsSortable = IsSortablePortableType(property.TypeName, enumTypeNames),
             SortDirection = BindingFieldModel.SortDirectionNone,
@@ -996,7 +1056,7 @@ public sealed class ReflectionBindingMetadataProvider : IBindingMetadataProvider
             Path = baseName,
             ItemTypeName = type.Name,
             Description = $"Импортировано из {System.IO.Path.GetFileName(assemblyPath)}",
-            SourceKind = "Assembly",
+            SourceKind = "DllTable",
             SourceAssemblyPath = assemblyPath,
             SourceTypeFullName = type.FullName ?? type.Name,
             SourceTableName = tableName,
@@ -1134,16 +1194,70 @@ public sealed class ReflectionBindingMetadataProvider : IBindingMetadataProvider
         return string.Empty;
     }
 
+    private static string GetColumnName(MemberInfo property)
+    {
+        return GetAttributeNamedString(property, ColumnAttributeFullName, "Name");
+    }
+
+    private static string GetColumnDbType(MemberInfo property)
+    {
+        return GetAttributeNamedString(property, ColumnAttributeFullName, "DbType");
+    }
+
+    private static bool GetColumnBoolean(MemberInfo property, string memberName, bool defaultValue = false)
+    {
+        return GetAttributeNamedBoolean(property, ColumnAttributeFullName, memberName, defaultValue);
+    }
+
+    private static string GetAttributeNamedString(MemberInfo member, string attributeFullName, string memberName)
+    {
+        var attribute = SafeGetCustomAttributes(member)
+            .FirstOrDefault(item => string.Equals(item.AttributeType.FullName, attributeFullName, StringComparison.Ordinal));
+        if (attribute is null)
+            return string.Empty;
+
+        var namedArgument = attribute.NamedArguments.FirstOrDefault(argument => string.Equals(argument.MemberName, memberName, StringComparison.Ordinal));
+        if (namedArgument.TypedValue.Value is string namedValue && !string.IsNullOrWhiteSpace(namedValue))
+            return namedValue;
+
+        return string.Empty;
+    }
+
+    private static bool GetAttributeNamedBoolean(MemberInfo member, string attributeFullName, string memberName, bool defaultValue)
+    {
+        var attribute = SafeGetCustomAttributes(member)
+            .FirstOrDefault(item => string.Equals(item.AttributeType.FullName, attributeFullName, StringComparison.Ordinal));
+        if (attribute is null)
+            return defaultValue;
+
+        var namedArgument = attribute.NamedArguments.FirstOrDefault(argument => string.Equals(argument.MemberName, memberName, StringComparison.Ordinal));
+        return namedArgument.TypedValue.Value is bool namedValue ? namedValue : defaultValue;
+    }
+
+    private static bool IsNullableProperty(PropertyInfo property)
+    {
+        var propertyType = property.PropertyType;
+        return !propertyType.IsValueType
+            || (propertyType.IsGenericType
+                && string.Equals(propertyType.GetGenericTypeDefinition().FullName, "System.Nullable`1", StringComparison.Ordinal));
+    }
+
     private static BindingFieldMetadata CreateBindingFieldFromProperty(PropertyInfo property)
     {
         var propertyType = GetBindablePropertyType(property);
+        var columnName = GetColumnName(property);
         return new BindingFieldMetadata
         {
-            Header = property.Name,
+            Header = string.IsNullOrWhiteSpace(columnName) ? property.Name : columnName,
             Path = property.Name,
             SampleValue = GetSampleValue(propertyType),
             Width = IsCompactColumnType(propertyType) ? "120" : "*",
             TypeName = GetFriendlyTypeName(propertyType),
+            DbType = GetColumnDbType(property),
+            IsPrimaryKey = GetColumnBoolean(property, "IsPrimaryKey"),
+            IsNullable = GetColumnBoolean(property, "CanBeNull", defaultValue: IsNullableProperty(property)),
+            CanRead = property.CanRead,
+            CanWrite = property.CanWrite,
             IsVisible = true,
             IsSortable = IsSortablePropertyType(propertyType),
             SortDirection = BindingFieldModel.SortDirectionNone,
@@ -1212,15 +1326,21 @@ public sealed class ReflectionBindingMetadataProvider : IBindingMetadataProvider
             return new LoadableTypeSnapshot
             {
                 Types = ex.Types.Where(type => type is not null).Cast<Type>().ToArray(),
-                LoaderExceptionCount = ex.LoaderExceptions?.Length ?? 0
+                LoaderExceptionCount = ex.LoaderExceptions?.Length ?? 0,
+                LoaderExceptionMessages = ex.LoaderExceptions?
+                    .Where(loaderException => loaderException is not null)
+                    .Select(loaderException => $"{loaderException!.GetType().Name}: {loaderException.Message}")
+                    .Distinct(StringComparer.Ordinal)
+                    .ToArray() ?? Array.Empty<string>()
             };
         }
-        catch
+        catch (Exception ex)
         {
             return new LoadableTypeSnapshot
             {
                 Types = Array.Empty<Type>(),
-                LoaderExceptionCount = 0
+                LoaderExceptionCount = 1,
+                LoaderExceptionMessages = new[] { $"{ex.GetType().Name}: {ex.Message}" }
             };
         }
     }
@@ -1634,6 +1754,10 @@ public sealed class ReflectionBindingMetadataProvider : IBindingMetadataProvider
         public bool IsPublicReadable { get; init; }
         public bool HasColumnAttribute { get; init; }
         public bool HasAssociationAttribute { get; init; }
+        public string ColumnName { get; init; } = "";
+        public string DbType { get; init; } = "";
+        public bool IsPrimaryKey { get; init; }
+        public bool IsNullable { get; init; } = true;
     }
 
     private sealed class PortableMetadataTypeAnalysis
@@ -1658,6 +1782,7 @@ public sealed class ReflectionBindingMetadataProvider : IBindingMetadataProvider
     {
         public IReadOnlyList<Type> Types { get; init; } = Array.Empty<Type>();
         public int LoaderExceptionCount { get; init; }
+        public IReadOnlyList<string> LoaderExceptionMessages { get; init; } = Array.Empty<string>();
     }
 }
 

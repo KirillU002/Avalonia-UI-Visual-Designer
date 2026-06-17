@@ -393,6 +393,24 @@ public sealed class PreviewInteractionExecutor
         IReadOnlyDictionary<string, string> sourceValues,
         PreviewInteractionExecutionResult result)
     {
+        if (IsDataGridSelectionChangedEvent(eventName) && sourceValues.Count == 0)
+        {
+            var noSelectionBehavior = InteractionModel.NormalizeNoSelectionBehavior(interaction.NoSelectionBehavior);
+            if (string.Equals(noSelectionBehavior, InteractionModel.NoSelectionKeepPrevious, StringComparison.Ordinal))
+                return false;
+
+            if (string.Equals(noSelectionBehavior, InteractionModel.NoSelectionSetText, StringComparison.Ordinal))
+            {
+                sourceValues = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["Value"] = interaction.NoSelectionText
+                };
+                interaction = interaction.Clone();
+                interaction.SourcePath = "Value";
+                interaction.TextTemplate = "";
+            }
+        }
+
         var value = ResolveInteractionValue(context, interaction, sourceValues);
         if (string.Equals(interaction.ActionType, InteractionModel.ActionShowMessage, StringComparison.OrdinalIgnoreCase))
         {
@@ -569,8 +587,8 @@ public sealed class PreviewInteractionExecutor
     {
         var missingFields = new List<string>();
         var value = !string.IsNullOrWhiteSpace(interaction.TextTemplate)
-            ? ApplyTemplate(interaction.TextTemplate, rowValues, missingFields)
-            : GetRowValue(rowValues, interaction.SourcePath, missingFields);
+            ? ApplyTemplate(interaction.TextTemplate, rowValues, missingFields, interaction.MissingValueBehavior)
+            : GetRowValue(rowValues, interaction.SourcePath, missingFields, interaction.MissingValueBehavior);
 
         foreach (var missingField in missingFields.Distinct(StringComparer.OrdinalIgnoreCase))
         {
@@ -587,18 +605,21 @@ public sealed class PreviewInteractionExecutor
     private static string ApplyTemplate(
         string template,
         IReadOnlyDictionary<string, string> rowValues,
-        ICollection<string> missingFields)
+        ICollection<string> missingFields,
+        string missingValueBehavior)
     {
         return Regex.Replace(
             template,
             "\\{(?<name>[^{}]+)\\}",
-            match => GetRowValue(rowValues, match.Groups["name"].Value.Trim(), missingFields));
+            match => GetRowValue(rowValues, match.Groups["name"].Value.Trim(), missingFields, missingValueBehavior, match.Value));
     }
 
     private static string GetRowValue(
         IReadOnlyDictionary<string, string> rowValues,
         string? path,
-        ICollection<string> missingFields)
+        ICollection<string> missingFields,
+        string missingValueBehavior,
+        string placeholder = "")
     {
         if (string.IsNullOrWhiteSpace(path))
             return string.Empty;
@@ -612,7 +633,20 @@ public sealed class PreviewInteractionExecutor
             return match.Value;
 
         missingFields.Add(trimmedPath);
-        return string.Empty;
+        return InteractionModel.NormalizeMissingValueBehavior(missingValueBehavior) switch
+        {
+            InteractionModel.MissingValueKeepPlaceholder => string.IsNullOrEmpty(placeholder) ? "{" + trimmedPath + "}" : placeholder,
+            InteractionModel.MissingValueShowNull => "null",
+            _ => string.Empty
+        };
+    }
+
+    private static bool IsDataGridSelectionChangedEvent(string? eventName)
+    {
+        return string.Equals(
+            InteractionModel.NormalizeEventName(eventName),
+            InteractionModel.EventDataGridSelectionChanged,
+            StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool ParseBool(string value)

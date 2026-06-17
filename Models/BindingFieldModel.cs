@@ -48,6 +48,21 @@ public partial class BindingFieldModel : ObservableObject
     private string typeName = "string";
 
     [ObservableProperty]
+    private string dbType = "";
+
+    [ObservableProperty]
+    private bool isPrimaryKey;
+
+    [ObservableProperty]
+    private bool isNullable = true;
+
+    [ObservableProperty]
+    private bool canRead = true;
+
+    [ObservableProperty]
+    private bool canWrite = true;
+
+    [ObservableProperty]
     private bool isVisible = true;
 
     [ObservableProperty]
@@ -133,6 +148,11 @@ public partial class BindingFieldModel : ObservableObject
             SampleValue = SampleValue,
             Width = Width,
             TypeName = TypeName,
+            DbType = DbType,
+            IsPrimaryKey = IsPrimaryKey,
+            IsNullable = IsNullable,
+            CanRead = CanRead,
+            CanWrite = CanWrite,
             IsVisible = IsVisible,
             IsSortable = IsSortable,
             SortDirection = SortDirection,
