@@ -1,28 +1,53 @@
 # Avalonia UI Visual Designer
 
-> Статус: **0.2.0-alpha**. Desktop designer для визуальной сборки Avalonia UI форм, настройки данных/interactions и экспорта в обычный Avalonia-проект.
+**Текущая версия:** Alpha 3.0
+
+Avalonia UI Visual Designer - визуальный дизайнер форм для Avalonia UI. Alpha 3.0 - стабилизационный релиз после Alpha 2.0: основной фокус сделан на стабильность Multi Form, Property Inspector, Export, DataGrid, DLL Import и соответствие Preview/Export.
 
 ![C#](https://img.shields.io/badge/C%23-.NET_6-blue?style=for-the-badge&logo=csharp)
 ![Avalonia](https://img.shields.io/badge/Avalonia-11.1.1-purple?style=for-the-badge)
-![Status](https://img.shields.io/badge/status-0.2.0--alpha-orange?style=for-the-badge)
+![Status](https://img.shields.io/badge/status-Alpha_3.0-orange?style=for-the-badge)
 
-## Что это
+## Статус проекта
 
-Avalonia UI Visual Designer — это IDE-like конструктор форм для Avalonia:
+Проект находится на стадии Alpha. Основные функции уже реализованы, но приложение всё ещё требует ручного тестирования и стабилизации перед Beta.
 
-- несколько форм в одном designer-project;
-- canvas editor с drag/drop, selection, undo/redo;
-- BindingSource и DataGrid с реальными полями;
-- Logic/interactions без ручного C#;
-- preview runtime;
-- Export Pipeline с generated files, NuGet-зависимостями и build validation.
+## Что изменилось в Alpha 3.0
 
-Alpha 0.2 сфокусирована на end-to-end workflow: создать multi-form проект, настроить DataGrid/BindingSource/Logic, открыть preview, экспортировать Avalonia-проект и собрать его.
+- Исправлена очистка состояния при New Project.
+- Улучшена стабильность Add Form / Multi Form.
+- Исправлены проблемы Property Inspector.
+- Export pipeline изолирован от editor state.
+- Улучшено соответствие Preview и Export.
+- Исправлен DataGrid export.
+- Добавлен/улучшен C# binding для DataGrid.
+- Улучшен Column Editor.
+- Переработан Data mode.
+- Улучшен DLL Import UX.
+- Добавлено удаление DLL.
+- Улучшены ошибки загрузки DLL.
+- Улучшены logs/settings/validate build.
+- Добавлена документация для разработчиков.
+
+## Версии
+
+- Alpha 3.0 - текущая версия, стабилизация конструктора, Export, DataGrid, DLL Import.
+- Alpha 2.0 - предыдущая версия до большого стабилизационного цикла.
+
+## Alpha 3.0
+
+- [Alpha 3.0](https://github.com/https://github.com/KirillU002/Avalonia-UI-Visual-Designer/tree/v0.3.0-alpha) — текущая версия, стабилизация конструктора, Export, DataGrid, DLL Import.
+- 
+## Alpha 2.0
+
+Предыдущую версию можно посмотреть по коммиту:
+
+[`29c5864908912c10713498b30def81af00ee4355`](https://github.com/KirillU002/Avalonia-UI-Visual-Designer/commit/29c5864908912c10713498b30def81af00ee4355)
 
 ## Требования
 
-- **.NET 6 SDK**
-- Avalonia NuGet-пакеты **11.1.1**
+- .NET 6 SDK
+- Avalonia NuGet packages 11.1.1
 - Windows для desktop-сценариев разработки
 
 Проверить SDK:
@@ -32,10 +57,7 @@ dotnet --list-sdks
 dotnet --list-runtimes
 ```
 
-Если .NET 6 SDK нет, установите его:  
-<https://dotnet.microsoft.com/en-us/download/dotnet/6.0>
-
-## Запуск
+## Быстрый запуск
 
 ```powershell
 dotnet restore .\FormDesigner.sln
@@ -43,70 +65,21 @@ dotnet build .\FormDesigner.sln
 dotnet run --project .\FormDesigner.csproj
 ```
 
-## Quick Start
-
-1. Создайте новый project.
-2. В Project Explorer добавьте вторую форму: `+ Form`.
-3. На `Form1` перетащите `Button`, `DataGrid`, `TextBox`, `CheckBox`.
-4. Во вкладке `Data` создайте `BindingSource`, добавьте поля `Id`, `Name`, `Email`, `Status`.
-5. Выберите `DataGrid`, назначьте BindingSource и создайте колонки из полей.
-6. Во вкладке `Logic` добавьте interactions:
-   - `Button.Click -> OpenForm -> Form2`;
-   - `DataGrid.SelectionChanged -> TextBox.Text = Name`;
-   - `CheckBox.Checked/Unchecked -> Show/Hide block`.
-7. Откройте preview и проверьте поведение.
-8. Перейдите в `Code / Export`, нажмите `Refresh`, затем `Validate build`.
-9. При Real DataGrid export установите пакет:
-
-```powershell
-dotnet add package Avalonia.Controls.DataGrid --version 11.1.1
-```
-
-## Export Pipeline
-
-Export Pipeline показывает:
-
-- дерево generated files: `MainWindow.axaml`, `MainWindow.axaml.cs`, дополнительные формы;
-- required packages;
-- export diagnostics;
-- build validation status;
-- code preview выбранного файла.
-
-Generated projects таргетятся в `net6.0` и используют Avalonia `11.1.1`.
-
-## Smoke tests
-
-Запуск:
+Smoke tests:
 
 ```powershell
 .\smoke-tests\run-smoke-tests.ps1
 ```
 
-Smoke tests создают временные Avalonia-проекты в `artifacts/smoke-tests`, вставляют generated XAML/C# и запускают `dotnet build`.
-
-Покрытые Alpha-сценарии:
-
-- simple form export;
-- Real DataGrid export;
-- interactions export;
-- multi-form OpenForm export;
-- Alpha end-to-end project export;
-- DataGrid + BindingSource workflow;
-- save/load multi-form project;
-- export build validation;
-- plugin fallback;
-- Grid/StackPanel/layout export.
-
-## Ограничения Alpha 0.2
-
-- UI preview проверяется вручную; smoke tests проверяют model/export/build path.
-- Layout System v2 ещё считается experimental.
-- Real DataGrid требует `Avalonia.Controls.DataGrid 11.1.1`.
-- Plugin runtime export пока лучше использовать через fallback, если plugin DLL не входит в target project.
-- Export to existing project требует внимательной проверки overwrite-сценариев.
-
 ## Документация
 
+- [DeveloperArchitecture](Docs/DeveloperArchitecture.md) - техническая документация для разработчиков.
 - [Alpha 0.2 manual checklist](Docs/ALPHA_0_2_MANUAL_TEST_CHECKLIST.md)
 - [Plugin guide](Docs/PluginGuide.md)
 - [Undo/Redo smoke checklist](Docs/UndoRedoSmokeTest.md)
+
+## Примечания
+
+Архитектура, ключевые классы, flows, diagnostics и правила разработки описаны в [DeveloperArchitecture](Docs/DeveloperArchitecture.md).
+
+Generated projects сейчас ориентированы на `net6.0` и Avalonia `11.1.1`. Проект не считается production-ready и может содержать Alpha-баги.
