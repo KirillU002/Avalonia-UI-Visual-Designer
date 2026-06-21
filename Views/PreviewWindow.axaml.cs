@@ -37,7 +37,6 @@ namespace FormDesigner.Views;
 /// </summary>
 public partial class PreviewWindow : Window
 {
-    private const double RuntimeToolbarHeight = 52;
     private const int MaxPreviewDataGridRows = 120;
     private const string RuntimeDataGridGroupFieldFormat = "formdesigner-preview-datagrid-group-field";
     private const string RuntimeDataGridUngroupFieldFormat = "formdesigner-preview-datagrid-ungroup-field";
@@ -49,6 +48,7 @@ public partial class PreviewWindow : Window
     private readonly Dictionary<string, (string Signature, IReadOnlyList<Dictionary<string, string>> Rows)> _previewRowsBySourceKey = new(StringComparer.OrdinalIgnoreCase);
     private readonly PreviewRuntimeService _previewRuntimeService = new();
     private readonly IDesignerRegistry _registry;
+    private readonly bool _showRuntimeBadge;
     private RuntimeDataGridHeaderDragState? _runtimeDataGridHeaderDrag;
     private bool _isRenderingDocument;
     private bool _renderDocumentAgainRequested;
@@ -76,9 +76,16 @@ public partial class PreviewWindow : Window
     }
 
     public PreviewWindow(IDesignerRegistry registry)
+        : this(registry, showRuntimeBadge: false)
+    {
+    }
+
+    public PreviewWindow(IDesignerRegistry registry, bool showRuntimeBadge)
     {
         _registry = registry;
+        _showRuntimeBadge = showRuntimeBadge;
         InitializeComponent();
+        RuntimeBadgeOverlay.IsVisible = _showRuntimeBadge;
         ApplyWindowSettings();
         Opened += PreviewWindow_Opened;
         KeyDown += PreviewWindow_KeyDown;
@@ -90,7 +97,12 @@ public partial class PreviewWindow : Window
     }
 
     public PreviewWindow(DesignerDocumentFileModel document, IDesignerRegistry registry)
-        : this(registry)
+        : this(document, registry, showRuntimeBadge: false)
+    {
+    }
+
+    public PreviewWindow(DesignerDocumentFileModel document, IDesignerRegistry registry, bool showRuntimeBadge)
+        : this(registry, showRuntimeBadge)
     {
         _document = document ?? throw new ArgumentNullException(nameof(document));
         ApplyWindowSettings();
@@ -100,8 +112,9 @@ public partial class PreviewWindow : Window
         DesignerDocumentFileModel document,
         IDesignerRegistry registry,
         IEnumerable<DesignerFormDocument> projectForms,
-        string currentFormId)
-        : this(document, registry)
+        string currentFormId,
+        bool showRuntimeBadge = false)
+        : this(document, registry, showRuntimeBadge)
     {
         _currentFormId = currentFormId ?? string.Empty;
         foreach (var form in projectForms)
@@ -386,13 +399,14 @@ public partial class PreviewWindow : Window
         WindowStartupLocation = NormalizeStartupLocation(_document.FormStartupLocation);
 
         Width = Math.Max(320, _document.DesignWidth);
-        Height = Math.Max(220, _document.DesignHeight) + RuntimeToolbarHeight;
+        Height = Math.Max(220, _document.DesignHeight);
         WindowState = NormalizeWindowState(_document.FormWindowState);
 
         PreviewSurfaceBorder.Background = ParseBrush(_document.SurfaceBackground, "#FFFFFF");
         PreviewCanvas.Background = ParseBrush(_document.SurfaceBackground, "#FFFFFF");
         PreviewCanvas.MinWidth = Math.Max(300, _document.DesignWidth);
         PreviewCanvas.MinHeight = Math.Max(200, _document.DesignHeight);
+        Debug.WriteLine($"PREVIEW_RUNTIME_BADGE_{(_showRuntimeBadge ? "SHOWN" : "HIDDEN")} mode=compact-overlay; affectsLayout=false; window={Width.ToString(CultureInfo.InvariantCulture)}x{Height.ToString(CultureInfo.InvariantCulture)}");
     }
 
     private static ThemeVariant ResolveThemeVariant(string? themeName)

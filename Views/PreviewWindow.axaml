@@ -5,43 +5,52 @@
         Background="#0F172A"
         MinWidth="320"
         MinHeight="220">
-  <Grid RowDefinitions="Auto,*">
-    <Border Background="#0F172A"
-            BorderBrush="#1E293B"
-            BorderThickness="0,0,0,1"
-            Padding="10,8">
-      <Grid ColumnDefinitions="*,Auto,Auto,Auto"
-            VerticalAlignment="Center">
-        <TextBlock x:Name="PreviewRuntimeStatusText"
-                   Text="Runtime ready"
-                   Foreground="#CBD5E1"
-                   VerticalAlignment="Center"
-                   TextTrimming="CharacterEllipsis"/>
-        <Button Grid.Column="1"
-                Content="Reset Preview"
-                Click="ResetPreviewButton_Click"
-                Padding="12,7"/>
-        <Button Grid.Column="2"
-                Content="Reload Preview"
-                Click="ReloadPreviewButton_Click"
-                Padding="12,7"/>
-        <Button Grid.Column="3"
-                Content="Закрыть предпросмотр"
-                Click="ClosePreviewButton_Click"
-                Padding="12,7"/>
-      </Grid>
-    </Border>
-
+  <Grid>
     <Border x:Name="PreviewSurfaceBorder"
-            Grid.Row="1"
             Background="White">
       <Canvas x:Name="PreviewCanvas"
               Background="White"
               ClipToBounds="True"/>
     </Border>
 
+    <Border x:Name="RuntimeBadgeOverlay"
+            Background="#0F172AE6"
+            BorderBrush="#60A5FA"
+            BorderThickness="1"
+            CornerRadius="10"
+            Padding="8,6"
+            Margin="10"
+            HorizontalAlignment="Right"
+            VerticalAlignment="Top"
+            IsVisible="False"
+            MaxWidth="520">
+      <Grid ColumnDefinitions="*,Auto,Auto,Auto"
+            VerticalAlignment="Center">
+        <TextBlock x:Name="PreviewRuntimeStatusText"
+                   Text="Runtime ready"
+                   Foreground="#CBD5E1"
+                   FontSize="12"
+                   VerticalAlignment="Center"
+                   TextTrimming="CharacterEllipsis"/>
+        <Button Grid.Column="1"
+                Content="Reset"
+                Click="ResetPreviewButton_Click"
+                Padding="8,4"
+                Margin="6,0,0,0"/>
+        <Button Grid.Column="2"
+                Content="Reload"
+                Click="ReloadPreviewButton_Click"
+                Padding="8,4"
+                Margin="6,0,0,0"/>
+        <Button Grid.Column="3"
+                Content="Закрыть"
+                Click="ClosePreviewButton_Click"
+                Padding="8,4"
+                Margin="6,0,0,0"/>
+      </Grid>
+    </Border>
+
     <Border x:Name="LoadingOverlay"
-            Grid.RowSpan="2"
             Background="#0F172AB8">
       <Grid>
         <Border Width="420"

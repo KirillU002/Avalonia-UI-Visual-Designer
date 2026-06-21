@@ -534,7 +534,6 @@ public partial class MainWindowViewModel : ObservableObject
     {
         WorkspaceModeDesign,
         WorkspaceModeData,
-        WorkspaceModeLayout,
         WorkspaceModeLogic,
         WorkspaceModeCode,
         WorkspaceModePlugins,
@@ -855,6 +854,30 @@ public partial class MainWindowViewModel : ObservableObject
     [ObservableProperty]
     private string uiDensityMode = UiDensityCompact;
 
+    [ObservableProperty]
+    private bool showPreviewRuntimeBadge;
+
+    [ObservableProperty]
+    private bool enableExperimentalLayoutTab;
+
+    [ObservableProperty]
+    private bool validateBuildAfterExport;
+
+    [ObservableProperty]
+    private bool verboseBuildLogs = true;
+
+    [ObservableProperty]
+    private bool keepSuccessfulBuildArtifacts = true;
+
+    [ObservableProperty]
+    private bool cleanOldArtifactsAutomatically = true;
+
+    [ObservableProperty]
+    private bool saveLogsToFile = true;
+
+    [ObservableProperty]
+    private string logsFolderPath = "";
+
     public event EventHandler? DesignerChanged;
     public IDesignerRegistry Registry => _registry;
     public bool IsCleanUiGenerationMode => string.Equals(GenerationMode, GenerationModeCleanUi, StringComparison.Ordinal);
@@ -892,6 +915,7 @@ public partial class MainWindowViewModel : ObservableObject
     public bool IsDesignMode => string.Equals(WorkspaceMode, WorkspaceModeDesign, StringComparison.Ordinal);
     public bool IsDataMode => string.Equals(WorkspaceMode, WorkspaceModeData, StringComparison.Ordinal);
     public bool IsLayoutMode => string.Equals(WorkspaceMode, WorkspaceModeLayout, StringComparison.Ordinal);
+    public bool IsLayoutTabVisible => EnableExperimentalLayoutTab;
     public bool IsCodeMode => string.Equals(WorkspaceMode, WorkspaceModeCode, StringComparison.Ordinal);
     public bool IsPluginsMode => string.Equals(WorkspaceMode, WorkspaceModePlugins, StringComparison.Ordinal);
     public bool IsLogicMode => string.Equals(WorkspaceMode, WorkspaceModeLogic, StringComparison.Ordinal);
@@ -918,7 +942,7 @@ public partial class MainWindowViewModel : ObservableObject
     public bool IsRightInspectorVisible => IsRightDockPanelVisible;
     public bool IsDesignModePanelVisible => IsDesignerSidePanelsVisible;
     public bool IsDataModePanelVisible => IsDesignerSidePanelsVisible;
-    public bool IsLayoutModePanelVisible => IsDesignerSidePanelsVisible;
+    public bool IsLayoutModePanelVisible => IsDesignerSidePanelsVisible && EnableExperimentalLayoutTab;
     public bool IsCodeModePanelVisible => IsDesignerSidePanelsVisible;
     public bool IsPluginsModePanelVisible => IsDesignerSidePanelsVisible;
     public bool IsLogicModePanelVisible => IsDesignerSidePanelsVisible;
@@ -966,7 +990,7 @@ public partial class MainWindowViewModel : ObservableObject
         get => WorkspaceMode switch
         {
             WorkspaceModeData => 1,
-            WorkspaceModeLayout => 2,
+            WorkspaceModeLayout when EnableExperimentalLayoutTab => 2,
             WorkspaceModePlugins => 3,
             WorkspaceModeCode => 4,
             WorkspaceModeLogic => 5,
@@ -977,7 +1001,7 @@ public partial class MainWindowViewModel : ObservableObject
             var mode = value switch
             {
                 1 => WorkspaceModeData,
-                2 => WorkspaceModeLayout,
+                2 when EnableExperimentalLayoutTab => WorkspaceModeLayout,
                 3 => WorkspaceModePlugins,
                 4 => WorkspaceModeCode,
                 5 => WorkspaceModeLogic,
@@ -2481,7 +2505,35 @@ public partial class MainWindowViewModel : ObservableObject
 
     public void LogWorkspace(WorkspaceLogLevel level, string category, string message, string details = "")
     {
-        _workspaceLogService.Log(level, category, message, details, CurrentDocumentPath);
+        var entry = _workspaceLogService.Log(level, category, message, details, CurrentDocumentPath);
+        AppendWorkspaceLogFile(entry);
+    }
+
+    private void AppendWorkspaceLogFile(WorkspaceLogEntryModel entry)
+    {
+        if (!SaveLogsToFile)
+            return;
+
+        try
+        {
+            var folder = string.IsNullOrWhiteSpace(LogsFolderPath)
+                ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AvaloniaUiVisualDesigner", "logs")
+                : LogsFolderPath;
+            Directory.CreateDirectory(folder);
+
+            var filePath = Path.Combine(folder, $"designer-{DateTime.UtcNow:yyyyMMdd}.log");
+            var line = $"[{entry.TimestampUtc:O}] [{entry.Level}] [{entry.Category}] {entry.Message}";
+            if (!string.IsNullOrWhiteSpace(entry.Details))
+                line += $" | {entry.Details.ReplaceLineEndings(" ")}";
+            if (!string.IsNullOrWhiteSpace(entry.RelatedDocumentPath))
+                line += $" | document={entry.RelatedDocumentPath}";
+
+            File.AppendAllText(filePath, line + Environment.NewLine, Encoding.UTF8);
+        }
+        catch
+        {
+            // Logging must never break editor input, preview, export, or project operations.
+        }
     }
 
     public void ShowWorkspaceToast(WorkspaceToastLevel level, string title, string message = "", bool isPersistent = false)
@@ -8689,6 +8741,8 @@ public partial class MainWindowViewModel : ObservableObject
         ApplyPropertyGridSettings(settings.PropertyGrid, settings.PropertyGridFavorites, settings.PropertyGridCollapsedCategories);
         ApplyCanvasEditorSettings(settings.CanvasEditor);
         ApplyUiDensitySettings(settings.UiDensity);
+        ApplyPreviewSettings(settings.Preview);
+        ApplyBuildAndLogsSettings(settings.BuildAndLogs);
 
         RecentFiles.Clear();
         foreach (var recentFile in settings.RecentFiles
@@ -8753,6 +8807,47 @@ public partial class MainWindowViewModel : ObservableObject
             DensityMode = AvailableUiDensityModes.Contains(UiDensityMode)
                 ? UiDensityMode
                 : UiDensityCompact
+        };
+    }
+
+    private void ApplyPreviewSettings(PreviewSettingsModel? settings)
+    {
+        ShowPreviewRuntimeBadge = settings?.ShowRuntimeBadge ?? false;
+        EnableExperimentalLayoutTab = settings?.EnableExperimentalLayoutTab ?? false;
+        RefreshAvailableWorkspaceModes();
+    }
+
+    public PreviewSettingsModel CapturePreviewSettings()
+    {
+        return new PreviewSettingsModel
+        {
+            ShowRuntimeBadge = ShowPreviewRuntimeBadge,
+            EnableExperimentalLayoutTab = EnableExperimentalLayoutTab
+        };
+    }
+
+    private void ApplyBuildAndLogsSettings(BuildAndLogsSettingsModel? settings)
+    {
+        ValidateBuildAfterExport = settings?.ValidateBuildAfterExport ?? false;
+        VerboseBuildLogs = settings?.VerboseBuildLogs ?? true;
+        KeepSuccessfulBuildArtifacts = settings?.KeepSuccessfulBuildArtifacts ?? true;
+        CleanOldArtifactsAutomatically = settings?.CleanOldArtifactsAutomatically ?? true;
+        SaveLogsToFile = settings?.SaveLogsToFile ?? true;
+        LogsFolderPath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "AvaloniaUiVisualDesigner",
+            "logs");
+    }
+
+    public BuildAndLogsSettingsModel CaptureBuildAndLogsSettings()
+    {
+        return new BuildAndLogsSettingsModel
+        {
+            ValidateBuildAfterExport = ValidateBuildAfterExport,
+            VerboseBuildLogs = VerboseBuildLogs,
+            KeepSuccessfulBuildArtifacts = KeepSuccessfulBuildArtifacts,
+            CleanOldArtifactsAutomatically = CleanOldArtifactsAutomatically,
+            SaveLogsToFile = SaveLogsToFile
         };
     }
 
@@ -9534,6 +9629,15 @@ public partial class MainWindowViewModel : ObservableObject
             yield return CreateNumberRow(PropertyGridCategoryCommon, nameof(DesignControlModel.Height), "Height", control.Height, "Element height.", value => { control.Height = value; ClampControlToSurface(control); });
             yield return CreateBoolRow(PropertyGridCategoryCommon, nameof(DesignControlModel.IsVisible), "IsVisible", control.IsVisible, "Show element on canvas/export.", value => control.IsVisible = value);
             yield return CreateBoolRow(PropertyGridCategoryCommon, nameof(DesignControlModel.IsLocked), "IsLocked", control.IsLocked, "Lock move/resize on canvas.", value => control.IsLocked = value);
+            yield return CreateNumberRow(PropertyGridCategoryLayout, nameof(DesignControlModel.X), "X", control.X, "Left position on canvas.", value => { control.X = Math.Max(0, value); ClampControlToSurface(control); });
+            yield return CreateNumberRow(PropertyGridCategoryLayout, nameof(DesignControlModel.Y), "Y", control.Y, "Top position on canvas.", value => { control.Y = Math.Max(0, value); ClampControlToSurface(control); });
+            yield return CreateTextRow(PropertyGridCategoryLayout, nameof(DesignControlModel.Margin), "Margin", control.Margin, "Avalonia Thickness used by Grid/StackPanel export.", value => control.Margin = value);
+            yield return CreateEnumRow(PropertyGridCategoryLayout, nameof(DesignControlModel.HorizontalAlignment), "HorizontalAlignment", control.HorizontalAlignment, AvailableHorizontalAlignments, "Horizontal alignment in layout containers.", value => control.HorizontalAlignment = value);
+            yield return CreateEnumRow(PropertyGridCategoryLayout, nameof(DesignControlModel.VerticalAlignment), "VerticalAlignment", control.VerticalAlignment, AvailableVerticalAlignments, "Vertical alignment in layout containers.", value => control.VerticalAlignment = value);
+            TraceDocumentDebug(
+                "LAYOUT_PROPERTIES_MOVED_TO_INSPECTOR",
+                "count=5; propertyNames=X,Y,Margin,HorizontalAlignment,VerticalAlignment",
+                toOutput: false);
         }
 
         if (layoutOnly)
@@ -20981,6 +21085,52 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(IsComfortableUiDensity));
         OnPropertyChanged(nameof(IsCompactUiDensity));
         OnPropertyChanged(nameof(IsDenseUiDensity));
+    }
+
+    partial void OnShowPreviewRuntimeBadgeChanged(bool value)
+    {
+        TraceDocumentDebug(
+            value ? "PREVIEW_RUNTIME_BADGE_SHOWN" : "PREVIEW_RUNTIME_BADGE_HIDDEN",
+            value ? "mode=compact-overlay; affectsLayout=false" : "reason=setting-disabled",
+            toOutput: false);
+        LogWorkspace(WorkspaceLogLevel.Info, OutputCategoryPreview, "Preview runtime badge setting changed.", $"ShowRuntimeBadge={value}");
+    }
+
+    partial void OnEnableExperimentalLayoutTabChanged(bool value)
+    {
+        RefreshAvailableWorkspaceModes();
+        if (!value && string.Equals(WorkspaceMode, WorkspaceModeLayout, StringComparison.Ordinal))
+            WorkspaceMode = WorkspaceModeDesign;
+
+        OnPropertyChanged(nameof(IsLayoutTabVisible));
+        OnPropertyChanged(nameof(IsLayoutModePanelVisible));
+        OnPropertyChanged(nameof(RightInspectorSelectedIndex));
+        TraceDocumentDebug("LAYOUT_TAB_VISIBILITY_CHANGED", $"enabled={value}; reason=feature-flag", toOutput: false);
+        LogWorkspace(WorkspaceLogLevel.Info, OutputCategoryGeneral, "Layout tab visibility changed.", $"Enabled={value}");
+    }
+
+    private void RefreshAvailableWorkspaceModes()
+    {
+        var modes = new List<string>
+        {
+            WorkspaceModeDesign,
+            WorkspaceModeData
+        };
+
+        if (EnableExperimentalLayoutTab)
+            modes.Add(WorkspaceModeLayout);
+
+        modes.Add(WorkspaceModeLogic);
+        modes.Add(WorkspaceModeCode);
+        modes.Add(WorkspaceModePlugins);
+        modes.Add(WorkspaceModeHistory);
+
+        if (AvailableWorkspaceModes.SequenceEqual(modes, StringComparer.Ordinal))
+            return;
+
+        AvailableWorkspaceModes.Clear();
+        foreach (var mode in modes)
+            AvailableWorkspaceModes.Add(mode);
     }
 
     partial void OnSelectedGeneratedFileChanged(GeneratedFileModel? value)

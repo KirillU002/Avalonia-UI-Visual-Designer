@@ -41,22 +41,128 @@ public sealed class ExportPipelineService
         Func<string, Task>? logAsync = null,
         CancellationToken cancellationToken = default)
     {
-        var runRoot = Path.Combine(artifactsRoot, DateTime.Now.ToString("yyyyMMdd-HHmmss"));
-        Directory.CreateDirectory(runRoot);
-        await WriteValidationProjectAsync(result, runRoot, cancellationToken).ConfigureAwait(false);
-        await LogAsync(logAsync, $"Validation project: {runRoot}").ConfigureAwait(false);
+        var totalStopwatch = Stopwatch.StartNew();
+        var detailedLog = new StringBuilder();
+        var stepSummaries = new List<string>();
+        var runRoot = Path.Combine(artifactsRoot, DateTime.Now.ToString("yyyyMMdd-HHmmss-fff"));
+        await LogValidationAsync("VALIDATE_BUILD_START", $"projectPath={runRoot}; reason=on-demand").ConfigureAwait(false);
+
+        async Task RunStepAsync(string stepName, Func<Task> action)
+        {
+            var stopwatch = Stopwatch.StartNew();
+            await LogValidationAsync("VALIDATE_BUILD_STEP_START", $"step={stepName}").ConfigureAwait(false);
+            try
+            {
+                await action().ConfigureAwait(false);
+                stopwatch.Stop();
+                stepSummaries.Add($"{stepName}: OK ({stopwatch.ElapsedMilliseconds} ms)");
+                await LogValidationAsync("VALIDATE_BUILD_STEP_END", $"step={stepName}; elapsedMs={stopwatch.ElapsedMilliseconds}; success=true").ConfigureAwait(false);
+            }
+            catch
+            {
+                stopwatch.Stop();
+                stepSummaries.Add($"{stepName}: Failed ({stopwatch.ElapsedMilliseconds} ms)");
+                await LogValidationAsync("VALIDATE_BUILD_STEP_END", $"step={stepName}; elapsedMs={stopwatch.ElapsedMilliseconds}; success=false").ConfigureAwait(false);
+                throw;
+            }
+        }
+
+        await RunStepAsync("Preparing export workspace", () =>
+        {
+            Directory.CreateDirectory(runRoot);
+            return Task.CompletedTask;
+        }).ConfigureAwait(false);
+
+        await RunStepAsync("Generating project files", () => WriteValidationProjectAsync(result, runRoot, cancellationToken)).ConfigureAwait(false);
+        await LogValidationAsync("VALIDATE_BUILD_PROJECT", $"path={runRoot}").ConfigureAwait(false);
 
         var projectFile = Directory.GetFiles(runRoot, "*.csproj").Single();
-        var process = await RunProcessAsync("dotnet", $"build \"{projectFile}\"", runRoot, logAsync, cancellationToken).ConfigureAwait(false);
-        PruneValidationRuns(artifactsRoot, runRoot);
+        ProcessResult restoreProcess = new(0, "");
+        ProcessResult buildProcess = new(0, "");
+
+        try
+        {
+            await RunStepAsync("Restoring NuGet packages", async () =>
+            {
+                await LogValidationAsync("VALIDATE_BUILD_COMMAND", $"command=dotnet restore \"{projectFile}\"; workingDirectory={runRoot}").ConfigureAwait(false);
+                restoreProcess = await RunProcessAsync("dotnet", $"restore \"{projectFile}\"", runRoot, LogValidationProcessLineAsync, cancellationToken).ConfigureAwait(false);
+                if (restoreProcess.ExitCode != 0)
+                    throw new InvalidOperationException($"dotnet restore failed with exit code {restoreProcess.ExitCode}.");
+            }).ConfigureAwait(false);
+        }
+        catch
+        {
+            // The failure is represented in the returned validation result below.
+        }
+
+        if (restoreProcess.ExitCode == 0)
+        {
+            try
+            {
+                await RunStepAsync("Building project", async () =>
+                {
+                    await LogValidationAsync("VALIDATE_BUILD_COMMAND", $"command=dotnet build \"{projectFile}\" --no-restore; workingDirectory={runRoot}").ConfigureAwait(false);
+                    buildProcess = await RunProcessAsync("dotnet", $"build \"{projectFile}\" --no-restore", runRoot, LogValidationProcessLineAsync, cancellationToken).ConfigureAwait(false);
+                    if (buildProcess.ExitCode != 0)
+                        throw new InvalidOperationException($"dotnet build failed with exit code {buildProcess.ExitCode}.");
+                }).ConfigureAwait(false);
+            }
+            catch
+            {
+                // The failure is represented in the returned validation result below.
+            }
+        }
+
+        var rawOutput = restoreProcess.Output + buildProcess.Output;
+        var dedupedOutput = DeduplicateBuildOutput(rawOutput);
+        await RunStepAsync("Collecting warnings/errors", () =>
+        {
+            detailedLog.AppendLine();
+            detailedLog.AppendLine("Deduplicated output:");
+            detailedLog.AppendLine(dedupedOutput);
+            return Task.CompletedTask;
+        }).ConfigureAwait(false);
+
+        await RunStepAsync("Cleaning temporary artifacts", () =>
+        {
+            PruneValidationRuns(artifactsRoot, runRoot);
+            return Task.CompletedTask;
+        }).ConfigureAwait(false);
+
+        totalStopwatch.Stop();
+        var logPath = Path.Combine(runRoot, "validate-build.log");
+        detailedLog.AppendLine();
+        detailedLog.AppendLine($"VALIDATE_BUILD_END success={restoreProcess.ExitCode == 0 && buildProcess.ExitCode == 0}; elapsedMs={totalStopwatch.ElapsedMilliseconds}");
+        await File.WriteAllTextAsync(logPath, detailedLog.ToString(), Encoding.UTF8, cancellationToken).ConfigureAwait(false);
+
+        var finalExitCode = restoreProcess.ExitCode != 0 ? restoreProcess.ExitCode : buildProcess.ExitCode;
+        await LogValidationAsync(
+            "VALIDATE_BUILD_END",
+            $"success={finalExitCode == 0}; warnings={CountBuildOutputLines(dedupedOutput, "warning")}; errors={CountBuildOutputLines(dedupedOutput, "error")}; elapsedMs={totalStopwatch.ElapsedMilliseconds}; log={logPath}").ConfigureAwait(false);
+
         return new ExportBuildValidationResult
         {
-            Status = process.ExitCode == 0 ? ExportBuildValidationStatus.Passed : ExportBuildValidationStatus.Failed,
+            Status = finalExitCode == 0 ? ExportBuildValidationStatus.Passed : ExportBuildValidationStatus.Failed,
             ProjectPath = runRoot,
-            ExitCode = process.ExitCode,
-            Output = DeduplicateBuildOutput(process.Output),
+            ExitCode = finalExitCode,
+            Output = dedupedOutput,
+            DetailedLogPath = logPath,
+            StepSummary = string.Join(Environment.NewLine, stepSummaries),
             CompletedUtc = DateTime.UtcNow
         };
+
+        async Task LogValidationAsync(string eventName, string details)
+        {
+            var line = $"{eventName} {details}";
+            detailedLog.AppendLine($"[{DateTime.Now:HH:mm:ss.fff}] {line}");
+            await LogAsync(logAsync, line).ConfigureAwait(false);
+        }
+
+        async Task LogValidationProcessLineAsync(string line)
+        {
+            detailedLog.AppendLine(line);
+            await LogAsync(logAsync, $"VALIDATE_BUILD_OUTPUT severity={ClassifyBuildOutputSeverity(line)}; {line}").ConfigureAwait(false);
+        }
     }
 
     public async Task ExportToProjectAsync(
@@ -346,6 +452,33 @@ The generated project targets `net6.0` and uses Avalonia `11.1.1`.
             .Trim()
             .Replace("\\", "/", StringComparison.Ordinal)
             .Replace("\t", " ", StringComparison.Ordinal);
+    }
+
+    private static string ClassifyBuildOutputSeverity(string line)
+    {
+        if (line.Contains("error", StringComparison.OrdinalIgnoreCase)
+            || line.Contains("failed", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Error";
+        }
+
+        if (line.Contains("warning", StringComparison.OrdinalIgnoreCase)
+            || line.Contains("NU", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Warning";
+        }
+
+        return "Info";
+    }
+
+    private static int CountBuildOutputLines(string output, string token)
+    {
+        if (string.IsNullOrWhiteSpace(output))
+            return 0;
+
+        return output
+            .Split(new[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries)
+            .Count(line => line.Contains(token, StringComparison.OrdinalIgnoreCase));
     }
 
     private static string BuildPackagesText(ExportResult result)

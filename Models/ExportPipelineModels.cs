@@ -148,6 +148,10 @@ public sealed class ExportBuildValidationResult
 
     public string Output { get; init; } = "";
 
+    public string DetailedLogPath { get; init; } = "";
+
+    public string StepSummary { get; init; } = "";
+
     public DateTime CompletedUtc { get; init; } = DateTime.UtcNow;
 
     public string StatusText => Status switch

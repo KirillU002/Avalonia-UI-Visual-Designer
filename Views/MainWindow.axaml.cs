@@ -673,14 +673,22 @@ public partial class MainWindow : Window
                 VM.CompleteWorkspaceTask(task, "Build passed");
                 VM.StatusText = $"Export build passed: {result.ProjectPath}";
                 VM.ShowWorkspaceToast(WorkspaceToastLevel.Success, "Build passed", result.ProjectPath);
-                VM.LogWorkspace(WorkspaceLogLevel.Success, MainWindowViewModel.OutputCategoryExport, "Export build validation passed.", result.ProjectPath);
+                VM.LogWorkspace(
+                    WorkspaceLogLevel.Success,
+                    MainWindowViewModel.OutputCategoryExport,
+                    "Export build validation passed.",
+                    BuildValidationDetails(result));
             }
             else
             {
                 VM.FailWorkspaceTask(task, $"Exit code {result.ExitCode}");
                 VM.StatusText = $"Export build failed: exit code {result.ExitCode}";
                 VM.ShowWorkspaceToast(WorkspaceToastLevel.Error, "Build failed", VM.StatusText, isPersistent: true);
-                VM.LogWorkspace(WorkspaceLogLevel.Error, MainWindowViewModel.OutputCategoryExport, "Export build validation failed.", result.Output);
+                VM.LogWorkspace(
+                    WorkspaceLogLevel.Error,
+                    MainWindowViewModel.OutputCategoryExport,
+                    "Export build validation failed.",
+                    BuildValidationDetails(result));
             }
         }
         catch (Exception ex)
@@ -690,6 +698,19 @@ public partial class MainWindow : Window
             VM.ShowWorkspaceToast(WorkspaceToastLevel.Error, "Build validation failed", ex.Message, isPersistent: true);
             VM.LogWorkspace(WorkspaceLogLevel.Error, MainWindowViewModel.OutputCategoryExport, "Build validation failed.", ex.Message);
         }
+    }
+
+    private static string BuildValidationDetails(ExportBuildValidationResult result)
+    {
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(result.StepSummary))
+            parts.Add(result.StepSummary);
+        if (!string.IsNullOrWhiteSpace(result.DetailedLogPath))
+            parts.Add($"Detailed log: {result.DetailedLogPath}");
+        if (!string.IsNullOrWhiteSpace(result.Output))
+            parts.Add(result.Output);
+
+        return string.Join(Environment.NewLine, parts);
     }
 
     private async Task ExportToProjectAsync()
@@ -802,6 +823,106 @@ public partial class MainWindow : Window
         {
             VM.StatusText = $"Could not open validation folder: {ex.Message}";
             VM.ShowWorkspaceToast(WorkspaceToastLevel.Error, "Could not open validation folder", ex.Message, isPersistent: true);
+        }
+    }
+
+    private async void CopyBuildLogsButton_Click(object? sender, RoutedEventArgs e)
+    {
+        var logText = await ReadCurrentBuildLogTextAsync();
+        if (string.IsNullOrWhiteSpace(logText))
+        {
+            VM.StatusText = "Run Validate Build first.";
+            VM.ShowWorkspaceToast(WorkspaceToastLevel.Warning, "Build logs unavailable", VM.StatusText);
+            return;
+        }
+
+        await CopyTextToClipboardAsync(logText, "Build logs copied.");
+        VM.LogWorkspace(WorkspaceLogLevel.Success, MainWindowViewModel.OutputCategoryExport, "Build logs copied.");
+    }
+
+    private void OpenBuildLogsFolderButton_Click(object? sender, RoutedEventArgs e)
+    {
+        var path = VM.CurrentExportBuildValidation.DetailedLogPath;
+        var folder = File.Exists(path)
+            ? System.IO.Path.GetDirectoryName(path)
+            : VM.CurrentExportBuildValidation.ProjectPath;
+
+        if (string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder))
+        {
+            VM.StatusText = "Run Validate Build first.";
+            VM.ShowWorkspaceToast(WorkspaceToastLevel.Warning, "Build logs folder is unavailable", VM.StatusText);
+            return;
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = "explorer.exe",
+                Arguments = $"\"{folder}\"",
+                UseShellExecute = true
+            });
+            VM.LogWorkspace(WorkspaceLogLevel.Info, MainWindowViewModel.OutputCategoryExport, "Opened build logs folder.", folder);
+        }
+        catch (Exception ex)
+        {
+            VM.StatusText = $"Could not open build logs folder: {ex.Message}";
+            VM.ShowWorkspaceToast(WorkspaceToastLevel.Error, "Could not open build logs folder", ex.Message, isPersistent: true);
+        }
+    }
+
+    private async Task<string> ReadCurrentBuildLogTextAsync()
+    {
+        var path = VM.CurrentExportBuildValidation.DetailedLogPath;
+        if (!string.IsNullOrWhiteSpace(path) && File.Exists(path))
+            return await File.ReadAllTextAsync(path);
+
+        return VM.CurrentExportBuildValidation.Output;
+    }
+
+    private async void CopyOutputLogsButton_Click(object? sender, RoutedEventArgs e)
+    {
+        var text = string.Join(
+            Environment.NewLine,
+            VM.OutputEntries
+                .Reverse()
+                .Select(entry =>
+                {
+                    var details = string.IsNullOrWhiteSpace(entry.Details) ? "" : $" | {entry.Details.ReplaceLineEndings(" ")}";
+                    return $"[{entry.TimestampUtc:O}] [{entry.Level}] [{entry.Category}] {entry.Message}{details}";
+                }));
+
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            VM.StatusText = "Output is empty.";
+            VM.ShowWorkspaceToast(WorkspaceToastLevel.Warning, "Output is empty");
+            return;
+        }
+
+        await CopyTextToClipboardAsync(text, "Output logs copied.");
+        VM.LogWorkspace(WorkspaceLogLevel.Success, MainWindowViewModel.OutputCategoryGeneral, "Output logs copied.");
+    }
+
+    private void OpenLogsFolderButton_Click(object? sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var folder = string.IsNullOrWhiteSpace(VM.LogsFolderPath)
+                ? System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AvaloniaUiVisualDesigner", "logs")
+                : VM.LogsFolderPath;
+            Directory.CreateDirectory(folder);
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = "explorer.exe",
+                Arguments = $"\"{folder}\"",
+                UseShellExecute = true
+            });
+            VM.LogWorkspace(WorkspaceLogLevel.Info, MainWindowViewModel.OutputCategoryGeneral, "Opened logs folder.", folder);
+        }
+        catch (Exception ex)
+        {
+            VM.StatusText = $"Could not open logs folder: {ex.Message}";
+            VM.ShowWorkspaceToast(WorkspaceToastLevel.Error, "Could not open logs folder", ex.Message, isPersistent: true);
         }
     }
 
@@ -1197,6 +1318,8 @@ public partial class MainWindow : Window
         _appSettings.PropertyGridCollapsedCategories = VM.CapturePropertyGridCollapsedCategories();
         _appSettings.CanvasEditor = VM.CaptureCanvasEditorSettings();
         _appSettings.UiDensity = VM.CaptureUiDensitySettings();
+        _appSettings.Preview = VM.CapturePreviewSettings();
+        _appSettings.BuildAndLogs = VM.CaptureBuildAndLogsSettings();
         _appSettings.ExportCache = VM.CaptureExportCache();
         _appSettings.Session = CaptureSessionState();
         await _appSettingsService.SaveAsync(_appSettings);
@@ -1246,6 +1369,13 @@ public partial class MainWindow : Window
             or nameof(MainWindowViewModel.IgnoreLockedDuringSelection)
             or nameof(MainWindowViewModel.IsSelectionToolbarEnabled)
             or nameof(MainWindowViewModel.UiDensityMode)
+            or nameof(MainWindowViewModel.ShowPreviewRuntimeBadge)
+            or nameof(MainWindowViewModel.EnableExperimentalLayoutTab)
+            or nameof(MainWindowViewModel.ValidateBuildAfterExport)
+            or nameof(MainWindowViewModel.VerboseBuildLogs)
+            or nameof(MainWindowViewModel.KeepSuccessfulBuildArtifacts)
+            or nameof(MainWindowViewModel.CleanOldArtifactsAutomatically)
+            or nameof(MainWindowViewModel.SaveLogsToFile)
             or nameof(MainWindowViewModel.PropertyGridSettingsVersion);
     }
 
@@ -7926,7 +8056,7 @@ public partial class MainWindow : Window
                 _launchPreviewWindow = null;
             }
 
-            var previewWindow = new PreviewWindow(snapshot, VM.Registry, projectForms, VM.ActiveFormDocument?.Id ?? string.Empty);
+            var previewWindow = new PreviewWindow(snapshot, VM.Registry, projectForms, VM.ActiveFormDocument?.Id ?? string.Empty, VM.ShowPreviewRuntimeBadge);
             previewWindow.Closed += LaunchPreviewWindow_Closed;
             _launchPreviewWindow = previewWindow;
             previewWindow.Show();

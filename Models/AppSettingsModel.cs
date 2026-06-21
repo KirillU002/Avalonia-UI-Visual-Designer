@@ -24,6 +24,10 @@ public class AppSettingsModel
 
     public ExportCacheModel ExportCache { get; set; } = new();
 
+    public PreviewSettingsModel Preview { get; set; } = new();
+
+    public BuildAndLogsSettingsModel BuildAndLogs { get; set; } = new();
+
     public AutosaveMetadataModel Autosave { get; set; } = new();
 }
 
@@ -45,6 +49,32 @@ public sealed class CanvasEditorSettingsModel
 public sealed class UiDensitySettingsModel
 {
     public string DensityMode { get; set; } = "Compact";
+}
+
+public sealed class PreviewSettingsModel
+{
+    public bool ShowRuntimeBadge { get; set; }
+
+    public bool EnableExperimentalLayoutTab { get; set; }
+}
+
+public sealed class BuildAndLogsSettingsModel
+{
+    public bool ValidateBuildAfterExport { get; set; }
+
+    public bool VerboseBuildLogs { get; set; } = true;
+
+    public bool KeepSuccessfulBuildArtifacts { get; set; } = true;
+
+    public bool CleanOldArtifactsAutomatically { get; set; } = true;
+
+    public bool SaveLogsToFile { get; set; } = true;
+
+    public string LogLevel { get; set; } = "Info";
+
+    public int MaxLogFilesCount { get; set; } = 10;
+
+    public int MaxLogFileSizeMb { get; set; } = 20;
 }
 
 public sealed class PropertyGridUserSettings

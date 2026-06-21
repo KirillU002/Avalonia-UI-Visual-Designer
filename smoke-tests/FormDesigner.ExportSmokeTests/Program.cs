@@ -38,6 +38,13 @@ internal static class Program
             new("ControlNamesAreNotLocalized", ConfigureSimpleFormExport, AssertControlNamesAreNotLocalized),
             new("RussianUiTextAppliedToMainButtons", ConfigureSimpleFormExport, AssertRussianUiTextAppliedToMainButtons),
             new("MissingLocalizationFallsBackToEnglishOrKey", ConfigureSimpleFormExport, AssertMissingLocalizationFallsBackToEnglishOrKey),
+            new("LayoutPropertiesAvailableInPropertyInspector", ConfigureLayoutPropertiesAvailableInPropertyInspector, AssertLayoutPropertiesAvailableInPropertyInspector),
+            new("LayoutTabCanBeHiddenWithoutBreakingProperties", ConfigureLayoutPropertiesAvailableInPropertyInspector, AssertLayoutTabCanBeHiddenWithoutBreakingProperties),
+            new("RuntimeBadgeDoesNotAffectPreviewBounds", ConfigureRuntimeBadgeDoesNotAffectPreviewBounds, AssertRuntimeBadgeDoesNotAffectPreviewBounds),
+            new("ValidateBuildShowsRestoreAndBuildSteps", ConfigureSimpleFormExport, AssertValidateBuildShowsRestoreAndBuildSteps),
+            new("ValidateBuildStoresDetailedLogs", ConfigureSimpleFormExport, AssertValidateBuildStoresDetailedLogs),
+            new("ValidateBuildSettingsCanDisableAutoBuild", ConfigureSimpleFormExport, AssertValidateBuildSettingsCanDisableAutoBuild),
+            new("LogsPanelShowsExportBuildDllErrors", ConfigureSimpleFormExport, AssertLogsPanelShowsExportBuildDllErrors),
             new("SimpleFormExport", ConfigureSimpleFormExport, AssertSimpleFormExport),
             new("CanvasBorderBackgroundZOrderExport", ConfigureCanvasBorderBackgroundZOrderExport, AssertCanvasBorderBackgroundZOrderExport),
             new("PreviewAndExportUseSameControlOrder", ConfigurePreviewExportConsistencyForm, AssertPreviewAndExportUseSameControlOrder),
@@ -330,6 +337,145 @@ internal static class Program
         RequireContains(context.Xaml, "<Border", "XAML should contain Border.");
         RequireNotContains(context.Xaml, "Avalonia.Controls.DataGrid", "Simple export must not require DataGrid package.");
         RequireContains(context.ChecklistText, "Plugins: none", "Simple export checklist should not require plugins.");
+    }
+
+    private static void ConfigureLayoutPropertiesAvailableInPropertyInspector(MainWindowViewModel vm)
+    {
+        ConfigureSimpleFormExport(vm);
+        var button = vm.Controls.Single(control => string.Equals(control.Name, "SaveButton", StringComparison.Ordinal));
+        vm.SelectSingleControl(button);
+    }
+
+    private static void AssertLayoutPropertiesAvailableInPropertyInspector(SmokeContext context)
+    {
+        var rows = context.ViewModel.PropertyGridCategories.SelectMany(category => category.Rows).ToList();
+        var keys = rows.Select(row => row.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var expected in new[]
+        {
+            nameof(DesignControlModel.Width),
+            nameof(DesignControlModel.Height),
+            nameof(DesignControlModel.X),
+            nameof(DesignControlModel.Y),
+            nameof(DesignControlModel.Margin),
+            nameof(DesignControlModel.HorizontalAlignment),
+            nameof(DesignControlModel.VerticalAlignment)
+        })
+        {
+            if (!keys.Contains(expected))
+                throw new InvalidOperationException($"Property Inspector should expose layout property '{expected}' in Properties.");
+        }
+
+        if (!rows.Any(row => string.Equals(row.Category, "Layout", StringComparison.Ordinal)
+            && string.Equals(row.Key, nameof(DesignControlModel.X), StringComparison.Ordinal)))
+        {
+            throw new InvalidOperationException("Canvas position properties should be grouped under Layout inside Properties.");
+        }
+    }
+
+    private static void AssertLayoutTabCanBeHiddenWithoutBreakingProperties(SmokeContext context)
+    {
+        var vm = context.ViewModel;
+        if (vm.EnableExperimentalLayoutTab)
+            throw new InvalidOperationException("Experimental Layout tab should be disabled by default.");
+        if (vm.IsLayoutTabVisible)
+            throw new InvalidOperationException("Layout tab should be hidden when the feature flag is disabled.");
+        if (vm.AvailableWorkspaceModes.Contains(MainWindowViewModel.WorkspaceModeLayout))
+            throw new InvalidOperationException("Layout workspace mode should be absent when the feature flag is disabled.");
+
+        AssertLayoutPropertiesAvailableInPropertyInspector(context);
+
+        vm.EnableExperimentalLayoutTab = true;
+        if (!vm.IsLayoutTabVisible || !vm.AvailableWorkspaceModes.Contains(MainWindowViewModel.WorkspaceModeLayout))
+            throw new InvalidOperationException("Layout tab should be restorable through the experimental feature flag.");
+        vm.EnableExperimentalLayoutTab = false;
+        if (vm.WorkspaceMode == MainWindowViewModel.WorkspaceModeLayout)
+            throw new InvalidOperationException("Disabling the Layout tab should leave the workspace in a non-Layout mode.");
+    }
+
+    private static void ConfigureRuntimeBadgeDoesNotAffectPreviewBounds(MainWindowViewModel vm)
+    {
+        ConfigureResizePreviewWindowDoesNotChangeControlPositions(vm);
+    }
+
+    private static void AssertRuntimeBadgeDoesNotAffectPreviewBounds(SmokeContext context)
+    {
+        var vm = context.ViewModel;
+        vm.ShowPreviewRuntimeBadge = false;
+        var withoutBadge = vm.BuildPreviewControlSnapshotsForActiveDocument("RuntimeBadgeOff", 900, 600).ToList();
+        vm.ShowPreviewRuntimeBadge = true;
+        var withBadge = vm.BuildPreviewControlSnapshotsForActiveDocument("RuntimeBadgeOn", 900, 600).ToList();
+
+        foreach (var off in withoutBadge)
+        {
+            var on = withBadge.Single(control => control.ControlId == off.ControlId);
+            RequireSameBounds(off, on);
+        }
+    }
+
+    private static void AssertValidateBuildShowsRestoreAndBuildSteps(SmokeContext context)
+    {
+        var (result, messages) = RunValidateBuildForSmoke(context.ViewModel, context.Scenario.Name);
+        RequireContains(result.StepSummary, "Preparing export workspace", "Validate Build should report workspace preparation.");
+        RequireContains(result.StepSummary, "Generating project files", "Validate Build should report file generation.");
+        RequireContains(result.StepSummary, "Restoring NuGet packages", "Validate Build should report restore step.");
+        RequireContains(result.StepSummary, "Building project", "Validate Build should report build step.");
+        RequireContains(result.StepSummary, "Collecting warnings/errors", "Validate Build should report diagnostics collection.");
+        if (!messages.Any(message => message.Contains("VALIDATE_BUILD_STEP_START", StringComparison.Ordinal)))
+            throw new InvalidOperationException("Validate Build should emit step start logs.");
+    }
+
+    private static void AssertValidateBuildStoresDetailedLogs(SmokeContext context)
+    {
+        var (result, _) = RunValidateBuildForSmoke(context.ViewModel, context.Scenario.Name);
+        if (string.IsNullOrWhiteSpace(result.DetailedLogPath) || !File.Exists(result.DetailedLogPath))
+            throw new InvalidOperationException("Validate Build should write a detailed log file.");
+
+        var log = File.ReadAllText(result.DetailedLogPath);
+        RequireContains(log, "VALIDATE_BUILD_START", "Detailed build log should include start event.");
+        RequireContains(log, "VALIDATE_BUILD_STEP_START", "Detailed build log should include step events.");
+        RequireContains(log, "VALIDATE_BUILD_COMMAND", "Detailed build log should include dotnet commands.");
+        RequireContains(log, "VALIDATE_BUILD_END", "Detailed build log should include end event.");
+    }
+
+    private static void AssertValidateBuildSettingsCanDisableAutoBuild(SmokeContext context)
+    {
+        var vm = context.ViewModel;
+        vm.ValidateBuildAfterExport = false;
+        vm.GenerateXaml();
+        if (vm.CurrentExportBuildValidation.Status == ExportBuildValidationStatus.Building)
+            throw new InvalidOperationException("Export generation should not start Validate Build when auto-build is disabled.");
+
+        var settings = vm.CaptureBuildAndLogsSettings();
+        if (settings.ValidateBuildAfterExport)
+            throw new InvalidOperationException("ValidateBuildAfterExport setting should persist disabled state.");
+    }
+
+    private static void AssertLogsPanelShowsExportBuildDllErrors(SmokeContext context)
+    {
+        var vm = context.ViewModel;
+        vm.LogWorkspace(WorkspaceLogLevel.Error, MainWindowViewModel.OutputCategoryExport, "Export failed smoke.", "export details");
+        vm.LogWorkspace(WorkspaceLogLevel.Warning, MainWindowViewModel.OutputCategoryPlugins, "DLL import warning smoke.", "dll details");
+
+        if (!vm.OutputEntries.Any(entry => entry.Category == MainWindowViewModel.OutputCategoryExport && entry.Level == WorkspaceLogLevel.Error))
+            throw new InvalidOperationException("Logs panel should include Export errors.");
+        if (!vm.OutputEntries.Any(entry => entry.Category == MainWindowViewModel.OutputCategoryPlugins && entry.Level == WorkspaceLogLevel.Warning))
+            throw new InvalidOperationException("Logs panel should include DLL/plugin warnings.");
+    }
+
+    private static (ExportBuildValidationResult Result, List<string> Messages) RunValidateBuildForSmoke(MainWindowViewModel vm, string scenarioName)
+    {
+        var validationRoot = Path.Combine(Path.GetTempPath(), "FormDesignerSmokeValidation", scenarioName, Guid.NewGuid().ToString("N"));
+        var messages = new List<string>();
+        var result = vm.ValidateCurrentExportBuildAsync(validationRoot, message =>
+        {
+            messages.Add(message);
+            return Task.CompletedTask;
+        }).GetAwaiter().GetResult();
+
+        if (result.Status != ExportBuildValidationStatus.Passed)
+            throw new InvalidOperationException($"Validation build did not pass: {result.Status} {result.Output}");
+
+        return (result, messages);
     }
 
     private static void ConfigureCanvasBorderBackgroundZOrderExport(MainWindowViewModel vm)

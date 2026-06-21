@@ -2315,12 +2315,32 @@
                                      Foreground="#64748B"
                                      FontSize="12"
                                      TextWrapping="Wrap"/>
-                          <Button Content="{Binding Texts.OpenValidationFolder}"
-                                  Classes="export-secondary"
-                                  Command="{Binding OpenValidationFolderEditorCommand}"
-                                  ToolTip.Tip="{Binding OpenValidationFolderEditorCommand.Hint}"
-                                  HorizontalAlignment="Left"
-                                  Margin="0,4,0,0"/>
+                          <TextBlock Text="{Binding CurrentExportBuildValidation.StepSummary}"
+                                     Foreground="#334155"
+                                     FontFamily="Consolas"
+                                     FontSize="11"
+                                     TextWrapping="Wrap"
+                                     IsVisible="{Binding HasExportValidationProjectPath}"/>
+                          <TextBlock Text="{Binding CurrentExportBuildValidation.DetailedLogPath}"
+                                     Foreground="#64748B"
+                                     FontSize="11"
+                                     TextWrapping="Wrap"
+                                     IsVisible="{Binding HasExportValidationProjectPath}"/>
+                          <WrapPanel Margin="0,4,0,0">
+                            <Button Content="{Binding Texts.OpenValidationFolder}"
+                                    Classes="export-secondary"
+                                    Command="{Binding OpenValidationFolderEditorCommand}"
+                                    ToolTip.Tip="{Binding OpenValidationFolderEditorCommand.Hint}"
+                                    Margin="0,0,6,6"/>
+                            <Button Content="Copy logs"
+                                    Classes="export-secondary"
+                                    Click="CopyBuildLogsButton_Click"
+                                    Margin="0,0,6,6"/>
+                            <Button Content="Open logs folder"
+                                    Classes="export-secondary"
+                                    Click="OpenBuildLogsFolderButton_Click"
+                                    Margin="0,0,6,6"/>
+                          </WrapPanel>
                         </StackPanel>
                       </Border>
                       <Button Content="{Binding Texts.OpenFullOutput}"
@@ -6170,7 +6190,8 @@
             </ScrollViewer>
           </TabItem>
 
-          <TabItem Header="{Binding Texts.Layout}">
+          <TabItem Header="{Binding Texts.Layout}"
+                   IsVisible="{Binding IsLayoutTabVisible}">
             <Grid RowDefinitions="Auto,*"
                   Margin="0,8,0,0">
               <Grid ColumnDefinitions="*,Auto">
@@ -6638,6 +6659,26 @@
                                   Margin="0,0,12,6"
                                   IsChecked="{Binding IncludeSampleData, Mode=TwoWay}"/>
                       </WrapPanel>
+                      <Border Background="#F8FAFC"
+                              BorderBrush="#D7E2EE"
+                              BorderThickness="1"
+                              CornerRadius="10"
+                              Padding="10">
+                        <StackPanel Spacing="6">
+                          <TextBlock Text="Settings"
+                                     FontWeight="Bold"/>
+                          <CheckBox Content="Show runtime badge in Preview"
+                                    IsChecked="{Binding ShowPreviewRuntimeBadge, Mode=TwoWay}"/>
+                          <CheckBox Content="Enable experimental Layout tab"
+                                    IsChecked="{Binding EnableExperimentalLayoutTab, Mode=TwoWay}"/>
+                          <CheckBox Content="Verbose build logs"
+                                    IsChecked="{Binding VerboseBuildLogs, Mode=TwoWay}"/>
+                          <CheckBox Content="Save logs to file"
+                                    IsChecked="{Binding SaveLogsToFile, Mode=TwoWay}"/>
+                          <CheckBox Content="Clean old artifacts automatically"
+                                    IsChecked="{Binding CleanOldArtifactsAutomatically, Mode=TwoWay}"/>
+                        </StackPanel>
+                      </Border>
                     </StackPanel>
                   </Border>
                 </Expander>
@@ -6654,11 +6695,32 @@
                                Foreground="#64748B"
                                FontSize="12"
                                TextWrapping="Wrap"/>
-                    <Button Content="{Binding Texts.OpenValidationFolder}"
-                            Classes="export-secondary"
-                            Command="{Binding OpenValidationFolderEditorCommand}"
-                            ToolTip.Tip="{Binding OpenValidationFolderEditorCommand.Hint}"
-                            HorizontalAlignment="Left"/>
+                    <TextBlock Text="{Binding CurrentExportBuildValidation.StepSummary}"
+                               Foreground="#334155"
+                               FontFamily="Consolas"
+                               FontSize="11"
+                               TextWrapping="Wrap"
+                               IsVisible="{Binding HasExportValidationProjectPath}"/>
+                    <TextBlock Text="{Binding CurrentExportBuildValidation.DetailedLogPath}"
+                               Foreground="#64748B"
+                               FontSize="11"
+                               TextWrapping="Wrap"
+                               IsVisible="{Binding HasExportValidationProjectPath}"/>
+                    <WrapPanel>
+                      <Button Content="{Binding Texts.OpenValidationFolder}"
+                              Classes="export-secondary"
+                              Command="{Binding OpenValidationFolderEditorCommand}"
+                              ToolTip.Tip="{Binding OpenValidationFolderEditorCommand.Hint}"
+                              Margin="0,0,6,6"/>
+                      <Button Content="Copy logs"
+                              Classes="export-secondary"
+                              Click="CopyBuildLogsButton_Click"
+                              Margin="0,0,6,6"/>
+                      <Button Content="Open logs folder"
+                              Classes="export-secondary"
+                              Click="OpenBuildLogsFolderButton_Click"
+                              Margin="0,0,6,6"/>
+                    </WrapPanel>
                   </StackPanel>
                 </Border>
               </StackPanel>
@@ -7270,6 +7332,14 @@
                           MinWidth="150"/>
                 <Button Content="Clear"
                         Command="{Binding ClearOutputCommand}"
+                        Classes="problem-filter"
+                        Padding="8,3"/>
+                <Button Content="Copy all"
+                        Click="CopyOutputLogsButton_Click"
+                        Classes="problem-filter"
+                        Padding="8,3"/>
+                <Button Content="Open logs folder"
+                        Click="OpenLogsFolderButton_Click"
                         Classes="problem-filter"
                         Padding="8,3"/>
               </StackPanel>
