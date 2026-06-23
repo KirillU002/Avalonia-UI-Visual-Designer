@@ -3061,7 +3061,7 @@
                           Padding="8"
                           IsVisible="{Binding IsActiveLayoutStack}">
                     <StackPanel Spacing="8">
-                      <TextBlock Text="StackPanel workflow"
+                      <TextBlock Text="Работа со StackPanel"
                                  FontWeight="Bold"
                                  FontSize="13"/>
                       <Grid ColumnDefinitions="*,*">
@@ -3084,12 +3084,12 @@
                       </Grid>
                       <StackPanel Orientation="Horizontal"
                                   Spacing="6">
-                        <Button Content="Move Up"
+                        <Button Content="Выше"
                                 Classes="data-action-button"
                                 Command="{Binding MoveSelectedStackChildUpCommand}"
                                 IsEnabled="{Binding IsSelectedControlManagedByLayout}"
                                 Padding="8,4"/>
-                        <Button Content="Move Down"
+                        <Button Content="Ниже"
                                 Classes="data-action-button"
                                 Command="{Binding MoveSelectedStackChildDownCommand}"
                                 IsEnabled="{Binding IsSelectedControlManagedByLayout}"
@@ -3134,14 +3134,14 @@
                                               Content="{Binding FavoriteGlyph}"
                                               Command="{Binding #RootWindow.DataContext.TogglePropertyGridFavoriteCommand}"
                                               CommandParameter="{Binding}"
-                                              ToolTip.Tip="Toggle favorite"/>
+                                              ToolTip.Tip="Добавить или убрать из избранного"/>
 
                                       <TextBlock Grid.Column="1"
                                                  FontSize="12"
                                                  Foreground="#334155"
                                                  VerticalAlignment="Center"
                                                  TextTrimming="CharacterEllipsis"
-                                                 IsHitTestVisible="False">
+                                                 ToolTip.Tip="{Binding Description}">
                                         <TextBlock.Text>
                                           <MultiBinding StringFormat="{}{0}{1}">
                                             <Binding Path="ModifiedGlyph"/>
@@ -3186,7 +3186,7 @@
                                                   Classes="property-action"
                                                   Content="..."
                                                   Click="PropertyGridOptionButton_Click"
-                                                  ToolTip.Tip="Select value"/>
+                                                  ToolTip.Tip="Выбрать значение"/>
                                         </Grid>
 
                                         <Grid IsVisible="{Binding IsBindingSourceEditor}"
@@ -3201,7 +3201,7 @@
                                                   Classes="property-action"
                                                   Content="..."
                                                   Click="PropertyGridOptionButton_Click"
-                                                  ToolTip.Tip="Select BindingSource"/>
+                                                  ToolTip.Tip="Выбрать BindingSource"/>
                                         </Grid>
 
                                         <Grid IsVisible="{Binding IsColorEditor}"
@@ -3226,7 +3226,7 @@
                                                   Classes="property-action"
                                                   Content="..."
                                                   Click="PropertyGridColorButton_Click"
-                                                  ToolTip.Tip="Choose color"/>
+                                                  ToolTip.Tip="Выбрать цвет"/>
                                         </Grid>
 
                                         <Button Classes="property-action"
@@ -6665,17 +6665,17 @@
                               CornerRadius="10"
                               Padding="10">
                         <StackPanel Spacing="6">
-                          <TextBlock Text="Settings"
+                          <TextBlock Text="Настройки"
                                      FontWeight="Bold"/>
-                          <CheckBox Content="Show runtime badge in Preview"
+                          <CheckBox Content="Показывать runtime-плашку в Preview"
                                     IsChecked="{Binding ShowPreviewRuntimeBadge, Mode=TwoWay}"/>
-                          <CheckBox Content="Enable experimental Layout tab"
+                          <CheckBox Content="Включить экспериментальную вкладку Layout"
                                     IsChecked="{Binding EnableExperimentalLayoutTab, Mode=TwoWay}"/>
-                          <CheckBox Content="Verbose build logs"
+                          <CheckBox Content="Подробные Build logs"
                                     IsChecked="{Binding VerboseBuildLogs, Mode=TwoWay}"/>
-                          <CheckBox Content="Save logs to file"
+                          <CheckBox Content="Сохранять logs в файл"
                                     IsChecked="{Binding SaveLogsToFile, Mode=TwoWay}"/>
-                          <CheckBox Content="Clean old artifacts automatically"
+                          <CheckBox Content="Автоматически очищать старые artifacts"
                                     IsChecked="{Binding CleanOldArtifactsAutomatically, Mode=TwoWay}"/>
                         </StackPanel>
                       </Border>
@@ -6687,12 +6687,12 @@
                         <StackPanel Spacing="7">
                           <TextBlock Text="NuGet"
                                      FontWeight="Bold"/>
-                          <CheckBox Content="Use custom NuGet source"
+                          <CheckBox Content="Использовать пользовательский NuGet source"
                                     IsChecked="{Binding UseCustomNuGetSource, Mode=TwoWay}"/>
                           <TextBox Watermark="https://api.nuget.org/v3/index.json or C:\packages"
                                    Text="{Binding CustomNuGetSource, Mode=TwoWay}"
                                    IsEnabled="{Binding UseCustomNuGetSource}"/>
-                          <CheckBox Content="Allow insecure HTTP source"
+                          <CheckBox Content="Разрешить HTTP source"
                                     IsChecked="{Binding AllowInsecureNuGetSource, Mode=TwoWay}"
                                     IsEnabled="{Binding UseCustomNuGetSource}"/>
                           <TextBlock Text="{Binding NuGetSourceSummaryText}"
@@ -6700,11 +6700,11 @@
                                      FontSize="12"
                                      TextWrapping="Wrap"/>
                           <WrapPanel>
-                            <Button Content="Test source"
+                            <Button Content="Проверить source"
                                     Classes="export-secondary"
                                     Command="{Binding TestNuGetSourceCommand}"
                                     Margin="0,0,6,6"/>
-                            <Button Content="Clear"
+                            <Button Content="Очистить"
                                     Classes="export-secondary"
                                     Command="{Binding ClearNuGetSourceCommand}"
                                     Margin="0,0,6,6"/>
@@ -6722,7 +6722,7 @@
 
                 <Border Classes="export-card">
                   <StackPanel Spacing="8">
-                    <TextBlock Text="Build status"
+                    <TextBlock Text="Статус Build"
                                FontWeight="Bold"
                                FontSize="14"/>
                     <TextBlock Text="{Binding ExportValidationStatusText}"
@@ -6749,11 +6749,11 @@
                               Command="{Binding OpenValidationFolderEditorCommand}"
                               ToolTip.Tip="{Binding OpenValidationFolderEditorCommand.Hint}"
                               Margin="0,0,6,6"/>
-                      <Button Content="Copy logs"
+                      <Button Content="Копировать logs"
                               Classes="export-secondary"
                               Click="CopyBuildLogsButton_Click"
                               Margin="0,0,6,6"/>
-                      <Button Content="Open logs folder"
+                      <Button Content="Открыть папку logs"
                               Classes="export-secondary"
                               Click="OpenBuildLogsFolderButton_Click"
                               Margin="0,0,6,6"/>

@@ -38,6 +38,8 @@ internal static class Program
             new("ControlNamesAreNotLocalized", ConfigureSimpleFormExport, AssertControlNamesAreNotLocalized),
             new("RussianUiTextAppliedToMainButtons", ConfigureSimpleFormExport, AssertRussianUiTextAppliedToMainButtons),
             new("MissingLocalizationFallsBackToEnglishOrKey", ConfigureSimpleFormExport, AssertMissingLocalizationFallsBackToEnglishOrKey),
+            new("PropertyDescriptionProviderHasRussianDescriptions", ConfigureSimpleFormExport, AssertPropertyDescriptionProviderHasRussianDescriptions),
+            new("PropertyInspectorUsesRussianPropertyDescriptionTooltips", ConfigurePropertyInspectorUsesRussianPropertyDescriptionTooltips, AssertPropertyInspectorUsesRussianPropertyDescriptionTooltips),
             new("LayoutPropertiesAvailableInPropertyInspector", ConfigureLayoutPropertiesAvailableInPropertyInspector, AssertLayoutPropertiesAvailableInPropertyInspector),
             new("LayoutTabCanBeHiddenWithoutBreakingProperties", ConfigureLayoutPropertiesAvailableInPropertyInspector, AssertLayoutTabCanBeHiddenWithoutBreakingProperties),
             new("RuntimeBadgeDoesNotAffectPreviewBounds", ConfigureRuntimeBadgeDoesNotAffectPreviewBounds, AssertRuntimeBadgeDoesNotAffectPreviewBounds),
@@ -325,6 +327,45 @@ internal static class Program
     {
         const string missingKey = "MissingLocalizationSmokeKey";
         RequireEqual(missingKey, UiText.Current.Get(missingKey), "Missing localization should fall back to the key.");
+    }
+
+    private static void AssertPropertyDescriptionProviderHasRussianDescriptions(SmokeContext context)
+    {
+        RequireContains(PropertyDescriptionProvider.GetDescription("Name"), "Уникальное имя", "Name should have a Russian property description.");
+        RequireContains(PropertyDescriptionProvider.GetDescription("Width"), "Ширина", "Width should have a Russian property description.");
+        RequireContains(PropertyDescriptionProvider.GetDescription("Height"), "Высота", "Height should have a Russian property description.");
+        RequireContains(PropertyDescriptionProvider.GetDescription("Background"), "Цвет фона", "Background should have a Russian property description.");
+        RequireContains(PropertyDescriptionProvider.GetDescription("CanUserSortColumns"), "сортировку", "DataGrid sorting property should be explained.");
+        RequireContains(PropertyDescriptionProvider.GetDescription("CanUserResizeColumns"), "ширину колонок", "DataGrid resize property should be explained.");
+        RequireContains(PropertyDescriptionProvider.GetDescription("TextWrapping"), "Переносить", "DataGrid wrapping property should be explained.");
+        RequireContains(PropertyDescriptionProvider.GetDescription("TextTrimming"), "Обрезать", "DataGrid trimming property should be explained.");
+    }
+
+    private static void ConfigurePropertyInspectorUsesRussianPropertyDescriptionTooltips(MainWindowViewModel vm)
+    {
+        ConfigureSimpleFormExport(vm);
+        var button = vm.Controls.Single(control => string.Equals(control.Name, "SaveButton", StringComparison.Ordinal));
+        vm.SelectSingleControl(button);
+    }
+
+    private static void AssertPropertyInspectorUsesRussianPropertyDescriptionTooltips(SmokeContext context)
+    {
+        var rows = context.ViewModel.PropertyGridCategories.SelectMany(category => category.Rows).ToList();
+        var width = rows.SingleOrDefault(row => string.Equals(row.Label, "Width", StringComparison.Ordinal));
+        if (width is null)
+            throw new InvalidOperationException("Property Inspector should contain Width row.");
+        RequireContains(width.Description, "Ширина элемента", "Width row should display the centralized Russian description.");
+        RequireNotContains(width.Description, "Element width", "Width row should not keep the old English description.");
+
+        var text = rows.SingleOrDefault(row => string.Equals(row.Label, "Text / Content", StringComparison.Ordinal));
+        if (text is null)
+            throw new InvalidOperationException("Property Inspector should contain Text / Content row.");
+        RequireContains(text.Description, "Текст", "Text / Content row should display the centralized Russian description.");
+
+        if (!context.ViewModel.PropertyGridCategories.Any(category => string.Equals(category.Title, "Основные", StringComparison.Ordinal)))
+            throw new InvalidOperationException("PropertyGrid Common category should be localized.");
+        if (!context.ViewModel.PropertyGridCategories.Any(category => string.Equals(category.Title, "Внешний вид", StringComparison.Ordinal)))
+            throw new InvalidOperationException("PropertyGrid Appearance category should be localized.");
     }
 
     private static void RequireTechnicalName(IReadOnlySet<string> names, string expected)

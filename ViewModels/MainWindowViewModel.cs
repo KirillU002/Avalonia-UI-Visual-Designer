@@ -88,6 +88,18 @@ public partial class MainWindowViewModel : ObservableObject
     public const string PropertyGridCategoryInteraction = "Interaction";
     public const string PropertyGridCategoryExport = "Export";
     public const string PropertyGridCategoryAdvanced = "Advanced";
+    private static readonly IReadOnlyDictionary<string, string> PropertyGridCategoryTitles = new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        [PropertyGridCategoryFavorites] = "★ Избранное",
+        [PropertyGridCategoryCommon] = "Основные",
+        [PropertyGridCategoryLayout] = "Layout",
+        [PropertyGridCategoryAppearance] = "Внешний вид",
+        [PropertyGridCategoryData] = "Данные",
+        [PropertyGridCategoryBehavior] = "Поведение",
+        [PropertyGridCategoryInteraction] = "Логика",
+        [PropertyGridCategoryExport] = "Export",
+        [PropertyGridCategoryAdvanced] = "Дополнительно"
+    };
     private const int RuntimeDataGridSampleRowCount = 6;
 
     public const string WindowStateNormal = "Обычное";
@@ -9447,13 +9459,13 @@ public partial class MainWindowViewModel : ObservableObject
 
             var favorites = rows.Where(row => row.IsFavorite).ToList();
             if (favorites.Count > 0)
-                AddPropertyGridCategory(PropertyGridCategoryFavorites, "\u2605 Favorites", favorites, hasSearch);
+                AddPropertyGridCategory(PropertyGridCategoryFavorites, GetPropertyGridCategoryTitle(PropertyGridCategoryFavorites), favorites, hasSearch);
 
             foreach (var category in GetPropertyGridCategoryOrder().Where(category => category != PropertyGridCategoryFavorites))
             {
                 var categoryRows = rows.Where(row => string.Equals(row.Category, category, StringComparison.Ordinal)).ToList();
                 if (categoryRows.Count > 0)
-                    AddPropertyGridCategory(category, category, categoryRows, hasSearch);
+                    AddPropertyGridCategory(category, GetPropertyGridCategoryTitle(category), categoryRows, hasSearch);
             }
 
             TraceDocumentDebug(
@@ -9591,6 +9603,13 @@ public partial class MainWindowViewModel : ObservableObject
 
         category.NotifyRowsChanged();
         PropertyGridCategories.Add(category);
+    }
+
+    private static string GetPropertyGridCategoryTitle(string category)
+    {
+        return PropertyGridCategoryTitles.TryGetValue(category, out var title)
+            ? title
+            : category;
     }
 
     private static string CreatePropertyGridRowCacheKey(string documentId, string controlId, string propertyKey)
@@ -10035,6 +10054,7 @@ public partial class MainWindowViewModel : ObservableObject
         string actionText = "Edit...",
         string aliases = "")
     {
+        var localizedDescription = PropertyDescriptionProvider.GetDescription(label, PropertyDescriptionProvider.GetDescription(key, description));
         var defaultValue = GetPropertyGridDefaultValue(key);
         var contextDocumentId = ActiveDocumentId;
         var contextControlId = SelectedControl?.Id ?? "";
@@ -10046,7 +10066,7 @@ public partial class MainWindowViewModel : ObservableObject
             category,
             editor,
             value,
-            description,
+            localizedDescription,
             (row, newValue) =>
             {
                 if (!CanApplyPropertyGridRow(row, newValue))
