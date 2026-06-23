@@ -44,6 +44,12 @@ internal static class Program
             new("ValidateBuildShowsRestoreAndBuildSteps", ConfigureSimpleFormExport, AssertValidateBuildShowsRestoreAndBuildSteps),
             new("ValidateBuildStoresDetailedLogs", ConfigureSimpleFormExport, AssertValidateBuildStoresDetailedLogs),
             new("ValidateBuildSettingsCanDisableAutoBuild", ConfigureSimpleFormExport, AssertValidateBuildSettingsCanDisableAutoBuild),
+            new("ValidateBuildUsesDefaultNugetSourceWhenCustomEmpty", ConfigureSimpleFormExport, AssertValidateBuildUsesDefaultNugetSourceWhenCustomEmpty),
+            new("ValidateBuildUsesCustomHttpsNugetSource", ConfigureSimpleFormExport, AssertValidateBuildUsesCustomHttpsNugetSource),
+            new("ValidateBuildUsesCustomHttpNugetSourceWithAllowInsecure", ConfigureSimpleFormExport, AssertValidateBuildUsesCustomHttpNugetSourceWithAllowInsecure),
+            new("ValidateBuildBlocksHttpSourceWithoutAllowInsecure", ConfigureSimpleFormExport, AssertValidateBuildBlocksHttpSourceWithoutAllowInsecure),
+            new("NugetSourceSettingsPersist", ConfigureSimpleFormExport, AssertNugetSourceSettingsPersist),
+            new("ValidateBuildOutputShowsNugetSource", ConfigureSimpleFormExport, AssertValidateBuildOutputShowsNugetSource),
             new("LogsPanelShowsExportBuildDllErrors", ConfigureSimpleFormExport, AssertLogsPanelShowsExportBuildDllErrors),
             new("SimpleFormExport", ConfigureSimpleFormExport, AssertSimpleFormExport),
             new("CanvasBorderBackgroundZOrderExport", ConfigureCanvasBorderBackgroundZOrderExport, AssertCanvasBorderBackgroundZOrderExport),
@@ -73,6 +79,11 @@ internal static class Program
             new("DataGridPreviewExportSettingsMatch", ConfigureDataGridColumnWrapUsesTemplateColumn, AssertDataGridPreviewExportSettingsMatch, RequiresRealDataGrid: true),
             new("SqlDataGridExportGeneratesItemsSourceProperty", ConfigureSqlDataGridExport, AssertSqlDataGridExportGeneratesItemsSourceProperty, RequiresRealDataGrid: true),
             new("SqlDataGridExportGeneratesRowDto", ConfigureSqlDataGridExport, AssertSqlDataGridExportGeneratesRowDto, RequiresRealDataGrid: true),
+            new("SqlDataGridPreviewRuntimeRowsMatch", ConfigureSqlDataGridPreviewRuntimeRowsMatch, AssertSqlDataGridPreviewRuntimeRowsMatch, RequiresRealDataGrid: true),
+            new("MultiFormSqlDataGridExportBuildsWithDistinctDtos", ConfigureMultiFormSqlDataGridExportBuildsWithDistinctDtos, AssertMultiFormSqlDataGridExportBuildsWithDistinctDtos, RequiresRealDataGrid: true),
+            new("FiveFormSqlDataGridsExportBuilds", ConfigureFiveFormSqlDataGridsExportBuilds, AssertFiveFormSqlDataGridsExportBuilds, RequiresRealDataGrid: true),
+            new("DllDataGridPreviewRuntimeRowsMatch", ConfigureDllTableDataGridExport, AssertDllDataGridPreviewRuntimeRowsMatch, RequiresRealDataGrid: true),
+            new("ManualDataGridPreviewRuntimeRowsMatch", ConfigureManualColumnsViaColumnEditor, AssertManualDataGridPreviewRuntimeRowsMatch, RequiresRealDataGrid: true),
             new("DllTableDataGridExportGeneratesUnderstandableBinding", ConfigureDllTableDataGridExport, AssertDllTableDataGridExportGeneratesUnderstandableBinding, RequiresRealDataGrid: true),
             new("DataGridExportDoesNotGenerateEmptyBindings", ConfigureSqlDataGridExport, AssertDataGridExportDoesNotGenerateEmptyBindings, RequiresRealDataGrid: true),
             new("DataGridExportDoesNotGenerateInvalidXDataType", ConfigureSqlDataGridExport, AssertDataGridExportDoesNotGenerateInvalidXDataType, RequiresRealDataGrid: true),
@@ -450,6 +461,117 @@ internal static class Program
             throw new InvalidOperationException("ValidateBuildAfterExport setting should persist disabled state.");
     }
 
+    private static void AssertValidateBuildUsesDefaultNugetSourceWhenCustomEmpty(SmokeContext context)
+    {
+        var vm = context.ViewModel;
+        vm.UseCustomNuGetSource = false;
+        vm.CustomNuGetSource = "";
+
+        var (result, messages) = RunValidateBuildForSmoke(vm, context.Scenario.Name);
+        var nugetConfig = File.ReadAllText(Path.Combine(result.ProjectPath, "NuGet.config"), Encoding.UTF8);
+        RequireContains(nugetConfig, "https://api.nuget.org/v3/index.json", "Default Validate Build should use NuGet.org.");
+        RequireContains(result.StepSummary, "custom=False", "Validate Build summary should mark default NuGet source as not custom.");
+        if (!messages.Any(message => message.Contains("VALIDATE_BUILD_NUGET_SOURCE_SELECTED", StringComparison.Ordinal)
+                                     && message.Contains("custom=False", StringComparison.Ordinal)))
+        {
+            throw new InvalidOperationException("Validate Build should log default NuGet source selection.");
+        }
+    }
+
+    private static void AssertValidateBuildUsesCustomHttpsNugetSource(SmokeContext context)
+    {
+        var vm = context.ViewModel;
+        vm.UseCustomNuGetSource = true;
+        vm.CustomNuGetSource = "https://api.nuget.org/v3/index.json";
+        vm.AllowInsecureNuGetSource = false;
+
+        var (result, messages) = RunValidateBuildForSmoke(vm, context.Scenario.Name);
+        var nugetConfig = File.ReadAllText(Path.Combine(result.ProjectPath, "NuGet.config"), Encoding.UTF8);
+        RequireContains(nugetConfig, "key=\"CustomNuGetSource\"", "Custom HTTPS source should be named in generated NuGet.config.");
+        RequireContains(nugetConfig, "https://api.nuget.org/v3/index.json", "Custom HTTPS source should be written to generated NuGet.config.");
+        RequireContains(result.StepSummary, "custom=True", "Validate Build summary should mark custom NuGet source.");
+        if (!messages.Any(message => message.Contains("VALIDATE_BUILD_COMMAND", StringComparison.Ordinal)
+                                     && message.Contains("--configfile", StringComparison.Ordinal)))
+        {
+            throw new InvalidOperationException("Validate Build restore should explicitly use generated NuGet.config.");
+        }
+    }
+
+    private static void AssertValidateBuildUsesCustomHttpNugetSourceWithAllowInsecure(SmokeContext context)
+    {
+        var vm = context.ViewModel;
+        vm.UseCustomNuGetSource = true;
+        vm.CustomNuGetSource = "http://127.0.0.1:9/v3/index.json";
+        vm.AllowInsecureNuGetSource = true;
+
+        var (result, messages) = RunValidateBuildForSmoke(vm, context.Scenario.Name, requirePassed: false);
+        if (string.IsNullOrWhiteSpace(result.ProjectPath) || !Directory.Exists(result.ProjectPath))
+            throw new InvalidOperationException("Validate Build should still create a validation project for allowed HTTP source.");
+
+        var nugetConfig = File.ReadAllText(Path.Combine(result.ProjectPath, "NuGet.config"), Encoding.UTF8);
+        RequireContains(nugetConfig, "value=\"http://127.0.0.1:9/v3/index.json\"", "Custom HTTP source should be written to generated NuGet.config.");
+        RequireContains(nugetConfig, "allowInsecureConnections=\"true\"", "Allowed HTTP source should generate allowInsecureConnections.");
+        RequireNotContains(nugetConfig, "https://api.nuget.org/v3/index.json", "Custom source validation config should not silently add default NuGet.org.");
+        if (!messages.Any(message => message.Contains("NUGET_CONFIG_GENERATED_FOR_VALIDATE_BUILD", StringComparison.Ordinal)
+                                     && message.Contains("allowInsecure=", StringComparison.Ordinal)
+                                     && message.Contains("True", StringComparison.Ordinal)))
+        {
+            throw new InvalidOperationException("Validate Build should log generated NuGet.config for allowed HTTP source.");
+        }
+    }
+
+    private static void AssertValidateBuildBlocksHttpSourceWithoutAllowInsecure(SmokeContext context)
+    {
+        var vm = context.ViewModel;
+        vm.UseCustomNuGetSource = true;
+        vm.CustomNuGetSource = "http://127.0.0.1:9/v3/index.json";
+        vm.AllowInsecureNuGetSource = false;
+
+        var (result, messages) = RunValidateBuildForSmoke(vm, context.Scenario.Name, requirePassed: false);
+        if (result.Status != ExportBuildValidationStatus.Failed || result.ExitCode != -1)
+            throw new InvalidOperationException("HTTP custom source without allowInsecureConnections should be blocked before restore.");
+        RequireContains(result.Output, "allowInsecureConnections", "Blocked HTTP source should explain allowInsecureConnections.");
+        if (!messages.Any(message => message.Contains("NUGET_HTTP_SOURCE_REQUIRES_ALLOW_INSECURE", StringComparison.Ordinal)))
+            throw new InvalidOperationException("Blocked HTTP source should emit NUGET_HTTP_SOURCE_REQUIRES_ALLOW_INSECURE.");
+        if (messages.Any(message => message.Contains("VALIDATE_BUILD_COMMAND", StringComparison.Ordinal)))
+            throw new InvalidOperationException("Blocked HTTP source should not run dotnet restore silently.");
+    }
+
+    private static void AssertNugetSourceSettingsPersist(SmokeContext context)
+    {
+        var vm = context.ViewModel;
+        vm.UseCustomNuGetSource = true;
+        vm.CustomNuGetSource = @"C:\local-nuget-feed";
+        vm.AllowInsecureNuGetSource = true;
+
+        var settings = new AppSettingsModel
+        {
+            BuildAndLogs = vm.CaptureBuildAndLogsSettings()
+        };
+        var reloaded = CreateViewModel(context.Scenario.Name + "Reloaded");
+        reloaded.ApplyAppSettings(settings);
+
+        if (!reloaded.UseCustomNuGetSource
+            || !string.Equals(reloaded.CustomNuGetSource, vm.CustomNuGetSource, StringComparison.Ordinal)
+            || !reloaded.AllowInsecureNuGetSource)
+        {
+            throw new InvalidOperationException("Custom NuGet source settings should persist through AppSettings.");
+        }
+    }
+
+    private static void AssertValidateBuildOutputShowsNugetSource(SmokeContext context)
+    {
+        var vm = context.ViewModel;
+        vm.UseCustomNuGetSource = true;
+        vm.CustomNuGetSource = "https://api.nuget.org/v3/index.json";
+
+        var (result, messages) = RunValidateBuildForSmoke(vm, context.Scenario.Name);
+        RequireContains(result.StepSummary, "NuGet source:", "Validate Build summary should show selected NuGet source.");
+        RequireContains(result.StepSummary, "NuGet.config:", "Validate Build summary should show generated NuGet.config path.");
+        if (!messages.Any(message => message.Contains("VALIDATE_BUILD_NUGET_SOURCE_SELECTED", StringComparison.Ordinal)))
+            throw new InvalidOperationException("Validate Build output should include selected NuGet source diagnostic.");
+    }
+
     private static void AssertLogsPanelShowsExportBuildDllErrors(SmokeContext context)
     {
         var vm = context.ViewModel;
@@ -462,7 +584,7 @@ internal static class Program
             throw new InvalidOperationException("Logs panel should include DLL/plugin warnings.");
     }
 
-    private static (ExportBuildValidationResult Result, List<string> Messages) RunValidateBuildForSmoke(MainWindowViewModel vm, string scenarioName)
+    private static (ExportBuildValidationResult Result, List<string> Messages) RunValidateBuildForSmoke(MainWindowViewModel vm, string scenarioName, bool requirePassed = true)
     {
         var validationRoot = Path.Combine(Path.GetTempPath(), "FormDesignerSmokeValidation", scenarioName, Guid.NewGuid().ToString("N"));
         var messages = new List<string>();
@@ -472,7 +594,7 @@ internal static class Program
             return Task.CompletedTask;
         }).GetAwaiter().GetResult();
 
-        if (result.Status != ExportBuildValidationStatus.Passed)
+        if (requirePassed && result.Status != ExportBuildValidationStatus.Passed)
             throw new InvalidOperationException($"Validation build did not pass: {result.Status} {result.Output}");
 
         return (result, messages);
@@ -942,6 +1064,110 @@ internal static class Program
         RequireContains(GetRequiredPackagesText(context), "Microsoft.Data.SqlClient", "Generated project should include SqlClient for optional SQL loader.");
     }
 
+    private static void ConfigureSqlDataGridPreviewRuntimeRowsMatch(MainWindowViewModel vm)
+    {
+        var source = SqlRuntimeMismatchSource("sql-preview-runtime-source", "RuntimeRows", "SqlRow");
+        vm.BindingSources.Add(source);
+        vm.DataGridExportMode = MainWindowViewModel.DataGridExportModeReal;
+        vm.Controls.Add(DataGrid("RuntimeGrid", source.Id, 32, 42, 720, 360));
+    }
+
+    private static void AssertSqlDataGridPreviewRuntimeRowsMatch(SmokeContext context)
+    {
+        RequireContains(context.Xaml, "ItemsSource=\"{Binding RuntimeRowsView}\"", "SQL DataGrid runtime should bind to generated ViewModel collection.");
+        RequireContains(context.CSharp, "DataContext = new MainWindowViewModel();", "Generated code-behind should create a runtime ViewModel.");
+        RequireContains(context.CSharp, "public ObservableCollection<SqlRow> RuntimeRows { get; } = new();", "Generated ViewModel should expose source collection.");
+        RequireContains(context.CSharp, "public ObservableCollection<SqlRow> RuntimeRowsView { get; } = new();", "Generated ViewModel should expose DataGrid view collection.");
+        RequireContains(context.CSharp, "SeedSqlRow();", "Generated ViewModel constructor should seed SQL sample rows.");
+        RequireContains(context.CSharp, "RuntimeRows.Add(new SqlRow", "Runtime collection should receive sample rows.");
+        RequireContains(context.CSharp, "RUNTIME_DATAGRID_COLLECTION_CREATED", "Generated runtime should trace created DataGrid collection row count.");
+        RequireContains(context.Xaml, "Binding=\"{Binding Кто_выгрузил}\"", "Runtime AXAML should bind to sanitized DTO property for SQL column with spaces.");
+        RequireContains(context.Xaml, "SortMemberPath=\"Кто_выгрузил\"", "Runtime sorting should use sanitized DTO property for SQL column with spaces.");
+        RequireNotContains(context.Xaml, "Binding=\"{Binding Кто выгрузил}\"", "Runtime AXAML must not bind to raw SQL column name that is not a C# property.");
+        RequireContains(context.CSharp, "private string кто_выгрузил;", "Generated DTO should contain the sanitized SQL column property.");
+        RequireTraceEvent(context, "DATAGRID_PREVIEW_ROWS_CREATED");
+        RequireTraceEvent(context, "EXPORT_DATAGRID_ITEMSSOURCE_GENERATED");
+        RequireTraceEvent(context, "EXPORT_VIEWMODEL_COLLECTION_CREATED");
+        RequireTraceEvent(context, "EXPORT_DATAGRID_ROWS_GENERATED");
+        RequireTraceEvent(context, "EXPORT_COLUMN_BINDING_VALIDATED");
+    }
+
+    private static void ConfigureMultiFormSqlDataGridExportBuildsWithDistinctDtos(MainWindowViewModel vm)
+    {
+        vm.ExportTarget = MainWindowViewModel.ExportTargetMainWindow;
+        vm.DataGridExportMode = MainWindowViewModel.DataGridExportModeReal;
+        var form1 = vm.ActiveFormDocument ?? throw new InvalidOperationException("Form1 missing.");
+
+        var source1 = SqlRuntimeMismatchSource("sql-form1-source", "SharedRows", "SqlRow");
+        vm.BindingSources.Add(source1);
+        vm.Controls.Add(DataGrid("Form1Grid", source1.Id, 32, 42, 720, 320));
+
+        var form2 = vm.CreateNewForm();
+        form2.Name = "Form2";
+        form2.Document.FormTitle = "Form2";
+        vm.FormTitle = "Form2";
+
+        var source2 = SqlRuntimeMismatchSource("sql-form2-source", "SharedRows", "SqlRow");
+        vm.BindingSources.Add(source2);
+        vm.Controls.Add(DataGrid("Form2Grid", source2.Id, 32, 42, 720, 320));
+
+        SwitchToForm(vm, form1.Id);
+    }
+
+    private static void AssertMultiFormSqlDataGridExportBuildsWithDistinctDtos(SmokeContext context)
+    {
+        RequireGeneratedFile(context, "MainWindow.axaml.cs");
+        RequireGeneratedFile(context, "Form2.axaml.cs");
+        var form2Code = context.GeneratedFiles.First(file => string.Equals(file.Path, "Form2.axaml.cs", StringComparison.OrdinalIgnoreCase)).Content;
+
+        RequireContains(context.CSharp, "public partial class MainWindowSqlRow : ObservableObject", "Active form SQL row DTO should be uniquely scoped by generated form class.");
+        RequireContains(form2Code, "public partial class Form2SqlRow : ObservableObject", "Secondary form SQL row DTO should be uniquely scoped by generated form class.");
+        RequireNotContains(context.CSharp, "public partial class SqlRow : ObservableObject", "Active form must not emit conflicting shared SqlRow DTO.");
+        RequireNotContains(form2Code, "public partial class SqlRow : ObservableObject", "Secondary form must not emit conflicting shared SqlRow DTO.");
+        RequireContains(context.Xaml, "ItemsSource=\"{Binding SharedRowsView}\"", "Active form DataGrid should still have runtime ItemsSource.");
+        RequireContains(form2Code, "public ObservableCollection<Form2SqlRow> SharedRows { get; } = new();", "Secondary form ViewModel should expose its own runtime collection.");
+        RequireContains(form2Code, "RUNTIME_DATAGRID_COLLECTION_CREATED", "Secondary generated runtime should trace created DataGrid rows.");
+        RequireTraceEvent(context, "BUILD_SECONDARY_FORM_GENERATION_PURE");
+    }
+
+    private static void ConfigureFiveFormSqlDataGridsExportBuilds(MainWindowViewModel vm)
+    {
+        vm.ExportTarget = MainWindowViewModel.ExportTargetMainWindow;
+        vm.DataGridExportMode = MainWindowViewModel.DataGridExportModeReal;
+        var form1 = vm.ActiveFormDocument ?? throw new InvalidOperationException("Form1 missing.");
+
+        for (var index = 1; index <= 5; index++)
+        {
+            if (index > 1)
+            {
+                var form = vm.CreateNewForm();
+                form.Name = $"Form{index}";
+                form.Document.FormTitle = $"Form{index}";
+                vm.FormTitle = $"Form{index}";
+            }
+
+            var source = SqlRuntimeMismatchSource($"sql-form{index}-source", "SharedRows", "SqlRow");
+            vm.BindingSources.Add(source);
+            vm.Controls.Add(DataGrid($"Form{index}Grid", source.Id, 32, 42, 720, 320));
+        }
+
+        SwitchToForm(vm, form1.Id);
+    }
+
+    private static void AssertFiveFormSqlDataGridsExportBuilds(SmokeContext context)
+    {
+        RequireGeneratedFile(context, "MainWindow.axaml.cs");
+        for (var index = 2; index <= 5; index++)
+            RequireGeneratedFile(context, $"Form{index}.axaml.cs");
+
+        var allCode = GetGeneratedFilesText(context);
+        RequireContains(context.CSharp, "public partial class MainWindowSqlRow : ObservableObject", "Active form should use unique SQL DTO.");
+        for (var index = 2; index <= 5; index++)
+            RequireContains(allCode, $"public partial class Form{index}SqlRow : ObservableObject", $"Form{index} should use unique SQL DTO.");
+        RequireNotContains(allCode, "public partial class SqlRow : ObservableObject", "Multi-form SQL export must not generate a shared conflicting SqlRow DTO.");
+        RequireContains(allCode, "RUNTIME_DATAGRID_COLLECTION_CREATED", "Generated runtime should trace row collections for multi-form SQL grids.");
+    }
+
     private static void ConfigureDllTableDataGridExport(MainWindowViewModel vm)
     {
         var source = DllOrdersSource();
@@ -960,6 +1186,24 @@ internal static class Program
         RequireContains(context.Xaml, "Binding=\"{Binding CustomerName}\"", "DLL table export should bind CustomerName column.");
         RequireNotContains(context.CSharp, "System.Reflection.MetadataLoadContext", "Generated runtime project must not include designer-only reflection packages.");
     }
+
+    private static void AssertDllDataGridPreviewRuntimeRowsMatch(SmokeContext context)
+    {
+        RequireContains(context.Xaml, "ItemsSource=\"{Binding SalesOrdersView}\"", "DLL DataGrid runtime should bind to generated ViewModel collection.");
+        RequireContains(context.CSharp, "SalesOrders.Add(new OrderRow", "DLL DataGrid should seed portable sample rows.");
+        RequireContains(context.CSharp, "OrderId = 1001", "DLL DataGrid sample rows should use schema sample values.");
+        RequireContains(context.CSharp, "RUNTIME_DATAGRID_COLLECTION_CREATED", "Generated runtime should trace DLL DataGrid collection row count.");
+        RequireTraceEvent(context, "EXPORT_DATAGRID_ROWS_GENERATED");
+    }
+
+    private static void AssertManualDataGridPreviewRuntimeRowsMatch(SmokeContext context)
+    {
+        RequireContains(context.Xaml, "ItemsSource=\"{Binding ManualGridItemsView}\"", "Manual DataGrid runtime should bind to generated ViewModel collection.");
+        RequireContains(context.CSharp, "ManualGridItems.Add(new ManualGridRow", "Manual DataGrid should seed sample rows.");
+        RequireContains(context.CSharp, "RUNTIME_DATAGRID_COLLECTION_CREATED", "Generated runtime should trace manual DataGrid collection row count.");
+        RequireTraceEvent(context, "EXPORT_DATAGRID_ITEMSSOURCE_GENERATED");
+    }
+
 
     private static void AssertDataGridExportDoesNotGenerateEmptyBindings(SmokeContext context)
     {
@@ -3518,6 +3762,28 @@ internal static class Program
         return source;
     }
 
+    private static BindingSourceModel SqlRuntimeMismatchSource(string id, string path, string itemTypeName)
+    {
+        var source = new BindingSourceModel
+        {
+            Id = id,
+            Name = "SqlRuntimeRows",
+            Path = path,
+            ItemTypeName = itemTypeName,
+            Description = "SQL source with raw column names that require runtime DTO property sanitization.",
+            SourceKind = "SqlServer",
+            SourceConnectionString = "Server=.;Database=Demo;User Id=designer;Password=secret;TrustServerCertificate=True",
+            SourceSchemaName = "dbo",
+            SourceTableName = "RuntimeRows",
+            SourceQuery = "SELECT [Кто выгрузил], [Рабочая станция], [Имя файла XML], [Id] FROM dbo.RuntimeRows"
+        };
+        source.Fields.Add(Field("Кто выгрузил", "Кто выгрузил", "operator", "string", "2*"));
+        source.Fields.Add(Field("Рабочая станция", "Рабочая станция", "WS-01", "string", "2*"));
+        source.Fields.Add(Field("Имя файла XML", "Имя файла XML", "sample.xml", "string", "2*"));
+        source.Fields.Add(Field("Id", "Id", "1", "int", "80"));
+        return source;
+    }
+
     private static BindingSourceModel DllOrdersSource()
     {
         var source = new BindingSourceModel
@@ -4407,6 +4673,15 @@ Diagnostics:
     {
         if (text.Contains(unexpected, StringComparison.Ordinal))
             throw new InvalidOperationException(message);
+    }
+
+    private static void RequireTraceEvent(SmokeContext context, string eventName)
+    {
+        if (context.ViewModel.InteractionTraceEntries.Any(entry => string.Equals(entry.EventName, eventName, StringComparison.OrdinalIgnoreCase)))
+            return;
+
+        var trace = string.Join(" | ", context.ViewModel.InteractionTraceEntries.Take(12).Select(entry => entry.Summary));
+        throw new InvalidOperationException($"Expected trace event '{eventName}' was not emitted. Recent trace: {trace}");
     }
 
     private static string GetGeneratedFilesText(SmokeContext context)

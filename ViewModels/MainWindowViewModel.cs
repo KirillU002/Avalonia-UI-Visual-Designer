@@ -88,6 +88,7 @@ public partial class MainWindowViewModel : ObservableObject
     public const string PropertyGridCategoryInteraction = "Interaction";
     public const string PropertyGridCategoryExport = "Export";
     public const string PropertyGridCategoryAdvanced = "Advanced";
+    private const int RuntimeDataGridSampleRowCount = 6;
 
     public const string WindowStateNormal = "Обычное";
     public const string WindowStateMaximized = "Рабочая область";
@@ -876,6 +877,18 @@ public partial class MainWindowViewModel : ObservableObject
     private bool saveLogsToFile = true;
 
     [ObservableProperty]
+    private bool useCustomNuGetSource;
+
+    [ObservableProperty]
+    private string customNuGetSource = "";
+
+    [ObservableProperty]
+    private bool allowInsecureNuGetSource;
+
+    [ObservableProperty]
+    private string nuGetSourceTestStatusText = "";
+
+    [ObservableProperty]
     private string logsFolderPath = "";
 
     public event EventHandler? DesignerChanged;
@@ -1072,6 +1085,15 @@ public partial class MainWindowViewModel : ObservableObject
         ? "No validation project yet."
         : CurrentExportBuildValidation.ProjectPath;
     public bool HasExportValidationProjectPath => !string.IsNullOrWhiteSpace(CurrentExportBuildValidation.ProjectPath);
+    public string EffectiveNuGetSourceText => UseCustomNuGetSource && !string.IsNullOrWhiteSpace(CustomNuGetSource)
+        ? CustomNuGetSource.Trim()
+        : ExportPipelineService.DefaultNuGetSourceUrl;
+    public string NuGetSourceSummaryText =>
+        UseCustomNuGetSource && !string.IsNullOrWhiteSpace(CustomNuGetSource)
+            ? $"Validate Build source: {CustomNuGetSource.Trim()} ({ExportPipelineService.GetNuGetSourceKind(CustomNuGetSource.Trim())})"
+            : $"Validate Build source: default NuGet.org ({ExportPipelineService.DefaultNuGetSourceUrl})";
+    public bool IsCustomNuGetSourceEnabled => UseCustomNuGetSource;
+    public bool HasNuGetSourceTestStatus => !string.IsNullOrWhiteSpace(NuGetSourceTestStatusText);
     public string ExportPipelineCompactSummary =>
         $"{ExportStatusText} · warnings {ExportChecklistWarningCount} · errors {ExportChecklistErrorCount} · packages {RequiredPackages.Count}";
     public string PerformanceDiagnosticsSummary =>
@@ -3787,7 +3809,7 @@ public partial class MainWindowViewModel : ObservableObject
         if (context is null)
             return field.Path;
 
-        var propertyName = SanitizeIdentifier(field.Path, SanitizeIdentifier(field.Header, "Field"));
+        var propertyName = GetGeneratedRowPropertyName(field);
         return $"{context.CurrentItemPropertyName}.{propertyName}";
     }
 
@@ -8833,6 +8855,9 @@ public partial class MainWindowViewModel : ObservableObject
         KeepSuccessfulBuildArtifacts = settings?.KeepSuccessfulBuildArtifacts ?? true;
         CleanOldArtifactsAutomatically = settings?.CleanOldArtifactsAutomatically ?? true;
         SaveLogsToFile = settings?.SaveLogsToFile ?? true;
+        UseCustomNuGetSource = settings?.UseCustomNuGetSource ?? false;
+        CustomNuGetSource = settings?.CustomNuGetSource ?? "";
+        AllowInsecureNuGetSource = settings?.AllowInsecureNuGetSource ?? false;
         LogsFolderPath = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "AvaloniaUiVisualDesigner",
@@ -8847,7 +8872,10 @@ public partial class MainWindowViewModel : ObservableObject
             VerboseBuildLogs = VerboseBuildLogs,
             KeepSuccessfulBuildArtifacts = KeepSuccessfulBuildArtifacts,
             CleanOldArtifactsAutomatically = CleanOldArtifactsAutomatically,
-            SaveLogsToFile = SaveLogsToFile
+            SaveLogsToFile = SaveLogsToFile,
+            UseCustomNuGetSource = UseCustomNuGetSource,
+            CustomNuGetSource = CustomNuGetSource,
+            AllowInsecureNuGetSource = AllowInsecureNuGetSource
         };
     }
 
@@ -12324,7 +12352,39 @@ public partial class MainWindowViewModel : ObservableObject
     {
         EnsureExportPipelineResultFresh();
         CurrentExportBuildValidation = new ExportBuildValidationResult { Status = ExportBuildValidationStatus.Building };
-        var result = await _exportPipelineService.ValidateBuildAsync(CurrentExportResult, artifactsRoot, logAsync);
+        if (!TryBuildValidateNuGetPackageSources(out var packageSources, out var sourceError))
+        {
+            var source = EffectiveNuGetSourceText;
+            var selectedLine = $"VALIDATE_BUILD_NUGET_SOURCE_SELECTED source={source}; sourceKind={ExportPipelineService.GetNuGetSourceKind(source)}; custom={UseCustomNuGetSource}; allowInsecure={AllowInsecureNuGetSource}";
+            var blockedLine = $"NUGET_HTTP_SOURCE_REQUIRES_ALLOW_INSECURE source={source}";
+            TraceDocumentDebug("NUGET_HTTP_SOURCE_REQUIRES_ALLOW_INSECURE", $"source={source}", toOutput: true, warning: true);
+            LogWorkspace(WorkspaceLogLevel.Warning, OutputCategoryExport, "Validate Build остановлен: HTTP NuGet source требует явного allowInsecureConnections.", sourceError);
+            if (logAsync is not null)
+            {
+                await logAsync(selectedLine);
+                await logAsync(blockedLine);
+            }
+
+            var blockedResult = new ExportBuildValidationResult
+            {
+                Status = ExportBuildValidationStatus.Failed,
+                ExitCode = -1,
+                Output = sourceError,
+                StepSummary = sourceError,
+                CompletedUtc = DateTime.UtcNow
+            };
+            CurrentExportBuildValidation = blockedResult;
+            CurrentExportResult = _exportPipelineService.CreateResult(
+                CurrentExportResult.Profile,
+                CurrentExportResult.GeneratedFiles,
+                CurrentExportResult.RequiredPackages,
+                CurrentExportResult.Diagnostics,
+                blockedResult);
+            RefreshEditorCommands();
+            return blockedResult;
+        }
+
+        var result = await _exportPipelineService.ValidateBuildAsync(CurrentExportResult, artifactsRoot, packageSources, logAsync);
         CurrentExportBuildValidation = result;
         CurrentExportResult = _exportPipelineService.CreateResult(
             CurrentExportResult.Profile,
@@ -12334,6 +12394,83 @@ public partial class MainWindowViewModel : ObservableObject
             result);
         RefreshEditorCommands();
         return result;
+    }
+
+    private bool TryBuildValidateNuGetPackageSources(out IReadOnlyList<NuGetPackageSource> packageSources, out string error)
+    {
+        packageSources = Array.Empty<NuGetPackageSource>();
+        error = "";
+
+        if (!UseCustomNuGetSource || string.IsNullOrWhiteSpace(CustomNuGetSource))
+            return true;
+
+        var source = CustomNuGetSource.Trim();
+        if (source.StartsWith("http://", StringComparison.OrdinalIgnoreCase) && !AllowInsecureNuGetSource)
+        {
+            error = $"HTTP NuGet source '{source}' requires allowInsecureConnections. Enable 'Allow insecure HTTP source' or use HTTPS/local source.";
+            return false;
+        }
+
+        packageSources = new[]
+        {
+            new NuGetPackageSource("CustomNuGetSource", source, AllowInsecureNuGetSource)
+        };
+        return true;
+    }
+
+    [RelayCommand]
+    private void TestNuGetSource()
+    {
+        var source = EffectiveNuGetSourceText;
+        TraceDocumentDebug("NUGET_SOURCE_TEST_STARTED", $"source={source}", toOutput: false);
+
+        if (UseCustomNuGetSource && string.IsNullOrWhiteSpace(CustomNuGetSource))
+        {
+            SetNuGetSourceTestFailed(source, "Custom NuGet source is empty.");
+            return;
+        }
+
+        if (source.StartsWith("http://", StringComparison.OrdinalIgnoreCase) && !AllowInsecureNuGetSource)
+        {
+            SetNuGetSourceTestFailed(source, "HTTP source requires allowInsecureConnections.");
+            TraceDocumentDebug("NUGET_HTTP_SOURCE_REQUIRES_ALLOW_INSECURE", $"source={source}", toOutput: true, warning: true);
+            return;
+        }
+
+        var kind = ExportPipelineService.GetNuGetSourceKind(source);
+        if ((string.Equals(kind, "local-folder", StringComparison.Ordinal) || string.Equals(kind, "network-share", StringComparison.Ordinal))
+            && !Directory.Exists(source))
+        {
+            SetNuGetSourceTestFailed(source, $"Folder source does not exist: {source}");
+            return;
+        }
+
+        if ((string.Equals(kind, "https", StringComparison.Ordinal) || string.Equals(kind, "http", StringComparison.Ordinal))
+            && !Uri.TryCreate(source, UriKind.Absolute, out _))
+        {
+            SetNuGetSourceTestFailed(source, $"Invalid NuGet URL: {source}");
+            return;
+        }
+
+        NuGetSourceTestStatusText = $"OK: {source} ({kind}). Restore will verify packages during Validate Build.";
+        TraceDocumentDebug("NUGET_SOURCE_TEST_SUCCESS", $"source={source}", toOutput: false);
+        LogWorkspace(WorkspaceLogLevel.Success, OutputCategoryExport, "NuGet source check passed.", NuGetSourceTestStatusText);
+    }
+
+    [RelayCommand]
+    private void ClearNuGetSource()
+    {
+        UseCustomNuGetSource = false;
+        CustomNuGetSource = "";
+        AllowInsecureNuGetSource = false;
+        NuGetSourceTestStatusText = "Custom NuGet source cleared. Validate Build will use NuGet.org.";
+    }
+
+    private void SetNuGetSourceTestFailed(string source, string reason)
+    {
+        NuGetSourceTestStatusText = $"Failed: {reason}";
+        TraceDocumentDebug("NUGET_SOURCE_TEST_FAILED", $"source={source}; reason={reason}", toOutput: true, warning: true);
+        LogWorkspace(WorkspaceLogLevel.Warning, OutputCategoryExport, "NuGet source check failed.", reason);
     }
 
     public async Task ExportCurrentResultToProjectAsync(string targetFolder, Func<string, Task>? logAsync = null)
@@ -14369,10 +14506,39 @@ public partial class MainWindowViewModel : ObservableObject
         var hasViewModel = crudContexts.Count > 0 || textBoxControls.Count > 0 || BindingSources.Count > 0;
         foreach (var context in crudContexts)
         {
+            var gridNames = Controls
+                .Where(control => control.Type == DesignerControlTypes.DataGrid
+                    && string.Equals(control.BindingSourceId, context.Source.Id, StringComparison.OrdinalIgnoreCase))
+                .Select(control => control.Name)
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .ToList();
+            var gridNameText = gridNames.Count == 0 ? context.Source.Name : string.Join(",", gridNames);
+            var previewRowCount = BindingPreviewItemsBuilder.BuildSampleItems(context.Source, RuntimeDataGridSampleRowCount).Count;
+            var generatedRowCount = context.Fields.Count > 0 ? RuntimeDataGridSampleRowCount : 0;
+            TraceDocumentDebug(
+                "DATAGRID_PREVIEW_ROWS_CREATED",
+                $"grid={gridNameText}; source={context.Source.Name}; rows={previewRowCount}",
+                toOutput: false);
             TraceDocumentDebug(
                 "EXPORT_DATAGRID_VIEWMODEL_PROPERTY_GENERATED",
                 $"source={context.Source.Name}; sourceKind={context.Source.SourceKind}; property={context.ViewCollectionPropertyName}; rowType={context.ItemTypeName}; columns={context.Fields.Count}",
                 toOutput: false);
+            TraceDocumentDebug(
+                "EXPORT_VIEWMODEL_COLLECTION_CREATED",
+                $"source={context.Source.Name}; property={context.CollectionPropertyName}; viewProperty={context.ViewCollectionPropertyName}; rowType={context.ItemTypeName}; rowCount={generatedRowCount}",
+                toOutput: false);
+            TraceDocumentDebug(
+                "EXPORT_DATAGRID_ROWS_GENERATED",
+                $"grid={gridNameText}; source={context.Source.Name}; sourceKind={context.Source.SourceKind}; rowType={context.ItemTypeName}; rows={generatedRowCount}",
+                toOutput: false);
+            if (previewRowCount != generatedRowCount)
+            {
+                TraceDocumentDebug(
+                    "PREVIEW_RUNTIME_ROW_COUNT_MISMATCH",
+                    $"grid={gridNameText}; source={context.Source.Name}; previewRows={previewRowCount}; runtimeRows={generatedRowCount}",
+                    toOutput: false,
+                    warning: true);
+            }
             TraceDocumentDebug(
                 "EXPORT_DATAGRID_ROW_DTO_GENERATED",
                 $"source={context.Source.Name}; rowType={context.ItemTypeName}; properties={context.Fields.Count}",
@@ -14712,6 +14878,7 @@ public partial class MainWindowViewModel : ObservableObject
             {
                 sb.AppendLine($"        Seed{context.ItemTypeName}();");
                 sb.AppendLine($"        Apply{context.ItemTypeName}Filter();");
+                sb.AppendLine($"        System.Diagnostics.Debug.WriteLine($\"RUNTIME_DATAGRID_COLLECTION_CREATED source={EscapeCSharp(context.Source.Name)} collection={context.ViewCollectionPropertyName} rows={{{context.ViewCollectionPropertyName}.Count}}\");");
             }
             sb.AppendLine("    }");
             sb.AppendLine();
@@ -14799,7 +14966,7 @@ public partial class MainWindowViewModel : ObservableObject
                 foreach (var field in filterFields)
                 {
                     var filterPropertyName = GetColumnFilterPropertyName(context, field);
-                    var itemPropertyName = SanitizeIdentifier(field.Path, "Field");
+                    var itemPropertyName = GetGeneratedRowPropertyName(field);
                     sb.AppendLine();
                     sb.AppendLine($"        if (!string.IsNullOrWhiteSpace({filterPropertyName}))");
                     sb.AppendLine("        {");
@@ -14845,15 +15012,16 @@ public partial class MainWindowViewModel : ObservableObject
 
                 sb.AppendLine($"    private void Seed{context.ItemTypeName}()");
                 sb.AppendLine("    {");
-                sb.AppendLine($"        {context.CollectionPropertyName}.Add(new {context.ItemTypeName}");
-                sb.AppendLine("        {");
-                AppendSeedAssignments(sb, context, 3, variantIndex: 0);
-                sb.AppendLine("        });");
-                sb.AppendLine();
-                sb.AppendLine($"        {context.CollectionPropertyName}.Add(new {context.ItemTypeName}");
-                sb.AppendLine("        {");
-                AppendSeedAssignments(sb, context, 3, variantIndex: 1);
-                sb.AppendLine("        });");
+                for (var variantIndex = 0; variantIndex < RuntimeDataGridSampleRowCount; variantIndex++)
+                {
+                    if (variantIndex > 0)
+                        sb.AppendLine();
+
+                    sb.AppendLine($"        {context.CollectionPropertyName}.Add(new {context.ItemTypeName}");
+                    sb.AppendLine("        {");
+                    AppendSeedAssignments(sb, context, 3, variantIndex);
+                    sb.AppendLine("        });");
+                }
                 sb.AppendLine("    }");
                 sb.AppendLine();
             }
@@ -14932,7 +15100,7 @@ public partial class MainWindowViewModel : ObservableObject
 
                 foreach (var field in context.Fields)
                 {
-                    var property = SanitizeIdentifier(field.Path, "Field");
+                    var property = GetGeneratedRowPropertyName(field);
                     var typeName = NormalizeCSharpType(field.TypeName);
                     sb.AppendLine("    [ObservableProperty]");
                     sb.AppendLine($"    private {typeName} {ToCamelCase(property)};");
@@ -14954,7 +15122,7 @@ public partial class MainWindowViewModel : ObservableObject
                 sb.AppendLine();
                 foreach (var field in context.Fields)
                 {
-                    var property = SanitizeIdentifier(field.Path, "Field");
+                    var property = GetGeneratedRowPropertyName(field);
                     sb.AppendLine($"        {property} = source.{property};");
                 }
                 sb.AppendLine("    }");
@@ -16179,7 +16347,12 @@ public partial class MainWindowViewModel : ObservableObject
 
     private static string GetColumnFilterPropertyName(CrudGenerationContext context, BindingFieldModel field)
     {
-        return $"{context.ItemTypeName}{SanitizeIdentifier(field.Path, SanitizeIdentifier(field.Header, "Field"))}Filter";
+        return $"{context.ItemTypeName}{GetGeneratedRowPropertyName(field)}Filter";
+    }
+
+    private static string GetGeneratedRowPropertyName(BindingFieldModel field)
+    {
+        return SanitizeIdentifier(field.Path, SanitizeIdentifier(field.Header, "Field"));
     }
 
     private static string ThemeResourceReference(string resourceKey) => "{StaticResource " + resourceKey + "}";
@@ -16464,6 +16637,10 @@ public partial class MainWindowViewModel : ObservableObject
 
     private List<CrudGenerationContext> BuildCrudGenerationContexts()
     {
+        var activeFormId = _exportActiveFormIdOverride ?? ActiveFormDocument?.Id ?? "";
+        var projectItemTypeNames = BuildProjectCrudItemTypeNameMap();
+        var usedItemTypeNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var usedCollectionPropertyNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var boundSources = Controls
             .Where(control => control.Type == DesignerControlTypes.DataGrid)
             .Select(control => GetBindingSource(control.BindingSourceId))
@@ -16476,15 +16653,22 @@ public partial class MainWindowViewModel : ObservableObject
 
         return sourceCandidates.Select(source =>
         {
-            var itemTypeName = SanitizeIdentifier(source.ItemTypeName, "RowItem");
-            var collectionPropertyName = SanitizeIdentifier(source.Path, SanitizeIdentifier(source.Name, "Items"));
-            var fields = source.Fields.Count > 0
+            var sourceKey = BuildCrudGenerationSourceKey(activeFormId, source);
+            var itemTypeName = projectItemTypeNames.TryGetValue(sourceKey, out var projectItemTypeName)
+                ? projectItemTypeName
+                : SanitizeIdentifier(source.ItemTypeName, "RowItem");
+            itemTypeName = EnsureUniqueGeneratedIdentifier(itemTypeName, usedItemTypeNames);
+            var collectionPropertyName = EnsureUniqueGeneratedIdentifier(
+                SanitizeIdentifier(source.Path, SanitizeIdentifier(source.Name, "Items")),
+                usedCollectionPropertyNames);
+            var rawFields = source.Fields.Count > 0
                 ? source.Fields.ToList()
                 : new List<BindingFieldModel>
                 {
                     new() { Header = "Id", Path = "Id", SampleValue = "1", TypeName = "int" },
                     new() { Header = "Name", Path = "Name", SampleValue = "Новая запись", TypeName = "string" }
                 };
+            var fields = BuildUniqueCrudFields(rawFields, itemTypeName);
 
             var searchFields = fields
                 .Where(field => string.Equals(field.TypeName, "string", StringComparison.OrdinalIgnoreCase))
@@ -16507,6 +16691,172 @@ public partial class MainWindowViewModel : ObservableObject
                 SearchFields = searchFields
             };
         }).ToList();
+    }
+
+    private Dictionary<string, string> BuildProjectCrudItemTypeNameMap()
+    {
+        var candidates = BuildProjectCrudSourceCandidates();
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (candidates.Count == 0)
+            return result;
+
+        var used = new HashSet<string>(UnsafeGeneratedIdentifiers, StringComparer.OrdinalIgnoreCase);
+        foreach (var group in candidates
+                     .GroupBy(candidate => candidate.BaseItemTypeName, StringComparer.OrdinalIgnoreCase)
+                     .OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase))
+        {
+            var groupItems = group
+                .OrderBy(candidate => candidate.FormClassName, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(candidate => candidate.SourcePath, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(candidate => candidate.SourceName, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(candidate => candidate.Key, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            var hasConflict = groupItems.Count > 1 || used.Contains(group.Key);
+
+            foreach (var candidate in groupItems)
+            {
+                var preferredName = hasConflict
+                    ? SanitizeIdentifier($"{candidate.FormClassName}{candidate.BaseItemTypeName}", candidate.BaseItemTypeName)
+                    : candidate.BaseItemTypeName;
+
+                if (used.Contains(preferredName))
+                {
+                    var sourceToken = SanitizeIdentifier(
+                        !string.IsNullOrWhiteSpace(candidate.SourcePath) ? candidate.SourcePath : candidate.SourceName,
+                        "Source");
+                    preferredName = SanitizeIdentifier($"{candidate.FormClassName}{sourceToken}{candidate.BaseItemTypeName}", candidate.BaseItemTypeName);
+                }
+
+                result[candidate.Key] = EnsureUniqueGeneratedIdentifier(preferredName, used);
+            }
+        }
+
+        return result;
+    }
+
+    private List<CrudSourceCandidate> BuildProjectCrudSourceCandidates()
+    {
+        var result = new List<CrudSourceCandidate>();
+        var activeFormId = _exportActiveFormIdOverride ?? ActiveFormDocument?.Id ?? "";
+        var formClassNames = BuildProjectFormClassNameMap();
+
+        foreach (var form in CurrentProject.Forms)
+        {
+            var formId = form.Id ?? "";
+            var formClassName = formClassNames.TryGetValue(formId, out var mappedClassName)
+                ? mappedClassName
+                : SanitizeIdentifier(form.DisplayName, "Form");
+
+            if (!string.IsNullOrWhiteSpace(activeFormId)
+                && string.Equals(formId, activeFormId, StringComparison.OrdinalIgnoreCase))
+            {
+                AddCrudSourceCandidates(result, formId, formClassName, Controls, BindingSources);
+                continue;
+            }
+
+            var document = form.Document;
+            if (document is null)
+                continue;
+
+            var documentControls = document.Controls
+                .Select(FromControlFileModel)
+                .ToList();
+            var documentSources = document.BindingSources
+                .Select(FromBindingSourceFileModel)
+                .ToList();
+            AddCrudSourceCandidates(result, formId, formClassName, documentControls, documentSources);
+        }
+
+        if (result.Count == 0)
+            AddCrudSourceCandidates(result, activeFormId, ResolveExportWindowClassName(), Controls, BindingSources);
+
+        return result
+            .GroupBy(candidate => candidate.Key, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .ToList();
+    }
+
+    private static void AddCrudSourceCandidates(
+        ICollection<CrudSourceCandidate> result,
+        string formId,
+        string formClassName,
+        IReadOnlyCollection<DesignControlModel> controls,
+        IReadOnlyCollection<BindingSourceModel> sources)
+    {
+        if (sources.Count == 0)
+            return;
+
+        var boundSourceIds = controls
+            .Where(control => control.Type == DesignerControlTypes.DataGrid)
+            .Select(control => NormalizeId(control.BindingSourceId))
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var candidates = boundSourceIds.Count > 0
+            ? boundSourceIds
+                .Select(id => sources.FirstOrDefault(source => string.Equals(source.Id, id, StringComparison.OrdinalIgnoreCase)))
+                .Where(source => source is not null)
+                .Cast<BindingSourceModel>()
+                .ToList()
+            : sources.ToList();
+
+        foreach (var source in candidates.DistinctBy(source => string.IsNullOrWhiteSpace(source.Id) ? DataSourceIdentity.BuildKey(source) : source.Id))
+        {
+            result.Add(new CrudSourceCandidate(
+                BuildCrudGenerationSourceKey(formId, source),
+                SanitizeIdentifier(source.ItemTypeName, "RowItem"),
+                SanitizeIdentifier(formClassName, "Form"),
+                source.Name,
+                source.Path));
+        }
+    }
+
+    private static string BuildCrudGenerationSourceKey(string? formId, BindingSourceModel source)
+    {
+        var sourceId = !string.IsNullOrWhiteSpace(source.Id)
+            ? source.Id
+            : DataSourceIdentity.BuildKey(source);
+        return $"{NormalizeId(formId)}::{sourceId}";
+    }
+
+    private static string EnsureUniqueGeneratedIdentifier(string preferredName, ISet<string> used)
+    {
+        var baseName = SanitizeIdentifier(preferredName, "Generated");
+        var candidate = baseName;
+        var index = 2;
+        while (used.Contains(candidate) || UnsafeGeneratedIdentifiers.Contains(candidate))
+            candidate = $"{baseName}{index++}";
+
+        used.Add(candidate);
+        return candidate;
+    }
+
+    private List<BindingFieldModel> BuildUniqueCrudFields(IEnumerable<BindingFieldModel> fields, string itemTypeName)
+    {
+        var result = new List<BindingFieldModel>();
+        var usedProperties = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var field in fields)
+        {
+            var propertyName = SanitizeIdentifier(field.Path, "Field");
+            if (usedProperties.Add(propertyName))
+            {
+                result.Add(field);
+                continue;
+            }
+
+            TraceDocumentDebug(
+                "EXPORT_DATAGRID_DUPLICATE_ROW_PROPERTY_SUPPRESSED",
+                $"rowType={itemTypeName}; property={propertyName}; path={field.Path}; header={field.Header}; reason=duplicate C# property would break generated DTO",
+                toOutput: false,
+                warning: true);
+        }
+
+        return result.Count > 0 ? result : new List<BindingFieldModel>
+        {
+            new() { Header = "Id", Path = "Id", SampleValue = "1", TypeName = "int" },
+            new() { Header = "Name", Path = "Name", SampleValue = "Новая запись", TypeName = "string" }
+        };
     }
 
     private CrudGenerationContext? GetCrudGenerationContext(BindingSourceModel? source)
@@ -16697,7 +17047,7 @@ public partial class MainWindowViewModel : ObservableObject
     {
         return string.Join(" || ", context.SearchFields.Select(field =>
         {
-            var property = SanitizeIdentifier(field.Path, "Field");
+            var property = GetGeneratedRowPropertyName(field);
             return $"ContainsText(item.{property}, {context.SearchTextPropertyName})";
         }));
     }
@@ -17133,7 +17483,7 @@ public partial class MainWindowViewModel : ObservableObject
         for (var index = 0; index < context.Fields.Count; index++)
         {
             var field = context.Fields[index];
-            var property = SanitizeIdentifier(field.Path, $"Field{index + 1}");
+            var property = GetGeneratedRowPropertyName(field);
             var suffix = index == context.Fields.Count - 1 ? string.Empty : ",";
             sb.AppendLine($"{Indent(indentLevel)}{property} = {BuildGeneratedSqlReaderExpression(field)}{suffix}");
         }
@@ -17156,9 +17506,9 @@ public partial class MainWindowViewModel : ObservableObject
         for (var index = 0; index < fields.Count; index++)
         {
             var field = fields[index];
-            var property = SanitizeIdentifier(field.Path, $"Field{index + 1}");
+            var property = GetGeneratedRowPropertyName(field);
             var suffix = index == fields.Count - 1 ? string.Empty : ",";
-            var sample = field.SampleValue;
+            var sample = GetVariantSampleValue(field, variantIndex);
             sb.AppendLine($"{Indent(indentLevel)}{property} = {ToCSharpLiteral(field.TypeName, sample)}{suffix}");
         }
     }
@@ -17168,7 +17518,7 @@ public partial class MainWindowViewModel : ObservableObject
         for (var index = 0; index < context.Fields.Count; index++)
         {
             var field = context.Fields[index];
-            var property = SanitizeIdentifier(field.Path, "Field");
+            var property = GetGeneratedRowPropertyName(field);
             var suffix = index == context.Fields.Count - 1 ? string.Empty : ",";
             sb.AppendLine($"{Indent(indentLevel)}{property} = {property}{suffix}");
         }
@@ -17778,6 +18128,18 @@ public partial class MainWindowViewModel : ObservableObject
                 "EXPORT_DATAGRID_BINDING_GENERATED",
                 $"grid={control.Name}; sourceKind={source.SourceKind}; sourceKey={DataSourceIdentity.BuildKey(source)}; itemsSource={itemsSourcePath}; rowType={crudContext?.ItemTypeName ?? source.ItemTypeName}; columns={visibleFields.Count}",
                 toOutput: false);
+            TraceDocumentDebug(
+                "EXPORT_DATAGRID_ITEMSSOURCE_GENERATED",
+                $"grid={control.Name}; property={itemsSourcePath}; rowType={crudContext?.ItemTypeName ?? source.ItemTypeName}",
+                toOutput: false);
+            if (crudContext is null || string.IsNullOrWhiteSpace(itemsSourcePath))
+            {
+                TraceDocumentDebug(
+                    "EXPORT_DATAGRID_COLLECTION_EMPTY",
+                    $"grid={control.Name}; sourceKind={source.SourceKind}; reason=runtime binding requested but generation context or ItemsSource path is missing",
+                    toOutput: false,
+                    warning: true);
+            }
         }
         else if (source is not null)
         {
@@ -17785,6 +18147,11 @@ public partial class MainWindowViewModel : ObservableObject
                 "EXPORT_DATAGRID_BINDING_SKIPPED",
                 $"grid={control.Name}; sourceKind={source.SourceKind}; reason=no-exportable-fields-or-non-real-mode; columns={visibleFields.Count}",
                 toOutput: false);
+            TraceDocumentDebug(
+                "EXPORT_DATAGRID_COLLECTION_EMPTY",
+                $"grid={control.Name}; sourceKind={source.SourceKind}; reason=no runtime ItemsSource generated; columns={visibleFields.Count}; realMode={ShouldExportRealDataGrid}",
+                toOutput: false,
+                warning: true);
         }
         var rowBackground = ResolveBrushValue(control.DataGridRowBackground, themePalette.DataGridRowBackground, ThemeResourceKeys.DataGridRowBackgroundBrush);
         var alternatingRowBackground = control.DataGridShowAlternatingRows
@@ -17936,7 +18303,8 @@ public partial class MainWindowViewModel : ObservableObject
                 var header = string.IsNullOrWhiteSpace(field.Header)
                     ? string.IsNullOrWhiteSpace(field.Path) ? "Column" : field.Path.Trim()
                     : field.Header.Trim();
-                var bindingPath = field.Path?.Trim() ?? "";
+                var sourceBindingPath = field.Path?.Trim() ?? "";
+                var bindingPath = ResolveDataGridExportBindingPath(control, source, crudContext, field, sourceBindingPath);
                 var bindingAttribute = string.IsNullOrWhiteSpace(bindingPath)
                     ? ""
                     : $" Binding=\"{{Binding {EscapeXml(bindingPath)}}}\"";
@@ -17990,6 +18358,46 @@ public partial class MainWindowViewModel : ObservableObject
         sb.AppendLine($"{Indent(dataGridIndent)}</DataGrid>");
         if (shouldExportHost)
             sb.AppendLine($"{Indent(indentLevel)}</Grid>");
+    }
+
+    private string ResolveDataGridExportBindingPath(
+        DesignControlModel control,
+        BindingSourceModel? source,
+        CrudGenerationContext? crudContext,
+        BindingFieldModel field,
+        string sourceBindingPath)
+    {
+        if (string.IsNullOrWhiteSpace(sourceBindingPath))
+            return string.Empty;
+
+        if (crudContext is null)
+        {
+            TraceDocumentDebug(
+                "EXPORT_COLUMN_BINDING_VALIDATED",
+                $"grid={control.Name}; column={field.Header}; bindingPath={sourceBindingPath}; propertyFound={source is not null}; rowType={source?.ItemTypeName ?? "-"}; reason=raw binding path used without generated runtime DTO",
+                toOutput: false);
+            return sourceBindingPath;
+        }
+
+        var generatedPropertyName = GetGeneratedRowPropertyName(field);
+        var propertyFound = crudContext.Fields.Any(contextField =>
+            string.Equals(GetGeneratedRowPropertyName(contextField), generatedPropertyName, StringComparison.OrdinalIgnoreCase));
+
+        TraceDocumentDebug(
+            "EXPORT_COLUMN_BINDING_VALIDATED",
+            $"grid={control.Name}; column={field.Header}; sourcePath={sourceBindingPath}; bindingPath={generatedPropertyName}; propertyFound={propertyFound}; rowType={crudContext.ItemTypeName}",
+            toOutput: false,
+            warning: !propertyFound);
+
+        if (propertyFound)
+            return generatedPropertyName;
+
+        TraceDocumentDebug(
+            "EXPORT_DATAGRID_INVALID_BINDING_BLOCKED",
+            $"grid={control.Name}; column={field.Header}; binding={sourceBindingPath}; generatedProperty={generatedPropertyName}; reason=generated DTO does not contain this property",
+            toOutput: false,
+            warning: true);
+        return string.Empty;
     }
 
     private static bool ShouldExportDataGridTemplateColumn(BindingFieldModel field)
@@ -21109,6 +21517,37 @@ public partial class MainWindowViewModel : ObservableObject
         LogWorkspace(WorkspaceLogLevel.Info, OutputCategoryGeneral, "Layout tab visibility changed.", $"Enabled={value}");
     }
 
+    partial void OnUseCustomNuGetSourceChanged(bool value)
+    {
+        RaiseNuGetSourceSettingsChanged();
+    }
+
+    partial void OnCustomNuGetSourceChanged(string value)
+    {
+        RaiseNuGetSourceSettingsChanged();
+    }
+
+    partial void OnAllowInsecureNuGetSourceChanged(bool value)
+    {
+        RaiseNuGetSourceSettingsChanged();
+    }
+
+    partial void OnNuGetSourceTestStatusTextChanged(string value)
+    {
+        OnPropertyChanged(nameof(HasNuGetSourceTestStatus));
+    }
+
+    private void RaiseNuGetSourceSettingsChanged()
+    {
+        OnPropertyChanged(nameof(EffectiveNuGetSourceText));
+        OnPropertyChanged(nameof(NuGetSourceSummaryText));
+        OnPropertyChanged(nameof(IsCustomNuGetSourceEnabled));
+        TraceDocumentDebug(
+            "NUGET_SOURCE_SETTINGS_CHANGED",
+            $"customEnabled={UseCustomNuGetSource}; source={EffectiveNuGetSourceText}; allowInsecure={AllowInsecureNuGetSource}",
+            toOutput: false);
+    }
+
     private void RefreshAvailableWorkspaceModes()
     {
         var modes = new List<string>
@@ -21634,6 +22073,13 @@ public partial class MainWindowViewModel : ObservableObject
         public IReadOnlyList<BindingFieldModel> Fields { get; init; } = Array.Empty<BindingFieldModel>();
         public IReadOnlyList<BindingFieldModel> SearchFields { get; init; } = Array.Empty<BindingFieldModel>();
     }
+
+    private sealed record CrudSourceCandidate(
+        string Key,
+        string BaseItemTypeName,
+        string FormClassName,
+        string SourceName,
+        string SourcePath);
 
     private sealed record ExportableInteraction(
         InteractionModel Interaction,

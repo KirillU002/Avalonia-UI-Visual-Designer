@@ -6679,6 +6679,43 @@
                                     IsChecked="{Binding CleanOldArtifactsAutomatically, Mode=TwoWay}"/>
                         </StackPanel>
                       </Border>
+                      <Border Background="#F8FAFC"
+                              BorderBrush="#BFDBFE"
+                              BorderThickness="1"
+                              CornerRadius="10"
+                              Padding="10">
+                        <StackPanel Spacing="7">
+                          <TextBlock Text="NuGet"
+                                     FontWeight="Bold"/>
+                          <CheckBox Content="Use custom NuGet source"
+                                    IsChecked="{Binding UseCustomNuGetSource, Mode=TwoWay}"/>
+                          <TextBox Watermark="https://api.nuget.org/v3/index.json or C:\packages"
+                                   Text="{Binding CustomNuGetSource, Mode=TwoWay}"
+                                   IsEnabled="{Binding UseCustomNuGetSource}"/>
+                          <CheckBox Content="Allow insecure HTTP source"
+                                    IsChecked="{Binding AllowInsecureNuGetSource, Mode=TwoWay}"
+                                    IsEnabled="{Binding UseCustomNuGetSource}"/>
+                          <TextBlock Text="{Binding NuGetSourceSummaryText}"
+                                     Foreground="#475569"
+                                     FontSize="12"
+                                     TextWrapping="Wrap"/>
+                          <WrapPanel>
+                            <Button Content="Test source"
+                                    Classes="export-secondary"
+                                    Command="{Binding TestNuGetSourceCommand}"
+                                    Margin="0,0,6,6"/>
+                            <Button Content="Clear"
+                                    Classes="export-secondary"
+                                    Command="{Binding ClearNuGetSourceCommand}"
+                                    Margin="0,0,6,6"/>
+                          </WrapPanel>
+                          <TextBlock Text="{Binding NuGetSourceTestStatusText}"
+                                     Foreground="#64748B"
+                                     FontSize="12"
+                                     TextWrapping="Wrap"
+                                     IsVisible="{Binding HasNuGetSourceTestStatus}"/>
+                        </StackPanel>
+                      </Border>
                     </StackPanel>
                   </Border>
                 </Expander>

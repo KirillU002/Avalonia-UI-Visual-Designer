@@ -70,6 +70,12 @@ public sealed class BuildAndLogsSettingsModel
 
     public bool SaveLogsToFile { get; set; } = true;
 
+    public bool UseCustomNuGetSource { get; set; }
+
+    public string CustomNuGetSource { get; set; } = "";
+
+    public bool AllowInsecureNuGetSource { get; set; }
+
     public string LogLevel { get; set; } = "Info";
 
     public int MaxLogFilesCount { get; set; } = 10;

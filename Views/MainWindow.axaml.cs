@@ -1376,6 +1376,9 @@ public partial class MainWindow : Window
             or nameof(MainWindowViewModel.KeepSuccessfulBuildArtifacts)
             or nameof(MainWindowViewModel.CleanOldArtifactsAutomatically)
             or nameof(MainWindowViewModel.SaveLogsToFile)
+            or nameof(MainWindowViewModel.UseCustomNuGetSource)
+            or nameof(MainWindowViewModel.CustomNuGetSource)
+            or nameof(MainWindowViewModel.AllowInsecureNuGetSource)
             or nameof(MainWindowViewModel.PropertyGridSettingsVersion);
     }
 
