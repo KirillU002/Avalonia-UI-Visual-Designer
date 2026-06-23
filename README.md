@@ -10,7 +10,7 @@ Avalonia UI Visual Designer - визуальный дизайнер форм д�
 
 ## Статус проекта
 
-Проект находится на стадии Alpha. Основные функции уже реализованы, но приложение всё ещё требует ручного тестирования и стабилизации перед Beta.
+Проект находится на стадии Alpha. Основные функции уже реализованы.
 
 ## Что изменилось в Alpha 3.0
 
@@ -36,8 +36,8 @@ Avalonia UI Visual Designer - визуальный дизайнер форм д�
 
 ## Alpha 3.0
 
-- [Alpha 3.0](https://github.com/https://github.com/KirillU002/Avalonia-UI-Visual-Designer/tree/v0.3.0-alpha) — текущая версия, стабилизация конструктора, Export, DataGrid, DLL Import.
-- 
+- [Alpha 3.0](https://github.com/KirillU002/Avalonia-UI-Visual-Designer/releases/tag/v0.3.0-alpha) — текущая версия, стабилизация конструктора, Export, DataGrid, DLL Import.
+  
 ## Alpha 2.0
 
 Предыдущую версию можно посмотреть по коммиту:
