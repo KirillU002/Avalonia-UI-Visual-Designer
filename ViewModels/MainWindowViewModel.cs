@@ -898,6 +898,12 @@ public partial class MainWindowViewModel : ObservableObject
     private bool allowInsecureNuGetSource;
 
     [ObservableProperty]
+    private bool includeNuGetOrgFallback = true;
+
+    [ObservableProperty]
+    private bool generateNuGetConfigInExportedProject = true;
+
+    [ObservableProperty]
     private string nuGetSourceTestStatusText = "";
 
     [ObservableProperty]
@@ -913,20 +919,26 @@ public partial class MainWindowViewModel : ObservableObject
 
     private bool HasRuntimeDataGridBindingSource()
     {
-        return ShouldExportRealDataGrid
-            && Controls
-                .Where(control => control.Type == DesignerControlTypes.DataGrid)
-                .Any(control => GetBindingSource(control.BindingSourceId) is { } source
-                    && HasVisibleBindingFields(source));
+        return Controls
+            .Where(control => control.Type == DesignerControlTypes.DataGrid)
+            .Any(control => GetBindingSource(control.BindingSourceId) is { } source
+                && HasVisibleBindingFields(source)
+                && (ShouldExportRealDataGrid || IsRuntimeGeneratedBindingSource(source)));
     }
-    public bool ShouldExportPlaceholderDataGrid => string.Equals(NormalizeDataGridExportMode(DataGridExportMode), DataGridExportModePlaceholder, StringComparison.Ordinal);
-    public bool ShouldExportVisualDataGrid => string.Equals(NormalizeDataGridExportMode(DataGridExportMode), DataGridExportModeVisual, StringComparison.Ordinal);
-    public bool ShouldExportRealDataGrid => string.Equals(NormalizeDataGridExportMode(DataGridExportMode), DataGridExportModeReal, StringComparison.Ordinal);
+    public bool ShouldExportPlaceholderDataGrid => !ShouldExportRealDataGrid
+        && string.Equals(NormalizeDataGridExportMode(DataGridExportMode), DataGridExportModePlaceholder, StringComparison.Ordinal);
+    public bool ShouldExportVisualDataGrid => !ShouldExportRealDataGrid
+        && string.Equals(NormalizeDataGridExportMode(DataGridExportMode), DataGridExportModeVisual, StringComparison.Ordinal);
+    public bool ShouldExportRealDataGrid => string.Equals(NormalizeDataGridExportMode(DataGridExportMode), DataGridExportModeReal, StringComparison.Ordinal)
+        || ShouldAutoPromoteDataGridExportToRuntime;
     public bool ShouldExportPortableDataGrid => !ShouldExportRealDataGrid;
+    private bool ShouldAutoPromoteDataGridExportToRuntime => string.Equals(NormalizeDataGridExportMode(DataGridExportMode), DataGridExportModeVisual, StringComparison.Ordinal)
+        && HasRuntimeGeneratedDataGridBindingCandidate();
     public string DataGridExportModeHint => NormalizeDataGridExportMode(DataGridExportMode) switch
     {
         DataGridExportModePlaceholder => "Компактная заглушка Border/TextBlock. Не рабочая таблица, зато без NuGet и без fake-колонок.",
         DataGridExportModeReal => "Настоящий Avalonia DataGrid. Работает как таблица, но в новом проекте нужен NuGet Avalonia.Controls.DataGrid.",
+        _ when ShouldAutoPromoteDataGridExportToRuntime => "SQL/DLL DataGrid автоматически экспортируется как настоящий Avalonia DataGrid, чтобы runtime получил ItemsSource и sample rows.",
         _ => "Визуальный макет таблицы без NuGet. Используется только при реальных полях BindingSource; без полей автоматически экспортируется placeholder."
     };
     public bool IsMainWindowExportTarget => string.Equals(ExportTarget, ExportTargetMainWindow, StringComparison.Ordinal);
@@ -1102,8 +1114,8 @@ public partial class MainWindowViewModel : ObservableObject
         : ExportPipelineService.DefaultNuGetSourceUrl;
     public string NuGetSourceSummaryText =>
         UseCustomNuGetSource && !string.IsNullOrWhiteSpace(CustomNuGetSource)
-            ? $"Validate Build source: {CustomNuGetSource.Trim()} ({ExportPipelineService.GetNuGetSourceKind(CustomNuGetSource.Trim())})"
-            : $"Validate Build source: default NuGet.org ({ExportPipelineService.DefaultNuGetSourceUrl})";
+            ? $"NuGet source: {CustomNuGetSource.Trim()} ({ExportPipelineService.GetNuGetSourceKind(CustomNuGetSource.Trim())}); fallback nuget.org={(IncludeNuGetOrgFallback ? "on" : "off")}"
+            : $"NuGet source: default NuGet.org ({ExportPipelineService.DefaultNuGetSourceUrl})";
     public bool IsCustomNuGetSourceEnabled => UseCustomNuGetSource;
     public bool HasNuGetSourceTestStatus => !string.IsNullOrWhiteSpace(NuGetSourceTestStatusText);
     public string ExportPipelineCompactSummary =>
@@ -8870,6 +8882,8 @@ public partial class MainWindowViewModel : ObservableObject
         UseCustomNuGetSource = settings?.UseCustomNuGetSource ?? false;
         CustomNuGetSource = settings?.CustomNuGetSource ?? "";
         AllowInsecureNuGetSource = settings?.AllowInsecureNuGetSource ?? false;
+        IncludeNuGetOrgFallback = settings?.IncludeNuGetOrgFallback ?? true;
+        GenerateNuGetConfigInExportedProject = settings?.GenerateNuGetConfigInExportedProject ?? true;
         LogsFolderPath = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "AvaloniaUiVisualDesigner",
@@ -8887,7 +8901,9 @@ public partial class MainWindowViewModel : ObservableObject
             SaveLogsToFile = SaveLogsToFile,
             UseCustomNuGetSource = UseCustomNuGetSource,
             CustomNuGetSource = CustomNuGetSource,
-            AllowInsecureNuGetSource = AllowInsecureNuGetSource
+            AllowInsecureNuGetSource = AllowInsecureNuGetSource,
+            IncludeNuGetOrgFallback = IncludeNuGetOrgFallback,
+            GenerateNuGetConfigInExportedProject = GenerateNuGetConfigInExportedProject
         };
     }
 
@@ -12375,7 +12391,7 @@ public partial class MainWindowViewModel : ObservableObject
         if (!TryBuildValidateNuGetPackageSources(out var packageSources, out var sourceError))
         {
             var source = EffectiveNuGetSourceText;
-            var selectedLine = $"VALIDATE_BUILD_NUGET_SOURCE_SELECTED source={source}; sourceKind={ExportPipelineService.GetNuGetSourceKind(source)}; custom={UseCustomNuGetSource}; allowInsecure={AllowInsecureNuGetSource}";
+            var selectedLine = $"VALIDATE_BUILD_NUGET_SOURCE_SELECTED source={source}; sourceKind={ExportPipelineService.GetNuGetSourceKind(source)}; custom={UseCustomNuGetSource}; allowInsecure={AllowInsecureNuGetSource}; includeNugetOrg={IncludeNuGetOrgFallback}";
             var blockedLine = $"NUGET_HTTP_SOURCE_REQUIRES_ALLOW_INSECURE source={source}";
             TraceDocumentDebug("NUGET_HTTP_SOURCE_REQUIRES_ALLOW_INSECURE", $"source={source}", toOutput: true, warning: true);
             LogWorkspace(WorkspaceLogLevel.Warning, OutputCategoryExport, "Validate Build остановлен: HTTP NuGet source требует явного allowInsecureConnections.", sourceError);
@@ -12404,7 +12420,7 @@ public partial class MainWindowViewModel : ObservableObject
             return blockedResult;
         }
 
-        var result = await _exportPipelineService.ValidateBuildAsync(CurrentExportResult, artifactsRoot, packageSources, logAsync);
+        var result = await _exportPipelineService.ValidateBuildAsync(CurrentExportResult, artifactsRoot, packageSources, IncludeNuGetOrgFallback, logAsync);
         CurrentExportBuildValidation = result;
         CurrentExportResult = _exportPipelineService.CreateResult(
             CurrentExportResult.Profile,
@@ -12483,6 +12499,8 @@ public partial class MainWindowViewModel : ObservableObject
         UseCustomNuGetSource = false;
         CustomNuGetSource = "";
         AllowInsecureNuGetSource = false;
+        IncludeNuGetOrgFallback = true;
+        GenerateNuGetConfigInExportedProject = true;
         NuGetSourceTestStatusText = "Custom NuGet source cleared. Validate Build will use NuGet.org.";
     }
 
@@ -12496,7 +12514,20 @@ public partial class MainWindowViewModel : ObservableObject
     public async Task ExportCurrentResultToProjectAsync(string targetFolder, Func<string, Task>? logAsync = null)
     {
         EnsureExportPipelineResultFresh();
-        await _exportPipelineService.ExportToProjectAsync(CurrentExportResult, targetFolder, logAsync);
+        if (!TryBuildValidateNuGetPackageSources(out var packageSources, out var sourceError))
+        {
+            TraceDocumentDebug("NUGET_HTTP_SOURCE_REQUIRES_ALLOW_INSECURE", $"source={EffectiveNuGetSourceText}", toOutput: true, warning: true);
+            LogWorkspace(WorkspaceLogLevel.Warning, OutputCategoryExport, "Export остановлен: HTTP NuGet source требует явного allowInsecureConnections.", sourceError);
+            throw new InvalidOperationException(sourceError);
+        }
+
+        await _exportPipelineService.ExportToProjectAsync(
+            CurrentExportResult,
+            targetFolder,
+            logAsync,
+            packageSources: packageSources,
+            includeDefaultNugetSource: IncludeNuGetOrgFallback,
+            generateNuGetConfig: GenerateNuGetConfigInExportedProject);
     }
 
     public async Task ExportCurrentResultAsZipAsync(string zipPath)
@@ -13096,7 +13127,7 @@ public partial class MainWindowViewModel : ObservableObject
             Name = IsCleanUiGenerationMode ? "Clean UI" : "Demo Data",
             TargetMode = ExportTarget,
             ProjectNamespace = ResolveExportNamespace(),
-            DataGridExportMode = NormalizeDataGridExportMode(DataGridExportMode),
+            DataGridExportMode = ShouldExportRealDataGrid ? DataGridExportModeReal : NormalizeDataGridExportMode(DataGridExportMode),
             LayoutExportMode = NormalizeLayoutExportMode(LayoutExportMode),
             XamlVerbosity = XamlVerbosity,
             IncludeComments = IncludeExportComments,
@@ -14536,6 +14567,10 @@ public partial class MainWindowViewModel : ObservableObject
             var previewRowCount = BindingPreviewItemsBuilder.BuildSampleItems(context.Source, RuntimeDataGridSampleRowCount).Count;
             var generatedRowCount = context.Fields.Count > 0 ? RuntimeDataGridSampleRowCount : 0;
             TraceDocumentDebug(
+                "EXPORT_DATAGRID_RUNTIME_BINDING_START",
+                $"form={ActiveDocumentName}; grid={gridNameText}; sourceKind={context.Source.SourceKind}; previewRows={previewRowCount}; columns={context.Fields.Count}",
+                toOutput: false);
+            TraceDocumentDebug(
                 "DATAGRID_PREVIEW_ROWS_CREATED",
                 $"grid={gridNameText}; source={context.Source.Name}; rows={previewRowCount}",
                 toOutput: false);
@@ -14562,6 +14597,10 @@ public partial class MainWindowViewModel : ObservableObject
             TraceDocumentDebug(
                 "EXPORT_DATAGRID_ROW_DTO_GENERATED",
                 $"source={context.Source.Name}; rowType={context.ItemTypeName}; properties={context.Fields.Count}",
+                toOutput: false);
+            TraceDocumentDebug(
+                "EXPORT_DATAGRID_LOADER_GENERATED",
+                $"source={context.Source.Name}; loader=Seed{context.ItemTypeName}; mode={(IsSqlServerSource(context.Source) ? "SampleRows+SqlPlaceholder" : "SampleRows")}; rowsGenerated={generatedRowCount}",
                 toOutput: false);
         }
         var anchorControls = Controls
@@ -14652,6 +14691,10 @@ public partial class MainWindowViewModel : ObservableObject
         if (hasViewModel)
         {
             sb.AppendLine($"        DataContext = new {viewModelClassName}();");
+            TraceDocumentDebug(
+                "EXPORT_DATAGRID_DATACONTEXT_GENERATED",
+                $"window={windowClassName}; viewmodel={viewModelClassName}",
+                toOutput: false);
             if (autoLoadSqlContexts)
                 sb.AppendLine("        Opened += Window_Opened;");
         }
@@ -17084,6 +17127,15 @@ public partial class MainWindowViewModel : ObservableObject
                 || DataSourceIdentity.IsAssembly(source.SourceKind));
     }
 
+    private bool HasRuntimeGeneratedDataGridBindingCandidate()
+    {
+        return Controls
+            .Where(control => control.Type == DesignerControlTypes.DataGrid)
+            .Any(control => GetBindingSource(control.BindingSourceId) is { } source
+                && HasVisibleBindingFields(source)
+                && IsRuntimeGeneratedBindingSource(source));
+    }
+
     private static bool HasVisibleBindingFields(BindingSourceModel source)
     {
         return source.Fields.Any(field => field.IsVisible && !string.IsNullOrWhiteSpace(field.Path));
@@ -17522,7 +17574,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     private static void AppendSeedAssignments(StringBuilder sb, CrudGenerationContext context, int indentLevel, int variantIndex)
     {
-        var fields = context.Fields.Take(8).ToList();
+        var fields = context.Fields.ToList();
         for (var index = 0; index < fields.Count; index++)
         {
             var field = fields[index];
@@ -21552,6 +21604,16 @@ public partial class MainWindowViewModel : ObservableObject
         RaiseNuGetSourceSettingsChanged();
     }
 
+    partial void OnIncludeNuGetOrgFallbackChanged(bool value)
+    {
+        RaiseNuGetSourceSettingsChanged();
+    }
+
+    partial void OnGenerateNuGetConfigInExportedProjectChanged(bool value)
+    {
+        RaiseNuGetSourceSettingsChanged();
+    }
+
     partial void OnNuGetSourceTestStatusTextChanged(string value)
     {
         OnPropertyChanged(nameof(HasNuGetSourceTestStatus));
@@ -21564,7 +21626,7 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(IsCustomNuGetSourceEnabled));
         TraceDocumentDebug(
             "NUGET_SOURCE_SETTINGS_CHANGED",
-            $"customEnabled={UseCustomNuGetSource}; source={EffectiveNuGetSourceText}; allowInsecure={AllowInsecureNuGetSource}",
+            $"customEnabled={UseCustomNuGetSource}; source={EffectiveNuGetSourceText}; allowInsecure={AllowInsecureNuGetSource}; includeNugetOrg={IncludeNuGetOrgFallback}; generateConfig={GenerateNuGetConfigInExportedProject}",
             toOutput: false);
     }
 

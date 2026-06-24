@@ -76,6 +76,10 @@ public sealed class BuildAndLogsSettingsModel
 
     public bool AllowInsecureNuGetSource { get; set; }
 
+    public bool IncludeNuGetOrgFallback { get; set; } = true;
+
+    public bool GenerateNuGetConfigInExportedProject { get; set; } = true;
+
     public string LogLevel { get; set; } = "Info";
 
     public int MaxLogFilesCount { get; set; } = 10;

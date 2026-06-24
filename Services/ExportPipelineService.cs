@@ -42,13 +42,24 @@ public sealed class ExportPipelineService
         Func<string, Task>? logAsync = null,
         CancellationToken cancellationToken = default)
     {
-        return await ValidateBuildAsync(result, artifactsRoot, Array.Empty<NuGetPackageSource>(), logAsync, cancellationToken).ConfigureAwait(false);
+        return await ValidateBuildAsync(result, artifactsRoot, Array.Empty<NuGetPackageSource>(), includeDefaultNugetSource: true, logAsync, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<ExportBuildValidationResult> ValidateBuildAsync(
         ExportResult result,
         string artifactsRoot,
         IEnumerable<NuGetPackageSource>? packageSources,
+        Func<string, Task>? logAsync = null,
+        CancellationToken cancellationToken = default)
+    {
+        return await ValidateBuildAsync(result, artifactsRoot, packageSources, includeDefaultNugetSource: true, logAsync, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<ExportBuildValidationResult> ValidateBuildAsync(
+        ExportResult result,
+        string artifactsRoot,
+        IEnumerable<NuGetPackageSource>? packageSources,
+        bool includeDefaultNugetSource,
         Func<string, Task>? logAsync = null,
         CancellationToken cancellationToken = default)
     {
@@ -67,7 +78,7 @@ public sealed class ExportPipelineService
         await LogValidationAsync("VALIDATE_BUILD_START", $"projectPath={runRoot}; reason=on-demand").ConfigureAwait(false);
         await LogValidationAsync(
             "VALIDATE_BUILD_NUGET_SOURCE_SELECTED",
-            $"source={selectedSourceText}; sourceKind={(hasCustomSources ? string.Join(",", validationSources.Select(source => GetNuGetSourceKind(source.Value))) : "https")}; custom={hasCustomSources}; allowInsecure={allowInsecureText}").ConfigureAwait(false);
+            $"source={selectedSourceText}; sourceKind={(hasCustomSources ? string.Join(",", validationSources.Select(source => GetNuGetSourceKind(source.Value))) : "https")}; custom={hasCustomSources}; allowInsecure={allowInsecureText}; includeNugetOrg={includeDefaultNugetSource}").ConfigureAwait(false);
 
         async Task RunStepAsync(string stepName, Func<Task> action)
         {
@@ -95,13 +106,16 @@ public sealed class ExportPipelineService
             return Task.CompletedTask;
         }).ConfigureAwait(false);
 
-        await RunStepAsync("Generating project files", () => WriteValidationProjectAsync(result, runRoot, validationSources, !hasCustomSources, cancellationToken)).ConfigureAwait(false);
+        await RunStepAsync("Generating project files", () => WriteValidationProjectAsync(result, runRoot, validationSources, includeDefaultNugetSource, cancellationToken)).ConfigureAwait(false);
         await LogValidationAsync("VALIDATE_BUILD_PROJECT", $"path={runRoot}").ConfigureAwait(false);
         var nugetConfigPath = Path.Combine(runRoot, "NuGet.config");
         await LogValidationAsync(
             "NUGET_CONFIG_GENERATED_FOR_VALIDATE_BUILD",
-            $"path={nugetConfigPath}; source={selectedSourceText}; allowInsecure={allowInsecureText}").ConfigureAwait(false);
-        stepSummaries.Add($"NuGet source: {selectedSourceText}; custom={hasCustomSources}; allowInsecure={allowInsecureText}");
+            $"path={nugetConfigPath}; source={selectedSourceText}; allowInsecure={allowInsecureText}; includeNugetOrg={includeDefaultNugetSource}").ConfigureAwait(false);
+        await LogValidationAsync(
+            "NUGET_CONFIG_WRITTEN",
+            $"path={nugetConfigPath}; sourcesCount={CountEffectiveNuGetSources(validationSources, includeDefaultNugetSource)}; containsNugetOrg={includeDefaultNugetSource}; containsCustomSource={hasCustomSources}; allowInsecure={allowInsecureText}").ConfigureAwait(false);
+        stepSummaries.Add($"NuGet source: {selectedSourceText}; custom={hasCustomSources}; allowInsecure={allowInsecureText}; nuget.org fallback={includeDefaultNugetSource}");
         stepSummaries.Add($"NuGet.config: {nugetConfigPath}");
 
         var projectFile = Directory.GetFiles(runRoot, "*.csproj").Single();
@@ -114,6 +128,7 @@ public sealed class ExportPipelineService
             {
                 var restoreArgs = $"restore \"{projectFile}\" --configfile \"{nugetConfigPath}\"";
                 await LogValidationAsync("VALIDATE_BUILD_COMMAND", $"command=dotnet {restoreArgs}; workingDirectory={runRoot}").ConfigureAwait(false);
+                await LogValidationAsync("VALIDATE_BUILD_RESTORE_COMMAND", $"command=dotnet {restoreArgs}; workingDirectory={runRoot}; nugetConfig={nugetConfigPath}").ConfigureAwait(false);
                 restoreProcess = await RunProcessAsync("dotnet", restoreArgs, runRoot, LogValidationProcessLineAsync, cancellationToken).ConfigureAwait(false);
                 if (restoreProcess.ExitCode != 0)
                     throw new InvalidOperationException($"dotnet restore failed with exit code {restoreProcess.ExitCode}.");
@@ -121,6 +136,7 @@ public sealed class ExportPipelineService
         }
         catch
         {
+            await LogValidationAsync("DOTNET_RESTORE_FAILED", $"exitCode={restoreProcess.ExitCode}; workingDirectory={runRoot}; nugetConfig={nugetConfigPath}; reason={DetectRestoreFailureReason(restoreProcess.Output)}").ConfigureAwait(false);
             // The failure is represented in the returned validation result below.
         }
 
@@ -198,11 +214,30 @@ public sealed class ExportPipelineService
         ExportResult result,
         string targetFolder,
         Func<string, Task>? logAsync = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IEnumerable<NuGetPackageSource>? packageSources = null,
+        bool includeDefaultNugetSource = true,
+        bool generateNuGetConfig = true)
     {
         Directory.CreateDirectory(targetFolder);
 
-        foreach (var file in result.GeneratedFiles.Where(file => !IsGeneratedReadme(file.Path)))
+        await WriteGeneratedSourceFilesAsync(result, targetFolder, cancellationToken, logAsync).ConfigureAwait(false);
+        await WriteProjectShellFilesAsync(result, targetFolder, packageSources, includeDefaultNugetSource, generateNuGetConfig, cancellationToken, logAsync).ConfigureAwait(false);
+
+        await File.WriteAllTextAsync(Path.Combine(targetFolder, "README.generated.md"), BuildReadme(result, packageSources, includeDefaultNugetSource, generateNuGetConfig), Encoding.UTF8, cancellationToken).ConfigureAwait(false);
+        await File.WriteAllTextAsync(Path.Combine(targetFolder, "required-packages.txt"), BuildPackagesText(result), Encoding.UTF8, cancellationToken).ConfigureAwait(false);
+        await File.WriteAllTextAsync(Path.Combine(targetFolder, "export-diagnostics.txt"), BuildDiagnosticsText(result), Encoding.UTF8, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task WriteGeneratedSourceFilesAsync(
+        ExportResult result,
+        string targetFolder,
+        CancellationToken cancellationToken,
+        Func<string, Task>? logAsync = null)
+    {
+        foreach (var file in result.GeneratedFiles.Where(file => !IsGeneratedReadme(file.Path)
+                     && (file.Path.EndsWith(".axaml", StringComparison.OrdinalIgnoreCase)
+                         || file.Path.EndsWith(".cs", StringComparison.OrdinalIgnoreCase))))
         {
             cancellationToken.ThrowIfCancellationRequested();
             var filePath = Path.Combine(targetFolder, file.Path.Replace('/', Path.DirectorySeparatorChar));
@@ -213,10 +248,33 @@ public sealed class ExportPipelineService
             await File.WriteAllTextAsync(filePath, file.Content, Encoding.UTF8, cancellationToken).ConfigureAwait(false);
             await LogAsync(logAsync, $"Wrote {file.Path}").ConfigureAwait(false);
         }
+    }
 
-        await File.WriteAllTextAsync(Path.Combine(targetFolder, "README.generated.md"), BuildReadme(result), Encoding.UTF8, cancellationToken).ConfigureAwait(false);
-        await File.WriteAllTextAsync(Path.Combine(targetFolder, "required-packages.txt"), BuildPackagesText(result), Encoding.UTF8, cancellationToken).ConfigureAwait(false);
-        await File.WriteAllTextAsync(Path.Combine(targetFolder, "export-diagnostics.txt"), BuildDiagnosticsText(result), Encoding.UTF8, cancellationToken).ConfigureAwait(false);
+    private static async Task WriteProjectShellFilesAsync(
+        ExportResult result,
+        string targetFolder,
+        IEnumerable<NuGetPackageSource>? packageSources,
+        bool includeDefaultNugetSource,
+        bool generateNuGetConfig,
+        CancellationToken cancellationToken,
+        Func<string, Task>? logAsync = null)
+    {
+        await File.WriteAllTextAsync(Path.Combine(targetFolder, "App.axaml"), BuildAppXaml(result.Profile.ProjectNamespace), Encoding.UTF8, cancellationToken).ConfigureAwait(false);
+        await File.WriteAllTextAsync(Path.Combine(targetFolder, "App.axaml.cs"), BuildAppCode(result.Profile.ProjectNamespace), Encoding.UTF8, cancellationToken).ConfigureAwait(false);
+        await File.WriteAllTextAsync(Path.Combine(targetFolder, "Program.cs"), BuildProgramCode(result.Profile.ProjectNamespace), Encoding.UTF8, cancellationToken).ConfigureAwait(false);
+
+        var projectFileName = BuildExportProjectFileName(result);
+        await File.WriteAllTextAsync(Path.Combine(targetFolder, projectFileName), BuildProjectFile(result.RequiredPackages), Encoding.UTF8, cancellationToken).ConfigureAwait(false);
+        await LogAsync(logAsync, $"Wrote {projectFileName}").ConfigureAwait(false);
+
+        if (!generateNuGetConfig)
+            return;
+
+        var normalizedSources = NormalizePackageSources(packageSources).ToList();
+        var nugetConfigPath = Path.Combine(targetFolder, "NuGet.config");
+        await File.WriteAllTextAsync(nugetConfigPath, BuildNuGetConfigForSources(normalizedSources, includeDefaultNugetSource), Encoding.UTF8, cancellationToken).ConfigureAwait(false);
+        await LogAsync(logAsync, $"NUGET_CONFIG_WRITTEN path={nugetConfigPath}; sourcesCount={CountEffectiveNuGetSources(normalizedSources, includeDefaultNugetSource)}; containsNugetOrg={includeDefaultNugetSource}; containsCustomSource={normalizedSources.Count > 0}; allowInsecure={string.Join(",", normalizedSources.Select(source => $"{source.Name}:{source.AllowInsecureConnections}"))}").ConfigureAwait(false);
+        await LogAsync(logAsync, $"MANUAL_RESTORE_COMMAND_HINT command=dotnet restore; workingDirectory={targetFolder}").ConfigureAwait(false);
     }
 
     public async Task ExportZipAsync(
@@ -233,7 +291,7 @@ public sealed class ExportPipelineService
 
         await using var stream = File.Create(zipPath);
         using var archive = new ZipArchive(stream, ZipArchiveMode.Create);
-        foreach (var file in result.GeneratedFiles.Where(file => !IsGeneratedReadme(file.Path)))
+        foreach (var file in BuildZipProjectFiles(result))
         {
             cancellationToken.ThrowIfCancellationRequested();
             var entry = archive.CreateEntry(file.Path.Replace('\\', '/'));
@@ -242,9 +300,25 @@ public sealed class ExportPipelineService
             await writer.WriteAsync(file.Content).ConfigureAwait(false);
         }
 
-        await WriteZipTextAsync(archive, "README.generated.md", BuildReadme(result), cancellationToken).ConfigureAwait(false);
+        await WriteZipTextAsync(archive, "README.generated.md", BuildReadme(result, Array.Empty<NuGetPackageSource>(), includeDefaultNugetSource: true, generateNuGetConfig: true), cancellationToken).ConfigureAwait(false);
         await WriteZipTextAsync(archive, "required-packages.txt", BuildPackagesText(result), cancellationToken).ConfigureAwait(false);
         await WriteZipTextAsync(archive, "export-diagnostics.txt", BuildDiagnosticsText(result), cancellationToken).ConfigureAwait(false);
+    }
+
+    private static IEnumerable<GeneratedFileModel> BuildZipProjectFiles(ExportResult result)
+    {
+        foreach (var file in result.GeneratedFiles.Where(file => !IsGeneratedReadme(file.Path)
+                     && (file.Path.EndsWith(".axaml", StringComparison.OrdinalIgnoreCase)
+                         || file.Path.EndsWith(".cs", StringComparison.OrdinalIgnoreCase))))
+        {
+            yield return file;
+        }
+
+        yield return new GeneratedFileModel { Path = "App.axaml", Content = BuildAppXaml(result.Profile.ProjectNamespace) };
+        yield return new GeneratedFileModel { Path = "App.axaml.cs", Content = BuildAppCode(result.Profile.ProjectNamespace) };
+        yield return new GeneratedFileModel { Path = "Program.cs", Content = BuildProgramCode(result.Profile.ProjectNamespace) };
+        yield return new GeneratedFileModel { Path = BuildExportProjectFileName(result), Content = BuildProjectFile(result.RequiredPackages) };
+        yield return new GeneratedFileModel { Path = "NuGet.config", Content = BuildNuGetConfigForSources(Array.Empty<NuGetPackageSource>(), includeDefaultNugetSource: true) };
     }
 
     private static async Task WriteValidationProjectAsync(
@@ -255,17 +329,7 @@ public sealed class ExportPipelineService
         CancellationToken cancellationToken)
     {
         Directory.CreateDirectory(projectPath);
-        foreach (var file in result.GeneratedFiles.Where(file => file.Path.EndsWith(".axaml", StringComparison.OrdinalIgnoreCase)
-                     || file.Path.EndsWith(".cs", StringComparison.OrdinalIgnoreCase)))
-        {
-            var targetPath = Path.Combine(projectPath, file.Path.Replace('/', Path.DirectorySeparatorChar));
-            var directory = Path.GetDirectoryName(targetPath);
-            if (!string.IsNullOrWhiteSpace(directory))
-                Directory.CreateDirectory(directory);
-
-            await File.WriteAllTextAsync(targetPath, file.Content, Encoding.UTF8, cancellationToken).ConfigureAwait(false);
-        }
-
+        await WriteGeneratedSourceFilesAsync(result, projectPath, cancellationToken).ConfigureAwait(false);
         await File.WriteAllTextAsync(Path.Combine(projectPath, "App.axaml"), BuildAppXaml(result.Profile.ProjectNamespace), Encoding.UTF8, cancellationToken).ConfigureAwait(false);
         await File.WriteAllTextAsync(Path.Combine(projectPath, "App.axaml.cs"), BuildAppCode(result.Profile.ProjectNamespace), Encoding.UTF8, cancellationToken).ConfigureAwait(false);
         await File.WriteAllTextAsync(Path.Combine(projectPath, "Program.cs"), BuildProgramCode(result.Profile.ProjectNamespace), Encoding.UTF8, cancellationToken).ConfigureAwait(false);
@@ -364,6 +428,74 @@ public sealed class ExportPipelineService
         return "custom";
     }
 
+    private static int CountEffectiveNuGetSources(IEnumerable<NuGetPackageSource>? additionalSources, bool includeDefaultNugetSource)
+    {
+        var count = includeDefaultNugetSource ? 1 : 0;
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (includeDefaultNugetSource)
+            seen.Add(DefaultNuGetSourceUrl);
+
+        foreach (var source in NormalizePackageSources(additionalSources))
+        {
+            if (seen.Add(source.Value))
+                count++;
+        }
+
+        return count;
+    }
+
+    private static string DetectRestoreFailureReason(string output)
+    {
+        if (output.Contains("allowInsecureConnections", StringComparison.OrdinalIgnoreCase)
+            || output.Contains("requires HTTPS sources", StringComparison.OrdinalIgnoreCase))
+        {
+            return "HTTP NuGet source requires allowInsecureConnections";
+        }
+
+        if (output.Contains("NU1100", StringComparison.OrdinalIgnoreCase)
+            || output.Contains("PackageSourceMapping", StringComparison.OrdinalIgnoreCase)
+            || output.Contains("package source mapping", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Package source mapping or source selection blocked package restore";
+        }
+
+        if (output.Contains("NU1101", StringComparison.OrdinalIgnoreCase)
+            || output.Contains("Unable to find package", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Package not found in configured NuGet sources";
+        }
+
+        if (output.Contains("NU1301", StringComparison.OrdinalIgnoreCase)
+            || output.Contains("Unable to load the service index", StringComparison.OrdinalIgnoreCase))
+        {
+            return "NuGet source is unreachable";
+        }
+
+        return "See dotnet restore output";
+    }
+
+    private static string BuildExportProjectFileName(ExportResult result)
+    {
+        var ns = string.IsNullOrWhiteSpace(result.Profile.ProjectNamespace)
+            ? "AvaloniaApplication1"
+            : result.Profile.ProjectNamespace.Trim();
+        var name = ns.Split('.', StringSplitOptions.RemoveEmptyEntries).LastOrDefault() ?? "AvaloniaApplication1";
+        var sanitized = SanitizeFileStem(name);
+        return $"{sanitized}.csproj";
+    }
+
+    private static string SanitizeFileStem(string value)
+    {
+        var builder = new StringBuilder();
+        foreach (var ch in value)
+        {
+            builder.Append(char.IsLetterOrDigit(ch) || ch == '_' || ch == '-' ? ch : '_');
+        }
+
+        var result = builder.ToString().Trim('_');
+        return string.IsNullOrWhiteSpace(result) ? "AvaloniaApplication1" : result;
+    }
+
     private static string BuildProjectFile(IEnumerable<RequiredPackageModel> requiredPackages)
     {
         var packageLines = new StringBuilder();
@@ -457,8 +589,24 @@ internal sealed class Program
 ".Replace("{Namespace}", ns);
     }
 
-    private static string BuildReadme(ExportResult result)
+    private static string BuildReadme(
+        ExportResult result,
+        IEnumerable<NuGetPackageSource>? packageSources = null,
+        bool includeDefaultNugetSource = true,
+        bool generateNuGetConfig = true)
     {
+        var normalizedSources = NormalizePackageSources(packageSources).ToList();
+        var nugetConfigNote = generateNuGetConfig
+            ? "NuGet sources are written to `NuGet.config` in this folder."
+            : "NuGet.config generation was disabled; restore will use machine/user NuGet settings.";
+        var sourceLines = new List<string>();
+        if (includeDefaultNugetSource)
+            sourceLines.Add($"- nuget.org: {DefaultNuGetSourceUrl}");
+        sourceLines.AddRange(normalizedSources.Select(source =>
+            $"- {source.Name}: {source.Value}{(source.Value.StartsWith("http://", StringComparison.OrdinalIgnoreCase) && source.AllowInsecureConnections ? " (`allowInsecureConnections=true`)" : "")}"));
+        if (sourceLines.Count == 0)
+            sourceLines.Add("- No package source was generated. Configure NuGet sources before restore.");
+
         return $@"# Generated Avalonia Export
 
 Generated: {result.GeneratedUtc:u}
@@ -474,10 +622,24 @@ Layout: {result.Profile.LayoutExportMode}
 
 The generated project targets `net6.0` and uses Avalonia `11.1.1`.
 
+## Restore/build
+From this folder run:
+
+```bash
+dotnet restore
+dotnet build
+```
+
+{nugetConfigNote}
+
+NuGet sources:
+{string.Join(Environment.NewLine, sourceLines)}
+
 ## NuGet notes
 - Real DataGrid export requires `Avalonia.Controls.DataGrid 11.1.1`.
 - Generated bindings are runtime bindings unless a real exported ViewModel type exists.
 - If your NuGet source is HTTP/intranet-only, the generated `NuGet.config` must mark that source with `allowInsecureConnections=""true""`.
+- This export clears `packageSourceMapping` in the local `NuGet.config` so user/global source mapping does not block restore for the generated project.
 
 ## Files
 {string.Join(Environment.NewLine, result.GeneratedFiles.Select(file => $"- {file.Path} ({file.StatusText})"))}

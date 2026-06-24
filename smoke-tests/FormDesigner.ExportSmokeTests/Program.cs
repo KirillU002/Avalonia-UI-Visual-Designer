@@ -6,7 +6,10 @@ using FormDesigner.Models;
 using FormDesigner.Services;
 using FormDesigner.ViewModels;
 using FormDesigner.Views;
+using System.Collections;
 using System.Diagnostics;
+using System.Reflection;
+using System.Runtime.Loader;
 using System.Text;
 using System.Text.Json;
 
@@ -82,6 +85,7 @@ internal static class Program
             new("SqlDataGridExportGeneratesItemsSourceProperty", ConfigureSqlDataGridExport, AssertSqlDataGridExportGeneratesItemsSourceProperty, RequiresRealDataGrid: true),
             new("SqlDataGridExportGeneratesRowDto", ConfigureSqlDataGridExport, AssertSqlDataGridExportGeneratesRowDto, RequiresRealDataGrid: true),
             new("SqlDataGridPreviewRuntimeRowsMatch", ConfigureSqlDataGridPreviewRuntimeRowsMatch, AssertSqlDataGridPreviewRuntimeRowsMatch, RequiresRealDataGrid: true),
+            new("SqlDataGridAutoPromotesVisualExportToRuntimeRows", ConfigureSqlDataGridAutoPromotesVisualExportToRuntimeRows, AssertSqlDataGridAutoPromotesVisualExportToRuntimeRows, RequiresRealDataGrid: true),
             new("MultiFormSqlDataGridExportBuildsWithDistinctDtos", ConfigureMultiFormSqlDataGridExportBuildsWithDistinctDtos, AssertMultiFormSqlDataGridExportBuildsWithDistinctDtos, RequiresRealDataGrid: true),
             new("FiveFormSqlDataGridsExportBuilds", ConfigureFiveFormSqlDataGridsExportBuilds, AssertFiveFormSqlDataGridsExportBuilds, RequiresRealDataGrid: true),
             new("DllDataGridPreviewRuntimeRowsMatch", ConfigureDllTableDataGridExport, AssertDllDataGridPreviewRuntimeRowsMatch, RequiresRealDataGrid: true),
@@ -119,6 +123,12 @@ internal static class Program
             new("RemoveDllReleasesMetadataAndCaches", ConfigureManyTableDllImport, AssertRemoveDllReleasesMetadataAndCaches),
             new("DataGridBindingUsesFullDllSourceKey", ConfigureLinqToSqlDllImport, AssertDataGridBindingUsesFullDllSourceKey),
             new("GeneratedNugetConfigContainsAllowInsecureConnectionsForHttpSource", ConfigureSimpleFormExport, AssertGeneratedNugetConfigContainsAllowInsecureConnectionsForHttpSource),
+            new("ExportGeneratesNugetConfigInProjectRoot", ConfigureSimpleFormExport, AssertExportGeneratesNugetConfigInProjectRoot),
+            new("ExportedNugetConfigContainsNugetOrgByDefault", ConfigureSimpleFormExport, AssertExportedNugetConfigContainsNugetOrgByDefault),
+            new("ExportedNugetConfigContainsCustomSource", ConfigureSimpleFormExport, AssertExportedNugetConfigContainsCustomSource),
+            new("ExportedNugetConfigSupportsHttpAllowInsecure", ConfigureSimpleFormExport, AssertExportedNugetConfigSupportsHttpAllowInsecure),
+            new("DotnetRestoreWorksFromExportedProjectRoot", ConfigureRealDataGridExport, AssertDotnetRestoreWorksFromExportedProjectRoot, RequiresRealDataGrid: true),
+            new("ValidateBuildUsesSameNugetConfigAsExportedProject", ConfigureSimpleFormExport, AssertValidateBuildUsesSameNugetConfigAsExportedProject),
             new("BuildOutputDeduplicatesRepeatedNet6Warning", ConfigureSimpleFormExport, AssertBuildOutputDeduplicatesRepeatedNet6Warning),
             new("ArtifactsCleanupDeletesOldExportRuns", ConfigureSimpleFormExport, AssertArtifactsCleanupDeletesOldExportRuns),
             new("ExportGeneratesAtMostOneReadme", ConfigureRealDataGridExport, AssertExportGeneratesAtMostOneReadme, RequiresRealDataGrid: true),
@@ -525,6 +535,7 @@ internal static class Program
         vm.UseCustomNuGetSource = true;
         vm.CustomNuGetSource = "https://api.nuget.org/v3/index.json";
         vm.AllowInsecureNuGetSource = false;
+        vm.IncludeNuGetOrgFallback = false;
 
         var (result, messages) = RunValidateBuildForSmoke(vm, context.Scenario.Name);
         var nugetConfig = File.ReadAllText(Path.Combine(result.ProjectPath, "NuGet.config"), Encoding.UTF8);
@@ -552,7 +563,7 @@ internal static class Program
         var nugetConfig = File.ReadAllText(Path.Combine(result.ProjectPath, "NuGet.config"), Encoding.UTF8);
         RequireContains(nugetConfig, "value=\"http://127.0.0.1:9/v3/index.json\"", "Custom HTTP source should be written to generated NuGet.config.");
         RequireContains(nugetConfig, "allowInsecureConnections=\"true\"", "Allowed HTTP source should generate allowInsecureConnections.");
-        RequireNotContains(nugetConfig, "https://api.nuget.org/v3/index.json", "Custom source validation config should not silently add default NuGet.org.");
+        RequireContains(nugetConfig, "https://api.nuget.org/v3/index.json", "Custom source validation config should include nuget.org fallback by default.");
         if (!messages.Any(message => message.Contains("NUGET_CONFIG_GENERATED_FOR_VALIDATE_BUILD", StringComparison.Ordinal)
                                      && message.Contains("allowInsecure=", StringComparison.Ordinal)
                                      && message.Contains("True", StringComparison.Ordinal)))
@@ -584,6 +595,8 @@ internal static class Program
         vm.UseCustomNuGetSource = true;
         vm.CustomNuGetSource = @"C:\local-nuget-feed";
         vm.AllowInsecureNuGetSource = true;
+        vm.IncludeNuGetOrgFallback = false;
+        vm.GenerateNuGetConfigInExportedProject = true;
 
         var settings = new AppSettingsModel
         {
@@ -594,7 +607,9 @@ internal static class Program
 
         if (!reloaded.UseCustomNuGetSource
             || !string.Equals(reloaded.CustomNuGetSource, vm.CustomNuGetSource, StringComparison.Ordinal)
-            || !reloaded.AllowInsecureNuGetSource)
+            || !reloaded.AllowInsecureNuGetSource
+            || reloaded.IncludeNuGetOrgFallback
+            || !reloaded.GenerateNuGetConfigInExportedProject)
         {
             throw new InvalidOperationException("Custom NuGet source settings should persist through AppSettings.");
         }
@@ -1130,7 +1145,33 @@ internal static class Program
         RequireTraceEvent(context, "EXPORT_DATAGRID_ITEMSSOURCE_GENERATED");
         RequireTraceEvent(context, "EXPORT_VIEWMODEL_COLLECTION_CREATED");
         RequireTraceEvent(context, "EXPORT_DATAGRID_ROWS_GENERATED");
+        RequireTraceEvent(context, "EXPORT_DATAGRID_RUNTIME_BINDING_START");
+        RequireTraceEvent(context, "EXPORT_DATAGRID_DATACONTEXT_GENERATED");
+        RequireTraceEvent(context, "EXPORT_DATAGRID_LOADER_GENERATED");
         RequireTraceEvent(context, "EXPORT_COLUMN_BINDING_VALIDATED");
+        RequireGeneratedViewModelCollectionHasRows(context, "RuntimeRowsView", 1);
+    }
+
+    private static void ConfigureSqlDataGridAutoPromotesVisualExportToRuntimeRows(MainWindowViewModel vm)
+    {
+        var source = SqlRuntimeMismatchSource("sql-auto-runtime-source", "AutoRows", "SqlRow");
+        vm.BindingSources.Add(source);
+        vm.DataGridExportMode = MainWindowViewModel.DataGridExportModeVisual;
+        vm.Controls.Add(DataGrid("AutoRuntimeGrid", source.Id, 32, 42, 720, 360));
+    }
+
+    private static void AssertSqlDataGridAutoPromotesVisualExportToRuntimeRows(SmokeContext context)
+    {
+        RequireContains(context.Xaml, "<DataGrid", "SQL source-backed DataGrid should be promoted from visual export to real runtime DataGrid.");
+        RequireContains(context.Xaml, "ItemsSource=\"{Binding AutoRowsView}\"", "Auto-promoted SQL DataGrid should have a runtime ItemsSource.");
+        RequireContains(context.CSharp, "DataContext = new MainWindowViewModel();", "Auto-promoted SQL DataGrid should generate and assign DataContext.");
+        RequireContains(context.CSharp, "public ObservableCollection<SqlRow> AutoRows { get; } = new();", "Auto-promoted SQL DataGrid should generate source collection.");
+        RequireContains(context.CSharp, "public ObservableCollection<SqlRow> AutoRowsView { get; } = new();", "Auto-promoted SQL DataGrid should generate view collection.");
+        RequireContains(context.CSharp, "SeedSqlRow();", "Auto-promoted SQL DataGrid should seed runtime rows.");
+        RequireTraceEvent(context, "EXPORT_DATAGRID_RUNTIME_BINDING_START");
+        RequireTraceEvent(context, "EXPORT_DATAGRID_DATACONTEXT_GENERATED");
+        RequireTraceEvent(context, "EXPORT_DATAGRID_LOADER_GENERATED");
+        RequireGeneratedViewModelCollectionHasRows(context, "AutoRowsView", 1);
     }
 
     private static void ConfigureMultiFormSqlDataGridExportBuildsWithDistinctDtos(MainWindowViewModel vm)
@@ -1777,6 +1818,81 @@ internal static class Program
         RequireContains(nugetConfig, "value=\"http://nuget.local/v3/index.json\"", "Generated NuGet.config should preserve HTTP source URL.");
         RequireContains(nugetConfig, "allowInsecureConnections=\"true\"", "HTTP NuGet source should explicitly opt into insecure connections.");
         RequireContains(nugetConfig, "https://api.nuget.org/v3/index.json", "Generated NuGet.config should still include nuget.org.");
+    }
+
+    private static void AssertExportGeneratesNugetConfigInProjectRoot(SmokeContext context)
+    {
+        using var export = ExportToTemporaryProject(context);
+        RequireFileExists(Path.Combine(export.Path, "NuGet.config"), "Exported project root should contain NuGet.config.");
+        if (Directory.GetFiles(export.Path, "*.csproj").Length != 1)
+            throw new InvalidOperationException("Exported project root should contain exactly one .csproj.");
+        RequireFileExists(Path.Combine(export.Path, "App.axaml"), "Exported project should include App.axaml.");
+        RequireFileExists(Path.Combine(export.Path, "Program.cs"), "Exported project should include Program.cs.");
+    }
+
+    private static void AssertExportedNugetConfigContainsNugetOrgByDefault(SmokeContext context)
+    {
+        context.ViewModel.UseCustomNuGetSource = false;
+        context.ViewModel.CustomNuGetSource = "";
+        using var export = ExportToTemporaryProject(context);
+        var nugetConfig = File.ReadAllText(Path.Combine(export.Path, "NuGet.config"), Encoding.UTF8);
+        RequireContains(nugetConfig, "https://api.nuget.org/v3/index.json", "Exported NuGet.config should contain nuget.org by default.");
+        RequireContains(nugetConfig, "<packageSourceMapping>", "Exported NuGet.config should override user package source mapping.");
+        RequireContains(nugetConfig, "<clear />", "Exported NuGet.config should clear inherited package source mapping.");
+    }
+
+    private static void AssertExportedNugetConfigContainsCustomSource(SmokeContext context)
+    {
+        context.ViewModel.UseCustomNuGetSource = true;
+        context.ViewModel.CustomNuGetSource = "https://example.com/nuget/v3/index.json";
+        context.ViewModel.AllowInsecureNuGetSource = false;
+        context.ViewModel.IncludeNuGetOrgFallback = true;
+        using var export = ExportToTemporaryProject(context);
+        var nugetConfig = File.ReadAllText(Path.Combine(export.Path, "NuGet.config"), Encoding.UTF8);
+        RequireContains(nugetConfig, "https://example.com/nuget/v3/index.json", "Exported NuGet.config should contain custom source.");
+        RequireContains(nugetConfig, "https://api.nuget.org/v3/index.json", "Exported NuGet.config should include nuget.org fallback when enabled.");
+    }
+
+    private static void AssertExportedNugetConfigSupportsHttpAllowInsecure(SmokeContext context)
+    {
+        context.ViewModel.UseCustomNuGetSource = true;
+        context.ViewModel.CustomNuGetSource = "http://nuget.local/v3/index.json";
+        context.ViewModel.AllowInsecureNuGetSource = true;
+        context.ViewModel.IncludeNuGetOrgFallback = true;
+        using var export = ExportToTemporaryProject(context);
+        var nugetConfig = File.ReadAllText(Path.Combine(export.Path, "NuGet.config"), Encoding.UTF8);
+        RequireContains(nugetConfig, "value=\"http://nuget.local/v3/index.json\"", "HTTP custom source should be written to exported NuGet.config.");
+        RequireContains(nugetConfig, "allowInsecureConnections=\"true\"", "HTTP custom source should opt into allowInsecureConnections.");
+    }
+
+    private static void AssertDotnetRestoreWorksFromExportedProjectRoot(SmokeContext context)
+    {
+        context.ViewModel.UseCustomNuGetSource = false;
+        context.ViewModel.CustomNuGetSource = "";
+        using var export = ExportToTemporaryProject(context);
+        var restore = RunProcess("dotnet", "restore", export.Path);
+        if (restore.ExitCode != 0)
+            throw new InvalidOperationException($"dotnet restore should work from exported project root.{Environment.NewLine}{restore.Output}");
+    }
+
+    private static void AssertValidateBuildUsesSameNugetConfigAsExportedProject(SmokeContext context)
+    {
+        context.ViewModel.UseCustomNuGetSource = true;
+        context.ViewModel.CustomNuGetSource = "https://example.com/nuget/v3/index.json";
+        context.ViewModel.AllowInsecureNuGetSource = false;
+        context.ViewModel.IncludeNuGetOrgFallback = true;
+
+        using var export = ExportToTemporaryProject(context);
+        var exportedNugetConfig = NormalizeNugetConfigForCompare(File.ReadAllText(Path.Combine(export.Path, "NuGet.config"), Encoding.UTF8));
+        var (result, messages) = RunValidateBuildForSmoke(context.ViewModel, context.Scenario.Name, requirePassed: false);
+        var validationNugetConfig = NormalizeNugetConfigForCompare(File.ReadAllText(Path.Combine(result.ProjectPath, "NuGet.config"), Encoding.UTF8));
+        if (!string.Equals(exportedNugetConfig, validationNugetConfig, StringComparison.Ordinal))
+            throw new InvalidOperationException("Validate Build should use the same generated NuGet.config content as exported project.");
+        if (!messages.Any(message => message.Contains("VALIDATE_BUILD_RESTORE_COMMAND", StringComparison.Ordinal)
+                                     && message.Contains("NuGet.config", StringComparison.Ordinal)))
+        {
+            throw new InvalidOperationException("Validate Build should log restore command and NuGet.config path.");
+        }
     }
 
     private static void AssertBuildOutputDeduplicatesRepeatedNet6Warning(SmokeContext context)
@@ -4517,6 +4633,72 @@ Diagnostics:
             throw new InvalidOperationException($"dotnet build failed.{Environment.NewLine}{result.Output}");
     }
 
+    private static TemporaryExportProject ExportToTemporaryProject(SmokeContext context)
+    {
+        var exportFolder = Path.Combine(Path.GetTempPath(), "FormDesignerSmokeExports", context.Scenario.Name, Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(exportFolder);
+        context.ViewModel.ExportCurrentResultToProjectAsync(exportFolder).GetAwaiter().GetResult();
+        return new TemporaryExportProject(exportFolder);
+    }
+
+    private static string NormalizeNugetConfigForCompare(string value)
+    {
+        return value
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Trim();
+    }
+
+    private static void RequireFileExists(string path, string message)
+    {
+        if (!File.Exists(path))
+            throw new InvalidOperationException($"{message} Missing: {path}");
+    }
+
+    private static void RequireGeneratedViewModelCollectionHasRows(SmokeContext context, string propertyName, int minimumRows)
+    {
+        DotnetBuild(context.ProjectPath);
+
+        var assemblyPath = Path.Combine(
+            context.ProjectPath,
+            "bin",
+            "Debug",
+            "net6.0",
+            $"{context.Scenario.Name}.dll");
+        if (!File.Exists(assemblyPath))
+            throw new InvalidOperationException($"Generated assembly was not found: {assemblyPath}");
+
+        var loadContext = new AssemblyLoadContext($"smoke-runtime-{context.Scenario.Name}-{Guid.NewGuid():N}", isCollectible: true);
+        var resolver = new AssemblyDependencyResolver(assemblyPath);
+        loadContext.Resolving += (_, assemblyName) =>
+        {
+            var resolvedPath = resolver.ResolveAssemblyToPath(assemblyName);
+            return resolvedPath is null ? null : loadContext.LoadFromAssemblyPath(resolvedPath);
+        };
+
+        try
+        {
+            var assembly = loadContext.LoadFromAssemblyPath(assemblyPath);
+            var viewModelTypeName = $"{context.ViewModel.ExportProjectNamespace}.MainWindowViewModel";
+            var viewModelType = assembly.GetType(viewModelTypeName)
+                ?? throw new InvalidOperationException($"Generated ViewModel type was not found: {viewModelTypeName}");
+            var instance = Activator.CreateInstance(viewModelType)
+                ?? throw new InvalidOperationException($"Generated ViewModel could not be created: {viewModelTypeName}");
+            var property = viewModelType.GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public)
+                ?? throw new InvalidOperationException($"Generated ViewModel property was not found: {viewModelTypeName}.{propertyName}");
+            var value = property.GetValue(instance);
+            if (value is not IEnumerable enumerable)
+                throw new InvalidOperationException($"Generated ViewModel property is not enumerable: {viewModelTypeName}.{propertyName}");
+
+            var rowCount = enumerable.Cast<object?>().Count();
+            if (rowCount < minimumRows)
+                throw new InvalidOperationException($"Generated runtime DataGrid collection is empty: {viewModelTypeName}.{propertyName} rows={rowCount}, expected at least {minimumRows}.");
+        }
+        finally
+        {
+            loadContext.Unload();
+        }
+    }
+
     private static string CreateLinqToSqlMetadataAssembly(string assemblyName, string namespaceName, string typeName, string tableName)
     {
         var cacheKey = $"{assemblyName}|{namespaceName}|{typeName}|{tableName}";
@@ -4853,5 +5035,21 @@ Diagnostics:
         string DiagnosticsText);
 
     private sealed record ProcessResult(int ExitCode, string Output);
+
+    private sealed class TemporaryExportProject : IDisposable
+    {
+        public TemporaryExportProject(string path)
+        {
+            Path = path;
+        }
+
+        public string Path { get; }
+
+        public void Dispose()
+        {
+            if (Directory.Exists(Path))
+                Directory.Delete(Path, recursive: true);
+        }
+    }
 }
 

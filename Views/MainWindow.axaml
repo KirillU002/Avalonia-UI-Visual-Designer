@@ -6695,6 +6695,10 @@
                           <CheckBox Content="Разрешить HTTP source"
                                     IsChecked="{Binding AllowInsecureNuGetSource, Mode=TwoWay}"
                                     IsEnabled="{Binding UseCustomNuGetSource}"/>
+                          <CheckBox Content="Добавить nuget.org fallback"
+                                    IsChecked="{Binding IncludeNuGetOrgFallback, Mode=TwoWay}"/>
+                          <CheckBox Content="Генерировать NuGet.config в exported project"
+                                    IsChecked="{Binding GenerateNuGetConfigInExportedProject, Mode=TwoWay}"/>
                           <TextBlock Text="{Binding NuGetSourceSummaryText}"
                                      Foreground="#475569"
                                      FontSize="12"
