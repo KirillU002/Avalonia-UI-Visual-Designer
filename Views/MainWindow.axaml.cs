@@ -5239,7 +5239,7 @@ public partial class MainWindow : Window
 
         var headerHeight = model.DataGridShowHeader ? Math.Max(24, model.DataGridHeaderHeight) : 0;
         var rowHeight = Math.Max(18, model.DataGridRowHeight);
-        var cellPadding = UniformThickness(model.DataGridCellPadding);
+        var cellPadding = GetDataGridCellContentPadding(model.DataGridCellPadding, rowHeight, model.DataGridRowFontSize);
         var headerCellBorderThickness = new Thickness(0, 0, model.DataGridShowColumnLines ? 1 : 0, 0);
         var bodyCellBorderThickness = new Thickness(0, 0, model.DataGridShowColumnLines ? 1 : 0, model.DataGridShowRowLines ? 1 : 0);
         var groupedAreaHeight = showGroupPanel ? Math.Max(42, rowHeight + 8) : 0;
@@ -5248,15 +5248,23 @@ public partial class MainWindow : Window
         var availableRowsHeight = Math.Max(rowHeight, model.Height - headerHeight - filterHeight - footerHeight - groupedAreaHeight - 12);
         var visibleRowCount = Math.Min(MaxPreviewDataGridRows, Math.Max(4, (int)Math.Ceiling(availableRowsHeight / rowHeight)));
         var previewRowCount = Math.Min(MaxPreviewDataGridRows, Math.Max(18, visibleRowCount + 6));
+        var previewBindingSource = showInteractivePreview
+            ? GetActiveBindingSource(model.BindingSourceId)
+            : null;
         var sqlPreviewRows = showInteractivePreview
             ? GetCachedInteractivePreviewRows(model.BindingSourceId)
             : Array.Empty<Dictionary<string, string>>();
         var usesSqlPreviewRows = sqlPreviewRows.Count > 0;
+        var suppressSyntheticRows = showInteractivePreview
+            && !usesSqlPreviewRows
+            && ShouldSuppressSyntheticRowsForPreview(previewBindingSource);
         var previewRows = showInteractivePreview
             ? ApplyModernPreviewSort(
                 ApplyModernPreviewFilter(
                     usesSqlPreviewRows
                     ? ClonePreviewRows(sqlPreviewRows)
+                    : suppressSyntheticRows
+                    ? new List<Dictionary<string, string>>()
                     : BuildModernPreviewRows(visibleFields, previewRowCount),
                     visibleFields,
                     filterValues,
@@ -5264,11 +5272,17 @@ public partial class MainWindow : Window
                 visibleFields,
                 model.Id)
             : new List<Dictionary<string, string>>();
+        if (showInteractivePreview)
+            TraceDataGridPreviewDataMode(model, previewBindingSource, previewRows.Count, usesSqlPreviewRows, suppressSyntheticRows);
         var renderedRowCount = showInteractivePreview
-            ? Math.Min(MaxPreviewDataGridRows, Math.Max(previewRows.Count, usesSqlPreviewRows ? 1 : previewRowCount))
+            ? suppressSyntheticRows
+                ? 0
+                : Math.Min(MaxPreviewDataGridRows, Math.Max(previewRows.Count, usesSqlPreviewRows ? 1 : previewRowCount))
             : previewRowCount;
         var summaryRows = previewRows.Count > 0
             ? previewRows
+            : suppressSyntheticRows
+            ? new List<Dictionary<string, string>>()
             : BuildModernPreviewRows(visibleFields, previewRowCount);
 
         headerTable.RowDefinitions.Add(new RowDefinition(headerHeight, GridUnitType.Pixel));
@@ -6304,17 +6318,7 @@ public partial class MainWindow : Window
 
     private static List<Dictionary<string, string>> BuildModernPreviewRows(IReadOnlyList<BindingFieldModel> fields, int rowCount)
     {
-        var rows = new List<Dictionary<string, string>>(rowCount);
-        for (var rowIndex = 0; rowIndex < rowCount; rowIndex++)
-        {
-            var row = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var field in fields)
-                row[field.Path] = CreateModernPreviewValue(field.Header, field.Path, field.TypeName, field.SampleValue, rowIndex);
-
-            rows.Add(row);
-        }
-
-        return rows;
+        return PreviewRowsLoader.BuildDemoRows(fields, rowCount).ToList();
     }
 
     private static List<Dictionary<string, string>> ClonePreviewRows(IReadOnlyList<Dictionary<string, string>> rows)
@@ -6811,6 +6815,20 @@ public partial class MainWindow : Window
     private static Thickness UniformThickness(double value)
     {
         return new Thickness(Math.Max(0, value));
+    }
+
+    private static Thickness GetDataGridCellContentPadding(double requestedPadding, double rowHeight, double fontSize)
+    {
+        var requested = Math.Max(0, requestedPadding);
+        if (requested <= 0)
+            return new Thickness(0);
+
+        var horizontal = Math.Min(requested, 10);
+        var estimatedTextHeight = Math.Max(8, fontSize);
+        var safeVertical = Math.Floor((Math.Max(18, rowHeight) - estimatedTextHeight - 4) / 2);
+        var verticalLimit = Math.Max(1, Math.Min(4, safeVertical));
+        var vertical = Math.Min(requested, verticalLimit);
+        return new Thickness(horizontal, vertical);
     }
 
     private static CornerRadius UniformCornerRadius(double value)
@@ -8074,41 +8092,71 @@ public partial class MainWindow : Window
 
     private async Task EnsureInteractivePreviewDataAsync()
     {
-        var sqlSources = GetActiveBindingSources()
-            .Where(SqlPreviewDataLoader.CanLoad)
+        var previewSources = GetActiveBindingSources()
+            .Where(PreviewRowsLoader.CanLoad)
             .DistinctBy(DataSourceIdentity.BuildKey)
             .ToList();
 
-        foreach (var source in sqlSources)
+        foreach (var source in previewSources)
+            await LoadPreviewRowsForSourceAsync(source, force: false);
+    }
+
+    private async Task LoadPreviewRowsForSourceAsync(BindingSourceModel source, bool force)
+    {
+        var sourceKey = DataSourceIdentity.BuildKey(source);
+        var signature = PreviewRowsLoader.BuildSignature(source);
+        if (_sqlPreviewRowsLoading.Contains(sourceKey))
+            return;
+
+        if (!force
+            && _previewRowsBySourceKey.TryGetValue(sourceKey, out var cached)
+            && string.Equals(cached.Signature, signature, StringComparison.Ordinal))
         {
-            var sourceKey = DataSourceIdentity.BuildKey(source);
-            if (_sqlPreviewRowsLoading.Contains(sourceKey))
-                continue;
-
-            if (_previewRowsBySourceKey.TryGetValue(sourceKey, out var cached)
-                && string.Equals(cached.Signature, sourceKey, StringComparison.Ordinal))
-            {
-                Debug.WriteLine($"DATAGRID_PREVIEW_CACHE_HIT sourceKey={sourceKey}; rows={cached.Rows.Count}");
-                continue;
-            }
-
-            _sqlPreviewRowsLoading.Add(sourceKey);
-            try
-            {
-                var rows = await SqlPreviewDataLoader.LoadRowsAsync(source);
-                _previewRowsBySourceKey[sourceKey] = (sourceKey, rows);
-                Debug.WriteLine($"DATAGRID_PREVIEW_ROWS_LOADED sourceKey={sourceKey}; display={DataSourceIdentity.BuildDisplayName(source)}; rows={rows.Count}");
-            }
-            catch
-            {
-                _previewRowsBySourceKey.Remove(sourceKey);
-                Debug.WriteLine($"DATAGRID_PREVIEW_CACHE_INVALIDATED sourceKey={sourceKey}; reason=load-failed");
-            }
-            finally
-            {
-                _sqlPreviewRowsLoading.Remove(sourceKey);
-            }
+            Debug.WriteLine($"DATAGRID_PREVIEW_CACHE_HIT sourceKey={sourceKey}; rows={cached.Rows.Count}");
+            return;
         }
+
+        _sqlPreviewRowsLoading.Add(sourceKey);
+        try
+        {
+            var result = await PreviewRowsLoader.LoadRowsAsync(source);
+            _previewRowsBySourceKey[sourceKey] = (signature, result.Rows);
+            VM.TraceDocumentDebug(
+                result.IsRealData ? "DATAGRID_PREVIEW_REAL_ROWS_APPLIED" : "DATAGRID_PREVIEW_SAMPLE_ROWS_USED",
+                $"sourceKey={sourceKey}; grid={VM.SelectedControl?.Name ?? "-"}; rows={result.Rows.Count}; dataKind={result.DataKind}; reason={result.Reason}",
+                toOutput: false);
+            VM.TraceDocumentDebug(
+                "DATAGRID_PREVIEW_ROWS_LOADED",
+                $"sourceKey={sourceKey}; display={DataSourceIdentity.BuildDisplayName(source)}; rows={result.Rows.Count}; dataKind={result.DataKind}",
+                toOutput: false);
+        }
+        catch (Exception ex)
+        {
+            _previewRowsBySourceKey.Remove(sourceKey);
+            source.PreviewRowsDataKind = "SchemaOnly";
+            source.PreviewRowsStatus = $"Реальные данные не загружены. Причина: {ex.Message}";
+            Debug.WriteLine($"DATAGRID_PREVIEW_CACHE_INVALIDATED sourceKey={sourceKey}; reason=load-failed");
+            VM.TraceDocumentDebug(
+                "DLL_TABLE_REAL_ROWS_LOAD_FAILED",
+                $"sourceKey={sourceKey}; reason={ex.Message}",
+                toOutput: true,
+                warning: true);
+        }
+        finally
+        {
+            _sqlPreviewRowsLoading.Remove(sourceKey);
+            VM.UpdatePreviewRowsCount(_previewRowsBySourceKey.Values.Sum(item => item.Rows.Count));
+        }
+    }
+
+    private async void RefreshBindingPreviewRowsButton_Click(object? sender, RoutedEventArgs e)
+    {
+        var source = VM.SelectedBindingSourceForControl ?? VM.SelectedBindingSource;
+        if (source is null)
+            return;
+
+        await LoadPreviewRowsForSourceAsync(source, force: true);
+        RenderDesigner();
     }
 
     private IReadOnlyList<Dictionary<string, string>> GetCachedInteractivePreviewRows(string? bindingSourceId)
@@ -8118,9 +8166,11 @@ public partial class MainWindow : Window
             return Array.Empty<Dictionary<string, string>>();
 
         var sourceKey = DataSourceIdentity.BuildKey(source);
-        return _previewRowsBySourceKey.TryGetValue(sourceKey, out var cached)
-            ? cached.Rows
-            : Array.Empty<Dictionary<string, string>>();
+        if (_previewRowsBySourceKey.TryGetValue(sourceKey, out var cached))
+            return cached.Rows;
+
+        SchedulePreviewRowsLoad(source);
+        return Array.Empty<Dictionary<string, string>>();
     }
 
     private System.Collections.IEnumerable? ResolvePreviewBindingItems(string bindingSourceId)
@@ -8133,7 +8183,67 @@ public partial class MainWindow : Window
         if (_previewRowsBySourceKey.TryGetValue(sourceKey, out var cached) && cached.Rows.Count > 0)
             return BindingPreviewItemsBuilder.ConvertRows(cached.Rows);
 
+        SchedulePreviewRowsLoad(source);
+        if (ShouldSuppressSyntheticRowsForPreview(source))
+            return Array.Empty<Dictionary<string, object?>>();
+
         return BindingPreviewItemsBuilder.BuildSampleItems(source);
+    }
+
+    private void SchedulePreviewRowsLoad(BindingSourceModel source)
+    {
+        if (!PreviewRowsLoader.CanLoad(source))
+            return;
+
+        var sourceKey = DataSourceIdentity.BuildKey(source);
+        if (_sqlPreviewRowsLoading.Contains(sourceKey))
+            return;
+
+        Dispatcher.UIThread.Post(async () =>
+        {
+            await LoadPreviewRowsForSourceAsync(source, force: false);
+            RenderDesigner();
+        }, DispatcherPriority.Background);
+    }
+
+    private static bool ShouldSuppressSyntheticRowsForPreview(BindingSourceModel? source)
+    {
+        return PreviewRowsLoader.ShouldSuppressSyntheticRows(source);
+    }
+
+    private void TraceDataGridPreviewDataMode(
+        DesignControlModel control,
+        BindingSourceModel? source,
+        int rowCount,
+        bool usesLoadedRows,
+        bool suppressed)
+    {
+        if (source is null)
+            return;
+
+        var mode = usesLoadedRows
+            ? string.Equals(source.PreviewRowsDataKind, "RealData", StringComparison.OrdinalIgnoreCase)
+                ? DataSourceIdentity.IsSqlServer(source.SourceKind)
+                    ? PreviewRowsLoader.DataModeRealSqlData
+                    : PreviewRowsLoader.DataModeRealDllData
+                : PreviewRowsLoader.DataModeDemoData
+            : PreviewRowsLoader.ResolveDataMode(source);
+
+        if (!usesLoadedRows && string.Equals(mode, PreviewRowsLoader.DataModeDemoData, StringComparison.Ordinal))
+        {
+            source.PreviewRowsDataKind = PreviewRowsLoader.DataModeDemoData;
+            source.PreviewRowsStatus = "Demo data: real source is not configured or preview fallback is enabled.";
+        }
+        else if (suppressed)
+        {
+            source.PreviewRowsDataKind = mode;
+            source.PreviewRowsStatus = "Preview rows are empty because source is schema-only or demo rows are disabled.";
+        }
+
+        VM.TraceDocumentDebug(
+            "DATAGRID_PREVIEW_DATA_MODE",
+            $"grid={control.Name}; mode={mode}; rows={rowCount}; sourceConfigured={PreviewRowsLoader.CanLoad(source)}; demoFallback={source.AllowPreviewSampleFallback}",
+            toOutput: false);
     }
 
     private void LaunchPreviewWindow_Closed(object? sender, EventArgs e)

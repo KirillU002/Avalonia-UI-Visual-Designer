@@ -320,15 +320,16 @@ public partial class PreviewWindow : Window
 
     private async Task PreloadBindingPreviewRowsAsync()
     {
-        var sqlSources = _document.BindingSources
-            .Where(SqlPreviewDataLoader.CanLoad)
+        var previewSources = _document.BindingSources
+            .Select(CreateRuntimeBindingSourceModel)
+            .Where(PreviewRowsLoader.CanLoad)
             .DistinctBy(DataSourceIdentity.BuildKey)
             .ToList();
 
-        foreach (var source in sqlSources)
+        foreach (var source in previewSources)
         {
             var sourceKey = DataSourceIdentity.BuildKey(source);
-            var signature = sourceKey;
+            var signature = PreviewRowsLoader.BuildSignature(source);
             if (_previewRowsBySourceKey.TryGetValue(sourceKey, out var cached)
                 && string.Equals(cached.Signature, signature, StringComparison.Ordinal))
             {
@@ -338,14 +339,14 @@ public partial class PreviewWindow : Window
 
             try
             {
-                var rows = await SqlPreviewDataLoader.LoadRowsAsync(source);
-                _previewRowsBySourceKey[sourceKey] = (signature, rows);
-                Debug.WriteLine($"DATAGRID_PREVIEW_ROWS_LOADED sourceKey={sourceKey}; display={DataSourceIdentity.BuildDisplayName(source)}; rows={rows.Count}");
+                var result = await PreviewRowsLoader.LoadRowsAsync(source);
+                _previewRowsBySourceKey[sourceKey] = (signature, result.Rows);
+                Debug.WriteLine($"DATAGRID_PREVIEW_ROWS_LOADED sourceKey={sourceKey}; display={DataSourceIdentity.BuildDisplayName(source)}; rows={result.Rows.Count}; dataKind={result.DataKind}");
             }
-            catch
+            catch (Exception ex)
             {
                 _previewRowsBySourceKey.Remove(sourceKey);
-                Debug.WriteLine($"DATAGRID_PREVIEW_CACHE_INVALIDATED sourceKey={sourceKey}; reason=load-failed");
+                Debug.WriteLine($"DATAGRID_PREVIEW_CACHE_INVALIDATED sourceKey={sourceKey}; reason={ex.Message}");
             }
         }
     }
@@ -383,7 +384,15 @@ public partial class PreviewWindow : Window
         if (_previewRowsBySourceKey.TryGetValue(sourceKey, out var cached) && cached.Rows.Count > 0)
             return BindingPreviewItemsBuilder.ConvertRows(cached.Rows);
 
+        if (ShouldSuppressSyntheticRowsForPreview(source))
+            return Array.Empty<Dictionary<string, object?>>();
+
         return BindingPreviewItemsBuilder.BuildSampleItems(CreateRuntimeBindingSourceModel(source));
+    }
+
+    private static bool ShouldSuppressSyntheticRowsForPreview(BindingSourceFileModel? source)
+    {
+        return PreviewRowsLoader.ShouldSuppressSyntheticRows(source);
     }
 
     private void ApplyWindowSettings()
@@ -874,7 +883,13 @@ public partial class PreviewWindow : Window
             SourceTableName = source.SourceTableName,
             SourceConnectionString = source.SourceConnectionString,
             SourceSchemaName = source.SourceSchemaName,
-            SourceQuery = source.SourceQuery
+            SourceQuery = source.SourceQuery,
+            PreviewRowMode = BindingSourceModel.NormalizePreviewRowMode(source.PreviewRowMode),
+            PreviewTopN = Math.Max(1, source.PreviewTopN),
+            PreviewSortColumn = source.PreviewSortColumn,
+            PreviewSortDirection = BindingSourceModel.NormalizePreviewSortDirection(source.PreviewSortDirection),
+            UseRealPreviewRowsIfAvailable = source.UseRealPreviewRowsIfAvailable,
+            AllowPreviewSampleFallback = source.AllowPreviewSampleFallback
         }).Select(model =>
         {
             var source = _document.BindingSources.First(item => item.Id == model.Id);
@@ -900,7 +915,13 @@ public partial class PreviewWindow : Window
             SourceTableName = source.SourceTableName,
             SourceConnectionString = source.SourceConnectionString,
             SourceSchemaName = source.SourceSchemaName,
-            SourceQuery = source.SourceQuery
+            SourceQuery = source.SourceQuery,
+            PreviewRowMode = BindingSourceModel.NormalizePreviewRowMode(source.PreviewRowMode),
+            PreviewTopN = Math.Max(1, source.PreviewTopN),
+            PreviewSortColumn = source.PreviewSortColumn,
+            PreviewSortDirection = BindingSourceModel.NormalizePreviewSortDirection(source.PreviewSortDirection),
+            UseRealPreviewRowsIfAvailable = source.UseRealPreviewRowsIfAvailable,
+            AllowPreviewSampleFallback = source.AllowPreviewSampleFallback
         };
 
         foreach (var field in source.Fields)
@@ -2620,7 +2641,7 @@ public partial class PreviewWindow : Window
 
         var headerHeight = control.DataGridShowHeader ? Math.Max(24, control.DataGridHeaderHeight) : 0;
         var rowHeight = Math.Max(18, control.DataGridRowHeight);
-        var cellPadding = UniformThickness(control.DataGridCellPadding);
+        var cellPadding = GetDataGridCellContentPadding(control.DataGridCellPadding, rowHeight, control.DataGridRowFontSize);
         var headerCellBorderThickness = new Thickness(0, 0, control.DataGridShowColumnLines ? 1 : 0, 0);
         var bodyCellBorderThickness = new Thickness(0, 0, control.DataGridShowColumnLines ? 1 : 0, control.DataGridShowRowLines ? 1 : 0);
         var groupedAreaHeight = showGroupPanel ? Math.Max(42, rowHeight + 8) : 0;
@@ -2628,18 +2649,25 @@ public partial class PreviewWindow : Window
         var availableRowsHeight = Math.Max(rowHeight, control.Height - headerHeight - filterHeight - groupedAreaHeight - 12);
         var visibleRowCount = Math.Min(MaxPreviewDataGridRows, Math.Max(4, (int)Math.Ceiling(availableRowsHeight / rowHeight)));
         var previewRowCount = Math.Min(MaxPreviewDataGridRows, Math.Max(18, visibleRowCount + 6));
+        var previewBindingSource = GetBindingSource(control.BindingSourceId);
         var sqlPreviewRows = GetCachedPreviewRows(control.BindingSourceId);
         var usesSqlPreviewRows = sqlPreviewRows.Count > 0;
+        var suppressSyntheticRows = !usesSqlPreviewRows && ShouldSuppressSyntheticRowsForPreview(previewBindingSource);
         var previewRows = ApplyPreviewWindowSort(
             ApplyPreviewWindowFilter(
                 usesSqlPreviewRows
                 ? ClonePreviewWindowRows(sqlPreviewRows)
+                : suppressSyntheticRows
+                ? new List<Dictionary<string, string>>()
                 : BuildPreviewWindowRows(visibleFields, previewRowCount),
                 visibleFields,
                 filterValues,
                 control.FilterMode),
             visibleFields);
-        var renderedRowCount = Math.Min(MaxPreviewDataGridRows, Math.Max(previewRows.Count, usesSqlPreviewRows ? 1 : previewRowCount));
+        TracePreviewWindowDataMode(control, previewBindingSource, previewRows.Count, usesSqlPreviewRows, suppressSyntheticRows);
+        var renderedRowCount = suppressSyntheticRows
+            ? 0
+            : Math.Min(MaxPreviewDataGridRows, Math.Max(previewRows.Count, usesSqlPreviewRows ? 1 : previewRowCount));
 
         headerTable.RowDefinitions.Add(new RowDefinition(headerHeight, GridUnitType.Pixel));
         if (control.ShowFilterRow)
@@ -3517,17 +3545,24 @@ public partial class PreviewWindow : Window
 
     private static List<Dictionary<string, string>> BuildPreviewWindowRows(IReadOnlyList<BindingFieldFileModel> fields, int rowCount)
     {
-        var rows = new List<Dictionary<string, string>>(rowCount);
-        for (var rowIndex = 0; rowIndex < rowCount; rowIndex++)
-        {
-            var row = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var field in fields)
-                row[field.Path] = CreatePreviewWindowValue(field.Header, field.Path, field.TypeName, field.SampleValue, rowIndex);
+        return PreviewRowsLoader.BuildDemoRows(fields, rowCount).ToList();
+    }
 
-            rows.Add(row);
-        }
+    private static void TracePreviewWindowDataMode(
+        DesignerControlFileModel control,
+        BindingSourceFileModel? source,
+        int rowCount,
+        bool usesLoadedRows,
+        bool suppressed)
+    {
+        if (source is null)
+            return;
 
-        return rows;
+        var mode = PreviewRowsLoader.ResolveDataMode(source);
+
+        Debug.WriteLine(
+            "DATAGRID_PREVIEW_DATA_MODE " +
+            $"grid={control.Name}; mode={mode}; rows={rowCount}; sourceConfigured={SqlPreviewDataLoader.CanLoad(source) || (!string.IsNullOrWhiteSpace(source.SourceAssemblyPath) && !string.IsNullOrWhiteSpace(source.SourceTypeFullName))}; demoFallback={source.AllowPreviewSampleFallback}; suppressed={suppressed}");
     }
 
     private static List<Dictionary<string, string>> ClonePreviewWindowRows(IReadOnlyList<Dictionary<string, string>> rows)
@@ -4131,6 +4166,20 @@ public partial class PreviewWindow : Window
     private static Thickness UniformThickness(double value)
     {
         return new Thickness(Math.Max(0, value));
+    }
+
+    private static Thickness GetDataGridCellContentPadding(double requestedPadding, double rowHeight, double fontSize)
+    {
+        var requested = Math.Max(0, requestedPadding);
+        if (requested <= 0)
+            return new Thickness(0);
+
+        var horizontal = Math.Min(requested, 10);
+        var estimatedTextHeight = Math.Max(8, fontSize);
+        var safeVertical = Math.Floor((Math.Max(18, rowHeight) - estimatedTextHeight - 4) / 2);
+        var verticalLimit = Math.Max(1, Math.Min(4, safeVertical));
+        var vertical = Math.Min(requested, verticalLimit);
+        return new Thickness(horizontal, vertical);
     }
 
     private static CornerRadius UniformCornerRadius(double value)

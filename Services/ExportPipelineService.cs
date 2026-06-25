@@ -259,7 +259,9 @@ public sealed class ExportPipelineService
         CancellationToken cancellationToken,
         Func<string, Task>? logAsync = null)
     {
-        await File.WriteAllTextAsync(Path.Combine(targetFolder, "App.axaml"), BuildAppXaml(result.Profile.ProjectNamespace), Encoding.UTF8, cancellationToken).ConfigureAwait(false);
+        var includeDataGridTheme = RequiresDataGridTheme(result);
+        await File.WriteAllTextAsync(Path.Combine(targetFolder, "App.axaml"), BuildAppXaml(result.Profile.ProjectNamespace, includeDataGridTheme), Encoding.UTF8, cancellationToken).ConfigureAwait(false);
+        await LogDataGridThemeAsync(logAsync, includeDataGridTheme, Path.Combine(targetFolder, "App.axaml")).ConfigureAwait(false);
         await File.WriteAllTextAsync(Path.Combine(targetFolder, "App.axaml.cs"), BuildAppCode(result.Profile.ProjectNamespace), Encoding.UTF8, cancellationToken).ConfigureAwait(false);
         await File.WriteAllTextAsync(Path.Combine(targetFolder, "Program.cs"), BuildProgramCode(result.Profile.ProjectNamespace), Encoding.UTF8, cancellationToken).ConfigureAwait(false);
 
@@ -314,7 +316,7 @@ public sealed class ExportPipelineService
             yield return file;
         }
 
-        yield return new GeneratedFileModel { Path = "App.axaml", Content = BuildAppXaml(result.Profile.ProjectNamespace) };
+        yield return new GeneratedFileModel { Path = "App.axaml", Content = BuildAppXaml(result.Profile.ProjectNamespace, RequiresDataGridTheme(result)) };
         yield return new GeneratedFileModel { Path = "App.axaml.cs", Content = BuildAppCode(result.Profile.ProjectNamespace) };
         yield return new GeneratedFileModel { Path = "Program.cs", Content = BuildProgramCode(result.Profile.ProjectNamespace) };
         yield return new GeneratedFileModel { Path = BuildExportProjectFileName(result), Content = BuildProjectFile(result.RequiredPackages) };
@@ -330,7 +332,7 @@ public sealed class ExportPipelineService
     {
         Directory.CreateDirectory(projectPath);
         await WriteGeneratedSourceFilesAsync(result, projectPath, cancellationToken).ConfigureAwait(false);
-        await File.WriteAllTextAsync(Path.Combine(projectPath, "App.axaml"), BuildAppXaml(result.Profile.ProjectNamespace), Encoding.UTF8, cancellationToken).ConfigureAwait(false);
+        await File.WriteAllTextAsync(Path.Combine(projectPath, "App.axaml"), BuildAppXaml(result.Profile.ProjectNamespace, RequiresDataGridTheme(result)), Encoding.UTF8, cancellationToken).ConfigureAwait(false);
         await File.WriteAllTextAsync(Path.Combine(projectPath, "App.axaml.cs"), BuildAppCode(result.Profile.ProjectNamespace), Encoding.UTF8, cancellationToken).ConfigureAwait(false);
         await File.WriteAllTextAsync(Path.Combine(projectPath, "Program.cs"), BuildProgramCode(result.Profile.ProjectNamespace), Encoding.UTF8, cancellationToken).ConfigureAwait(false);
         await File.WriteAllTextAsync(Path.Combine(projectPath, "ExportValidation.csproj"), BuildProjectFile(result.RequiredPackages), Encoding.UTF8, cancellationToken).ConfigureAwait(false);
@@ -524,17 +526,34 @@ public sealed class ExportPipelineService
 ";
     }
 
-    private static string BuildAppXaml(string ns)
+    private static string BuildAppXaml(string ns, bool includeDataGridTheme)
     {
+        var dataGridStyleInclude = includeDataGridTheme
+            ? "    <StyleInclude Source=\"avares://Avalonia.Controls.DataGrid/Themes/Fluent.xaml\" />\n"
+            : "";
         return $@"<Application xmlns=""https://github.com/avaloniaui""
              xmlns:x=""http://schemas.microsoft.com/winfx/2006/xaml""
              x:Class=""{ns}.App""
              RequestedThemeVariant=""Default"">
   <Application.Styles>
     <FluentTheme />
+{dataGridStyleInclude.TrimEnd()}
   </Application.Styles>
 </Application>
 ";
+    }
+
+    private static bool RequiresDataGridTheme(ExportResult result)
+    {
+        return result.RequiredPackages.Any(package =>
+            string.Equals(package.Id, "Avalonia.Controls.DataGrid", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static Task LogDataGridThemeAsync(Func<string, Task>? logAsync, bool includeDataGridTheme, string appXamlPath)
+    {
+        return includeDataGridTheme
+            ? LogAsync(logAsync, $"DATAGRID_THEME_INCLUDE_GENERATED appAxaml={appXamlPath}; source=avares://Avalonia.Controls.DataGrid/Themes/Fluent.xaml")
+            : LogAsync(logAsync, $"DATAGRID_THEME_INCLUDE_MISSING appAxaml={appXamlPath}; reason=Real DataGrid package not required");
     }
 
     private static string BuildAppCode(string ns)

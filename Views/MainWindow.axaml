@@ -5313,6 +5313,77 @@
                                      TextWrapping="Wrap"/>
                         </Border>
 
+                        <Border Background="#FFFFFF"
+                                BorderBrush="#D7E2EE"
+                                BorderThickness="1"
+                                CornerRadius="12"
+                                Padding="12"
+                                IsVisible="{Binding CanEditDataBinding}">
+                          <StackPanel Spacing="10">
+                            <Grid ColumnDefinitions="*,Auto">
+                              <StackPanel Spacing="2">
+                                <TextBlock Text="Preview rows"
+                                           FontWeight="SemiBold"/>
+                                <TextBlock Text="{Binding SelectedBindingPreviewRowsModeSummary}"
+                                           Foreground="#64748B"
+                                           TextWrapping="Wrap"/>
+                              </StackPanel>
+
+                              <Button Grid.Column="1"
+                                      Content="Обновить preview"
+                                      Classes="data-action-button"
+                                      Padding="12,8"
+                                      VerticalAlignment="Center"
+                                      Click="RefreshBindingPreviewRowsButton_Click"/>
+                            </Grid>
+
+                            <Grid ColumnDefinitions="*,100,*,120"
+                                  RowDefinitions="Auto,Auto">
+                              <TextBlock Grid.Row="0"
+                                         Grid.Column="0"
+                                         Text="Mode"
+                                         FontSize="12"
+                                         Foreground="#64748B"/>
+                              <TextBlock Grid.Row="0"
+                                         Grid.Column="1"
+                                         Text="Top N"
+                                         FontSize="12"
+                                         Foreground="#64748B"/>
+                              <TextBlock Grid.Row="0"
+                                         Grid.Column="2"
+                                         Text="Sort by"
+                                         FontSize="12"
+                                         Foreground="#64748B"/>
+                              <TextBlock Grid.Row="0"
+                                         Grid.Column="3"
+                                         Text="Direction"
+                                         FontSize="12"
+                                         Foreground="#64748B"/>
+
+                              <ComboBox Grid.Row="1"
+                                        Grid.Column="0"
+                                        ItemsSource="{Binding AvailablePreviewRowModes}"
+                                        SelectedItem="{Binding SelectedBindingSourceForControl.PreviewRowMode, Mode=TwoWay}"/>
+                              <TextBox Grid.Row="1"
+                                       Grid.Column="1"
+                                       Text="{Binding SelectedBindingSourceForControl.PreviewTopN, Mode=TwoWay}"/>
+                              <ComboBox Grid.Row="1"
+                                        Grid.Column="2"
+                                        ItemsSource="{Binding SelectedBindingPreviewSortColumns}"
+                                        SelectedItem="{Binding SelectedBindingSourceForControl.PreviewSortColumn, Mode=TwoWay}"/>
+                              <ComboBox Grid.Row="1"
+                                        Grid.Column="3"
+                                        ItemsSource="{Binding AvailablePreviewSortDirections}"
+                                        SelectedItem="{Binding SelectedBindingSourceForControl.PreviewSortDirection, Mode=TwoWay}"/>
+                            </Grid>
+
+                            <TextBlock Text="{Binding SelectedBindingPreviewRowsStatus}"
+                                       Foreground="#475569"
+                                       TextWrapping="Wrap"
+                                       IsVisible="{Binding HasSelectedBindingPreviewRowsStatus}"/>
+                          </StackPanel>
+                        </Border>
+
                         <StackPanel Spacing="6"
                                     IsVisible="{Binding HasSelectedBindingPreview}">
                           <TextBlock Text="{Binding SelectedBindingPreviewTitle}"

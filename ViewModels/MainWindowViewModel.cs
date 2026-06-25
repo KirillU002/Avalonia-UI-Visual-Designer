@@ -424,6 +424,20 @@ public partial class MainWindowViewModel : ObservableObject
         BindingFieldModel.SortDirectionDescending
     };
 
+    public ObservableCollection<string> AvailablePreviewRowModes { get; } = new()
+    {
+        BindingSourceModel.PreviewRowModeSchemaOnly,
+        BindingSourceModel.PreviewRowModeSampleRows,
+        BindingSourceModel.PreviewRowModeTopN,
+        BindingSourceModel.PreviewRowModeAllRows
+    };
+
+    public ObservableCollection<string> AvailablePreviewSortDirections { get; } = new()
+    {
+        BindingFieldModel.SortDirectionAscending,
+        BindingFieldModel.SortDirectionDescending
+    };
+
     public ObservableCollection<string> AvailableFieldSummaryTypes { get; } = new()
     {
         BindingFieldModel.SummaryTypeNone,
@@ -1586,6 +1600,61 @@ public partial class MainWindowViewModel : ObservableObject
         ? "Пример выбранного поля"
         : "Пример данных источника";
 
+    public IReadOnlyList<string> SelectedBindingPreviewSortColumns
+    {
+        get
+        {
+            var source = SelectedBindingSourceForControl ?? SelectedBindingSource;
+            if (source is null)
+                return Array.Empty<string>();
+
+            return source.Fields
+                .Where(field => field.IsVisible)
+                .OrderBy(field => field.VisibleIndex < 0 ? int.MaxValue : field.VisibleIndex)
+                .ThenBy(field => field.Header, StringComparer.OrdinalIgnoreCase)
+                .Select(field => string.IsNullOrWhiteSpace(field.Path) ? field.Header : field.Path)
+                .Where(path => !string.IsNullOrWhiteSpace(path))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Prepend("")
+                .ToList();
+        }
+    }
+
+    public string SelectedBindingPreviewRowsStatus
+    {
+        get
+        {
+            var source = SelectedBindingSourceForControl ?? SelectedBindingSource;
+            if (source is null)
+                return "Источник не выбран.";
+
+            if (!string.IsNullOrWhiteSpace(source.PreviewRowsStatus))
+                return source.PreviewRowsStatus;
+
+            if (DataSourceIdentity.IsAssembly(source.SourceKind))
+                return "Реальные DLL rows ещё не загружались. Нажмите “Обновить preview”, чтобы загрузить данные или увидеть причину fallback.";
+
+            return "Preview rows будут загружены при открытии Preview.";
+        }
+    }
+
+    public bool HasSelectedBindingPreviewRowsStatus => !string.IsNullOrWhiteSpace(SelectedBindingPreviewRowsStatus);
+
+    public string SelectedBindingPreviewRowsModeSummary
+    {
+        get
+        {
+            var source = SelectedBindingSourceForControl ?? SelectedBindingSource;
+            if (source is null)
+                return "Mode: источник не выбран";
+
+            var mode = BindingSourceModel.NormalizePreviewRowMode(source.PreviewRowMode);
+            var sortColumn = string.IsNullOrWhiteSpace(source.PreviewSortColumn) ? "без сортировки" : source.PreviewSortColumn;
+            var dataKind = string.IsNullOrWhiteSpace(source.PreviewRowsDataKind) ? "Unknown" : source.PreviewRowsDataKind;
+            return $"Mode: {mode}; Top N: {Math.Max(1, source.PreviewTopN)}; Sort: {sortColumn} {BindingSourceModel.NormalizePreviewSortDirection(source.PreviewSortDirection)}; Data kind: {dataKind}";
+        }
+    }
+
     public bool HasGridColumnWidthEditor => CanEditDataBinding;
 
     public IReadOnlyList<BindingFieldModel> SelectedGridColumnsForControl
@@ -2227,6 +2296,10 @@ public partial class MainWindowViewModel : ObservableObject
             OnPropertyChanged(nameof(SelectedBindingPreviewFields));
             OnPropertyChanged(nameof(HasSelectedBindingPreview));
             OnPropertyChanged(nameof(SelectedBindingPreviewTitle));
+            OnPropertyChanged(nameof(SelectedBindingPreviewSortColumns));
+            OnPropertyChanged(nameof(SelectedBindingPreviewRowsStatus));
+            OnPropertyChanged(nameof(HasSelectedBindingPreviewRowsStatus));
+            OnPropertyChanged(nameof(SelectedBindingPreviewRowsModeSummary));
             OnPropertyChanged(nameof(HasGridColumnWidthEditor));
             OnPropertyChanged(nameof(SelectedGridColumnsForControl));
             OnPropertyChanged(nameof(SelectedGridColumnEditorSummary));
@@ -3803,6 +3876,30 @@ public partial class MainWindowViewModel : ObservableObject
     {
         var source = GetBindingSource(bindingSourceId);
         return source is null ? Array.Empty<BindingFieldModel>() : OrderBindingFieldsForDisplay(source.Fields).ToList();
+    }
+
+    public async Task<IReadOnlyList<Dictionary<string, string>>> LoadPreviewRowsForBindingSourceAsync(BindingSourceModel source, CancellationToken cancellationToken = default)
+    {
+        var result = await PreviewRowsLoader.LoadRowsAsync(source, cancellationToken).ConfigureAwait(false);
+        UpdatePreviewRowsCount(result.Rows.Count);
+        var dataMode = result.IsRealData
+            ? DataSourceIdentity.IsSqlServer(source.SourceKind)
+                ? PreviewRowsLoader.DataModeRealSqlData
+                : PreviewRowsLoader.DataModeRealDllData
+            : string.Equals(result.DataKind, "DemoData", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(result.DataKind, "SampleRows", StringComparison.OrdinalIgnoreCase)
+                    ? PreviewRowsLoader.DataModeDemoData
+                    : PreviewRowsLoader.ResolveDataMode(source);
+        TraceDocumentDebug(
+            "DATAGRID_PREVIEW_DATA_MODE",
+            $"source={source.Name}; mode={dataMode}; rows={result.Rows.Count}; sourceConfigured={PreviewRowsLoader.CanLoad(source)}; demoFallback={source.AllowPreviewSampleFallback}",
+            toOutput: false);
+        TraceDocumentDebug(
+            result.IsRealData ? "DATAGRID_PREVIEW_REAL_ROWS_APPLIED" : "DATAGRID_PREVIEW_SAMPLE_ROWS_USED",
+            $"sourceKey={DataSourceIdentity.BuildKey(source)}; source={source.Name}; rows={result.Rows.Count}; dataKind={result.DataKind}; reason={result.Reason}",
+            toOutput: false);
+        RaiseBindingEditorProperties();
+        return result.Rows;
     }
 
     private BindingFieldModel? ResolveBindingFieldForControl(BindingSourceModel? source, string? bindingPath)
@@ -5446,6 +5543,11 @@ public partial class MainWindowViewModel : ObservableObject
         _lastCanvasWrapperCount = Math.Max(0, wrapperCount);
         _lastPreviewRowsCount = Math.Max(0, previewRowsCount);
         TrackRefreshOperation("RenderCanvas", reason);
+    }
+
+    public void UpdatePreviewRowsCount(int previewRowsCount)
+    {
+        _lastPreviewRowsCount = Math.Max(0, previewRowsCount);
     }
 
     private void AppendPluginLoaderDiagnostics(ICollection<DocumentDiagnosticModel> diagnostics)
@@ -14550,6 +14652,27 @@ public partial class MainWindowViewModel : ObservableObject
         var buttonControls = Controls.Where(control => control.Type == DesignerControlTypes.Button).ToList();
         var textBoxControls = Controls.Where(control => control.Type == DesignerControlTypes.TextBox).ToList();
         var crudContexts = BuildCrudGenerationContexts();
+        var exportSeedRowsBySourceId = crudContexts.ToDictionary(
+            context => context.Source.Id,
+            context => BuildRuntimeSeedRows(context),
+            StringComparer.OrdinalIgnoreCase);
+        var runtimeDataGridChecks = new List<RuntimeDataGridSelfCheck>();
+        foreach (var control in Controls.Where(control => control.Type == DesignerControlTypes.DataGrid))
+        {
+            var source = GetBindingSource(control.BindingSourceId);
+            if (source is null || !ShouldGenerateRuntimeBindingForSource(source))
+                continue;
+
+            var context = crudContexts.FirstOrDefault(candidate =>
+                string.Equals(candidate.Source.Id, source.Id, StringComparison.OrdinalIgnoreCase));
+            if (context is null || !exportControlNames.TryGetValue(control.Id, out var exportedGridName))
+                continue;
+
+            runtimeDataGridChecks.Add(new RuntimeDataGridSelfCheck(
+                exportedGridName,
+                context.ViewCollectionPropertyName,
+                context.ViewCollectionPropertyName));
+        }
         var sqlContexts = crudContexts.Where(context => IsSqlServerSource(context.Source)).ToList();
         var hasSqlContexts = sqlContexts.Count > 0;
         var autoLoadSqlContexts = false;
@@ -14564,8 +14687,10 @@ public partial class MainWindowViewModel : ObservableObject
                 .Where(name => !string.IsNullOrWhiteSpace(name))
                 .ToList();
             var gridNameText = gridNames.Count == 0 ? context.Source.Name : string.Join(",", gridNames);
-            var previewRowCount = BindingPreviewItemsBuilder.BuildSampleItems(context.Source, RuntimeDataGridSampleRowCount).Count;
-            var generatedRowCount = context.Fields.Count > 0 ? RuntimeDataGridSampleRowCount : 0;
+            var generatedRowCount = exportSeedRowsBySourceId.TryGetValue(context.Source.Id, out var exportSeedRows)
+                ? exportSeedRows.Count
+                : 0;
+            var previewRowCount = generatedRowCount;
             TraceDocumentDebug(
                 "EXPORT_DATAGRID_RUNTIME_BINDING_START",
                 $"form={ActiveDocumentName}; grid={gridNameText}; sourceKind={context.Source.SourceKind}; previewRows={previewRowCount}; columns={context.Fields.Count}",
@@ -14600,7 +14725,7 @@ public partial class MainWindowViewModel : ObservableObject
                 toOutput: false);
             TraceDocumentDebug(
                 "EXPORT_DATAGRID_LOADER_GENERATED",
-                $"source={context.Source.Name}; loader=Seed{context.ItemTypeName}; mode={(IsSqlServerSource(context.Source) ? "SampleRows+SqlPlaceholder" : "SampleRows")}; rowsGenerated={generatedRowCount}",
+                $"source={context.Source.Name}; loader=Seed{context.ItemTypeName}; mode={ResolveExportSeedMode(context.Source)}; rowsGenerated={generatedRowCount}",
                 toOutput: false);
         }
         var anchorControls = Controls
@@ -14690,11 +14815,28 @@ public partial class MainWindowViewModel : ObservableObject
         sb.AppendLine("        InitializeComponent();");
         if (hasViewModel)
         {
-            sb.AppendLine($"        DataContext = new {viewModelClassName}();");
+            if (runtimeDataGridChecks.Count > 0)
+            {
+                sb.AppendLine($"        var viewModel = new {viewModelClassName}();");
+                sb.AppendLine("        DataContext = viewModel;");
+                sb.AppendLine($"        System.Diagnostics.Debug.WriteLine($\"RUNTIME_DATAGRID_DATACONTEXT window={windowClassName}; dataContext={{DataContext?.GetType().Name ?? \"-\"}}\");");
+                sb.AppendLine("        AttachedToVisualTree += (_, _) => RunDataGridRuntimeSelfCheck(viewModel);");
+            }
+            else
+            {
+                sb.AppendLine($"        DataContext = new {viewModelClassName}();");
+            }
             TraceDocumentDebug(
                 "EXPORT_DATAGRID_DATACONTEXT_GENERATED",
                 $"window={windowClassName}; viewmodel={viewModelClassName}",
                 toOutput: false);
+            foreach (var check in runtimeDataGridChecks)
+            {
+                TraceDocumentDebug(
+                    "EXPORT_DATAGRID_RUNTIME_SELF_CHECK_GENERATED",
+                    $"grid={check.GridName}; itemsSourceProperty={check.ItemsSourceProperty}; expectedCollection={check.ExpectedCollectionProperty}",
+                    toOutput: false);
+            }
             if (autoLoadSqlContexts)
                 sb.AppendLine("        Opened += Window_Opened;");
         }
@@ -14710,6 +14852,44 @@ public partial class MainWindowViewModel : ObservableObject
         {
             sb.AppendLine();
             sb.AppendLine($"    private {viewModelClassName} ViewModel => ({viewModelClassName})DataContext!;");
+        }
+
+        if (runtimeDataGridChecks.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine($"    private void RunDataGridRuntimeSelfCheck({viewModelClassName} viewModel)");
+            sb.AppendLine("    {");
+            foreach (var check in runtimeDataGridChecks)
+            {
+                sb.AppendLine($"        LogDataGridRuntimeSelfCheck(\"{EscapeCSharp(check.GridName)}\", this.FindControl<DataGrid>(\"{EscapeCSharp(check.GridName)}\"), \"{EscapeCSharp(check.ItemsSourceProperty)}\", viewModel.{check.ExpectedCollectionProperty}.Count);");
+            }
+            sb.AppendLine("    }");
+            sb.AppendLine();
+            sb.AppendLine("    private static void LogDataGridRuntimeSelfCheck(string gridName, DataGrid? grid, string bindingPath, int expectedRows)");
+            sb.AppendLine("    {");
+            sb.AppendLine("        var itemsSource = grid?.ItemsSource;");
+            sb.AppendLine("        var itemsSourceCount = CountEnumerable(itemsSource);");
+            sb.AppendLine("        System.Diagnostics.Debug.WriteLine($\"RUNTIME_DATAGRID_ATTACHED grid={gridName}; dataContext={grid?.DataContext?.GetType().Name ?? \"-\"}; itemsSourceType={itemsSource?.GetType().FullName ?? \"-\"}; itemsSourceCount={itemsSourceCount}; expectedRows={expectedRows}; actualHeight={grid?.Bounds.Height ?? 0}\");");
+            sb.AppendLine("        if (itemsSource is null)");
+            sb.AppendLine("            System.Diagnostics.Debug.WriteLine($\"RUNTIME_DATAGRID_BINDING_FAILED grid={gridName}; bindingPath={bindingPath}; reason=ItemsSource is null\");");
+            sb.AppendLine("        else if (expectedRows > 0 && itemsSourceCount == 0)");
+            sb.AppendLine("            System.Diagnostics.Debug.WriteLine($\"RUNTIME_DATAGRID_BINDING_FAILED grid={gridName}; bindingPath={bindingPath}; reason=ItemsSource is empty but ViewModel collection has rows\");");
+            sb.AppendLine("    }");
+            sb.AppendLine();
+            sb.AppendLine("    private static int CountEnumerable(object? value)");
+            sb.AppendLine("    {");
+            sb.AppendLine("        if (value is null)");
+            sb.AppendLine("            return -1;");
+            sb.AppendLine("        if (value is System.Collections.ICollection collection)");
+            sb.AppendLine("            return collection.Count;");
+            sb.AppendLine("        if (value is not System.Collections.IEnumerable enumerable)");
+            sb.AppendLine("            return -1;");
+            sb.AppendLine();
+            sb.AppendLine("        var count = 0;");
+            sb.AppendLine("        foreach (var _ in enumerable)");
+            sb.AppendLine("            count++;");
+            sb.AppendLine("        return count;");
+            sb.AppendLine("    }");
         }
 
         if (autoLoadSqlContexts)
@@ -15075,14 +15255,17 @@ public partial class MainWindowViewModel : ObservableObject
 
                 sb.AppendLine($"    private void Seed{context.ItemTypeName}()");
                 sb.AppendLine("    {");
-                for (var variantIndex = 0; variantIndex < RuntimeDataGridSampleRowCount; variantIndex++)
+                var seedRows = exportSeedRowsBySourceId.TryGetValue(context.Source.Id, out var rows)
+                    ? rows
+                    : Array.Empty<Dictionary<string, string>>();
+                for (var variantIndex = 0; variantIndex < seedRows.Count; variantIndex++)
                 {
                     if (variantIndex > 0)
                         sb.AppendLine();
 
                     sb.AppendLine($"        {context.CollectionPropertyName}.Add(new {context.ItemTypeName}");
                     sb.AppendLine("        {");
-                    AppendSeedAssignments(sb, context, 3, variantIndex);
+                    AppendSeedAssignments(sb, context, 3, variantIndex, seedRows[variantIndex]);
                     sb.AppendLine("        });");
                 }
                 sb.AppendLine("    }");
@@ -15467,6 +15650,12 @@ public partial class MainWindowViewModel : ObservableObject
         var existingFieldsByPath = existing.Fields.ToDictionary(field => field.Path, StringComparer.OrdinalIgnoreCase);
         var preservePath = existing.Path;
         var preserveName = existing.Name;
+        var preservePreviewRowMode = existing.PreviewRowMode;
+        var preservePreviewTopN = existing.PreviewTopN;
+        var preservePreviewSortColumn = existing.PreviewSortColumn;
+        var preservePreviewSortDirection = existing.PreviewSortDirection;
+        var preserveUseRealPreviewRowsIfAvailable = existing.UseRealPreviewRowsIfAvailable;
+        var preserveAllowPreviewSampleFallback = existing.AllowPreviewSampleFallback;
 
         existing.Name = GetUniqueBindingSourceName(preserveName, existing.Id);
         existing.Path = string.IsNullOrWhiteSpace(preservePath) ? importedSource.Path : preservePath;
@@ -15476,6 +15665,12 @@ public partial class MainWindowViewModel : ObservableObject
         existing.SourceAssemblyPath = importedSource.SourceAssemblyPath;
         existing.SourceTypeFullName = importedSource.SourceTypeFullName;
         existing.SourceTableName = importedSource.SourceTableName;
+        existing.PreviewRowMode = BindingSourceModel.NormalizePreviewRowMode(preservePreviewRowMode);
+        existing.PreviewTopN = Math.Max(1, preservePreviewTopN);
+        existing.PreviewSortColumn = preservePreviewSortColumn;
+        existing.PreviewSortDirection = BindingSourceModel.NormalizePreviewSortDirection(preservePreviewSortDirection);
+        existing.UseRealPreviewRowsIfAvailable = preserveUseRealPreviewRowsIfAvailable;
+        existing.AllowPreviewSampleFallback = preserveAllowPreviewSampleFallback;
 
         existing.Fields.Clear();
         foreach (var importedField in importedSource.Fields)
@@ -16322,6 +16517,43 @@ public partial class MainWindowViewModel : ObservableObject
 
     private static string EscapeXml(string value) => value.Replace("&", "&amp;").Replace("\"", "&quot;").Replace("<", "&lt;").Replace(">", "&gt;");
     private static string ToInvariant(double value) => value.ToString(CultureInfo.InvariantCulture);
+
+    private static (double Horizontal, double Vertical) ResolveDataGridCellPadding(double requestedPadding, double rowHeight, double fontSize)
+    {
+        return ResolveDataGridCompactPadding(requestedPadding, rowHeight, fontSize, maxVerticalPadding: 4);
+    }
+
+    private static (double Horizontal, double Vertical) ResolveDataGridHeaderPadding(double requestedPadding, double headerHeight, double fontSize)
+    {
+        return ResolveDataGridCompactPadding(requestedPadding, headerHeight, fontSize, maxVerticalPadding: 6);
+    }
+
+    private static (double Horizontal, double Vertical) ResolveDataGridCompactPadding(double requestedPadding, double availableHeight, double fontSize, double maxVerticalPadding)
+    {
+        var requested = Math.Max(0, requestedPadding);
+        if (requested <= 0)
+            return (0, 0);
+
+        var horizontal = Math.Min(requested, 10);
+        var estimatedTextHeight = Math.Max(8, fontSize);
+        var safeVertical = Math.Floor((Math.Max(18, availableHeight) - estimatedTextHeight - 4) / 2);
+        var verticalLimit = Math.Max(1, Math.Min(maxVerticalPadding, safeVertical));
+        var vertical = Math.Min(requested, verticalLimit);
+        return (Math.Round(horizontal, 1), Math.Round(vertical, 1));
+    }
+
+    private static string ToDataGridThicknessValue((double Horizontal, double Vertical) padding)
+    {
+        return Math.Abs(padding.Horizontal - padding.Vertical) < 0.01
+            ? ToInvariant(padding.Horizontal)
+            : $"{ToInvariant(padding.Horizontal)},{ToInvariant(padding.Vertical)}";
+    }
+
+    private static bool IsDataGridPaddingAdjusted(double requestedPadding, (double Horizontal, double Vertical) padding)
+    {
+        return Math.Abs(Math.Max(0, requestedPadding) - padding.Horizontal) > 0.01
+            || Math.Abs(Math.Max(0, requestedPadding) - padding.Vertical) > 0.01;
+    }
     private static string BoolToXaml(bool value) => value ? "True" : "False";
     private static string BoolToCSharp(bool value) => value ? "true" : "false";
     private static string Indent(int level) => new(' ', level * 2);
@@ -17585,6 +17817,121 @@ public partial class MainWindowViewModel : ObservableObject
         }
     }
 
+    private static void AppendSeedAssignments(
+        StringBuilder sb,
+        CrudGenerationContext context,
+        int indentLevel,
+        int variantIndex,
+        IReadOnlyDictionary<string, string> rowValues)
+    {
+        var fields = context.Fields.ToList();
+        for (var index = 0; index < fields.Count; index++)
+        {
+            var field = fields[index];
+            var property = GetGeneratedRowPropertyName(field);
+            var suffix = index == fields.Count - 1 ? string.Empty : ",";
+            var sample = TryGetSeedValue(rowValues, field, out var value)
+                ? value
+                : GetVariantSampleValue(field, variantIndex);
+            sb.AppendLine($"{Indent(indentLevel)}{property} = {ToCSharpLiteral(field.TypeName, sample)}{suffix}");
+        }
+    }
+
+    private IReadOnlyList<Dictionary<string, string>> BuildRuntimeSeedRows(CrudGenerationContext context)
+    {
+        if (context.Fields.Count == 0)
+            return Array.Empty<Dictionary<string, string>>();
+
+        var dataMode = PreviewRowsLoader.ResolveDataMode(context.Source);
+        TraceDocumentDebug(
+            "DATAGRID_EXPORT_DATA_MODE",
+            $"source={context.Source.Name}; sourceKind={context.Source.SourceKind}; mode={dataMode}; rowsConfigured={context.Source.Fields.Count}; sourceConfigured={PreviewRowsLoader.CanLoad(context.Source)}",
+            toOutput: false);
+
+        if (DataSourceIdentity.IsSqlServer(context.Source.SourceKind) && !SqlPreviewDataLoader.CanLoad(context.Source))
+        {
+            TraceDocumentDebug(
+                "EXPORT_DATAGRID_SOURCE_NOT_CONFIGURED_WARNING",
+                $"source={context.Source.Name}; sourceKind={context.Source.SourceKind}; missingFields=connectionString/tableName/query",
+                toOutput: true,
+                warning: true);
+        }
+
+        if (string.Equals(dataMode, PreviewRowsLoader.DataModeNoData, StringComparison.Ordinal)
+            || string.Equals(dataMode, PreviewRowsLoader.DataModeSchemaOnly, StringComparison.Ordinal))
+        {
+            TraceDocumentDebug(
+                "EXPORT_DATAGRID_EMPTY_COLLECTION_GENERATED",
+                $"source={context.Source.Name}; sourceKind={context.Source.SourceKind}; mode={dataMode}; reason=demo rows disabled or schema-only source",
+                toOutput: false,
+                warning: true);
+            TraceDocumentDebug(
+                "EXPORT_DATAGRID_COLLECTION_EMPTY",
+                $"source={context.Source.Name}; sourceKind={context.Source.SourceKind}; reason=demo rows disabled or schema-only source; mode={dataMode}",
+                toOutput: false,
+                warning: true);
+            return Array.Empty<Dictionary<string, string>>();
+        }
+
+        if (DataSourceIdentity.IsAssembly(context.Source.SourceKind) && PreviewRowsLoader.CanLoad(context.Source))
+        {
+            try
+            {
+                var result = PreviewRowsLoader.LoadRowsAsync(context.Source, updateSourceStatus: false).GetAwaiter().GetResult();
+                if (result.Rows.Count > 0)
+                {
+                    TraceDocumentDebug(
+                        "EXPORT_DATAGRID_ROWS_GENERATED",
+                        $"source={context.Source.Name}; sourceKind={context.Source.SourceKind}; mode={(result.IsRealData ? "DllRealRows" : result.DataKind)}; rows={result.Rows.Count}",
+                        toOutput: false);
+                    return result.Rows;
+                }
+            }
+            catch (Exception ex)
+            {
+                TraceDocumentDebug(
+                    "EXPORT_DATAGRID_RUNTIME_DATA_WARNING",
+                    $"source={context.Source.Name}; reason={ex.Message}",
+                    toOutput: true,
+                    warning: true);
+            }
+        }
+
+        var demoRows = PreviewRowsLoader.BuildSampleRows(context.Source, RuntimeDataGridSampleRowCount);
+        TraceDocumentDebug(
+            "EXPORT_DATAGRID_DEMO_ROWS_GENERATED",
+            $"source={context.Source.Name}; sourceKind={context.Source.SourceKind}; mode={dataMode}; rows={demoRows.Count}; columns={context.Fields.Count}",
+            toOutput: false);
+        return demoRows;
+    }
+
+    private static string ResolveExportSeedMode(BindingSourceModel source)
+    {
+        if (IsSqlServerSource(source))
+            return PreviewRowsLoader.ResolveDataMode(source) == PreviewRowsLoader.DataModeDemoData
+                ? "DemoData+SqlPlaceholder"
+                : "SampleRows+SqlPlaceholder";
+
+        if (DataSourceIdentity.IsAssembly(source.SourceKind))
+            return string.Equals(source.PreviewRowsDataKind, "RealData", StringComparison.OrdinalIgnoreCase)
+                ? "DllRealRows"
+                : "DllSampleRowsOrSchemaFallback";
+
+        return "SampleRows";
+    }
+
+    private static bool TryGetSeedValue(IReadOnlyDictionary<string, string> rowValues, BindingFieldModel field, out string value)
+    {
+        if (rowValues.TryGetValue(field.Path, out value!))
+            return true;
+
+        if (rowValues.TryGetValue(field.Header, out value!))
+            return true;
+
+        value = string.Empty;
+        return false;
+    }
+
     private static void AppendCloneAssignments(StringBuilder sb, CrudGenerationContext context, int indentLevel)
     {
         for (var index = 0; index < context.Fields.Count; index++)
@@ -18194,6 +18541,15 @@ public partial class MainWindowViewModel : ObservableObject
             : "";
         var itemsSource = string.IsNullOrWhiteSpace(itemsSourcePath) ? "" : $" ItemsSource=\"{{Binding {EscapeXml(itemsSourcePath)}}}\"";
         var selectedItem = string.IsNullOrWhiteSpace(selectedItemPath) ? "" : $" SelectedItem=\"{{Binding {EscapeXml(selectedItemPath)}, Mode=TwoWay}}\"";
+        if (source is not null)
+        {
+            var dataMode = PreviewRowsLoader.ResolveDataMode(source);
+            TraceDocumentDebug(
+                "DATAGRID_EXPORT_DATA_MODE",
+                $"grid={control.Name}; source={source.Name}; sourceKind={source.SourceKind}; mode={dataMode}; columns={visibleFields.Count}; sourceConfigured={PreviewRowsLoader.CanLoad(source)}",
+                toOutput: false);
+        }
+
         if (source is not null && shouldGenerateRuntimeBindingForSource)
         {
             TraceDocumentDebug(
@@ -18204,6 +18560,11 @@ public partial class MainWindowViewModel : ObservableObject
                 "EXPORT_DATAGRID_ITEMSSOURCE_GENERATED",
                 $"grid={control.Name}; property={itemsSourcePath}; rowType={crudContext?.ItemTypeName ?? source.ItemTypeName}",
                 toOutput: false);
+            TraceDocumentDebug(
+                "EXPORT_DATAGRID_RUNTIME_BINDING_VALIDATED",
+                $"grid={control.Name}; itemsSourceProperty={itemsSourcePath}; rowType={crudContext?.ItemTypeName ?? source.ItemTypeName}; collectionInitialized={crudContext is not null}; loaderCalled={crudContext is not null}",
+                toOutput: false,
+                warning: crudContext is null || string.IsNullOrWhiteSpace(itemsSourcePath));
             if (crudContext is null || string.IsNullOrWhiteSpace(itemsSourcePath))
             {
                 TraceDocumentDebug(
@@ -18242,6 +18603,21 @@ public partial class MainWindowViewModel : ObservableObject
         var rowHeight = Math.Max(18, control.DataGridRowHeight);
         var headerHeight = Math.Max(24, control.DataGridHeaderHeight);
         var cellPadding = Math.Max(0, control.DataGridCellPadding);
+        var headerPadding = ResolveDataGridHeaderPadding(cellPadding, headerHeight, control.DataGridHeaderFontSize);
+        var rowCellPadding = ResolveDataGridCellPadding(cellPadding, rowHeight, control.DataGridRowFontSize);
+        var headerPaddingValue = ToDataGridThicknessValue(headerPadding);
+        var rowCellPaddingValue = ToDataGridThicknessValue(rowCellPadding);
+        TraceDocumentDebug(
+            "EXPORT_DATAGRID_VISUAL_STYLE_GENERATED",
+            $"grid={control.Name}; rowHeight={ToInvariant(rowHeight)}; cellPadding={rowCellPaddingValue}; headerPadding={headerPaddingValue}; fontSize={ToInvariant(control.DataGridRowFontSize)}; fontFamily={control.FontFamily}",
+            toOutput: false);
+        if (IsDataGridPaddingAdjusted(cellPadding, rowCellPadding))
+        {
+            TraceDocumentDebug(
+                "EXPORT_DATAGRID_CELL_PADDING_ADJUSTED",
+                $"grid={control.Name}; oldPadding={ToInvariant(cellPadding)}; newPadding={rowCellPaddingValue}; reason=vertical padding must fit RowHeight and FontSize",
+                toOutput: false);
+        }
         var headerBorderThickness = $"{(control.DataGridShowColumnLines ? "1" : "0")},{(control.DataGridShowRowLines ? "1" : "0")},0,{(control.DataGridShowRowLines ? "1" : "0")}";
         var cellBorderThickness = $"0,0,{(control.DataGridShowColumnLines ? "1" : "0")},{(control.DataGridShowRowLines ? "1" : "0")}";
         var gridLinesVisibility = (control.DataGridShowRowLines, control.DataGridShowColumnLines) switch
@@ -18323,7 +18699,7 @@ public partial class MainWindowViewModel : ObservableObject
         sb.AppendLine($"{Indent(dataGridIndent + 3)}<Setter Property=\"Foreground\" Value=\"{headerForeground}\" />");
         sb.AppendLine($"{Indent(dataGridIndent + 3)}<Setter Property=\"BorderBrush\" Value=\"{gridLineBrush}\" />");
         sb.AppendLine($"{Indent(dataGridIndent + 3)}<Setter Property=\"BorderThickness\" Value=\"{headerBorderThickness}\" />");
-        sb.AppendLine($"{Indent(dataGridIndent + 3)}<Setter Property=\"Padding\" Value=\"{ToInvariant(cellPadding)}\" />");
+        sb.AppendLine($"{Indent(dataGridIndent + 3)}<Setter Property=\"Padding\" Value=\"{headerPaddingValue}\" />");
         sb.AppendLine($"{Indent(dataGridIndent + 3)}<Setter Property=\"MinHeight\" Value=\"{ToInvariant(headerHeight)}\" />");
         sb.AppendLine($"{Indent(dataGridIndent + 3)}<Setter Property=\"FontSize\" Value=\"{ToInvariant(control.DataGridHeaderFontSize)}\" />");
         sb.AppendLine($"{Indent(dataGridIndent + 3)}<Setter Property=\"FontWeight\" Value=\"{EscapeXml(control.DataGridHeaderFontWeight)}\" />");
@@ -18332,9 +18708,10 @@ public partial class MainWindowViewModel : ObservableObject
         sb.AppendLine($"{Indent(dataGridIndent + 3)}<Setter Property=\"Foreground\" Value=\"{rowForeground}\" />");
         sb.AppendLine($"{Indent(dataGridIndent + 3)}<Setter Property=\"BorderBrush\" Value=\"{gridLineBrush}\" />");
         sb.AppendLine($"{Indent(dataGridIndent + 3)}<Setter Property=\"BorderThickness\" Value=\"{cellBorderThickness}\" />");
-        sb.AppendLine($"{Indent(dataGridIndent + 3)}<Setter Property=\"Padding\" Value=\"{ToInvariant(cellPadding)}\" />");
+        sb.AppendLine($"{Indent(dataGridIndent + 3)}<Setter Property=\"Padding\" Value=\"{rowCellPaddingValue}\" />");
         sb.AppendLine($"{Indent(dataGridIndent + 3)}<Setter Property=\"MinHeight\" Value=\"{ToInvariant(rowHeight)}\" />");
         sb.AppendLine($"{Indent(dataGridIndent + 3)}<Setter Property=\"HorizontalContentAlignment\" Value=\"{dataGridTextAlignment}\" />");
+        sb.AppendLine($"{Indent(dataGridIndent + 3)}<Setter Property=\"VerticalContentAlignment\" Value=\"Center\" />");
         sb.AppendLine($"{Indent(dataGridIndent + 2)}</Style>");
         sb.AppendLine($"{Indent(dataGridIndent + 2)}<Style Selector=\"DataGridCell:pointerover\">");
         sb.AppendLine($"{Indent(dataGridIndent + 3)}<Setter Property=\"Background\" Value=\"{hoverRowBackground}\" />");
@@ -18601,6 +18978,8 @@ public partial class MainWindowViewModel : ObservableObject
         var showFooter = control.ShowFooter && summaryFields.Count > 0;
         var sampleRowCount = Math.Clamp((int)Math.Floor(Math.Max(0, control.Height - headerHeight - 72) / Math.Max(18, rowHeight)), 3, 6);
         var borderThickness = Math.Max(0, control.BorderThickness);
+        var headerPadding = ToDataGridThicknessValue(ResolveDataGridHeaderPadding(cellPadding, headerHeight, control.DataGridHeaderFontSize));
+        var rowCellPadding = ToDataGridThicknessValue(ResolveDataGridCellPadding(cellPadding, rowHeight, control.DataGridRowFontSize));
 
         if (ShouldIncludeExportComments)
         {
@@ -18656,7 +19035,7 @@ public partial class MainWindowViewModel : ObservableObject
 
         if (exportGroupPanel)
         {
-            sb.AppendLine($"{Indent(indentLevel + 2)}<Border Grid.Row=\"{groupRowIndex}\" Background=\"{headerBackground}\" BorderBrush=\"{gridLineBrush}\" BorderThickness=\"0,0,0,1\" Padding=\"{ToInvariant(Math.Max(6, cellPadding))}\"{groupVisibility}>");
+            sb.AppendLine($"{Indent(indentLevel + 2)}<Border Grid.Row=\"{groupRowIndex}\" Background=\"{headerBackground}\" BorderBrush=\"{gridLineBrush}\" BorderThickness=\"0,0,0,1\" Padding=\"{headerPadding}\"{groupVisibility}>");
             if (groupedFields.Count > 0)
             {
                 sb.AppendLine($"{Indent(indentLevel + 3)}<StackPanel Orientation=\"Horizontal\" Spacing=\"6\">");
@@ -18678,7 +19057,7 @@ public partial class MainWindowViewModel : ObservableObject
             {
                 var field = fields[index];
                 var headerAlignment = BindingFieldModel.NormalizeAlignment(field.HeaderAlignment);
-                sb.AppendLine($"{Indent(indentLevel + 3)}<Border Grid.Column=\"{index}\" BorderBrush=\"{gridLineBrush}\" BorderThickness=\"0,0,1,1\" Padding=\"{ToInvariant(Math.Max(6, cellPadding))}\">");
+                sb.AppendLine($"{Indent(indentLevel + 3)}<Border Grid.Column=\"{index}\" BorderBrush=\"{gridLineBrush}\" BorderThickness=\"0,0,1,1\" Padding=\"{headerPadding}\">");
                 sb.AppendLine($"{Indent(indentLevel + 4)}<TextBlock Text=\"{EscapeXml(GetFieldDisplayHeader(field))}\" Foreground=\"{headerForeground}\" FontSize=\"{ToInvariant(control.DataGridHeaderFontSize)}\" FontWeight=\"{EscapeXml(control.DataGridHeaderFontWeight)}\" HorizontalAlignment=\"{headerAlignment}\" TextAlignment=\"{headerAlignment}\" TextTrimming=\"CharacterEllipsis\" />");
                 sb.AppendLine($"{Indent(indentLevel + 3)}</Border>");
             }
@@ -18715,7 +19094,7 @@ public partial class MainWindowViewModel : ObservableObject
                 var maxLines = Math.Max(0, field.MaxLines);
                 var maxLinesAttribute = maxLines > 0 ? $" MaxLines=\"{maxLines}\"" : "";
                 var sample = EscapeXml(GetVariantSampleValue(field, rowIndex));
-                sb.AppendLine($"{Indent(indentLevel + 4)}<Border Grid.Column=\"{columnIndex}\" BorderBrush=\"{gridLineBrush}\" BorderThickness=\"0,0,1,1\" Padding=\"{ToInvariant(Math.Max(6, cellPadding))}\">");
+                sb.AppendLine($"{Indent(indentLevel + 4)}<Border Grid.Column=\"{columnIndex}\" BorderBrush=\"{gridLineBrush}\" BorderThickness=\"0,0,1,1\" Padding=\"{rowCellPadding}\">");
                 sb.AppendLine($"{Indent(indentLevel + 5)}<TextBlock Text=\"{sample}\" Foreground=\"{rowForeground}\" FontSize=\"{ToInvariant(control.DataGridRowFontSize)}\" FontWeight=\"{EscapeXml(control.DataGridRowFontWeight)}\" HorizontalAlignment=\"{cellAlignment}\" TextAlignment=\"{cellAlignment}\" TextTrimming=\"{trimming}\" TextWrapping=\"{wrapping}\"{maxLinesAttribute} />");
                 sb.AppendLine($"{Indent(indentLevel + 4)}</Border>");
             }
@@ -18732,7 +19111,7 @@ public partial class MainWindowViewModel : ObservableObject
                 var summaryText = summaryFields.Any(summary => string.Equals(summary.Path, field.Path, StringComparison.OrdinalIgnoreCase))
                     ? BuildPortableSummaryText(field)
                     : "";
-                sb.AppendLine($"{Indent(indentLevel + 3)}<Border Grid.Column=\"{index}\" BorderBrush=\"{gridLineBrush}\" BorderThickness=\"0,1,1,0\" Padding=\"{ToInvariant(Math.Max(6, cellPadding))}\">");
+                sb.AppendLine($"{Indent(indentLevel + 3)}<Border Grid.Column=\"{index}\" BorderBrush=\"{gridLineBrush}\" BorderThickness=\"0,1,1,0\" Padding=\"{rowCellPadding}\">");
                 sb.AppendLine($"{Indent(indentLevel + 4)}<TextBlock Text=\"{EscapeXml(summaryText)}\" Foreground=\"{headerForeground}\" FontWeight=\"SemiBold\" TextTrimming=\"CharacterEllipsis\" />");
                 sb.AppendLine($"{Indent(indentLevel + 3)}</Border>");
             }
@@ -19052,6 +19431,12 @@ public partial class MainWindowViewModel : ObservableObject
             SourceConnectionString = source.SourceConnectionString,
             SourceSchemaName = source.SourceSchemaName,
             SourceQuery = source.SourceQuery,
+            PreviewRowMode = BindingSourceModel.NormalizePreviewRowMode(source.PreviewRowMode),
+            PreviewTopN = Math.Max(1, source.PreviewTopN),
+            PreviewSortColumn = source.PreviewSortColumn,
+            PreviewSortDirection = BindingSourceModel.NormalizePreviewSortDirection(source.PreviewSortDirection),
+            UseRealPreviewRowsIfAvailable = source.UseRealPreviewRowsIfAvailable,
+            AllowPreviewSampleFallback = source.AllowPreviewSampleFallback,
             Fields = source.Fields.Select(ToBindingFieldFileModel).ToList()
         };
     }
@@ -19147,7 +19532,13 @@ public partial class MainWindowViewModel : ObservableObject
             SourceTableName = sourceFile.SourceTableName,
             SourceConnectionString = sourceFile.SourceConnectionString,
             SourceSchemaName = string.IsNullOrWhiteSpace(sourceFile.SourceSchemaName) ? "dbo" : sourceFile.SourceSchemaName,
-            SourceQuery = sourceFile.SourceQuery
+            SourceQuery = sourceFile.SourceQuery,
+            PreviewRowMode = BindingSourceModel.NormalizePreviewRowMode(sourceFile.PreviewRowMode),
+            PreviewTopN = Math.Max(1, sourceFile.PreviewTopN),
+            PreviewSortColumn = sourceFile.PreviewSortColumn,
+            PreviewSortDirection = BindingSourceModel.NormalizePreviewSortDirection(sourceFile.PreviewSortDirection),
+            UseRealPreviewRowsIfAvailable = sourceFile.UseRealPreviewRowsIfAvailable,
+            AllowPreviewSampleFallback = sourceFile.AllowPreviewSampleFallback
         };
 
         foreach (var fieldFile in sourceFile.Fields)
@@ -20273,6 +20664,10 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(SelectedBindingPreviewFields));
         OnPropertyChanged(nameof(HasSelectedBindingPreview));
         OnPropertyChanged(nameof(SelectedBindingPreviewTitle));
+        OnPropertyChanged(nameof(SelectedBindingPreviewSortColumns));
+        OnPropertyChanged(nameof(SelectedBindingPreviewRowsStatus));
+        OnPropertyChanged(nameof(HasSelectedBindingPreviewRowsStatus));
+        OnPropertyChanged(nameof(SelectedBindingPreviewRowsModeSummary));
         OnPropertyChanged(nameof(HasGridColumnWidthEditor));
         OnPropertyChanged(nameof(SelectedGridColumnsForControl));
         OnPropertyChanged(nameof(SelectedGridColumnEditorTitle));
@@ -20794,6 +21189,18 @@ public partial class MainWindowViewModel : ObservableObject
     {
         if (_isApplyingDocument)
             return;
+
+        if (sender is BindingSourceModel previewSource
+            && e.PropertyName is nameof(BindingSourceModel.PreviewRowMode)
+                or nameof(BindingSourceModel.PreviewTopN)
+                or nameof(BindingSourceModel.PreviewSortColumn)
+                or nameof(BindingSourceModel.PreviewSortDirection))
+        {
+            TraceDocumentDebug(
+                "DATAGRID_PREVIEW_ROWS_MODE_CHANGED",
+                $"source={previewSource.Name}; mode={previewSource.PreviewRowMode}; topN={previewSource.PreviewTopN}; sort={previewSource.PreviewSortColumn} {previewSource.PreviewSortDirection}",
+                toOutput: false);
+        }
 
         RebuildImportedDllCatalog();
         RaiseBindingEditorProperties();
@@ -22162,6 +22569,11 @@ public partial class MainWindowViewModel : ObservableObject
         string FormClassName,
         string SourceName,
         string SourcePath);
+
+    private sealed record RuntimeDataGridSelfCheck(
+        string GridName,
+        string ItemsSourceProperty,
+        string ExpectedCollectionProperty);
 
     private sealed record ExportableInteraction(
         InteractionModel Interaction,

@@ -10,6 +10,11 @@ namespace FormDesigner.Models;
 /// </summary>
 public partial class BindingSourceModel : ObservableObject
 {
+    public const string PreviewRowModeSchemaOnly = "SchemaOnly";
+    public const string PreviewRowModeSampleRows = "SampleRows";
+    public const string PreviewRowModeTopN = "TopN";
+    public const string PreviewRowModeAllRows = "AllRows";
+
     [ObservableProperty]
     private string id = Guid.NewGuid().ToString("N");
 
@@ -46,6 +51,30 @@ public partial class BindingSourceModel : ObservableObject
     [ObservableProperty]
     private string sourceQuery = "";
 
+    [ObservableProperty]
+    private string previewRowMode = PreviewRowModeTopN;
+
+    [ObservableProperty]
+    private int previewTopN = 50;
+
+    [ObservableProperty]
+    private string previewSortColumn = "";
+
+    [ObservableProperty]
+    private string previewSortDirection = BindingFieldModel.SortDirectionAscending;
+
+    [ObservableProperty]
+    private bool useRealPreviewRowsIfAvailable = true;
+
+    [ObservableProperty]
+    private bool allowPreviewSampleFallback = true;
+
+    [ObservableProperty]
+    private string previewRowsDataKind = "";
+
+    [ObservableProperty]
+    private string previewRowsStatus = "";
+
     public ObservableCollection<BindingFieldModel> Fields { get; } = new();
 
     /// <summary>
@@ -67,7 +96,15 @@ public partial class BindingSourceModel : ObservableObject
             SourceTableName = SourceTableName,
             SourceConnectionString = SourceConnectionString,
             SourceSchemaName = SourceSchemaName,
-            SourceQuery = SourceQuery
+            SourceQuery = SourceQuery,
+            PreviewRowMode = NormalizePreviewRowMode(PreviewRowMode),
+            PreviewTopN = Math.Max(1, PreviewTopN),
+            PreviewSortColumn = PreviewSortColumn,
+            PreviewSortDirection = NormalizePreviewSortDirection(PreviewSortDirection),
+            UseRealPreviewRowsIfAvailable = UseRealPreviewRowsIfAvailable,
+            AllowPreviewSampleFallback = AllowPreviewSampleFallback,
+            PreviewRowsDataKind = PreviewRowsDataKind,
+            PreviewRowsStatus = PreviewRowsStatus
         };
 
         foreach (var field in Fields)
@@ -82,5 +119,23 @@ public partial class BindingSourceModel : ObservableObject
     public override string ToString()
     {
         return $"{Name} ({Path})";
+    }
+
+    public static string NormalizePreviewRowMode(string? value)
+    {
+        return value switch
+        {
+            PreviewRowModeSchemaOnly => PreviewRowModeSchemaOnly,
+            PreviewRowModeSampleRows => PreviewRowModeSampleRows,
+            PreviewRowModeAllRows => PreviewRowModeAllRows,
+            _ => PreviewRowModeTopN
+        };
+    }
+
+    public static string NormalizePreviewSortDirection(string? value)
+    {
+        return string.Equals(value, BindingFieldModel.SortDirectionDescending, StringComparison.OrdinalIgnoreCase)
+            ? BindingFieldModel.SortDirectionDescending
+            : BindingFieldModel.SortDirectionAscending;
     }
 }

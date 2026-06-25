@@ -77,6 +77,11 @@ internal static class Program
             new("DataGridExportBuildsWithoutManualFix", ConfigureRealDataGridExport, AssertDataGridExportBuildsWithoutManualFix, RequiresRealDataGrid: true),
             new("DataGridHeaderTemplateDoesNotGenerateEmptyBinding", ConfigureDataGridBindingSourceWorkflow, AssertDataGridHeaderTemplateDoesNotGenerateEmptyBinding, RequiresRealDataGrid: true),
             new("DataGridExportSettingsForSortResizeScroll", ConfigureRealDataGridExport, AssertDataGridExportSettingsForSortResizeScroll, RequiresRealDataGrid: true),
+            new("DataGridCellPaddingDoesNotExceedRowHeight", ConfigureRealDataGridExport, AssertDataGridCellPaddingDoesNotExceedRowHeight, RequiresRealDataGrid: true),
+            new("ExportedDataGridDefaultCellPaddingIsCompact", ConfigureRealDataGridExport, AssertExportedDataGridDefaultCellPaddingIsCompact, RequiresRealDataGrid: true),
+            new("ExportedDataGridRowsTextNotClippedByStyle", ConfigureRealDataGridExport, AssertExportedDataGridRowsTextNotClippedByStyle, RequiresRealDataGrid: true),
+            new("ExportedDataGridDoesNotRequireInterFont", ConfigureRealDataGridExport, AssertExportedDataGridDoesNotRequireInterFont, RequiresRealDataGrid: true),
+            new("PreviewExportDataGridCellStyleMatch", ConfigureRealDataGridExport, AssertPreviewExportDataGridCellStyleMatch, RequiresRealDataGrid: true),
             new("DataGridColumnWrapUsesTemplateColumn", ConfigureDataGridColumnWrapUsesTemplateColumn, AssertDataGridColumnWrapUsesTemplateColumn, RequiresRealDataGrid: true),
             new("DataGridColumnTrimmingExportedCorrectly", ConfigureDataGridColumnTrimmingExportedCorrectly, AssertDataGridColumnTrimmingExportedCorrectly, RequiresRealDataGrid: true),
             new("DataGridGroupingDoesNotGenerateInvalidBindings", ConfigureDataGridGroupingDoesNotGenerateInvalidBindings, AssertDataGridGroupingDoesNotGenerateInvalidBindings, RequiresRealDataGrid: true),
@@ -85,6 +90,15 @@ internal static class Program
             new("SqlDataGridExportGeneratesItemsSourceProperty", ConfigureSqlDataGridExport, AssertSqlDataGridExportGeneratesItemsSourceProperty, RequiresRealDataGrid: true),
             new("SqlDataGridExportGeneratesRowDto", ConfigureSqlDataGridExport, AssertSqlDataGridExportGeneratesRowDto, RequiresRealDataGrid: true),
             new("SqlDataGridPreviewRuntimeRowsMatch", ConfigureSqlDataGridPreviewRuntimeRowsMatch, AssertSqlDataGridPreviewRuntimeRowsMatch, RequiresRealDataGrid: true),
+            new("SqlDataGridWithoutConnectionDoesNotPretendRealData", ConfigureUnconfiguredSqlDataGridDemoRows, AssertSqlDataGridWithoutConnectionDoesNotPretendRealData, RequiresRealDataGrid: true),
+            new("DemoDataPreviewExportsDemoRows", ConfigureUnconfiguredSqlDataGridDemoRows, AssertDemoDataPreviewExportsDemoRows, RequiresRealDataGrid: true),
+            new("NoDataPreviewExportsEmptyCollectionWithWarning", ConfigureUnconfiguredSqlDataGridNoData, AssertNoDataPreviewExportsEmptyCollectionWithWarning, RequiresRealDataGrid: true),
+            new("PreviewRuntimeDataModeMatches", ConfigureUnconfiguredSqlDataGridDemoRows, AssertPreviewRuntimeDataModeMatches, RequiresRealDataGrid: true),
+            new("ExportedDataGridShowsRowsWhenDemoDataEnabled", ConfigureUnconfiguredSqlDataGridDemoRows, AssertExportedDataGridShowsRowsWhenDemoDataEnabled, RequiresRealDataGrid: true),
+            new("ExportedDataGridShowsEmptyWithClearWarningWhenNoSourceAndNoDemo", ConfigureUnconfiguredSqlDataGridNoData, AssertExportedDataGridShowsEmptyWithClearWarningWhenNoSourceAndNoDemo, RequiresRealDataGrid: true),
+            new("GeneratedDataGridAppAxamlIncludesDataGridTheme", ConfigureUnconfiguredSqlDataGridDemoRows, AssertGeneratedDataGridAppAxamlIncludesDataGridTheme, RequiresRealDataGrid: true),
+            new("GeneratedDataGridRuntimeSelfCheckGenerated", ConfigureUnconfiguredSqlDataGridDemoRows, AssertGeneratedDataGridRuntimeSelfCheckGenerated, RequiresRealDataGrid: true),
+            new("GeneratedDataGridWithFilterAndGroupPanelStillShowsRows", ConfigureUnconfiguredSqlDataGridDemoRows, AssertGeneratedDataGridWithFilterAndGroupPanelStillShowsRows, RequiresRealDataGrid: true),
             new("SqlDataGridAutoPromotesVisualExportToRuntimeRows", ConfigureSqlDataGridAutoPromotesVisualExportToRuntimeRows, AssertSqlDataGridAutoPromotesVisualExportToRuntimeRows, RequiresRealDataGrid: true),
             new("MultiFormSqlDataGridExportBuildsWithDistinctDtos", ConfigureMultiFormSqlDataGridExportBuildsWithDistinctDtos, AssertMultiFormSqlDataGridExportBuildsWithDistinctDtos, RequiresRealDataGrid: true),
             new("FiveFormSqlDataGridsExportBuilds", ConfigureFiveFormSqlDataGridsExportBuilds, AssertFiveFormSqlDataGridsExportBuilds, RequiresRealDataGrid: true),
@@ -122,6 +136,10 @@ internal static class Program
             new("ImportManyDllsDoesNotLoadPreviewRowsAutomatically", ConfigureManyTableDllImport, AssertImportManyDllsDoesNotLoadPreviewRowsAutomatically),
             new("RemoveDllReleasesMetadataAndCaches", ConfigureManyTableDllImport, AssertRemoveDllReleasesMetadataAndCaches),
             new("DataGridBindingUsesFullDllSourceKey", ConfigureLinqToSqlDllImport, AssertDataGridBindingUsesFullDllSourceKey),
+            new("DllTablePreviewDoesNotUseFakeRowsWhenRealRowsAvailable", ConfigureDllTablePreviewRealRows, AssertDllTablePreviewDoesNotUseFakeRowsWhenRealRowsAvailable),
+            new("DllTablePreviewClearlyMarksSampleRows", ConfigureLinqToSqlDllImport, AssertDllTablePreviewClearlyMarksSampleRows),
+            new("DllTablePreviewTopNWorks", ConfigureDllTablePreviewTopN, AssertDllTablePreviewTopNWorks),
+            new("DllTablePreviewSortThenTopNWorks", ConfigureDllTablePreviewSortThenTopN, AssertDllTablePreviewSortThenTopNWorks),
             new("GeneratedNugetConfigContainsAllowInsecureConnectionsForHttpSource", ConfigureSimpleFormExport, AssertGeneratedNugetConfigContainsAllowInsecureConnectionsForHttpSource),
             new("ExportGeneratesNugetConfigInProjectRoot", ConfigureSimpleFormExport, AssertExportGeneratesNugetConfigInProjectRoot),
             new("ExportedNugetConfigContainsNugetOrgByDefault", ConfigureSimpleFormExport, AssertExportedNugetConfigContainsNugetOrgByDefault),
@@ -953,7 +971,7 @@ internal static class Program
     private static void AssertDataGridExportBuildsWithoutManualFix(SmokeContext context)
     {
         RequireContains(context.Xaml, "<DataGridTextColumn Header=\"Title\" Binding=\"{Binding Title}\"", "Generated AXAML should be build-ready without manual column fixes.");
-        RequireContains(context.CSharp, "DataContext = new MainWindowViewModel();", "Generated code-behind should attach generated ViewModel.");
+        RequireGeneratedMainWindowViewModelAssignment(context, "Generated code-behind should attach generated ViewModel.");
         RequireNotContains(context.Xaml, "{Binding }", "Generated AXAML should not contain empty bindings.");
         RequireNotContains(context.Xaml, "x:DataType=\"\"", "Generated AXAML should not contain empty x:DataType.");
     }
@@ -981,6 +999,53 @@ internal static class Program
         RequireContains(context.Xaml, "SortMemberPath=\"Title\"", "Text columns should export SortMemberPath for sorting.");
         RequireContains(context.Xaml, "CanUserResize=\"True\"", "Columns should preserve per-column resize setting.");
         RequireContains(context.Xaml, "CanUserSort=\"True\"", "Columns should preserve per-column sort setting.");
+    }
+
+    private static void AssertDataGridCellPaddingDoesNotExceedRowHeight(SmokeContext context)
+    {
+        RequireContains(context.Xaml, "RowHeight=\"36\"", "Baseline DataGrid export should keep fixed row height for non-wrapped cells.");
+        RequireContains(context.Xaml, "FontSize=\"13\"", "Baseline DataGrid export should use row font size 13.");
+        RequireContains(context.Xaml, "<Setter Property=\"Padding\" Value=\"10,4\" />", "DataGrid cell padding should preserve horizontal room without clipping row text.");
+        RequireNotContains(context.Xaml, "<Setter Property=\"Padding\" Value=\"14\" />", "DataGrid export must not use uniform 14px cell/header padding with RowHeight=36.");
+        RequireTraceEvent(context, "EXPORT_DATAGRID_VISUAL_STYLE_GENERATED");
+        RequireTraceEvent(context, "EXPORT_DATAGRID_CELL_PADDING_ADJUSTED");
+    }
+
+    private static void AssertExportedDataGridDefaultCellPaddingIsCompact(SmokeContext context)
+    {
+        RequireContains(context.Xaml, "<Style Selector=\"DataGridColumnHeader\">", "DataGrid export should style column headers.");
+        RequireContains(context.Xaml, "<Setter Property=\"Padding\" Value=\"10,6\" />", "DataGrid header padding should be compact vertically.");
+        RequireContains(context.Xaml, "<Style Selector=\"DataGridCell\">", "DataGrid export should style cells.");
+        RequireContains(context.Xaml, "<Setter Property=\"Padding\" Value=\"10,4\" />", "DataGrid cell padding should be compact vertically.");
+    }
+
+    private static void AssertExportedDataGridRowsTextNotClippedByStyle(SmokeContext context)
+    {
+        const double rowHeight = 36;
+        const double fontSize = 13;
+        const double verticalPadding = 4;
+        if (rowHeight - (verticalPadding * 2) < fontSize + 4)
+            throw new InvalidOperationException("Generated DataGrid cell style leaves too little vertical text area.");
+
+        RequireContains(context.Xaml, "<Setter Property=\"MinHeight\" Value=\"36\" />", "DataGrid rows/cells should keep a 36px minimum height.");
+        RequireContains(context.Xaml, "<Setter Property=\"VerticalContentAlignment\" Value=\"Center\" />", "DataGrid cells should vertically center content when supported by Avalonia.");
+    }
+
+    private static void AssertExportedDataGridDoesNotRequireInterFont(SmokeContext context)
+    {
+        using var export = ExportToTemporaryProject(context);
+        var projectFile = Directory.GetFiles(export.Path, "*.csproj").Single();
+        var programFile = Path.Combine(export.Path, "Program.cs");
+        RequireFileExists(programFile, "Exported project should include Program.cs.");
+        RequireContains(File.ReadAllText(projectFile, Encoding.UTF8), "Avalonia.Fonts.Inter", "Generated project should include Inter font package when exported controls request Inter.");
+        RequireContains(File.ReadAllText(programFile, Encoding.UTF8), ".WithInterFont()", "Generated project should register Inter so runtime does not depend on a system-installed font.");
+    }
+
+    private static void AssertPreviewExportDataGridCellStyleMatch(SmokeContext context)
+    {
+        var comparison = context.ViewModel.ComparePreviewAndExportForActiveDocument("PreviewExportDataGridCellStyleMatch");
+        RequireNoPreviewExportMismatches(comparison);
+        RequireContains(context.Xaml, "<Setter Property=\"Padding\" Value=\"10,4\" />", "Preview/export DataGrid cell style should use compact row padding.");
     }
 
     private static void ConfigureDataGridColumnWrapUsesTemplateColumn(MainWindowViewModel vm)
@@ -1131,7 +1196,7 @@ internal static class Program
     private static void AssertSqlDataGridPreviewRuntimeRowsMatch(SmokeContext context)
     {
         RequireContains(context.Xaml, "ItemsSource=\"{Binding RuntimeRowsView}\"", "SQL DataGrid runtime should bind to generated ViewModel collection.");
-        RequireContains(context.CSharp, "DataContext = new MainWindowViewModel();", "Generated code-behind should create a runtime ViewModel.");
+        RequireGeneratedMainWindowViewModelAssignment(context, "Generated code-behind should create a runtime ViewModel.");
         RequireContains(context.CSharp, "public ObservableCollection<SqlRow> RuntimeRows { get; } = new();", "Generated ViewModel should expose source collection.");
         RequireContains(context.CSharp, "public ObservableCollection<SqlRow> RuntimeRowsView { get; } = new();", "Generated ViewModel should expose DataGrid view collection.");
         RequireContains(context.CSharp, "SeedSqlRow();", "Generated ViewModel constructor should seed SQL sample rows.");
@@ -1152,6 +1217,113 @@ internal static class Program
         RequireGeneratedViewModelCollectionHasRows(context, "RuntimeRowsView", 1);
     }
 
+    private static void ConfigureUnconfiguredSqlDataGridDemoRows(MainWindowViewModel vm)
+    {
+        var source = UnconfiguredSqlSource(allowDemoRows: true);
+        vm.BindingSources.Add(source);
+        vm.DataGridExportMode = MainWindowViewModel.DataGridExportModeReal;
+        var grid = DataGrid("DataGrid1", source.Id, 32, 42, 720, 360);
+        grid.ShowFilterRow = true;
+        grid.ShowGroupPanel = true;
+        vm.Controls.Add(grid);
+        vm.LoadPreviewRowsForBindingSourceAsync(source).GetAwaiter().GetResult();
+    }
+
+    private static void ConfigureUnconfiguredSqlDataGridNoData(MainWindowViewModel vm)
+    {
+        var source = UnconfiguredSqlSource(allowDemoRows: false);
+        source.PreviewRowMode = BindingSourceModel.PreviewRowModeSchemaOnly;
+        vm.BindingSources.Add(source);
+        vm.DataGridExportMode = MainWindowViewModel.DataGridExportModeReal;
+        var grid = DataGrid("DataGrid1", source.Id, 32, 42, 720, 360);
+        grid.ShowFilterRow = true;
+        grid.ShowGroupPanel = true;
+        vm.Controls.Add(grid);
+        vm.LoadPreviewRowsForBindingSourceAsync(source).GetAwaiter().GetResult();
+    }
+
+    private static void AssertSqlDataGridWithoutConnectionDoesNotPretendRealData(SmokeContext context)
+    {
+        RequireTraceEvent(context, "DATAGRID_PREVIEW_DATA_MODE");
+        RequireTraceEvent(context, "DATAGRID_EXPORT_DATA_MODE");
+        RequireTraceEvent(context, "EXPORT_DATAGRID_SOURCE_NOT_CONFIGURED_WARNING");
+        RequireContains(context.CSharp, "private const string SqlRowSqlConnectionString = \"TODO: set SQL Server connection string\";", "Unconfigured SQL export should generate a safe TODO connection string.");
+        RequireContains(context.CSharp, "private const string SqlRowSqlCommandText = @\"SELECT * FROM [dbo].[dbo]\";", "Unconfigured SQL export should make placeholder SQL explicit.");
+        RequireNotContains(context.CSharp, "Server=.;Database=", "Unconfigured SQL export must not pretend that a real connection exists.");
+    }
+
+    private static void AssertDemoDataPreviewExportsDemoRows(SmokeContext context)
+    {
+        RequireTraceEvent(context, "EXPORT_DATAGRID_DEMO_ROWS_GENERATED");
+        RequireTraceEvent(context, "EXPORT_DATAGRID_RUNTIME_BINDING_VALIDATED");
+        RequireContains(context.Xaml, "ItemsSource=\"{Binding SqlSourceView}\"", "Demo DataGrid runtime should bind to the generated demo collection.");
+        RequireGeneratedMainWindowViewModelAssignment(context, "Demo DataGrid runtime should assign DataContext.");
+        RequireContains(context.CSharp, "SeedSqlRow();", "Demo DataGrid runtime should seed rows.");
+        RequireContains(context.CSharp, "SqlSource.Add(new SqlRow", "Demo DataGrid runtime should add sample rows.");
+        RequireContains(context.CSharp, "Field1 = 1", "Demo rows should use the same numeric demo generator as Preview.");
+        RequireGeneratedViewModelCollectionHasRows(context, "SqlSourceView", 1);
+    }
+
+    private static void AssertNoDataPreviewExportsEmptyCollectionWithWarning(SmokeContext context)
+    {
+        RequireTraceEvent(context, "EXPORT_DATAGRID_EMPTY_COLLECTION_GENERATED");
+        RequireTraceEvent(context, "EXPORT_DATAGRID_SOURCE_NOT_CONFIGURED_WARNING");
+        RequireContains(context.Xaml, "ItemsSource=\"{Binding SqlSourceView}\"", "NoData export should still expose an explicit empty collection binding.");
+        RequireContains(context.CSharp, "public ObservableCollection<SqlRow> SqlSource { get; } = new();", "NoData export should create the source collection.");
+        RequireNotContains(context.CSharp, "SqlSource.Add(new SqlRow", "NoData export should not silently seed demo rows.");
+        RequireGeneratedViewModelCollectionRowCount(context, "SqlSourceView", expectedRows: 0);
+    }
+
+    private static void AssertPreviewRuntimeDataModeMatches(SmokeContext context)
+    {
+        RequireTraceEvent(context, "DATAGRID_PREVIEW_DATA_MODE");
+        RequireTraceEvent(context, "DATAGRID_EXPORT_DATA_MODE");
+        RequireTraceEvent(context, "EXPORT_DATAGRID_DEMO_ROWS_GENERATED");
+        RequireGeneratedViewModelCollectionHasRows(context, "SqlSourceView", 1);
+    }
+
+    private static void AssertExportedDataGridShowsRowsWhenDemoDataEnabled(SmokeContext context)
+    {
+        RequireContains(context.Xaml, "<DataGrid", "Demo DataGrid should export a real runtime DataGrid.");
+        RequireContains(context.Xaml, "ItemsSource=\"{Binding SqlSourceView}\"", "Demo DataGrid should have runtime ItemsSource.");
+        RequireContains(context.CSharp, "RUNTIME_DATAGRID_COLLECTION_CREATED", "Generated runtime should trace DataGrid collection rows.");
+        RequireGeneratedViewModelCollectionHasRows(context, "SqlSourceView", 6);
+    }
+
+    private static void AssertExportedDataGridShowsEmptyWithClearWarningWhenNoSourceAndNoDemo(SmokeContext context)
+    {
+        RequireTraceEvent(context, "EXPORT_DATAGRID_EMPTY_COLLECTION_GENERATED");
+        RequireTraceEvent(context, "EXPORT_DATAGRID_SOURCE_NOT_CONFIGURED_WARNING");
+        RequireContains(context.CSharp, "SeedSqlRow();", "NoData export keeps an explicit loader hook.");
+        RequireGeneratedViewModelCollectionRowCount(context, "SqlSourceView", expectedRows: 0);
+    }
+
+    private static void AssertGeneratedDataGridAppAxamlIncludesDataGridTheme(SmokeContext context)
+    {
+        using var export = ExportToTemporaryProject(context);
+        var appXamlPath = Path.Combine(export.Path, "App.axaml");
+        RequireFileExists(appXamlPath, "Exported project should include App.axaml.");
+        var appXaml = File.ReadAllText(appXamlPath, Encoding.UTF8);
+        RequireContains(appXaml, "avares://Avalonia.Controls.DataGrid/Themes/Fluent.xaml", "Real DataGrid exported app should include Avalonia.Controls.DataGrid Fluent theme.");
+    }
+
+    private static void AssertGeneratedDataGridRuntimeSelfCheckGenerated(SmokeContext context)
+    {
+        RequireTraceEvent(context, "EXPORT_DATAGRID_RUNTIME_SELF_CHECK_GENERATED");
+        RequireContains(context.CSharp, "RUNTIME_DATAGRID_ATTACHED", "Generated real DataGrid runtime should log attached ItemsSource diagnostics.");
+        RequireContains(context.CSharp, "RUNTIME_DATAGRID_BINDING_FAILED", "Generated real DataGrid runtime should log binding failures.");
+        RequireContains(context.CSharp, "this.FindControl<DataGrid>(\"DataGrid1\")", "Generated runtime self-check should inspect the exported DataGrid control.");
+    }
+
+    private static void AssertGeneratedDataGridWithFilterAndGroupPanelStillShowsRows(SmokeContext context)
+    {
+        RequireContains(context.Xaml, "RowDefinitions=\"Auto,Auto,*\"", "DataGrid host should keep a row area after group and filter rows.");
+        RequireContains(context.Xaml, "Grid.Row=\"2\"", "DataGrid should be placed in the star-sized row below group/filter rows.");
+        RequireContains(context.Xaml, "ItemsSource=\"{Binding SqlSourceView}\"", "DataGrid with group/filter host should still bind runtime rows.");
+        RequireContains(context.CSharp, "Field1Filter", "Filter bindings should exist but stay empty by default.");
+        RequireGeneratedViewModelCollectionHasRows(context, "SqlSourceView", 1);
+    }
+
     private static void ConfigureSqlDataGridAutoPromotesVisualExportToRuntimeRows(MainWindowViewModel vm)
     {
         var source = SqlRuntimeMismatchSource("sql-auto-runtime-source", "AutoRows", "SqlRow");
@@ -1164,7 +1336,7 @@ internal static class Program
     {
         RequireContains(context.Xaml, "<DataGrid", "SQL source-backed DataGrid should be promoted from visual export to real runtime DataGrid.");
         RequireContains(context.Xaml, "ItemsSource=\"{Binding AutoRowsView}\"", "Auto-promoted SQL DataGrid should have a runtime ItemsSource.");
-        RequireContains(context.CSharp, "DataContext = new MainWindowViewModel();", "Auto-promoted SQL DataGrid should generate and assign DataContext.");
+        RequireGeneratedMainWindowViewModelAssignment(context, "Auto-promoted SQL DataGrid should generate and assign DataContext.");
         RequireContains(context.CSharp, "public ObservableCollection<SqlRow> AutoRows { get; } = new();", "Auto-promoted SQL DataGrid should generate source collection.");
         RequireContains(context.CSharp, "public ObservableCollection<SqlRow> AutoRowsView { get; } = new();", "Auto-promoted SQL DataGrid should generate view collection.");
         RequireContains(context.CSharp, "SeedSqlRow();", "Auto-promoted SQL DataGrid should seed runtime rows.");
@@ -1806,6 +1978,92 @@ internal static class Program
         {
             throw new InvalidOperationException($"DataGrid DLL binding should use full source key, got {table.SourceKey}.");
         }
+    }
+
+    private static void ConfigureDllTablePreviewRealRows(MainWindowViewModel vm)
+    {
+        var assemblyPath = CreateLinqToSqlPreviewRowsAssembly(
+            "SmokePreviewOrders",
+            "Smoke.Data.Preview",
+            "OrderRow",
+            "dbo.Orders",
+            rowCount: 12);
+        var imported = vm.ImportBindingSourcesFromAssembly(assemblyPath);
+        if (imported <= 0)
+            throw new InvalidOperationException("Expected preview rows DLL to import at least one source.");
+
+        var source = vm.BindingSources.Single(source => source.SourceTypeFullName == "Smoke.Data.Preview.OrderRow");
+        source.PreviewRowMode = BindingSourceModel.PreviewRowModeTopN;
+        source.PreviewTopN = 50;
+    }
+
+    private static void AssertDllTablePreviewDoesNotUseFakeRowsWhenRealRowsAvailable(SmokeContext context)
+    {
+        var source = context.ViewModel.BindingSources.Single(source => source.SourceTypeFullName == "Smoke.Data.Preview.OrderRow");
+        var rows = context.ViewModel.LoadPreviewRowsForBindingSourceAsync(source).GetAwaiter().GetResult();
+        if (rows.Count != 12)
+            throw new InvalidOperationException($"Expected 12 real DLL preview rows, got {rows.Count}.");
+
+        if (!rows[0].TryGetValue("Name", out var firstName) || firstName != "Real order 001")
+            throw new InvalidOperationException($"DLL preview should display real row values, got '{firstName}'.");
+
+        if (string.Equals(source.PreviewRowsDataKind, "SampleRows", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Real DLL preview rows must not be marked as sample rows.");
+
+        RequireTraceEvent(context, "DATAGRID_PREVIEW_REAL_ROWS_APPLIED");
+    }
+
+    private static void AssertDllTablePreviewClearlyMarksSampleRows(SmokeContext context)
+    {
+        var source = context.ViewModel.BindingSources.Single(source => source.SourceTypeFullName == "Smoke.Data.Customers.Customer");
+        source.PreviewRowMode = BindingSourceModel.PreviewRowModeTopN;
+        source.PreviewTopN = 10;
+
+        var rows = context.ViewModel.LoadPreviewRowsForBindingSourceAsync(source).GetAwaiter().GetResult();
+        if (rows.Count == 0)
+            throw new InvalidOperationException("Sample fallback should still produce limited preview rows when enabled.");
+
+        if (!string.Equals(source.PreviewRowsDataKind, "SampleRows", StringComparison.OrdinalIgnoreCase)
+            || !source.PreviewRowsStatus.Contains("demo rows", StringComparison.OrdinalIgnoreCase)
+            || !source.PreviewRowsStatus.Contains("Причина", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException($"Sample fallback should be clearly marked. DataKind={source.PreviewRowsDataKind}; Status={source.PreviewRowsStatus}");
+        }
+    }
+
+    private static void ConfigureDllTablePreviewTopN(MainWindowViewModel vm)
+    {
+        ConfigureDllTablePreviewRealRows(vm);
+        var source = vm.BindingSources.Single(source => source.SourceTypeFullName == "Smoke.Data.Preview.OrderRow");
+        source.PreviewTopN = 5;
+    }
+
+    private static void AssertDllTablePreviewTopNWorks(SmokeContext context)
+    {
+        var source = context.ViewModel.BindingSources.Single(source => source.SourceTypeFullName == "Smoke.Data.Preview.OrderRow");
+        var rows = context.ViewModel.LoadPreviewRowsForBindingSourceAsync(source).GetAwaiter().GetResult();
+        if (rows.Count != 5)
+            throw new InvalidOperationException($"TopN should limit DLL preview rows to 5, got {rows.Count}.");
+    }
+
+    private static void ConfigureDllTablePreviewSortThenTopN(MainWindowViewModel vm)
+    {
+        ConfigureDllTablePreviewRealRows(vm);
+        var source = vm.BindingSources.Single(source => source.SourceTypeFullName == "Smoke.Data.Preview.OrderRow");
+        source.PreviewSortColumn = "CreatedAt";
+        source.PreviewSortDirection = BindingFieldModel.SortDirectionDescending;
+        source.PreviewTopN = 3;
+    }
+
+    private static void AssertDllTablePreviewSortThenTopNWorks(SmokeContext context)
+    {
+        var source = context.ViewModel.BindingSources.Single(source => source.SourceTypeFullName == "Smoke.Data.Preview.OrderRow");
+        var rows = context.ViewModel.LoadPreviewRowsForBindingSourceAsync(source).GetAwaiter().GetResult();
+        if (rows.Count != 3)
+            throw new InvalidOperationException($"Sort + TopN should return 3 rows, got {rows.Count}.");
+
+        if (!rows[0].TryGetValue("Name", out var firstName) || firstName != "Real order 012")
+            throw new InvalidOperationException($"Sort should be applied before TopN. First row: {firstName}");
     }
 
     private static void AssertGeneratedNugetConfigContainsAllowInsecureConnectionsForHttpSource(SmokeContext context)
@@ -3941,6 +4199,30 @@ internal static class Program
         return source;
     }
 
+    private static BindingSourceModel UnconfiguredSqlSource(bool allowDemoRows)
+    {
+        var source = new BindingSourceModel
+        {
+            Id = allowDemoRows ? "sql-unconfigured-demo-source" : "sql-unconfigured-empty-source",
+            Name = "SqlSource",
+            Path = "SqlSource",
+            ItemTypeName = "SqlRow",
+            Description = "SQL source selected in UI, but connection string, table and query are not configured.",
+            SourceKind = "SqlServer",
+            SourceConnectionString = "",
+            SourceSchemaName = "dbo",
+            SourceTableName = "",
+            SourceQuery = "",
+            PreviewRowMode = allowDemoRows ? BindingSourceModel.PreviewRowModeTopN : BindingSourceModel.PreviewRowModeSchemaOnly,
+            PreviewTopN = 6,
+            AllowPreviewSampleFallback = allowDemoRows
+        };
+        source.Fields.Add(Field("Колонка 1", "Field1", "1", "int", "*"));
+        source.Fields.Add(Field("Колонка 2", "Field2", "2", "int", "*"));
+        source.Fields.Add(Field("Колонка 3", "Field3", "3", "int", "*"));
+        return source;
+    }
+
     private static BindingSourceModel DllOrdersSource()
     {
         var source = new BindingSourceModel
@@ -4482,7 +4764,7 @@ internal static class Program
             File.WriteAllText(Path.Combine(context.ProjectPath, "MainWindow.axaml"), context.Xaml, Encoding.UTF8);
         if (!File.Exists(Path.Combine(context.ProjectPath, "MainWindow.axaml.cs")))
             File.WriteAllText(Path.Combine(context.ProjectPath, "MainWindow.axaml.cs"), context.CSharp, Encoding.UTF8);
-        File.WriteAllText(Path.Combine(context.ProjectPath, "App.axaml"), BuildAppXaml(context.ViewModel.ExportProjectNamespace), Encoding.UTF8);
+        File.WriteAllText(Path.Combine(context.ProjectPath, "App.axaml"), BuildAppXaml(context.ViewModel.ExportProjectNamespace, context.Scenario.RequiresRealDataGrid), Encoding.UTF8);
         File.WriteAllText(Path.Combine(context.ProjectPath, "App.axaml.cs"), BuildAppCode(context.ViewModel.ExportProjectNamespace), Encoding.UTF8);
         File.WriteAllText(Path.Combine(context.ProjectPath, "Program.cs"), BuildProgramCode(context.ViewModel.ExportProjectNamespace), Encoding.UTF8);
         File.WriteAllText(Path.Combine(context.ProjectPath, $"{context.Scenario.Name}.csproj"), BuildProjectFile(context), Encoding.UTF8);
@@ -4547,14 +4829,18 @@ internal static class Program
 ";
     }
 
-    private static string BuildAppXaml(string ns)
+    private static string BuildAppXaml(string ns, bool includeDataGridTheme)
     {
+        var dataGridStyleInclude = includeDataGridTheme
+            ? "    <StyleInclude Source=\"avares://Avalonia.Controls.DataGrid/Themes/Fluent.xaml\" />\n"
+            : "";
         return $@"<Application xmlns=""https://github.com/avaloniaui""
              xmlns:x=""http://schemas.microsoft.com/winfx/2006/xaml""
              x:Class=""{ns}.App""
              RequestedThemeVariant=""Default"">
   <Application.Styles>
     <FluentTheme />
+{dataGridStyleInclude.TrimEnd()}
   </Application.Styles>
 </Application>
 ";
@@ -4656,6 +4942,20 @@ Diagnostics:
 
     private static void RequireGeneratedViewModelCollectionHasRows(SmokeContext context, string propertyName, int minimumRows)
     {
+        var rowCount = GetGeneratedViewModelCollectionRowCount(context, propertyName);
+        if (rowCount < minimumRows)
+            throw new InvalidOperationException($"Generated runtime DataGrid collection is empty: {propertyName} rows={rowCount}, expected at least {minimumRows}.");
+    }
+
+    private static void RequireGeneratedViewModelCollectionRowCount(SmokeContext context, string propertyName, int expectedRows)
+    {
+        var rowCount = GetGeneratedViewModelCollectionRowCount(context, propertyName);
+        if (rowCount != expectedRows)
+            throw new InvalidOperationException($"Generated runtime DataGrid collection row count mismatch: {propertyName} rows={rowCount}, expected {expectedRows}.");
+    }
+
+    private static int GetGeneratedViewModelCollectionRowCount(SmokeContext context, string propertyName)
+    {
         DotnetBuild(context.ProjectPath);
 
         var assemblyPath = Path.Combine(
@@ -4689,9 +4989,7 @@ Diagnostics:
             if (value is not IEnumerable enumerable)
                 throw new InvalidOperationException($"Generated ViewModel property is not enumerable: {viewModelTypeName}.{propertyName}");
 
-            var rowCount = enumerable.Cast<object?>().Count();
-            if (rowCount < minimumRows)
-                throw new InvalidOperationException($"Generated runtime DataGrid collection is empty: {viewModelTypeName}.{propertyName} rows={rowCount}, expected at least {minimumRows}.");
+            return enumerable.Cast<object?>().Count();
         }
         finally
         {
@@ -4774,6 +5072,90 @@ Diagnostics:
         var assemblyPath = Path.Combine(root, "bin", "Debug", "net6.0", $"{assemblyName}.dll");
         if (!File.Exists(assemblyPath))
             throw new InvalidOperationException($"Smoke LINQ to SQL DLL was not built: {assemblyPath}");
+
+        LinqToSqlSmokeDllCache[cacheKey] = assemblyPath;
+        return assemblyPath;
+    }
+
+    private static string CreateLinqToSqlPreviewRowsAssembly(string assemblyName, string namespaceName, string typeName, string tableName, int rowCount)
+    {
+        var cacheKey = $"{assemblyName}|{namespaceName}|{typeName}|{tableName}|preview|{rowCount}";
+        if (LinqToSqlSmokeDllCache.TryGetValue(cacheKey, out var cachedPath) && File.Exists(cachedPath))
+            return cachedPath;
+
+        var root = Path.Combine(Path.GetTempPath(), "FormDesignerSmokeDlls", assemblyName);
+        if (Directory.Exists(root))
+            Directory.Delete(root, recursive: true);
+
+        Directory.CreateDirectory(root);
+        File.WriteAllText(
+            Path.Combine(root, $"{assemblyName}.csproj"),
+            "<Project Sdk=\"Microsoft.NET.Sdk\">" + Environment.NewLine +
+            "  <PropertyGroup>" + Environment.NewLine +
+            "    <TargetFramework>net6.0</TargetFramework>" + Environment.NewLine +
+            "    <Nullable>enable</Nullable>" + Environment.NewLine +
+            "  </PropertyGroup>" + Environment.NewLine +
+            "</Project>" + Environment.NewLine,
+            Encoding.UTF8);
+
+        var code = new StringBuilder();
+        code.AppendLine("using System;");
+        code.AppendLine("using System.Collections.Generic;");
+        code.AppendLine();
+        code.AppendLine("namespace System.Data.Linq.Mapping");
+        code.AppendLine("{");
+        code.AppendLine("    [AttributeUsage(AttributeTargets.Class, AllowMultiple = false)]");
+        code.AppendLine("    public sealed class TableAttribute : Attribute");
+        code.AppendLine("    {");
+        code.AppendLine("        public string Name { get; set; } = \"\";");
+        code.AppendLine("    }");
+        code.AppendLine();
+        code.AppendLine("    [AttributeUsage(AttributeTargets.Property | AttributeTargets.Field, AllowMultiple = false)]");
+        code.AppendLine("    public sealed class ColumnAttribute : Attribute");
+        code.AppendLine("    {");
+        code.AppendLine("        public string Name { get; set; } = \"\";");
+        code.AppendLine("        public string DbType { get; set; } = \"\";");
+        code.AppendLine("        public bool IsPrimaryKey { get; set; }");
+        code.AppendLine("        public bool CanBeNull { get; set; } = true;");
+        code.AppendLine("    }");
+        code.AppendLine("}");
+        code.AppendLine();
+        code.AppendLine($"namespace {namespaceName}");
+        code.AppendLine("{");
+        code.AppendLine("    using System.Data.Linq.Mapping;");
+        code.AppendLine();
+        code.AppendLine($"    [Table(Name = \"{tableName}\")]");
+        code.AppendLine($"    public sealed class {typeName}");
+        code.AppendLine("    {");
+        code.AppendLine("        [Column(Name = \"OrderId\", DbType = \"Int NOT NULL\", IsPrimaryKey = true, CanBeNull = false)]");
+        code.AppendLine("        public int Id { get; set; }");
+        code.AppendLine();
+        code.AppendLine("        [Column(Name = \"CustomerName\", DbType = \"NVarChar(120)\", CanBeNull = false)]");
+        code.AppendLine("        public string Name { get; set; } = \"\";");
+        code.AppendLine();
+        code.AppendLine("        [Column(Name = \"CreatedAt\", DbType = \"DateTime NOT NULL\", CanBeNull = false)]");
+        code.AppendLine("        public DateTime CreatedAt { get; set; }");
+        code.AppendLine();
+        code.AppendLine($"        public static IEnumerable<{typeName}> GetPreviewRows()");
+        code.AppendLine("        {");
+        code.AppendLine($"            for (var index = 1; index <= {rowCount}; index++)");
+        code.AppendLine("            {");
+        code.AppendLine($"                yield return new {typeName}");
+        code.AppendLine("                {");
+        code.AppendLine("                    Id = index,");
+        code.AppendLine("                    Name = $\"Real order {index:000}\",");
+        code.AppendLine("                    CreatedAt = new DateTime(2024, 1, 1).AddDays(index)");
+        code.AppendLine("                };");
+        code.AppendLine("            }");
+        code.AppendLine("        }");
+        code.AppendLine("    }");
+        code.AppendLine("}");
+
+        File.WriteAllText(Path.Combine(root, "Models.cs"), code.ToString(), Encoding.UTF8);
+        DotnetBuild(root);
+        var assemblyPath = Path.Combine(root, "bin", "Debug", "net6.0", $"{assemblyName}.dll");
+        if (!File.Exists(assemblyPath))
+            throw new InvalidOperationException($"Smoke preview rows DLL was not built: {assemblyPath}");
 
         LinqToSqlSmokeDllCache[cacheKey] = assemblyPath;
         return assemblyPath;
@@ -4896,6 +5278,18 @@ Diagnostics:
     {
         if (text.Contains(unexpected, StringComparison.Ordinal))
             throw new InvalidOperationException(message);
+    }
+
+    private static void RequireGeneratedMainWindowViewModelAssignment(SmokeContext context, string message)
+    {
+        if (context.CSharp.Contains("DataContext = new MainWindowViewModel();", StringComparison.Ordinal)
+            || (context.CSharp.Contains("var viewModel = new MainWindowViewModel();", StringComparison.Ordinal)
+                && context.CSharp.Contains("DataContext = viewModel;", StringComparison.Ordinal)))
+        {
+            return;
+        }
+
+        throw new InvalidOperationException(message);
     }
 
     private static void RequireTraceEvent(SmokeContext context, string eventName)
