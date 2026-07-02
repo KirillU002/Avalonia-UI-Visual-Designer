@@ -80,6 +80,8 @@ public sealed class BuildAndLogsSettingsModel
 
     public bool GenerateNuGetConfigInExportedProject { get; set; } = true;
 
+    public bool ExportSqlConnectionString { get; set; }
+
     public string LogLevel { get; set; } = "Info";
 
     public int MaxLogFilesCount { get; set; } = 10;

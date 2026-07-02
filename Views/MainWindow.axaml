@@ -6748,6 +6748,12 @@
                                     IsChecked="{Binding SaveLogsToFile, Mode=TwoWay}"/>
                           <CheckBox Content="Автоматически очищать старые artifacts"
                                     IsChecked="{Binding CleanOldArtifactsAutomatically, Mode=TwoWay}"/>
+                          <CheckBox Content="Export SQL connection string в generated code"
+                                    IsChecked="{Binding ExportSqlConnectionString, Mode=TwoWay}"/>
+                          <TextBlock Text="Если выключено, SQL loader получит TODO вместо строки подключения. Включайте только для локального или безопасного Export."
+                                     Foreground="#64748B"
+                                     FontSize="12"
+                                     TextWrapping="Wrap"/>
                         </StackPanel>
                       </Border>
                       <Border Background="#F8FAFC"

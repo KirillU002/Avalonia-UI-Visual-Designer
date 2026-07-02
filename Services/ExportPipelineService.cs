@@ -626,6 +626,18 @@ internal sealed class Program
         if (sourceLines.Count == 0)
             sourceLines.Add("- No package source was generated. Configure NuGet sources before restore.");
 
+        var generatedCodeText = string.Join(Environment.NewLine, result.GeneratedFiles.Select(file => file.Content));
+        var hasSqlRuntimeLoader = generatedCodeText.Contains("FromSql()", StringComparison.Ordinal)
+            || generatedCodeText.Contains("new SqlConnection(", StringComparison.Ordinal);
+        var hasSqlConnectionTodo = generatedCodeText.Contains("TODO: set SQL Server connection string", StringComparison.Ordinal);
+        var sqlRuntimeNotes = hasSqlRuntimeLoader
+            ? $@"
+## SQL DataGrid runtime
+- SQL DataGrid loaders are generated as `Load...FromSql()` methods.
+{(hasSqlConnectionTodo ? "- SQL connection string export was disabled or incomplete. Replace `TODO: set SQL Server connection string` before calling the loader." : "- The exported code contains the SQL connection string that was explicitly allowed in Export settings. Move it to configuration/secrets before production use.")}
+- The SQL query/table mapping is generated from the Data mode source schema."
+            : "";
+
         return $@"# Generated Avalonia Export
 
 Generated: {result.GeneratedUtc:u}
@@ -659,6 +671,7 @@ NuGet sources:
 - Generated bindings are runtime bindings unless a real exported ViewModel type exists.
 - If your NuGet source is HTTP/intranet-only, the generated `NuGet.config` must mark that source with `allowInsecureConnections=""true""`.
 - This export clears `packageSourceMapping` in the local `NuGet.config` so user/global source mapping does not block restore for the generated project.
+{sqlRuntimeNotes}
 
 ## Files
 {string.Join(Environment.NewLine, result.GeneratedFiles.Select(file => $"- {file.Path} ({file.StatusText})"))}

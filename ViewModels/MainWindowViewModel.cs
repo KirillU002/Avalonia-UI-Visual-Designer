@@ -918,6 +918,9 @@ public partial class MainWindowViewModel : ObservableObject
     private bool generateNuGetConfigInExportedProject = true;
 
     [ObservableProperty]
+    private bool exportSqlConnectionString;
+
+    [ObservableProperty]
     private string nuGetSourceTestStatusText = "";
 
     [ObservableProperty]
@@ -8986,6 +8989,7 @@ public partial class MainWindowViewModel : ObservableObject
         AllowInsecureNuGetSource = settings?.AllowInsecureNuGetSource ?? false;
         IncludeNuGetOrgFallback = settings?.IncludeNuGetOrgFallback ?? true;
         GenerateNuGetConfigInExportedProject = settings?.GenerateNuGetConfigInExportedProject ?? true;
+        ExportSqlConnectionString = settings?.ExportSqlConnectionString ?? false;
         LogsFolderPath = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "AvaloniaUiVisualDesigner",
@@ -9005,7 +9009,8 @@ public partial class MainWindowViewModel : ObservableObject
             CustomNuGetSource = CustomNuGetSource,
             AllowInsecureNuGetSource = AllowInsecureNuGetSource,
             IncludeNuGetOrgFallback = IncludeNuGetOrgFallback,
-            GenerateNuGetConfigInExportedProject = GenerateNuGetConfigInExportedProject
+            GenerateNuGetConfigInExportedProject = GenerateNuGetConfigInExportedProject,
+            ExportSqlConnectionString = ExportSqlConnectionString
         };
     }
 
@@ -13813,7 +13818,8 @@ public partial class MainWindowViewModel : ObservableObject
             IncludeSampleData,
             IncludeCrudSkeleton,
             IncludeCommunityToolkitAttributes,
-            IncludePluginRuntimeReferences);
+            IncludePluginRuntimeReferences,
+            ExportSqlConnectionString);
     }
 
     private static string GetSnapshotHash(string snapshot)
@@ -13860,8 +13866,23 @@ public partial class MainWindowViewModel : ObservableObject
         if (ShouldGenerateRuntimeDataBindingCode || IncludeCommunityToolkitAttributes)
             yield return "CommunityToolkit.Mvvm";
 
-        if (ShouldGenerateRuntimeDataBindingCode && BuildCrudGenerationContexts().Any(context => IsSqlServerSource(context.Source)))
+        if (ShouldGenerateRuntimeDataBindingCode && BuildCrudGenerationContexts().Any(context => ShouldGenerateSqlRuntimeLoader(context.Source)))
             yield return "Microsoft.Data.SqlClient";
+    }
+
+    private static bool ShouldGenerateSqlRuntimeLoader(BindingSourceModel source)
+    {
+        if (!IsSqlServerSource(source))
+            return false;
+
+        var hasCommandText = !string.IsNullOrWhiteSpace(source.SourceQuery)
+            || !string.IsNullOrWhiteSpace(source.SourceTableName);
+        if (!hasCommandText)
+            return false;
+
+        var dataMode = PreviewRowsLoader.ResolveDataMode(source);
+        return string.Equals(dataMode, PreviewRowsLoader.DataModeRealSqlData, StringComparison.Ordinal)
+            || string.IsNullOrWhiteSpace(source.SourceConnectionString);
     }
 
     private string ResolveExportNamespace()
@@ -14652,6 +14673,14 @@ public partial class MainWindowViewModel : ObservableObject
         var buttonControls = Controls.Where(control => control.Type == DesignerControlTypes.Button).ToList();
         var textBoxControls = Controls.Where(control => control.Type == DesignerControlTypes.TextBox).ToList();
         var crudContexts = BuildCrudGenerationContexts();
+        var sqlRuntimePlans = crudContexts
+            .Where(context => IsSqlServerSource(context.Source))
+            .Select(BuildSqlRuntimeExportPlan)
+            .ToDictionary(plan => plan.Context.Source.Id, StringComparer.OrdinalIgnoreCase);
+        var sqlLoaderPlans = sqlRuntimePlans.Values
+            .Where(plan => plan.ShouldGenerateLoader)
+            .ToList();
+        var hasSqlRuntimeLoaders = sqlLoaderPlans.Count > 0;
         var exportSeedRowsBySourceId = crudContexts.ToDictionary(
             context => context.Source.Id,
             context => BuildRuntimeSeedRows(context),
@@ -14673,8 +14702,6 @@ public partial class MainWindowViewModel : ObservableObject
                 context.ViewCollectionPropertyName,
                 context.ViewCollectionPropertyName));
         }
-        var sqlContexts = crudContexts.Where(context => IsSqlServerSource(context.Source)).ToList();
-        var hasSqlContexts = sqlContexts.Count > 0;
         var autoLoadSqlContexts = false;
         var primaryCrud = crudContexts.FirstOrDefault();
         var hasViewModel = crudContexts.Count > 0 || textBoxControls.Count > 0 || BindingSources.Count > 0;
@@ -14723,10 +14750,24 @@ public partial class MainWindowViewModel : ObservableObject
                 "EXPORT_DATAGRID_ROW_DTO_GENERATED",
                 $"source={context.Source.Name}; rowType={context.ItemTypeName}; properties={context.Fields.Count}",
                 toOutput: false);
-            TraceDocumentDebug(
-                "EXPORT_DATAGRID_LOADER_GENERATED",
-                $"source={context.Source.Name}; loader=Seed{context.ItemTypeName}; mode={ResolveExportSeedMode(context.Source)}; rowsGenerated={generatedRowCount}",
-                toOutput: false);
+            if (sqlRuntimePlans.TryGetValue(context.Source.Id, out var sqlPlan))
+            {
+                TraceSqlRuntimeExportPlan(sqlPlan, gridNameText);
+                if (sqlPlan.ShouldGenerateSeedRows)
+                {
+                    TraceDocumentDebug(
+                        "EXPORT_DATAGRID_LOADER_GENERATED",
+                        $"source={context.Source.Name}; loader=Seed{context.ItemTypeName}; mode={ResolveExportSeedMode(context.Source)}; rowsGenerated={generatedRowCount}",
+                        toOutput: false);
+                }
+            }
+            else
+            {
+                TraceDocumentDebug(
+                    "EXPORT_DATAGRID_LOADER_GENERATED",
+                    $"source={context.Source.Name}; loader=Seed{context.ItemTypeName}; mode={ResolveExportSeedMode(context.Source)}; rowsGenerated={generatedRowCount}",
+                    toOutput: false);
+            }
         }
         var anchorControls = Controls
             .Where(control => (control.AnchorRight || control.AnchorBottom) && IsAbsoluteLayoutParent(control.ParentId))
@@ -14757,11 +14798,10 @@ public partial class MainWindowViewModel : ObservableObject
             usings.Add("using System.Globalization;");
             usings.Add("using System.Linq;");
 
-            if (hasSqlContexts)
+            if (hasSqlRuntimeLoaders)
             {
                 usings.Add("using Microsoft.Data.SqlClient;");
                 usings.Add("using System.Data;");
-                usings.Add("using System.Threading.Tasks;");
             }
         }
         if (hasShowMessageInteractions)
@@ -14797,8 +14837,8 @@ public partial class MainWindowViewModel : ObservableObject
                 sb.AppendLine($" 2. Строку поиска привяжите к {primaryCrud.SearchTextPropertyName}.");
             sb.AppendLine($" 3. Поля редактирования привязывайте к {primaryCrud.CurrentItemPropertyName}.Свойство.");
             sb.AppendLine(" 4. Кнопки уже получают обработчики Click, а внутри вызовут методы ViewModel.");
-            if (hasSqlContexts)
-                sb.AppendLine(" 5. Для SQL Server сгенерированы методы Load...FromDatabaseAsync(). Перед запуском вынесите строку подключения в конфиг.");
+            if (hasSqlRuntimeLoaders)
+                sb.AppendLine(" 5. Для SQL Server сгенерированы методы Load...FromSql(). Если строка подключения не экспортирована, заполните TODO и вызовите loader.");
             sb.AppendLine("*/");
             sb.AppendLine();
         }
@@ -15107,11 +15147,10 @@ public partial class MainWindowViewModel : ObservableObject
                 sb.AppendLine();
             }
 
-            foreach (var context in sqlContexts)
+            foreach (var plan in sqlLoaderPlans)
             {
-                var sqlConstantBase = SanitizeIdentifier($"{context.ItemTypeName}Sql", "SqlSource");
-                sb.AppendLine($"    private const string {sqlConstantBase}ConnectionString = \"TODO: set SQL Server connection string\";");
-                sb.AppendLine($"    private const string {sqlConstantBase}CommandText = {ToVerbatimCSharpString(BuildSqlImportCommandText(context.Source.SourceSchemaName, context.Source.SourceTableName, context.Source.SourceQuery))};");
+                sb.AppendLine($"    private const string {plan.ConnectionStringConstantName} = \"{EscapeCSharp(plan.ConnectionStringValue)}\";");
+                sb.AppendLine($"    private const string {plan.CommandTextConstantName} = {ToVerbatimCSharpString(plan.CommandText)};");
                 sb.AppendLine();
             }
 
@@ -15119,22 +15158,31 @@ public partial class MainWindowViewModel : ObservableObject
             sb.AppendLine("    {");
             foreach (var context in crudContexts)
             {
-                sb.AppendLine($"        Seed{context.ItemTypeName}();");
-                sb.AppendLine($"        Apply{context.ItemTypeName}Filter();");
+                if (sqlRuntimePlans.TryGetValue(context.Source.Id, out var sqlPlan))
+                {
+                    if (sqlPlan.ShouldCallLoader)
+                    {
+                        sb.AppendLine($"        {sqlPlan.LoaderMethodName}();");
+                    }
+                    else
+                    {
+                        if (sqlPlan.ShouldGenerateSeedRows)
+                            sb.AppendLine($"        Seed{context.ItemTypeName}();");
+                        else if (sqlPlan.ShouldGenerateLoader)
+                            sb.AppendLine($"        // SQL source is configured, but connection string export is disabled. Fill {sqlPlan.ConnectionStringConstantName} and call {sqlPlan.LoaderMethodName}() when ready.");
+
+                        sb.AppendLine($"        Apply{context.ItemTypeName}Filter();");
+                    }
+                }
+                else
+                {
+                    sb.AppendLine($"        Seed{context.ItemTypeName}();");
+                    sb.AppendLine($"        Apply{context.ItemTypeName}Filter();");
+                }
                 sb.AppendLine($"        System.Diagnostics.Debug.WriteLine($\"RUNTIME_DATAGRID_COLLECTION_CREATED source={EscapeCSharp(context.Source.Name)} collection={context.ViewCollectionPropertyName} rows={{{context.ViewCollectionPropertyName}.Count}}\");");
             }
             sb.AppendLine("    }");
             sb.AppendLine();
-
-            if (hasSqlContexts)
-            {
-                sb.AppendLine("    public async Task InitializeAsync()");
-                sb.AppendLine("    {");
-                foreach (var context in sqlContexts)
-                    sb.AppendLine($"        await Load{context.ItemTypeName}FromDatabaseAsync();");
-                sb.AppendLine("    }");
-                sb.AppendLine();
-            }
 
             foreach (var context in crudContexts)
             {
@@ -15221,28 +15269,38 @@ public partial class MainWindowViewModel : ObservableObject
                 sb.AppendLine("    }");
                 sb.AppendLine();
 
-                if (IsSqlServerSource(context.Source))
+                if (sqlRuntimePlans.TryGetValue(context.Source.Id, out var sqlPlanForLoader)
+                    && sqlPlanForLoader.ShouldGenerateLoader)
                 {
-                    var sqlConstantBase = SanitizeIdentifier($"{context.ItemTypeName}Sql", "SqlSource");
-                    sb.AppendLine($"    // SQL loader is generated as a placeholder. The exported project starts with sample rows until you set a safe connection string and call this method.");
-                    sb.AppendLine($"    public async Task Load{context.ItemTypeName}FromDatabaseAsync()");
+                    if (sqlPlanForLoader.ShouldCallLoader)
+                        sb.AppendLine("    // SQL loader uses the connection string and query configured in the designer.");
+                    else
+                        sb.AppendLine($"    // SQL loader placeholder. Fill {sqlPlanForLoader.ConnectionStringConstantName} and call this method when you are ready to load real data.");
+                    sb.AppendLine($"    public void {sqlPlanForLoader.LoaderMethodName}()");
                     sb.AppendLine("    {");
                     sb.AppendLine($"        var items = new List<{context.ItemTypeName}>();");
-                    sb.AppendLine($"        using var connection = new SqlConnection({sqlConstantBase}ConnectionString);");
-                    sb.AppendLine("        await connection.OpenAsync();");
-                    sb.AppendLine();
-                    sb.AppendLine("        using var command = connection.CreateCommand();");
-                    sb.AppendLine($"        command.CommandText = {sqlConstantBase}CommandText;");
-                    sb.AppendLine("        command.CommandType = CommandType.Text;");
-                    sb.AppendLine("        command.CommandTimeout = 15;");
-                    sb.AppendLine();
-                    sb.AppendLine("        using var reader = await command.ExecuteReaderAsync();");
-                    sb.AppendLine("        while (await reader.ReadAsync())");
+                    sb.AppendLine("        try");
                     sb.AppendLine("        {");
-                    sb.AppendLine($"            items.Add(new {context.ItemTypeName}");
+                    sb.AppendLine($"            using var connection = new SqlConnection({sqlPlanForLoader.ConnectionStringConstantName});");
+                    sb.AppendLine("            connection.Open();");
+                    sb.AppendLine();
+                    sb.AppendLine("            using var command = connection.CreateCommand();");
+                    sb.AppendLine($"            command.CommandText = {sqlPlanForLoader.CommandTextConstantName};");
+                    sb.AppendLine("            command.CommandType = CommandType.Text;");
+                    sb.AppendLine("            command.CommandTimeout = 30;");
+                    sb.AppendLine();
+                    sb.AppendLine("            using var reader = command.ExecuteReader();");
+                    sb.AppendLine("            while (reader.Read())");
                     sb.AppendLine("            {");
-                    AppendGeneratedSqlAssignments(sb, context, 4);
-                    sb.AppendLine("            });");
+                    sb.AppendLine($"                items.Add(new {context.ItemTypeName}");
+                    sb.AppendLine("                {");
+                    AppendGeneratedSqlAssignments(sb, context, 5);
+                    sb.AppendLine("                });");
+                    sb.AppendLine("            }");
+                    sb.AppendLine("        }");
+                    sb.AppendLine("        catch (Exception ex)");
+                    sb.AppendLine("        {");
+                    sb.AppendLine($"            System.Diagnostics.Debug.WriteLine($\"RUNTIME_SQL_LOAD_FAILED source={EscapeCSharp(context.Source.Name)} method={sqlPlanForLoader.LoaderMethodName}; error={{ex.GetType().Name}}: {{ex.Message}}\");");
                     sb.AppendLine("        }");
                     sb.AppendLine();
                     sb.AppendLine($"        ReplaceItems({context.CollectionPropertyName}, items);");
@@ -15253,23 +15311,28 @@ public partial class MainWindowViewModel : ObservableObject
                     sb.AppendLine();
                 }
 
-                sb.AppendLine($"    private void Seed{context.ItemTypeName}()");
-                sb.AppendLine("    {");
                 var seedRows = exportSeedRowsBySourceId.TryGetValue(context.Source.Id, out var rows)
                     ? rows
                     : Array.Empty<Dictionary<string, string>>();
-                for (var variantIndex = 0; variantIndex < seedRows.Count; variantIndex++)
+                var shouldGenerateSeedMethod = !sqlRuntimePlans.TryGetValue(context.Source.Id, out var sqlPlanForSeed)
+                    || sqlPlanForSeed.ShouldGenerateSeedRows;
+                if (shouldGenerateSeedMethod)
                 {
-                    if (variantIndex > 0)
-                        sb.AppendLine();
+                    sb.AppendLine($"    private void Seed{context.ItemTypeName}()");
+                    sb.AppendLine("    {");
+                    for (var variantIndex = 0; variantIndex < seedRows.Count; variantIndex++)
+                    {
+                        if (variantIndex > 0)
+                            sb.AppendLine();
 
-                    sb.AppendLine($"        {context.CollectionPropertyName}.Add(new {context.ItemTypeName}");
-                    sb.AppendLine("        {");
-                    AppendSeedAssignments(sb, context, 3, variantIndex, seedRows[variantIndex]);
-                    sb.AppendLine("        });");
+                        sb.AppendLine($"        {context.CollectionPropertyName}.Add(new {context.ItemTypeName}");
+                        sb.AppendLine("        {");
+                        AppendSeedAssignments(sb, context, 3, variantIndex, seedRows[variantIndex]);
+                        sb.AppendLine("        });");
+                    }
+                    sb.AppendLine("    }");
+                    sb.AppendLine();
                 }
-                sb.AppendLine("    }");
-                sb.AppendLine();
             }
 
             sb.AppendLine("    private static bool ContainsText(object? value, string query)");
@@ -15302,7 +15365,7 @@ public partial class MainWindowViewModel : ObservableObject
             sb.AppendLine("            target.Add(item);");
             sb.AppendLine("    }");
 
-            if (hasSqlContexts)
+            if (hasSqlRuntimeLoaders)
             {
                 sb.AppendLine();
                 sb.AppendLine("    private static string ReadString(SqlDataReader reader, string columnName)");
@@ -17795,13 +17858,20 @@ public partial class MainWindowViewModel : ObservableObject
 
     private static string BuildGeneratedSqlReaderExpression(BindingFieldModel field)
     {
-        var columnNameLiteral = ToVerbatimCSharpString(field.Path);
+        var columnNameLiteral = ToVerbatimCSharpString(GetSqlReaderColumnName(field));
         return NormalizeCSharpType(field.TypeName) switch
         {
             "string" => $"ReadString(reader, {columnNameLiteral})",
             "byte[]" => $"ReadBytes(reader, {columnNameLiteral})",
             var typeName => $"ReadValue<{typeName}>(reader, {columnNameLiteral})"
         };
+    }
+
+    private static string GetSqlReaderColumnName(BindingFieldModel field)
+    {
+        return !string.IsNullOrWhiteSpace(field.Header)
+            ? field.Header.Trim()
+            : field.Path;
     }
 
     private static void AppendSeedAssignments(StringBuilder sb, CrudGenerationContext context, int indentLevel, int variantIndex)
@@ -17857,6 +17927,16 @@ public partial class MainWindowViewModel : ObservableObject
                 warning: true);
         }
 
+        if (DataSourceIdentity.IsSqlServer(context.Source.SourceKind)
+            && string.Equals(dataMode, PreviewRowsLoader.DataModeRealSqlData, StringComparison.Ordinal))
+        {
+            TraceDocumentDebug(
+                "EXPORT_DATAGRID_EMPTY_COLLECTION_GENERATED",
+                $"source={context.Source.Name}; sourceKind={context.Source.SourceKind}; mode={dataMode}; reason=runtime SQL loader will populate the collection",
+                toOutput: false);
+            return Array.Empty<Dictionary<string, string>>();
+        }
+
         if (string.Equals(dataMode, PreviewRowsLoader.DataModeNoData, StringComparison.Ordinal)
             || string.Equals(dataMode, PreviewRowsLoader.DataModeSchemaOnly, StringComparison.Ordinal))
         {
@@ -17905,12 +17985,114 @@ public partial class MainWindowViewModel : ObservableObject
         return demoRows;
     }
 
+    private SqlRuntimeExportPlan BuildSqlRuntimeExportPlan(CrudGenerationContext context)
+    {
+        var source = context.Source;
+        var dataMode = PreviewRowsLoader.ResolveDataMode(source);
+        var hasConnectionString = !string.IsNullOrWhiteSpace(source.SourceConnectionString);
+        var hasQuery = !string.IsNullOrWhiteSpace(source.SourceQuery);
+        var hasTable = !string.IsNullOrWhiteSpace(source.SourceTableName);
+        var hasCommandText = hasQuery || hasTable;
+        var isRealSqlData = string.Equals(dataMode, PreviewRowsLoader.DataModeRealSqlData, StringComparison.Ordinal);
+        var isDemoData = string.Equals(dataMode, PreviewRowsLoader.DataModeDemoData, StringComparison.Ordinal);
+        var shouldGenerateLoader = hasCommandText && (isRealSqlData || !hasConnectionString);
+        var shouldExportConnectionString = shouldGenerateLoader && hasConnectionString && ExportSqlConnectionString;
+        var connectionStringValue = shouldExportConnectionString
+            ? source.SourceConnectionString.Trim()
+            : "TODO: set SQL Server connection string";
+        var commandText = hasCommandText
+            ? BuildSqlImportCommandText(source.SourceSchemaName, source.SourceTableName, source.SourceQuery)
+            : string.Empty;
+        var skipReason = shouldGenerateLoader
+            ? string.Empty
+            : hasCommandText
+                ? "data mode is demo/schema-only"
+                : "SQL query/table is not configured";
+        var connectionReason = shouldExportConnectionString
+            ? "setting-enabled"
+            : hasConnectionString
+                ? "setting-disabled"
+                : "connection-string-missing";
+
+        return new SqlRuntimeExportPlan
+        {
+            Context = context,
+            RuntimeMode = isRealSqlData ? PreviewRowsLoader.DataModeRealSqlData : dataMode,
+            HasConnectionString = hasConnectionString,
+            HasCommandText = hasCommandText,
+            ShouldGenerateLoader = shouldGenerateLoader,
+            ShouldCallLoader = shouldGenerateLoader && shouldExportConnectionString && isRealSqlData,
+            ShouldGenerateSeedRows = isDemoData,
+            ShouldExportConnectionString = shouldExportConnectionString,
+            ConnectionStringValue = connectionStringValue,
+            CommandText = commandText,
+            SkipReason = skipReason,
+            ConnectionStringReason = connectionReason
+        };
+    }
+
+    private void TraceSqlRuntimeExportPlan(SqlRuntimeExportPlan plan, string gridNameText)
+    {
+        TraceDocumentDebug(
+            "EXPORT_SQL_DATAGRID_RUNTIME_MODE",
+            $"grid={gridNameText}; source={plan.Context.Source.Name}; mode={plan.RuntimeMode}; hasConnectionString={plan.HasConnectionString}; hasQuery={plan.HasCommandText}; provider=Microsoft.Data.SqlClient",
+            toOutput: false);
+        TraceDocumentDebug(
+            "EXPORT_SQL_CONNECTION_STRING_USED",
+            $"grid={gridNameText}; exported={plan.ShouldExportConnectionString}; reason={plan.ConnectionStringReason}",
+            toOutput: false,
+            warning: plan.ShouldGenerateLoader && !plan.ShouldExportConnectionString);
+
+        if (plan.HasCommandText)
+        {
+            TraceDocumentDebug(
+                "EXPORT_SQL_QUERY_USED",
+                $"grid={gridNameText}; queryLength={plan.CommandText.Length}",
+                toOutput: false);
+        }
+
+        if (plan.ShouldGenerateLoader)
+        {
+            TraceDocumentDebug(
+                "EXPORT_SQL_LOADER_GENERATED",
+                $"grid={gridNameText}; method={plan.LoaderMethodName}; provider=Microsoft.Data.SqlClient; packageReference=true; autoCall={plan.ShouldCallLoader}",
+                toOutput: false);
+            foreach (var field in plan.Context.Fields)
+            {
+                var originalColumn = GetSqlReaderColumnName(field);
+                var propertyName = GetGeneratedRowPropertyName(field);
+                TraceDocumentDebug(
+                    "EXPORT_SQL_COLUMN_MAPPING",
+                    $"grid={gridNameText}; originalColumn={originalColumn}; propertyName={propertyName}; readerExpression=reader[{originalColumn}]; bindingPath={propertyName}",
+                    toOutput: false);
+            }
+            TraceDocumentDebug(
+                "EXPORT_SQL_PACKAGE_REFERENCE_GENERATED",
+                "packageId=Microsoft.Data.SqlClient; version=5.2.2",
+                toOutput: false);
+        }
+        else
+        {
+            TraceDocumentDebug(
+                "EXPORT_SQL_LOADER_SKIPPED",
+                $"grid={gridNameText}; reason={plan.SkipReason}",
+                toOutput: false,
+                warning: !string.Equals(plan.RuntimeMode, PreviewRowsLoader.DataModeDemoData, StringComparison.Ordinal));
+        }
+    }
+
     private static string ResolveExportSeedMode(BindingSourceModel source)
     {
         if (IsSqlServerSource(source))
-            return PreviewRowsLoader.ResolveDataMode(source) == PreviewRowsLoader.DataModeDemoData
-                ? "DemoData+SqlPlaceholder"
-                : "SampleRows+SqlPlaceholder";
+        {
+            var dataMode = PreviewRowsLoader.ResolveDataMode(source);
+            if (string.Equals(dataMode, PreviewRowsLoader.DataModeDemoData, StringComparison.Ordinal))
+                return "DemoData";
+            if (string.Equals(dataMode, PreviewRowsLoader.DataModeRealSqlData, StringComparison.Ordinal))
+                return "RealSqlData";
+
+            return dataMode;
+        }
 
         if (DataSourceIdentity.IsAssembly(source.SourceKind))
             return string.Equals(source.PreviewRowsDataKind, "RealData", StringComparison.OrdinalIgnoreCase)
@@ -22021,6 +22203,15 @@ public partial class MainWindowViewModel : ObservableObject
         RaiseNuGetSourceSettingsChanged();
     }
 
+    partial void OnExportSqlConnectionStringChanged(bool value)
+    {
+        TraceDocumentDebug(
+            "SETTINGS_CHANGED",
+            $"key=ExportSqlConnectionString; value={value}; scope=user",
+            toOutput: false);
+        RaiseExportCacheProperties();
+    }
+
     partial void OnNuGetSourceTestStatusTextChanged(string value)
     {
         OnPropertyChanged(nameof(HasNuGetSourceTestStatus));
@@ -22574,6 +22765,26 @@ public partial class MainWindowViewModel : ObservableObject
         string GridName,
         string ItemsSourceProperty,
         string ExpectedCollectionProperty);
+
+    private sealed class SqlRuntimeExportPlan
+    {
+        public CrudGenerationContext Context { get; init; } = new();
+        public string RuntimeMode { get; init; } = "";
+        public bool HasConnectionString { get; init; }
+        public bool HasCommandText { get; init; }
+        public bool ShouldGenerateLoader { get; init; }
+        public bool ShouldCallLoader { get; init; }
+        public bool ShouldGenerateSeedRows { get; init; }
+        public bool ShouldExportConnectionString { get; init; }
+        public string ConnectionStringValue { get; init; } = "";
+        public string CommandText { get; init; } = "";
+        public string SkipReason { get; init; } = "";
+        public string ConnectionStringReason { get; init; } = "";
+        public string LoaderMethodName => $"Load{Context.ItemTypeName}FromSql";
+        public string ConstantBase => SanitizeIdentifier($"{Context.ItemTypeName}Sql", "SqlSource");
+        public string ConnectionStringConstantName => $"{ConstantBase}ConnectionString";
+        public string CommandTextConstantName => $"{ConstantBase}CommandText";
+    }
 
     private sealed record ExportableInteraction(
         InteractionModel Interaction,

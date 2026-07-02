@@ -1379,6 +1379,7 @@ public partial class MainWindow : Window
             or nameof(MainWindowViewModel.UseCustomNuGetSource)
             or nameof(MainWindowViewModel.CustomNuGetSource)
             or nameof(MainWindowViewModel.AllowInsecureNuGetSource)
+            or nameof(MainWindowViewModel.ExportSqlConnectionString)
             or nameof(MainWindowViewModel.PropertyGridSettingsVersion);
     }
 
@@ -1393,6 +1394,7 @@ public partial class MainWindow : Window
             or nameof(MainWindowViewModel.IncludeSampleData)
             or nameof(MainWindowViewModel.IncludeCrudSkeleton)
             or nameof(MainWindowViewModel.IncludeCommunityToolkitAttributes)
+            or nameof(MainWindowViewModel.ExportSqlConnectionString)
             or nameof(MainWindowViewModel.IncludePluginRuntimeReferences)
             or nameof(MainWindowViewModel.GeneratedXaml)
             or nameof(MainWindowViewModel.GeneratedCSharp)

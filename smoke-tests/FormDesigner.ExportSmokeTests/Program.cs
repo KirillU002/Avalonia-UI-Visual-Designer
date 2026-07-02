@@ -89,6 +89,14 @@ internal static class Program
             new("DataGridPreviewExportSettingsMatch", ConfigureDataGridColumnWrapUsesTemplateColumn, AssertDataGridPreviewExportSettingsMatch, RequiresRealDataGrid: true),
             new("SqlDataGridExportGeneratesItemsSourceProperty", ConfigureSqlDataGridExport, AssertSqlDataGridExportGeneratesItemsSourceProperty, RequiresRealDataGrid: true),
             new("SqlDataGridExportGeneratesRowDto", ConfigureSqlDataGridExport, AssertSqlDataGridExportGeneratesRowDto, RequiresRealDataGrid: true),
+            new("SqlDataGridWithConnectionAndQueryGeneratesSqlLoader", ConfigureSqlDataGridExportConnectionAllowed, AssertSqlDataGridWithConnectionAndQueryGeneratesSqlLoader, RequiresRealDataGrid: true),
+            new("SqlDataGridConnectionStringExportedWhenAllowed", ConfigureSqlDataGridExportConnectionAllowed, AssertSqlDataGridConnectionStringExportedWhenAllowed, RequiresRealDataGrid: true),
+            new("SqlDataGridConnectionStringNotExportedWhenDisabled", ConfigureSqlDataGridExport, AssertSqlDataGridConnectionStringNotExportedWhenDisabled, RequiresRealDataGrid: true),
+            new("SqlDataGridQueryExported", ConfigureSqlDataGridExportConnectionAllowed, AssertSqlDataGridQueryExported, RequiresRealDataGrid: true),
+            new("SqlDataGridGeneratesSqlClientPackageReference", ConfigureSqlDataGridExportConnectionAllowed, AssertSqlDataGridGeneratesSqlClientPackageReference, RequiresRealDataGrid: true),
+            new("SqlDataGridColumnMappingUsesOriginalColumnNamesForReader", ConfigureSqlDataGridRussianColumnsExportAllowed, AssertSqlDataGridColumnMappingUsesOriginalColumnNamesForReader, RequiresRealDataGrid: true),
+            new("SqlDataGridWithoutQueryDoesNotGenerateFakeSqlData", ConfigureUnconfiguredSqlDataGridNoData, AssertSqlDataGridWithoutQueryDoesNotGenerateFakeSqlData, RequiresRealDataGrid: true),
+            new("DemoDataStillGeneratesSeedRowsOnlyInDemoMode", ConfigureUnconfiguredSqlDataGridDemoRows, AssertDemoDataStillGeneratesSeedRowsOnlyInDemoMode, RequiresRealDataGrid: true),
             new("SqlDataGridPreviewRuntimeRowsMatch", ConfigureSqlDataGridPreviewRuntimeRowsMatch, AssertSqlDataGridPreviewRuntimeRowsMatch, RequiresRealDataGrid: true),
             new("SqlDataGridWithoutConnectionDoesNotPretendRealData", ConfigureUnconfiguredSqlDataGridDemoRows, AssertSqlDataGridWithoutConnectionDoesNotPretendRealData, RequiresRealDataGrid: true),
             new("DemoDataPreviewExportsDemoRows", ConfigureUnconfiguredSqlDataGridDemoRows, AssertDemoDataPreviewExportsDemoRows, RequiresRealDataGrid: true),
@@ -1162,6 +1170,21 @@ internal static class Program
         vm.Controls.Add(DataGrid("CustomersGrid", source.Id, 32, 42, 720, 360));
     }
 
+    private static void ConfigureSqlDataGridExportConnectionAllowed(MainWindowViewModel vm)
+    {
+        vm.ExportSqlConnectionString = true;
+        ConfigureSqlDataGridExport(vm);
+    }
+
+    private static void ConfigureSqlDataGridRussianColumnsExportAllowed(MainWindowViewModel vm)
+    {
+        vm.ExportSqlConnectionString = true;
+        var source = SqlRuntimeMismatchSource("sql-russian-columns-source", "RuntimeRows", "SqlRow");
+        vm.BindingSources.Add(source);
+        vm.DataGridExportMode = MainWindowViewModel.DataGridExportModeReal;
+        vm.Controls.Add(DataGrid("RuntimeGrid", source.Id, 32, 42, 720, 360));
+    }
+
     private static void AssertSqlDataGridExportGeneratesItemsSourceProperty(SmokeContext context)
     {
         RequireContains(context.Xaml, "ItemsSource=\"{Binding CustomersView}\"", "SQL DataGrid should bind to generated ViewModel collection.");
@@ -1170,8 +1193,8 @@ internal static class Program
         RequireContains(context.CSharp, "public ObservableCollection<CustomerRow> CustomersView { get; } = new();", "SQL export should generate view collection.");
         RequireContains(context.CSharp, "private const string CustomerRowSqlConnectionString = \"TODO: set SQL Server connection string\";", "SQL export should not leak the designer connection string.");
         RequireNotContains(context.CSharp, "Password=secret", "SQL export must not leak a password from the designer connection string.");
-        RequireContains(context.CSharp, "LoadCustomerRowFromDatabaseAsync", "SQL export should provide a placeholder loader method.");
-        RequireContains(context.CSharp, "SeedCustomerRow();", "SQL export should seed sample rows so generated app opens without a live database.");
+        RequireContains(context.CSharp, "LoadCustomerRowFromSql", "SQL export should provide a runtime loader method.");
+        RequireNotContains(context.CSharp, "SeedCustomerRow();", "Real SQL export should not seed fake rows.");
     }
 
     private static void AssertSqlDataGridExportGeneratesRowDto(SmokeContext context)
@@ -1185,9 +1208,78 @@ internal static class Program
         RequireContains(GetRequiredPackagesText(context), "Microsoft.Data.SqlClient", "Generated project should include SqlClient for optional SQL loader.");
     }
 
+    private static void AssertSqlDataGridWithConnectionAndQueryGeneratesSqlLoader(SmokeContext context)
+    {
+        RequireContains(context.CSharp, "private const string CustomerRowSqlConnectionString = \"Server=.;Database=Demo;User Id=designer;Password=secret;TrustServerCertificate=True\";", "SQL export should use the configured connection string when explicitly allowed.");
+        RequireContains(context.CSharp, "private const string CustomerRowSqlCommandText = @\"SELECT Id, Name, Email, Status FROM dbo.Customers\";", "SQL export should use the configured query.");
+        RequireContains(context.CSharp, "LoadCustomerRowFromSql();", "Generated ViewModel constructor should call SQL loader when connection string export is allowed.");
+        RequireContains(context.CSharp, "public void LoadCustomerRowFromSql()", "SQL export should generate a runtime SQL loader.");
+        RequireContains(context.CSharp, "using var connection = new SqlConnection(CustomerRowSqlConnectionString);", "SQL loader should create a SqlConnection.");
+        RequireContains(context.CSharp, "using var reader = command.ExecuteReader();", "SQL loader should execute the configured query.");
+        RequireNotContains(context.CSharp, "SeedCustomerRow();", "Real SQL export should not seed demo rows.");
+        RequireNotContains(context.CSharp, "Customers.Add(new CustomerRow", "Real SQL export should not generate fake customer rows.");
+        RequireTraceEvent(context, "EXPORT_SQL_DATAGRID_RUNTIME_MODE");
+        RequireTraceEvent(context, "EXPORT_SQL_LOADER_GENERATED");
+    }
+
+    private static void AssertSqlDataGridConnectionStringExportedWhenAllowed(SmokeContext context)
+    {
+        RequireContains(context.CSharp, "Password=secret", "Connection string should be exported only when the explicit setting is enabled.");
+        RequireTraceEvent(context, "EXPORT_SQL_CONNECTION_STRING_USED");
+    }
+
+    private static void AssertSqlDataGridConnectionStringNotExportedWhenDisabled(SmokeContext context)
+    {
+        RequireContains(context.CSharp, "private const string CustomerRowSqlConnectionString = \"TODO: set SQL Server connection string\";", "Disabled SQL secret export should generate a TODO connection string.");
+        RequireNotContains(context.CSharp, "Password=secret", "Disabled SQL secret export must not leak the designer connection string.");
+        RequireContains(context.CSharp, "public void LoadCustomerRowFromSql()", "Disabled SQL secret export should still include a clear placeholder loader.");
+        RequireNotContains(context.CSharp, "LoadCustomerRowFromSql();", "Placeholder SQL loader should not run automatically without an exported connection string.");
+    }
+
+    private static void AssertSqlDataGridQueryExported(SmokeContext context)
+    {
+        RequireContains(context.CSharp, "SELECT Id, Name, Email, Status FROM dbo.Customers", "Generated SQL loader should preserve the user's query.");
+        RequireTraceEvent(context, "EXPORT_SQL_QUERY_USED");
+    }
+
+    private static void AssertSqlDataGridGeneratesSqlClientPackageReference(SmokeContext context)
+    {
+        RequireContains(GetRequiredPackagesText(context), "Microsoft.Data.SqlClient", "SQL Server runtime loader should require Microsoft.Data.SqlClient.");
+        RequireTraceEvent(context, "EXPORT_SQL_PACKAGE_REFERENCE_GENERATED");
+    }
+
+    private static void AssertSqlDataGridColumnMappingUsesOriginalColumnNamesForReader(SmokeContext context)
+    {
+        RequireContains(context.Xaml, "Binding=\"{Binding Кто_выгрузил}\"", "Runtime AXAML should bind to sanitized DTO property for SQL column with spaces.");
+        RequireContains(context.CSharp, "private string кто_выгрузил;", "Generated DTO should contain sanitized SQL column property.");
+        RequireContains(context.CSharp, "Кто_выгрузил = ReadString(reader, @\"Кто выгрузил\")", "SQL reader should use the original column name while assigning the sanitized property.");
+        RequireContains(context.CSharp, "Рабочая_станция = ReadString(reader, @\"Рабочая станция\")", "SQL reader should preserve original Russian column names.");
+        RequireTraceEvent(context, "EXPORT_SQL_COLUMN_MAPPING");
+    }
+
+    private static void AssertSqlDataGridWithoutQueryDoesNotGenerateFakeSqlData(SmokeContext context)
+    {
+        RequireTraceEvent(context, "EXPORT_DATAGRID_EMPTY_COLLECTION_GENERATED");
+        RequireTraceEvent(context, "EXPORT_SQL_LOADER_SKIPPED");
+        RequireNotContains(context.CSharp, "LoadSqlRowFromSql", "Unconfigured SQL source without query/table should not generate a SQL loader.");
+        RequireNotContains(context.CSharp, "SeedSqlRow();", "NoData SQL export should not seed fake rows.");
+        RequireNotContains(context.CSharp, "SqlSource.Add(new SqlRow", "NoData SQL export should not add fake rows.");
+        RequireNotContains(GetRequiredPackagesText(context), "Microsoft.Data.SqlClient", "Unconfigured SQL source without query/table should not require SqlClient.");
+    }
+
+    private static void AssertDemoDataStillGeneratesSeedRowsOnlyInDemoMode(SmokeContext context)
+    {
+        RequireTraceEvent(context, "EXPORT_DATAGRID_DEMO_ROWS_GENERATED");
+        RequireContains(context.CSharp, "SeedSqlRow();", "DemoData SQL export should seed explicit demo rows.");
+        RequireContains(context.CSharp, "SqlSource.Add(new SqlRow", "DemoData SQL export should add sample rows.");
+        RequireNotContains(context.CSharp, "LoadSqlRowFromSql", "DemoData without query/table should not generate a SQL runtime loader.");
+    }
+
     private static void ConfigureSqlDataGridPreviewRuntimeRowsMatch(MainWindowViewModel vm)
     {
         var source = SqlRuntimeMismatchSource("sql-preview-runtime-source", "RuntimeRows", "SqlRow");
+        source.UseRealPreviewRowsIfAvailable = false;
+        source.AllowPreviewSampleFallback = true;
         vm.BindingSources.Add(source);
         vm.DataGridExportMode = MainWindowViewModel.DataGridExportModeReal;
         vm.Controls.Add(DataGrid("RuntimeGrid", source.Id, 32, 42, 720, 360));
@@ -1247,8 +1339,9 @@ internal static class Program
         RequireTraceEvent(context, "DATAGRID_PREVIEW_DATA_MODE");
         RequireTraceEvent(context, "DATAGRID_EXPORT_DATA_MODE");
         RequireTraceEvent(context, "EXPORT_DATAGRID_SOURCE_NOT_CONFIGURED_WARNING");
-        RequireContains(context.CSharp, "private const string SqlRowSqlConnectionString = \"TODO: set SQL Server connection string\";", "Unconfigured SQL export should generate a safe TODO connection string.");
-        RequireContains(context.CSharp, "private const string SqlRowSqlCommandText = @\"SELECT * FROM [dbo].[dbo]\";", "Unconfigured SQL export should make placeholder SQL explicit.");
+        RequireTraceEvent(context, "EXPORT_SQL_LOADER_SKIPPED");
+        RequireNotContains(context.CSharp, "private const string SqlRowSqlConnectionString", "Unconfigured SQL export without query/table should not generate a fake SQL connection string.");
+        RequireNotContains(context.CSharp, "LoadSqlRowFromSql", "Unconfigured SQL export without query/table should not generate a SQL loader.");
         RequireNotContains(context.CSharp, "Server=.;Database=", "Unconfigured SQL export must not pretend that a real connection exists.");
     }
 
@@ -1294,7 +1387,7 @@ internal static class Program
     {
         RequireTraceEvent(context, "EXPORT_DATAGRID_EMPTY_COLLECTION_GENERATED");
         RequireTraceEvent(context, "EXPORT_DATAGRID_SOURCE_NOT_CONFIGURED_WARNING");
-        RequireContains(context.CSharp, "SeedSqlRow();", "NoData export keeps an explicit loader hook.");
+        RequireNotContains(context.CSharp, "SeedSqlRow();", "NoData export should not keep a fake seed hook.");
         RequireGeneratedViewModelCollectionRowCount(context, "SqlSourceView", expectedRows: 0);
     }
 
@@ -1327,6 +1420,8 @@ internal static class Program
     private static void ConfigureSqlDataGridAutoPromotesVisualExportToRuntimeRows(MainWindowViewModel vm)
     {
         var source = SqlRuntimeMismatchSource("sql-auto-runtime-source", "AutoRows", "SqlRow");
+        source.UseRealPreviewRowsIfAvailable = false;
+        source.AllowPreviewSampleFallback = true;
         vm.BindingSources.Add(source);
         vm.DataGridExportMode = MainWindowViewModel.DataGridExportModeVisual;
         vm.Controls.Add(DataGrid("AutoRuntimeGrid", source.Id, 32, 42, 720, 360));
@@ -1507,7 +1602,7 @@ internal static class Program
     {
         RequireContains(context.CSharp, "public partial class CustomerRow : ObservableObject", "SQL source should export DTO by schema.");
         RequireContains(context.CSharp, "private const string CustomerRowSqlConnectionString = \"TODO: set SQL Server connection string\";", "SQL export should use placeholder connection string.");
-        RequireContains(context.CSharp, "LoadCustomerRowFromDatabaseAsync", "SQL export should include a clear placeholder loader.");
+        RequireContains(context.CSharp, "LoadCustomerRowFromSql", "SQL export should include a clear placeholder loader.");
     }
 
     private static void AssertDataGridExportSupportsDllSchemaAsDtoOrReference(SmokeContext context)
