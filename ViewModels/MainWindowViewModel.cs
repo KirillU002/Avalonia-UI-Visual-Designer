@@ -3898,9 +3898,24 @@ public partial class MainWindowViewModel : ObservableObject
             $"source={source.Name}; mode={dataMode}; rows={result.Rows.Count}; sourceConfigured={PreviewRowsLoader.CanLoad(source)}; demoFallback={source.AllowPreviewSampleFallback}",
             toOutput: false);
         TraceDocumentDebug(
+            "PREVIEW_DATAGRID_DATA_MODE",
+            $"source={source.Name}; mode={dataMode}; sourceKind={source.SourceKind}; sourceKey={DataSourceIdentity.BuildKey(source)}; hasConnectionString={!string.IsNullOrWhiteSpace(source.SourceConnectionString)}; hasQuery={!string.IsNullOrWhiteSpace(source.SourceQuery) || !string.IsNullOrWhiteSpace(source.SourceTableName)}; rows={result.Rows.Count}",
+            toOutput: false);
+        TraceDocumentDebug(
             result.IsRealData ? "DATAGRID_PREVIEW_REAL_ROWS_APPLIED" : "DATAGRID_PREVIEW_SAMPLE_ROWS_USED",
             $"sourceKey={DataSourceIdentity.BuildKey(source)}; source={source.Name}; rows={result.Rows.Count}; dataKind={result.DataKind}; reason={result.Reason}",
             toOutput: false);
+        if (!result.IsRealData
+            && DataSourceIdentity.IsSqlServer(source.SourceKind)
+            && SqlPreviewDataLoader.CanLoad(source)
+            && source.UseRealPreviewRowsIfAvailable)
+        {
+            TraceDocumentDebug(
+                "PREVIEW_DATAGRID_UNEXPECTED_DEMO_FALLBACK",
+                $"source={source.Name}; sourceKind={source.SourceKind}; sourceConfigured=true; reason={result.Reason}",
+                toOutput: true,
+                warning: true);
+        }
         RaiseBindingEditorProperties();
         return result.Rows;
     }

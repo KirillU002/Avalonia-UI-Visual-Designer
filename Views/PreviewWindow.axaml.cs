@@ -45,7 +45,7 @@ public partial class PreviewWindow : Window
     private readonly Dictionary<string, DesignerFormDocument> _projectFormsById = new(StringComparer.OrdinalIgnoreCase);
     private string _currentFormId = "";
     private readonly Dictionary<string, Bitmap?> _imageCache = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, (string Signature, IReadOnlyList<Dictionary<string, string>> Rows)> _previewRowsBySourceKey = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, (string Signature, IReadOnlyList<Dictionary<string, string>> Rows, string DataKind)> _previewRowsBySourceKey = new(StringComparer.OrdinalIgnoreCase);
     private readonly PreviewRuntimeService _previewRuntimeService = new();
     private readonly IDesignerRegistry _registry;
     private readonly bool _showRuntimeBadge;
@@ -334,19 +334,32 @@ public partial class PreviewWindow : Window
                 && string.Equals(cached.Signature, signature, StringComparison.Ordinal))
             {
                 Debug.WriteLine($"DATAGRID_PREVIEW_CACHE_HIT sourceKey={sourceKey}; rows={cached.Rows.Count}");
+                Debug.WriteLine($"PREVIEW_DATA_CACHE_HIT key={sourceKey}; rows={cached.Rows.Count}");
                 continue;
             }
 
             try
             {
                 var result = await PreviewRowsLoader.LoadRowsAsync(source);
-                _previewRowsBySourceKey[sourceKey] = (signature, result.Rows);
+                _previewRowsBySourceKey[sourceKey] = (signature, result.Rows, result.DataKind);
                 Debug.WriteLine($"DATAGRID_PREVIEW_ROWS_LOADED sourceKey={sourceKey}; display={DataSourceIdentity.BuildDisplayName(source)}; rows={result.Rows.Count}; dataKind={result.DataKind}");
+                if (!result.IsRealData
+                    && DataSourceIdentity.IsSqlServer(source.SourceKind)
+                    && SqlPreviewDataLoader.CanLoad(source)
+                    && source.UseRealPreviewRowsIfAvailable)
+                {
+                    Debug.WriteLine(
+                        "PREVIEW_DATAGRID_UNEXPECTED_DEMO_FALLBACK " +
+                        $"sourceKind={source.SourceKind}; sourceConfigured=True; reason={result.Reason}");
+                }
             }
             catch (Exception ex)
             {
                 _previewRowsBySourceKey.Remove(sourceKey);
                 Debug.WriteLine($"DATAGRID_PREVIEW_CACHE_INVALIDATED sourceKey={sourceKey}; reason={ex.Message}");
+                Debug.WriteLine($"PREVIEW_DATA_CACHE_INVALIDATED key={sourceKey}; reason={ex.Message}");
+                if (DataSourceIdentity.IsSqlServer(source.SourceKind))
+                    Debug.WriteLine($"PREVIEW_SQL_ROWS_LOAD_FAILED sourceKey={sourceKey}; reason={ex.Message}");
             }
         }
     }
@@ -361,6 +374,18 @@ public partial class PreviewWindow : Window
         return _previewRowsBySourceKey.TryGetValue(sourceKey, out var cached)
             ? cached.Rows
             : Array.Empty<Dictionary<string, string>>();
+    }
+
+    private string GetCachedPreviewRowsDataKind(string? bindingSourceId)
+    {
+        var source = GetBindingSource(bindingSourceId);
+        if (source is null)
+            return string.Empty;
+
+        var sourceKey = DataSourceIdentity.BuildKey(source);
+        return _previewRowsBySourceKey.TryGetValue(sourceKey, out var cached)
+            ? cached.DataKind
+            : string.Empty;
     }
 
     private Dictionary<string, string> GetPreviewDataGridFilterValues(string controlId)
@@ -2651,6 +2676,7 @@ public partial class PreviewWindow : Window
         var previewRowCount = Math.Min(MaxPreviewDataGridRows, Math.Max(18, visibleRowCount + 6));
         var previewBindingSource = GetBindingSource(control.BindingSourceId);
         var sqlPreviewRows = GetCachedPreviewRows(control.BindingSourceId);
+        var previewRowsDataKind = GetCachedPreviewRowsDataKind(control.BindingSourceId);
         var usesSqlPreviewRows = sqlPreviewRows.Count > 0;
         var suppressSyntheticRows = !usesSqlPreviewRows && ShouldSuppressSyntheticRowsForPreview(previewBindingSource);
         var previewRows = ApplyPreviewWindowSort(
@@ -2664,7 +2690,7 @@ public partial class PreviewWindow : Window
                 filterValues,
                 control.FilterMode),
             visibleFields);
-        TracePreviewWindowDataMode(control, previewBindingSource, previewRows.Count, usesSqlPreviewRows, suppressSyntheticRows);
+        TracePreviewWindowDataMode(control, previewBindingSource, previewRows.Count, usesSqlPreviewRows, suppressSyntheticRows, previewRowsDataKind);
         var renderedRowCount = suppressSyntheticRows
             ? 0
             : Math.Min(MaxPreviewDataGridRows, Math.Max(previewRows.Count, usesSqlPreviewRows ? 1 : previewRowCount));
@@ -3553,13 +3579,23 @@ public partial class PreviewWindow : Window
         BindingSourceFileModel? source,
         int rowCount,
         bool usesLoadedRows,
-        bool suppressed)
+        bool suppressed,
+        string loadedDataKind)
     {
         if (source is null)
             return;
 
-        var mode = PreviewRowsLoader.ResolveDataMode(source);
+        var mode = usesLoadedRows
+            ? string.Equals(loadedDataKind, "RealData", StringComparison.OrdinalIgnoreCase)
+                ? DataSourceIdentity.IsSqlServer(source.SourceKind)
+                    ? PreviewRowsLoader.DataModeRealSqlData
+                    : PreviewRowsLoader.DataModeRealDllData
+                : PreviewRowsLoader.DataModeDemoData
+            : PreviewRowsLoader.ResolveDataMode(source);
 
+        Debug.WriteLine(
+            "PREVIEW_DATAGRID_DATA_MODE " +
+            $"grid={control.Name}; mode={mode}; sourceKind={source.SourceKind}; sourceKey={DataSourceIdentity.BuildKey(source)}; hasConnectionString={!string.IsNullOrWhiteSpace(source.SourceConnectionString)}; hasQuery={!string.IsNullOrWhiteSpace(source.SourceQuery) || !string.IsNullOrWhiteSpace(source.SourceTableName)}; rows={rowCount}; suppressed={suppressed}");
         Debug.WriteLine(
             "DATAGRID_PREVIEW_DATA_MODE " +
             $"grid={control.Name}; mode={mode}; rows={rowCount}; sourceConfigured={SqlPreviewDataLoader.CanLoad(source) || (!string.IsNullOrWhiteSpace(source.SourceAssemblyPath) && !string.IsNullOrWhiteSpace(source.SourceTypeFullName))}; demoFallback={source.AllowPreviewSampleFallback}; suppressed={suppressed}");

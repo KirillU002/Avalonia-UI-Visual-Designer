@@ -133,8 +133,13 @@ internal static class PreviewRowsLoader
         if (mode == BindingSourceModel.PreviewRowModeSchemaOnly)
             return true;
 
-        if (DataSourceIdentity.IsSqlServer(source.SourceKind) && !SqlPreviewDataLoader.CanLoad(source))
+        if (DataSourceIdentity.IsSqlServer(source.SourceKind))
+        {
+            if (SqlPreviewDataLoader.CanLoad(source) && source.UseRealPreviewRowsIfAvailable)
+                return mode is BindingSourceModel.PreviewRowModeTopN or BindingSourceModel.PreviewRowModeAllRows;
+
             return !AllowsDemoRows(source);
+        }
 
         return DataSourceIdentity.IsAssembly(source.SourceKind)
             && source.UseRealPreviewRowsIfAvailable
@@ -150,8 +155,13 @@ internal static class PreviewRowsLoader
         if (mode == BindingSourceModel.PreviewRowModeSchemaOnly)
             return true;
 
-        if (DataSourceIdentity.IsSqlServer(source.SourceKind) && !SqlPreviewDataLoader.CanLoad(source))
+        if (DataSourceIdentity.IsSqlServer(source.SourceKind))
+        {
+            if (SqlPreviewDataLoader.CanLoad(source) && source.UseRealPreviewRowsIfAvailable)
+                return mode is BindingSourceModel.PreviewRowModeTopN or BindingSourceModel.PreviewRowModeAllRows;
+
             return !AllowsDemoRows(source);
+        }
 
         return DataSourceIdentity.IsAssembly(source.SourceKind)
             && source.UseRealPreviewRowsIfAvailable
@@ -193,15 +203,29 @@ internal static class PreviewRowsLoader
 
         if (SqlPreviewDataLoader.CanLoad(source))
         {
+            var sqlStarted = Stopwatch.StartNew();
+            var sourceKey = DataSourceIdentity.BuildKey(source);
+            Debug.WriteLine(
+                "PREVIEW_SQL_ROWS_LOAD_START " +
+                $"sourceKey={sourceKey}; queryHash={SqlPreviewDataLoader.BuildQueryHash(source)}; topN={source.PreviewTopN}");
             try
             {
                 var sqlRows = await SqlPreviewDataLoader.LoadRowsAsync(source).ConfigureAwait(false);
                 var limitedRows = ApplySortAndLimit(source, sqlRows, out var beforeCount);
+                Debug.WriteLine(
+                    "PREVIEW_SQL_ROWS_LOAD_END " +
+                    $"sourceKey={sourceKey}; rows={limitedRows.Count}; elapsedMs={sqlStarted.Elapsed.TotalMilliseconds:0.0}");
                 Debug.WriteLine($"DATAGRID_PREVIEW_TOP_N_APPLIED sourceKey={DataSourceIdentity.BuildKey(source)}; topN={source.PreviewTopN}; rowsBefore={beforeCount}; rowsAfter={limitedRows.Count}");
                 return Complete(source, limitedRows, true, "RealData", $"Загружены реальные SQL rows: {limitedRows.Count}.", "sql", updateSourceStatus);
             }
             catch (Exception ex) when (source.AllowPreviewSampleFallback)
             {
+                Debug.WriteLine(
+                    "PREVIEW_SQL_ROWS_LOAD_FAILED " +
+                    $"sourceKey={sourceKey}; reason={ex.Message}");
+                Debug.WriteLine(
+                    "PREVIEW_DATAGRID_UNEXPECTED_DEMO_FALLBACK " +
+                    $"sourceKind={source.SourceKind}; sourceConfigured=True; reason={ex.Message}");
                 var fallbackRows = BuildSampleRows(source, Math.Max(1, source.PreviewTopN));
                 return Complete(source, fallbackRows, false, "SampleRows", $"Используются demo rows, реальные SQL данные не загружены. Причина: {ex.Message}", ex.Message, updateSourceStatus);
             }
@@ -212,6 +236,9 @@ internal static class PreviewRowsLoader
             if (source.AllowPreviewSampleFallback)
             {
                 var rows = BuildSampleRows(source, Math.Max(1, source.PreviewTopN));
+                Debug.WriteLine(
+                    "PREVIEW_DATAGRID_DEMO_ROWS_USED " +
+                    $"sourceKey={DataSourceIdentity.BuildKey(source)}; reason=sql-not-configured; explicitDemoEnabled=True; rows={rows.Count}");
                 return Complete(source, rows, false, "DemoData", "Demo data: SQL source is not configured.", "sql-not-configured", updateSourceStatus);
             }
 

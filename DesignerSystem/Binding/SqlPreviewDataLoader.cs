@@ -6,6 +6,8 @@ using System.Data;
 using System.Globalization;
 using System.Linq;
 using System.Reflection;
+using System.Security.Cryptography;
+using System.Text;
 using System.Threading.Tasks;
 
 namespace FormDesigner.DesignerSystem.Binding;
@@ -13,6 +15,8 @@ namespace FormDesigner.DesignerSystem.Binding;
 internal static class SqlPreviewDataLoader
 {
     public const int MaxPreviewRows = 100;
+
+    internal static Func<string, string, string, string?, Task<IReadOnlyList<Dictionary<string, string>>>>? TestRowsProviderAsync { get; set; }
 
     public static bool CanLoad(BindingSourceModel? source)
     {
@@ -38,6 +42,22 @@ internal static class SqlPreviewDataLoader
             Normalize(source.SourceSchemaName),
             Normalize(source.SourceTableName),
             Normalize(source.SourceQuery));
+    }
+
+    public static string BuildQueryHash(BindingSourceModel source)
+    {
+        return ShortHash(string.Join("|",
+            Normalize(source.SourceSchemaName),
+            Normalize(source.SourceTableName),
+            Normalize(source.SourceQuery)));
+    }
+
+    public static string BuildQueryHash(BindingSourceFileModel source)
+    {
+        return ShortHash(string.Join("|",
+            Normalize(source.SourceSchemaName),
+            Normalize(source.SourceTableName),
+            Normalize(source.SourceQuery)));
     }
 
     public static string BuildSignature(BindingSourceFileModel source)
@@ -73,12 +93,24 @@ internal static class SqlPreviewDataLoader
         return string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
     }
 
+    private static string ShortHash(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return "0";
+
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(value.Trim()));
+        return Convert.ToHexString(bytes)[..10];
+    }
+
     private static async Task<IReadOnlyList<Dictionary<string, string>>> LoadRowsCoreAsync(
         string connectionString,
         string schemaName,
         string tableName,
         string? sourceQuery)
     {
+        if (TestRowsProviderAsync is { } testRowsProvider)
+            return await testRowsProvider(connectionString, schemaName, tableName, sourceQuery).ConfigureAwait(false);
+
         var connectionResult = await OpenSqlConnectionAsync(connectionString);
         await using var connection = connectionResult.Connection;
 

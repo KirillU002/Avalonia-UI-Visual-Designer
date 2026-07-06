@@ -8115,6 +8115,10 @@ public partial class MainWindow : Window
             && string.Equals(cached.Signature, signature, StringComparison.Ordinal))
         {
             Debug.WriteLine($"DATAGRID_PREVIEW_CACHE_HIT sourceKey={sourceKey}; rows={cached.Rows.Count}");
+            VM.TraceDocumentDebug(
+                "PREVIEW_DATA_CACHE_HIT",
+                $"key={sourceKey}; mode={source.PreviewRowsDataKind}; rows={cached.Rows.Count}",
+                toOutput: false);
             return;
         }
 
@@ -8131,6 +8135,17 @@ public partial class MainWindow : Window
                 "DATAGRID_PREVIEW_ROWS_LOADED",
                 $"sourceKey={sourceKey}; display={DataSourceIdentity.BuildDisplayName(source)}; rows={result.Rows.Count}; dataKind={result.DataKind}",
                 toOutput: false);
+            if (!result.IsRealData
+                && DataSourceIdentity.IsSqlServer(source.SourceKind)
+                && SqlPreviewDataLoader.CanLoad(source)
+                && source.UseRealPreviewRowsIfAvailable)
+            {
+                VM.TraceDocumentDebug(
+                    "PREVIEW_DATAGRID_UNEXPECTED_DEMO_FALLBACK",
+                    $"grid={VM.SelectedControl?.Name ?? "-"}; sourceKind={source.SourceKind}; sourceConfigured=true; reason={result.Reason}",
+                    toOutput: true,
+                    warning: true);
+            }
         }
         catch (Exception ex)
         {
@@ -8139,7 +8154,12 @@ public partial class MainWindow : Window
             source.PreviewRowsStatus = $"Реальные данные не загружены. Причина: {ex.Message}";
             Debug.WriteLine($"DATAGRID_PREVIEW_CACHE_INVALIDATED sourceKey={sourceKey}; reason=load-failed");
             VM.TraceDocumentDebug(
-                "DLL_TABLE_REAL_ROWS_LOAD_FAILED",
+                "PREVIEW_DATA_CACHE_INVALIDATED",
+                $"key={sourceKey}; reason=load-failed",
+                toOutput: false,
+                warning: true);
+            VM.TraceDocumentDebug(
+                DataSourceIdentity.IsSqlServer(source.SourceKind) ? "PREVIEW_SQL_ROWS_LOAD_FAILED" : "DLL_TABLE_REAL_ROWS_LOAD_FAILED",
                 $"sourceKey={sourceKey}; reason={ex.Message}",
                 toOutput: true,
                 warning: true);
@@ -8239,13 +8259,31 @@ public partial class MainWindow : Window
         else if (suppressed)
         {
             source.PreviewRowsDataKind = mode;
-            source.PreviewRowsStatus = "Preview rows are empty because source is schema-only or demo rows are disabled.";
+            source.PreviewRowsStatus = string.Equals(mode, PreviewRowsLoader.DataModeRealSqlData, StringComparison.Ordinal)
+                ? "Preview data: loading real SQL rows. Demo rows are suppressed for this source."
+                : "Preview rows are empty because source is schema-only or demo rows are disabled.";
         }
 
         VM.TraceDocumentDebug(
             "DATAGRID_PREVIEW_DATA_MODE",
             $"grid={control.Name}; mode={mode}; rows={rowCount}; sourceConfigured={PreviewRowsLoader.CanLoad(source)}; demoFallback={source.AllowPreviewSampleFallback}",
             toOutput: false);
+        VM.TraceDocumentDebug(
+            "PREVIEW_DATAGRID_DATA_MODE",
+            $"grid={control.Name}; form={VM.ActiveDocumentName}; mode={mode}; sourceKind={source.SourceKind}; sourceKey={DataSourceIdentity.BuildKey(source)}; hasConnectionString={!string.IsNullOrWhiteSpace(source.SourceConnectionString)}; hasQuery={!string.IsNullOrWhiteSpace(source.SourceQuery) || !string.IsNullOrWhiteSpace(source.SourceTableName)}; rows={rowCount}",
+            toOutput: false);
+        if (!usesLoadedRows
+            && !suppressed
+            && DataSourceIdentity.IsSqlServer(source.SourceKind)
+            && SqlPreviewDataLoader.CanLoad(source)
+            && source.UseRealPreviewRowsIfAvailable)
+        {
+            VM.TraceDocumentDebug(
+                "PREVIEW_DATAGRID_UNEXPECTED_DEMO_FALLBACK",
+                $"grid={control.Name}; sourceKind={source.SourceKind}; sourceConfigured=true; reason=synthetic rows would be used before SQL preview rows loaded",
+                toOutput: true,
+                warning: true);
+        }
     }
 
     private void LaunchPreviewWindow_Closed(object? sender, EventArgs e)

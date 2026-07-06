@@ -97,6 +97,12 @@ internal static class Program
             new("SqlDataGridColumnMappingUsesOriginalColumnNamesForReader", ConfigureSqlDataGridRussianColumnsExportAllowed, AssertSqlDataGridColumnMappingUsesOriginalColumnNamesForReader, RequiresRealDataGrid: true),
             new("SqlDataGridWithoutQueryDoesNotGenerateFakeSqlData", ConfigureUnconfiguredSqlDataGridNoData, AssertSqlDataGridWithoutQueryDoesNotGenerateFakeSqlData, RequiresRealDataGrid: true),
             new("DemoDataStillGeneratesSeedRowsOnlyInDemoMode", ConfigureUnconfiguredSqlDataGridDemoRows, AssertDemoDataStillGeneratesSeedRowsOnlyInDemoMode, RequiresRealDataGrid: true),
+            new("SqlDataGridPreviewUsesRealSqlRowsWhenSourceConfigured", ConfigureSqlDataGridExport, AssertSqlDataGridPreviewUsesRealSqlRowsWhenSourceConfigured, RequiresRealDataGrid: true),
+            new("SqlDataGridPreviewDoesNotUseDemoRowsForConfiguredSql", ConfigureSqlDataGridExport, AssertSqlDataGridPreviewDoesNotUseDemoRowsForConfiguredSql, RequiresRealDataGrid: true),
+            new("SqlDataGridPreviewUsesDemoOnlyWhenExplicitlyEnabled", ConfigureUnconfiguredSqlDataGridDemoRows, AssertSqlDataGridPreviewUsesDemoOnlyWhenExplicitlyEnabled, RequiresRealDataGrid: true),
+            new("SqlDataGridPreviewShowsNoDataWhenNoSourceAndDemoDisabled", ConfigureUnconfiguredSqlDataGridNoData, AssertSqlDataGridPreviewShowsNoDataWhenNoSourceAndDemoDisabled, RequiresRealDataGrid: true),
+            new("SqlPreviewCacheInvalidatesWhenQueryChanges", ConfigureSqlDataGridExport, AssertSqlPreviewCacheInvalidatesWhenQueryChanges, RequiresRealDataGrid: true),
+            new("SqlPreviewCacheKeyIncludesSourceKeyAndQueryHash", ConfigureSqlDataGridExport, AssertSqlPreviewCacheKeyIncludesSourceKeyAndQueryHash, RequiresRealDataGrid: true),
             new("SqlDataGridPreviewRuntimeRowsMatch", ConfigureSqlDataGridPreviewRuntimeRowsMatch, AssertSqlDataGridPreviewRuntimeRowsMatch, RequiresRealDataGrid: true),
             new("SqlDataGridWithoutConnectionDoesNotPretendRealData", ConfigureUnconfiguredSqlDataGridDemoRows, AssertSqlDataGridWithoutConnectionDoesNotPretendRealData, RequiresRealDataGrid: true),
             new("DemoDataPreviewExportsDemoRows", ConfigureUnconfiguredSqlDataGridDemoRows, AssertDemoDataPreviewExportsDemoRows, RequiresRealDataGrid: true),
@@ -1273,6 +1279,151 @@ internal static class Program
         RequireContains(context.CSharp, "SeedSqlRow();", "DemoData SQL export should seed explicit demo rows.");
         RequireContains(context.CSharp, "SqlSource.Add(new SqlRow", "DemoData SQL export should add sample rows.");
         RequireNotContains(context.CSharp, "LoadSqlRowFromSql", "DemoData without query/table should not generate a SQL runtime loader.");
+    }
+
+    private static void AssertSqlDataGridPreviewUsesRealSqlRowsWhenSourceConfigured(SmokeContext context)
+    {
+        using var provider = UseSqlPreviewRowsProvider((_, _, _, _) => SqlPreviewRows(("Id", "9001"), ("Name", "Real SQL customer"), ("Email", "real-sql@example.com"), ("Status", "Loaded")));
+        var source = GetOnlySqlSource(context);
+        source.AllowPreviewSampleFallback = false;
+        source.UseRealPreviewRowsIfAvailable = true;
+
+        var rows = context.ViewModel.LoadPreviewRowsForBindingSourceAsync(source).GetAwaiter().GetResult();
+
+        RequireEqual(1, rows.Count, "Configured SQL preview should load rows from SQL provider.");
+        RequireEqual("Real SQL customer", rows[0]["Name"], "Configured SQL preview should display real provider rows.");
+        RequireEqual("RealData", source.PreviewRowsDataKind, "Configured SQL preview should be marked as real data.");
+        RequireTraceEvent(context, "PREVIEW_DATAGRID_DATA_MODE");
+        RequireTraceEvent(context, "DATAGRID_PREVIEW_REAL_ROWS_APPLIED");
+        RequireNoTraceEvent(context, "PREVIEW_DATAGRID_UNEXPECTED_DEMO_FALLBACK");
+    }
+
+    private static void AssertSqlDataGridPreviewDoesNotUseDemoRowsForConfiguredSql(SmokeContext context)
+    {
+        using var provider = UseSqlPreviewRowsProvider((_, _, _, _) => SqlPreviewRows(("Id", "42"), ("Name", "Only real row"), ("Email", "real-only@example.com"), ("Status", "Real")));
+        var source = GetOnlySqlSource(context);
+        source.AllowPreviewSampleFallback = false;
+        source.UseRealPreviewRowsIfAvailable = true;
+
+        RequireEqual(true, ShouldSuppressSyntheticPreviewRows(source), "Configured real SQL source should suppress synthetic preview rows while real rows load.");
+        var rows = context.ViewModel.LoadPreviewRowsForBindingSourceAsync(source).GetAwaiter().GetResult();
+        var joined = string.Join("|", rows.SelectMany(row => row.Values));
+
+        RequireContains(joined, "Only real row", "Configured SQL preview should contain real provider values.");
+        RequireNotContains(joined, "Ada Lovelace", "Configured SQL preview must not fall back to schema sample values.");
+        RequireNotContains(joined, "Sample", "Configured SQL preview must not show generic sample rows.");
+        RequireNotContains(joined, "текст", "Configured SQL preview must not show synthetic text rows.");
+    }
+
+    private static void AssertSqlDataGridPreviewUsesDemoOnlyWhenExplicitlyEnabled(SmokeContext context)
+    {
+        var source = GetOnlySqlSource(context);
+        var rows = context.ViewModel.LoadPreviewRowsForBindingSourceAsync(source).GetAwaiter().GetResult();
+
+        if (rows.Count == 0)
+            throw new InvalidOperationException("Explicit demo mode should produce preview demo rows.");
+
+        RequireEqual("DemoData", source.PreviewRowsDataKind, "Unconfigured SQL with demo fallback should be marked as DemoData.");
+        RequireTraceEvent(context, "PREVIEW_DATAGRID_DATA_MODE");
+        RequireTraceEvent(context, "DATAGRID_PREVIEW_SAMPLE_ROWS_USED");
+    }
+
+    private static void AssertSqlDataGridPreviewShowsNoDataWhenNoSourceAndDemoDisabled(SmokeContext context)
+    {
+        var source = GetOnlySqlSource(context);
+        var rows = context.ViewModel.LoadPreviewRowsForBindingSourceAsync(source).GetAwaiter().GetResult();
+
+        RequireEqual(0, rows.Count, "Unconfigured SQL with demo disabled should not generate fake preview rows.");
+        RequireEqual("SchemaOnly", source.PreviewRowsDataKind, "Unconfigured SQL with demo disabled should be schema-only/no-data.");
+        RequireTraceEvent(context, "PREVIEW_DATAGRID_DATA_MODE");
+    }
+
+    private static void AssertSqlPreviewCacheInvalidatesWhenQueryChanges(SmokeContext context)
+    {
+        using var provider = UseSqlPreviewRowsProvider((_, _, _, query) =>
+            query?.Contains("CustomersV2", StringComparison.OrdinalIgnoreCase) == true
+                ? SqlPreviewRows(("Id", "2"), ("Name", "Query B"), ("Email", "b@example.com"), ("Status", "B"))
+                : SqlPreviewRows(("Id", "1"), ("Name", "Query A"), ("Email", "a@example.com"), ("Status", "A")));
+        var source = GetOnlySqlSource(context);
+        source.AllowPreviewSampleFallback = false;
+        source.UseRealPreviewRowsIfAvailable = true;
+
+        source.SourceQuery = "SELECT Id, Name, Email, Status FROM dbo.Customers";
+        var rowsA = context.ViewModel.LoadPreviewRowsForBindingSourceAsync(source).GetAwaiter().GetResult();
+        source.SourceQuery = "SELECT Id, Name, Email, Status FROM dbo.CustomersV2";
+        var rowsB = context.ViewModel.LoadPreviewRowsForBindingSourceAsync(source).GetAwaiter().GetResult();
+
+        RequireEqual("Query A", rowsA[0]["Name"], "Initial SQL preview query should load query A rows.");
+        RequireEqual("Query B", rowsB[0]["Name"], "Changed SQL preview query should load query B rows.");
+        RequireNotEqual(rowsA[0]["Name"], rowsB[0]["Name"], "SQL preview rows must not stay stale after query changes.");
+    }
+
+    private static void AssertSqlPreviewCacheKeyIncludesSourceKeyAndQueryHash(SmokeContext context)
+    {
+        using var provider = UseSqlPreviewRowsProvider((_, _, _, query) =>
+            query?.Contains("Orders", StringComparison.OrdinalIgnoreCase) == true
+                ? SqlPreviewRows(("Id", "77"), ("Name", "Orders source"), ("Email", "orders@example.com"), ("Status", "Orders"))
+                : SqlPreviewRows(("Id", "11"), ("Name", "Customers source"), ("Email", "customers@example.com"), ("Status", "Customers")));
+        var customers = GetOnlySqlSource(context);
+        customers.AllowPreviewSampleFallback = false;
+        customers.UseRealPreviewRowsIfAvailable = true;
+
+        var orders = SqlCustomersSource();
+        orders.Id = "sql-orders-preview-source";
+        orders.Name = "SqlOrders";
+        orders.Path = "Orders";
+        orders.SourceTableName = "Orders";
+        orders.SourceQuery = "SELECT Id, Name, Email, Status FROM dbo.Orders";
+        orders.AllowPreviewSampleFallback = false;
+        orders.UseRealPreviewRowsIfAvailable = true;
+        context.ViewModel.BindingSources.Add(orders);
+
+        var customerRows = context.ViewModel.LoadPreviewRowsForBindingSourceAsync(customers).GetAwaiter().GetResult();
+        var orderRows = context.ViewModel.LoadPreviewRowsForBindingSourceAsync(orders).GetAwaiter().GetResult();
+
+        RequireEqual("Customers source", customerRows[0]["Name"], "First SQL source should keep its own preview rows.");
+        RequireEqual("Orders source", orderRows[0]["Name"], "Second SQL source should keep its own preview rows.");
+        RequireNotEqual(customerRows[0]["Name"], orderRows[0]["Name"], "SQL preview cache/source identity must not mix rows between sources.");
+    }
+
+    private static BindingSourceModel GetOnlySqlSource(SmokeContext context)
+    {
+        return context.ViewModel.BindingSources.First(source => string.Equals(source.SourceKind, "SqlServer", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static Task<IReadOnlyList<Dictionary<string, string>>> SqlPreviewRows(params (string Key, string Value)[] values)
+    {
+        IReadOnlyList<Dictionary<string, string>> rows = new[]
+        {
+            values.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase)
+        };
+        return Task.FromResult(rows);
+    }
+
+    private static IDisposable UseSqlPreviewRowsProvider(
+        Func<string, string, string, string?, Task<IReadOnlyList<Dictionary<string, string>>>> provider)
+    {
+        var loaderType = typeof(MainWindowViewModel).Assembly.GetType("FormDesigner.DesignerSystem.Binding.SqlPreviewDataLoader")
+            ?? throw new InvalidOperationException("SqlPreviewDataLoader type was not found.");
+        var property = loaderType.GetProperty("TestRowsProviderAsync", BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public)
+            ?? throw new InvalidOperationException("SqlPreviewDataLoader.TestRowsProviderAsync was not found.");
+        var previous = property.GetValue(null);
+        property.SetValue(null, provider);
+        return new DisposeAction(() => property.SetValue(null, previous));
+    }
+
+    private static bool ShouldSuppressSyntheticPreviewRows(BindingSourceModel source)
+    {
+        var loaderType = typeof(MainWindowViewModel).Assembly.GetType("FormDesigner.DesignerSystem.Binding.PreviewRowsLoader")
+            ?? throw new InvalidOperationException("PreviewRowsLoader type was not found.");
+        var method = loaderType.GetMethod(
+            "ShouldSuppressSyntheticRows",
+            BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public,
+            binder: null,
+            types: new[] { typeof(BindingSourceModel) },
+            modifiers: null)
+            ?? throw new InvalidOperationException("PreviewRowsLoader.ShouldSuppressSyntheticRows was not found.");
+        return (bool)(method.Invoke(null, new object?[] { source }) ?? false);
     }
 
     private static void ConfigureSqlDataGridPreviewRuntimeRowsMatch(MainWindowViewModel vm)
@@ -5375,6 +5526,18 @@ Diagnostics:
             throw new InvalidOperationException(message);
     }
 
+    private static void RequireEqual<T>(T expected, T actual, string message)
+    {
+        if (!EqualityComparer<T>.Default.Equals(expected, actual))
+            throw new InvalidOperationException($"{message} Expected: {expected}; actual: {actual}");
+    }
+
+    private static void RequireNotEqual<T>(T unexpected, T actual, string message)
+    {
+        if (EqualityComparer<T>.Default.Equals(unexpected, actual))
+            throw new InvalidOperationException($"{message} Unexpected value: {unexpected}");
+    }
+
     private static void RequireGeneratedMainWindowViewModelAssignment(SmokeContext context, string message)
     {
         if (context.CSharp.Contains("DataContext = new MainWindowViewModel();", StringComparison.Ordinal)
@@ -5394,6 +5557,14 @@ Diagnostics:
 
         var trace = string.Join(" | ", context.ViewModel.InteractionTraceEntries.Take(12).Select(entry => entry.Summary));
         throw new InvalidOperationException($"Expected trace event '{eventName}' was not emitted. Recent trace: {trace}");
+    }
+
+    private static void RequireNoTraceEvent(SmokeContext context, string eventName)
+    {
+        if (!context.ViewModel.InteractionTraceEntries.Any(entry => string.Equals(entry.EventName, eventName, StringComparison.OrdinalIgnoreCase)))
+            return;
+
+        throw new InvalidOperationException($"Trace event '{eventName}' should not be emitted.");
     }
 
     private static string GetGeneratedFilesText(SmokeContext context)
@@ -5538,6 +5709,26 @@ Diagnostics:
         {
             if (Directory.Exists(Path))
                 Directory.Delete(Path, recursive: true);
+        }
+    }
+
+    private sealed class DisposeAction : IDisposable
+    {
+        private readonly Action _dispose;
+        private bool _isDisposed;
+
+        public DisposeAction(Action dispose)
+        {
+            _dispose = dispose;
+        }
+
+        public void Dispose()
+        {
+            if (_isDisposed)
+                return;
+
+            _isDisposed = true;
+            _dispose();
         }
     }
 }
