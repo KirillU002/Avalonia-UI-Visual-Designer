@@ -1,5 +1,6 @@
 ﻿using FormDesigner.DesignerSystem.Binding;
 using FormDesigner.DesignerSystem.BuiltIn;
+using Avalonia.Controls;
 using FormDesigner.DesignerSystem.Infrastructure;
 using FormDesigner.Localization;
 using FormDesigner.Models;
@@ -46,6 +47,19 @@ internal static class Program
             new("LayoutPropertiesAvailableInPropertyInspector", ConfigureLayoutPropertiesAvailableInPropertyInspector, AssertLayoutPropertiesAvailableInPropertyInspector),
             new("LayoutTabCanBeHiddenWithoutBreakingProperties", ConfigureLayoutPropertiesAvailableInPropertyInspector, AssertLayoutTabCanBeHiddenWithoutBreakingProperties),
             new("RuntimeBadgeDoesNotAffectPreviewBounds", ConfigureRuntimeBadgeDoesNotAffectPreviewBounds, AssertRuntimeBadgeDoesNotAffectPreviewBounds),
+            new("HelpWindowOpensMaximized", ConfigureSimpleFormExport, AssertHelpWindowOpensMaximized),
+            new("HelpWindowOpensLargeAdaptive", ConfigureSimpleFormExport, AssertHelpWindowOpensLargeAdaptive),
+            new("HelpWindowReusesExistingInstance", ConfigureSimpleFormExport, AssertHelpWindowReusesExistingInstance),
+            new("HelpSectionsExist", ConfigureSimpleFormExport, AssertHelpSectionsExist),
+            new("HelpCarouselHasSlides", ConfigureSimpleFormExport, AssertHelpCarouselHasSlides),
+            new("HelpContentMentionsAlpha30", ConfigureSimpleFormExport, AssertHelpContentMentionsAlpha30),
+            new("HelpAboutProjectDoesNotMentionUniversityPresentation", ConfigureSimpleFormExport, AssertHelpAboutProjectDoesNotMentionUniversityPresentation),
+            new("HelpDeveloperSectionExists", ConfigureSimpleFormExport, AssertHelpDeveloperSectionExists),
+            new("HelpDeveloperSectionContainsCoreTerms", ConfigureSimpleFormExport, AssertHelpDeveloperSectionContainsCoreTerms),
+            new("HelpSearchFindsDeveloperTerms", ConfigureSimpleFormExport, AssertHelpSearchFindsDeveloperTerms),
+            new("HelpNavigationChangesSelectedSection", ConfigureSimpleFormExport, AssertHelpNavigationChangesSelectedSection),
+            new("HelpLayoutWorksInMaximizedMode", ConfigureSimpleFormExport, AssertHelpLayoutWorksInMaximizedMode),
+            new("HelpWindowDoesNotBlockMainDesigner", ConfigureSimpleFormExport, AssertHelpWindowDoesNotBlockMainDesigner),
             new("ValidateBuildShowsRestoreAndBuildSteps", ConfigureSimpleFormExport, AssertValidateBuildShowsRestoreAndBuildSteps),
             new("ValidateBuildStoresDetailedLogs", ConfigureSimpleFormExport, AssertValidateBuildStoresDetailedLogs),
             new("ValidateBuildSettingsCanDisableAutoBuild", ConfigureSimpleFormExport, AssertValidateBuildSettingsCanDisableAutoBuild),
@@ -504,6 +518,195 @@ internal static class Program
             var on = withBadge.Single(control => control.ControlId == off.ControlId);
             RequireSameBounds(off, on);
         }
+    }
+
+    private static void AssertHelpWindowOpensMaximized(SmokeContext context)
+    {
+        RequireEqual(WindowState.Maximized.ToString(), HelpWindow.PreferredWindowState.ToString(), "Help Window should prefer maximized startup.");
+        RequireContains(
+            File.ReadAllText(Path.Combine(FindRepositoryRoot(), "Views", "HelpWindow.axaml"), Encoding.UTF8),
+            "WindowState=\"Maximized\"",
+            "HelpWindow.axaml should open maximized.");
+    }
+
+    private static void AssertHelpWindowOpensLargeAdaptive(SmokeContext context)
+    {
+        var fullHd = HelpWindow.CalculateAdaptiveSize(1920, 1080);
+        if (fullHd.Width < 1840 || fullHd.Width > 1920)
+            throw new InvalidOperationException($"Help window width should use most of Full HD working area, got {fullHd.Width}.");
+        if (fullHd.Height < 1000 || fullHd.Height > 1080)
+            throw new InvalidOperationException($"Help window height should use most of Full HD working area, got {fullHd.Height}.");
+
+        var small = HelpWindow.CalculateAdaptiveSize(1000, 680);
+        if (small.Width > 1000 || small.Height > 680)
+            throw new InvalidOperationException($"Help window must not exceed small working area, got {small.Width}x{small.Height}.");
+    }
+
+    private static void AssertHelpWindowReusesExistingInstance(SmokeContext context)
+    {
+        var source = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "Views", "MainWindow.axaml.cs"), Encoding.UTF8);
+        RequireContains(source, "_helpWindow is { IsVisible: true }", "OpenHelpWindow should check an existing visible HelpWindow.");
+        RequireContains(source, "_helpWindow.Activate();", "OpenHelpWindow should activate the existing HelpWindow.");
+        RequireContains(source, "action=activate-existing", "OpenHelpWindow should emit reuse diagnostics.");
+    }
+
+    private static void AssertHelpSectionsExist(SmokeContext context)
+    {
+        var sections = new HelpContentService().CreateSections();
+        var required = new[]
+        {
+            "home",
+            "quick-start",
+            "interface",
+            "forms",
+            "properties",
+            "datagrid",
+            "dll-sql",
+            "preview-export",
+            "diagnostics",
+            "developer",
+            "tips",
+            "about"
+        };
+
+        foreach (var id in required)
+        {
+            if (!sections.Any(section => string.Equals(section.Id, id, StringComparison.Ordinal)))
+                throw new InvalidOperationException($"Help Center should contain section '{id}'.");
+        }
+    }
+
+    private static void AssertHelpCarouselHasSlides(SmokeContext context)
+    {
+        var slides = new HelpContentService().CreateCarouselSlides();
+        if (slides.Count < 7)
+            throw new InvalidOperationException($"Help carousel should contain multiple useful slides, got {slides.Count}.");
+
+        RequireContains(string.Join(Environment.NewLine, slides.Select(slide => slide.Title)), "DataGrid", "Help carousel should include DataGrid slide.");
+        RequireContains(string.Join(Environment.NewLine, slides.Select(slide => slide.Title)), "Export", "Help carousel should include Export slide.");
+    }
+
+    private static void AssertHelpContentMentionsAlpha30(SmokeContext context)
+    {
+        var service = new HelpContentService();
+        var text = string.Join(Environment.NewLine, service.CreateSections().SelectMany(section =>
+            new[]
+            {
+                section.Title,
+                section.Subtitle
+            }
+            .Concat(section.FeatureCards.Select(card => $"{card.Title} {card.Description}"))
+            .Concat(section.Articles.Select(article => $"{article.Title} {article.Body} {string.Join(" ", article.Bullets)}"))));
+
+        RequireContains(text, "Alpha 3.0", "Help Center content should be updated for Alpha 3.0.");
+        RequireContains(text, "DataGrid", "Help Center content should describe DataGrid.");
+        RequireContains(text, "DLL", "Help Center content should describe DLL import/data sources.");
+    }
+
+    private static void AssertHelpAboutProjectDoesNotMentionUniversityPresentation(SmokeContext context)
+    {
+        var text = BuildHelpContentText().ToLowerInvariant();
+        foreach (var forbidden in new[] { "вуз", "презентац", "диплом" })
+        {
+            if (text.Contains(forbidden, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException($"User-facing Help Center content should not mention '{forbidden}'.");
+        }
+    }
+
+    private static void AssertHelpDeveloperSectionExists(SmokeContext context)
+    {
+        var developer = new HelpContentService().CreateSections().SingleOrDefault(section => string.Equals(section.Id, "developer", StringComparison.Ordinal));
+        if (developer is null)
+            throw new InvalidOperationException("Help Center should contain developer concepts section.");
+        RequireEqual("Для разработчиков", developer.Title, "Developer help section should have Russian title.");
+    }
+
+    private static void AssertHelpDeveloperSectionContainsCoreTerms(SmokeContext context)
+    {
+        var developer = new HelpContentService().CreateSections().Single(section => string.Equals(section.Id, "developer", StringComparison.Ordinal));
+        var text = BuildHelpSectionText(developer);
+        foreach (var term in new[] { "Canvas", "MVVM", "AXAML", "Binding", "DataContext", "ViewModel", "Export Pipeline", "ItemsSource", "NuGet" })
+            RequireContains(text, term, $"Developer section should explain {term}.");
+    }
+
+    private static void AssertHelpSearchFindsDeveloperTerms(SmokeContext context)
+    {
+        foreach (var query in new[] { "MVVM", "Canvas", "Binding", "DataContext", "Export Pipeline", "ItemsSource", "NuGet" })
+        {
+            var viewModel = new HelpWindowViewModel(new HelpContentService())
+            {
+                SearchQuery = query
+            };
+
+            if (!viewModel.Sections.Any(section => string.Equals(section.Id, "developer", StringComparison.Ordinal)))
+                throw new InvalidOperationException($"Help search should find developer section by '{query}'.");
+        }
+    }
+
+    private static void AssertHelpNavigationChangesSelectedSection(SmokeContext context)
+    {
+        var viewModel = new HelpWindowViewModel(new HelpContentService());
+        var initial = viewModel.SelectedSection?.Id ?? "";
+        var dataGrid = viewModel.Sections.Single(section => string.Equals(section.Id, "datagrid", StringComparison.Ordinal));
+
+        viewModel.SelectSectionCommand.Execute(dataGrid);
+        RequireEqual("datagrid", viewModel.SelectedSection?.Id ?? "", "Help navigation should select the requested section.");
+
+        viewModel.GoToSectionCommand.Execute("preview-export");
+        RequireEqual("preview-export", viewModel.SelectedSection?.Id ?? "", "Help quick actions should navigate by section id.");
+
+        viewModel.SearchQuery = "NuGet";
+        if (!viewModel.Sections.Any(section => string.Equals(section.Id, "preview-export", StringComparison.Ordinal)))
+            throw new InvalidOperationException("Help search should find Preview / Export by NuGet content.");
+
+        viewModel.ClearSearchCommand.Execute(null);
+        if (!viewModel.Sections.Any(section => string.Equals(section.Id, initial, StringComparison.Ordinal)))
+            throw new InvalidOperationException("Help clear search should restore all sections.");
+    }
+
+    private static void AssertHelpLayoutWorksInMaximizedMode(SmokeContext context)
+    {
+        var xaml = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "Views", "HelpWindow.axaml"), Encoding.UTF8);
+        RequireContains(xaml, "ColumnDefinitions=\"260,*\"", "Help layout should keep a fixed sidebar and flexible content area.");
+        RequireContains(xaml, "ScrollViewer", "Help layout should keep content scrollable in maximized mode.");
+        RequireContains(xaml, "VerticalScrollBarVisibility=\"Auto\"", "Help content should have vertical scrolling available.");
+        RequireContains(xaml, "WindowState=\"Maximized\"", "Help layout smoke should verify maximized mode.");
+    }
+
+    private static void AssertHelpWindowDoesNotBlockMainDesigner(SmokeContext context)
+    {
+        var controlsCount = context.ViewModel.Controls.Count;
+        var activeFormId = context.ViewModel.ActiveFormDocument?.Id ?? "";
+        var generatedXaml = context.ViewModel.GeneratedXaml;
+
+        var help = new HelpWindowViewModel(new HelpContentService());
+        help.GoToSectionCommand.Execute("datagrid");
+        help.NextSlideCommand.Execute(null);
+        help.SearchQuery = "Export";
+        help.ClearSearchCommand.Execute(null);
+
+        RequireEqual(controlsCount, context.ViewModel.Controls.Count, "Help Center navigation should not mutate designer controls.");
+        RequireEqual(activeFormId, context.ViewModel.ActiveFormDocument?.Id ?? "", "Help Center navigation should not change active form.");
+        RequireEqual(generatedXaml, context.ViewModel.GeneratedXaml, "Help Center navigation should not regenerate or mutate export output.");
+    }
+
+    private static string BuildHelpContentText()
+    {
+        return string.Join(Environment.NewLine, new HelpContentService().CreateSections().Select(BuildHelpSectionText));
+    }
+
+    private static string BuildHelpSectionText(HelpSection section)
+    {
+        return string.Join(Environment.NewLine,
+            new[]
+            {
+                section.Id,
+                section.Title,
+                section.Subtitle
+            }
+            .Concat(section.FeatureCards.Select(card => $"{card.Title} {card.Description} {card.Icon}"))
+            .Concat(section.QuickActions.Select(action => $"{action.Title} {action.Description} {action.TargetSectionId}"))
+            .Concat(section.Articles.Select(article => $"{article.Title} {article.Body} {string.Join(" ", article.Bullets)}")));
     }
 
     private static void AssertValidateBuildShowsRestoreAndBuildSteps(SmokeContext context)

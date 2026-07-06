@@ -1,57 +1,71 @@
-using System;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
-using Avalonia.Media;
 using Avalonia.Threading;
+using FormDesigner.ViewModels;
+using System;
+using System.Diagnostics;
+using System.Linq;
 
 namespace FormDesigner.Views;
 
 public partial class HelpWindow : Window
 {
-    private readonly DispatcherTimer _demoTimer = new() { Interval = TimeSpan.FromSeconds(4.5) };
-    private readonly (string Title, string Description)[] _demoSteps =
-    {
-        ("Designer canvas", "Toolbox, canvas и properties работают как единый поток: добавьте control, выделите его и настройте внешний вид без перехода в код."),
-        ("DataGrid + BindingSource", "BindingSource задает реальные поля, а DataGrid использует их как колонки для preview, export и interactions."),
-        ("Interaction Designer", "Свяжите событие с действием: selection заполняет поля, кнопки показывают сообщение, очищают форму или скрывают панель."),
-        ("Export XAML/C#", "Code/Export mode показывает XAML, C# и checklist: target, layout mode, DataGrid mode, NuGet и exported interactions."),
-        ("Plugin system", "Plugin DLL регистрирует descriptor, preview provider и export provider, после чего control появляется в toolbox."),
-        ("Preview mode", "Preview запускает форму как пользовательский сценарий: клики, selection, show/hide и diagnostics проверяются до переноса в проект.")
-    };
+    public const double DefaultWidthRatio = 0.96;
+    public const double DefaultHeightRatio = 0.94;
+    public const double DefaultMinWidth = 1100;
+    public const double DefaultMinHeight = 720;
+    public static WindowState PreferredWindowState => WindowState.Maximized;
 
-    private Border[] _demoFrames = Array.Empty<Border>();
-    private Border[] _demoDots = Array.Empty<Border>();
-    private int _currentDemoIndex;
-
-    private static readonly IBrush ActiveDotBrush = new SolidColorBrush(Color.Parse("#93C5FD"));
-    private static readonly IBrush InactiveDotBrush = new SolidColorBrush(Color.Parse("#64748B"));
+    private readonly DispatcherTimer _carouselTimer = new() { Interval = TimeSpan.FromSeconds(6) };
 
     public HelpWindow()
     {
         InitializeComponent();
-        BuildDemoState();
+        DataContext = new HelpWindowViewModel();
 
         Opened += HelpWindow_Opened;
         Closed += HelpWindow_Closed;
         KeyDown += HelpWindow_KeyDown;
-        _demoTimer.Tick += DemoTimer_Tick;
+        PointerEntered += HelpWindow_PointerEntered;
+        PointerExited += HelpWindow_PointerExited;
+        _carouselTimer.Tick += CarouselTimer_Tick;
     }
 
-    private void BuildDemoState()
+    public static Size CalculateAdaptiveSize(double workingWidth, double workingHeight)
     {
-        _demoFrames = new[] { DemoFrame0, DemoFrame1, DemoFrame2, DemoFrame3, DemoFrame4, DemoFrame5 };
-        _demoDots = new[] { DemoDot0, DemoDot1, DemoDot2, DemoDot3, DemoDot4, DemoDot5 };
-        ShowDemoStep(0);
+        if (workingWidth <= 0 || workingHeight <= 0)
+            return new Size(DefaultMinWidth, DefaultMinHeight);
+
+        var width = workingWidth * DefaultWidthRatio;
+        var height = workingHeight * DefaultHeightRatio;
+
+        if (workingWidth >= DefaultMinWidth)
+            width = Math.Max(DefaultMinWidth, width);
+        else
+            width = Math.Max(720, workingWidth * 0.96);
+
+        if (workingHeight >= DefaultMinHeight)
+            height = Math.Max(DefaultMinHeight, height);
+        else
+            height = Math.Max(520, workingHeight * 0.94);
+
+        width = Math.Min(width, workingWidth);
+        height = Math.Min(height, workingHeight);
+        return new Size(Math.Round(width), Math.Round(height));
     }
 
     private void HelpWindow_Opened(object? sender, EventArgs e)
     {
-        _demoTimer.Start();
+        ApplyAdaptiveSize();
+        _carouselTimer.Start();
     }
 
     private void HelpWindow_Closed(object? sender, EventArgs e)
     {
-        _demoTimer.Stop();
+        _carouselTimer.Stop();
+        _carouselTimer.Tick -= CarouselTimer_Tick;
+        Debug.WriteLine("HELP_WINDOW_CLOSED");
     }
 
     private void HelpWindow_KeyDown(object? sender, KeyEventArgs e)
@@ -63,56 +77,49 @@ public partial class HelpWindow : Window
         }
     }
 
-    private void DemoTimer_Tick(object? sender, EventArgs e)
+    private void HelpWindow_PointerEntered(object? sender, PointerEventArgs e)
     {
-        ShowDemoStep((_currentDemoIndex + 1) % _demoSteps.Length);
+        _carouselTimer.Stop();
     }
 
-    private void DemoPreviousButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    private void HelpWindow_PointerExited(object? sender, PointerEventArgs e)
     {
-        ShowDemoStep((_currentDemoIndex - 1 + _demoSteps.Length) % _demoSteps.Length);
-        RestartDemoTimer();
+        _carouselTimer.Start();
     }
 
-    private void DemoNextButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    private void CarouselTimer_Tick(object? sender, EventArgs e)
     {
-        ShowDemoStep((_currentDemoIndex + 1) % _demoSteps.Length);
-        RestartDemoTimer();
+        if (DataContext is HelpWindowViewModel viewModel)
+            viewModel.NextSlideCommand.Execute(null);
     }
 
-    private void DemoDot_Click(object? sender, PointerPressedEventArgs e)
+    private void HelpSearchTextBox_TextChanged(object? sender, TextChangedEventArgs e)
     {
-        if (sender is not Border dot)
+        if (sender is TextBox textBox && DataContext is HelpWindowViewModel viewModel)
+            viewModel.SearchQuery = textBox.Text ?? "";
+    }
+
+    private void ApplyAdaptiveSize()
+    {
+        var screen = Screens?.ScreenFromVisual(this)
+            ?? Screens?.ScreenFromWindow(this)
+            ?? Screens?.All.FirstOrDefault(item => item.IsPrimary)
+            ?? Screens?.All.FirstOrDefault();
+
+        if (screen is null)
             return;
 
-        var index = Array.IndexOf(_demoDots, dot);
-        if (index < 0)
-            return;
+        var scaling = screen.Scaling <= 0 ? 1 : screen.Scaling;
+        var workingWidth = screen.WorkingArea.Width / scaling;
+        var workingHeight = screen.WorkingArea.Height / scaling;
+        var size = CalculateAdaptiveSize(workingWidth, workingHeight);
 
-        ShowDemoStep(index);
-        RestartDemoTimer();
-    }
+        Width = size.Width;
+        Height = size.Height;
+        WindowStartupLocation = WindowStartupLocation.CenterScreen;
+        WindowState = PreferredWindowState;
 
-    private void RestartDemoTimer()
-    {
-        _demoTimer.Stop();
-        _demoTimer.Start();
-    }
-
-    private void ShowDemoStep(int index)
-    {
-        if (index < 0 || index >= _demoSteps.Length)
-            return;
-
-        _currentDemoIndex = index;
-
-        for (var i = 0; i < _demoFrames.Length; i++)
-        {
-            _demoFrames[i].IsVisible = i == index;
-            _demoDots[i].Background = i == index ? ActiveDotBrush : InactiveDotBrush;
-        }
-
-        DemoTitleTextBlock.Text = _demoSteps[index].Title;
-        DemoDescriptionTextBlock.Text = _demoSteps[index].Description;
+        Debug.WriteLine($"HELP_WINDOW_OPENED windowState={WindowState}; workingArea={workingWidth:0}x{workingHeight:0}; fallbackSize={Width:0}x{Height:0}; version=Alpha 3.0");
+        Debug.WriteLine($"HELP_WINDOW_MAXIMIZED success={WindowState == WindowState.Maximized}; windowState={WindowState}");
     }
 }

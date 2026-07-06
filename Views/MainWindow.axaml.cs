@@ -8047,6 +8047,7 @@ public partial class MainWindow : Window
         if (_helpWindow is { IsVisible: true })
         {
             _helpWindow.Activate();
+            VM.TraceDocumentDebug("HELP_WINDOW_OPENED", "reuse=true; action=activate-existing", toOutput: false);
             return;
         }
 
@@ -8055,6 +8056,7 @@ public partial class MainWindow : Window
         _helpWindow = helpWindow;
         helpWindow.Show(this);
         helpWindow.Activate();
+        VM.TraceDocumentDebug("HELP_WINDOW_OPENED", "reuse=false; action=create-window; version=Alpha 3.0", toOutput: false);
 
         if (DataContext is MainWindowViewModel viewModel)
             viewModel.StatusText = "Открыта подробная справка по конструктору форм.";
@@ -8302,6 +8304,8 @@ public partial class MainWindow : Window
 
         if (ReferenceEquals(_helpWindow, sender))
             _helpWindow = null;
+
+        VM.TraceDocumentDebug("HELP_WINDOW_CLOSED", "source=MainWindow", toOutput: false);
     }
 
     private void ApplyStringPropertyToSelection(string propertyName, string value)
