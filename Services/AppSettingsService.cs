@@ -21,11 +21,13 @@ public sealed class AppSettingsService
 
     public string? LastError { get; private set; }
 
-    public AppSettingsService()
+    public AppSettingsService(string? settingsDirectoryPath = null)
     {
-        SettingsDirectoryPath = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "FormDesigner");
+        SettingsDirectoryPath = string.IsNullOrWhiteSpace(settingsDirectoryPath)
+            ? Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "FormDesigner")
+            : settingsDirectoryPath;
     }
 
     public AppSettingsModel Load()

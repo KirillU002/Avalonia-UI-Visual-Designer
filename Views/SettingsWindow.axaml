@@ -1,0 +1,544 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="FormDesigner.Views.SettingsWindow"
+        Title="{Binding Texts.WindowTitle}"
+        Width="980"
+        Height="720"
+        MinWidth="900"
+        MinHeight="640"
+        WindowStartupLocation="CenterOwner"
+        CanResize="True"
+        Background="#F2F6FB">
+  <Window.Styles>
+    <Style Selector="Button.settings-primary">
+      <Setter Property="Background" Value="#2563EB"/>
+      <Setter Property="Foreground" Value="White"/>
+      <Setter Property="BorderBrush" Value="#1D4ED8"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="8"/>
+      <Setter Property="Padding" Value="16,9"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
+    <Style Selector="Button.settings-secondary">
+      <Setter Property="Background" Value="#FFFFFF"/>
+      <Setter Property="Foreground" Value="#0F172A"/>
+      <Setter Property="BorderBrush" Value="#CBD5E1"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="8"/>
+      <Setter Property="Padding" Value="14,9"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
+    <Style Selector="Border.settings-card">
+      <Setter Property="Background" Value="#FFFFFF"/>
+      <Setter Property="BorderBrush" Value="#D7E2EE"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="14"/>
+      <Setter Property="Padding" Value="16"/>
+      <Setter Property="Margin" Value="0,0,0,14"/>
+    </Style>
+    <Style Selector="Border.settings-soft-card">
+      <Setter Property="Background" Value="#F8FAFC"/>
+      <Setter Property="BorderBrush" Value="#E2E8F0"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="12"/>
+      <Setter Property="Padding" Value="12"/>
+    </Style>
+    <Style Selector="TextBlock.settings-title">
+      <Setter Property="FontSize" Value="17"/>
+      <Setter Property="FontWeight" Value="Bold"/>
+      <Setter Property="Foreground" Value="#0F172A"/>
+    </Style>
+    <Style Selector="TextBlock.settings-hint">
+      <Setter Property="FontSize" Value="12"/>
+      <Setter Property="Foreground" Value="#64748B"/>
+      <Setter Property="TextWrapping" Value="Wrap"/>
+    </Style>
+    <Style Selector="TextBlock.settings-label">
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="Foreground" Value="#0F172A"/>
+    </Style>
+  </Window.Styles>
+
+  <Grid RowDefinitions="Auto,*,Auto"
+        ClipToBounds="True">
+    <Border Grid.Row="0"
+            Background="#FFFFFF"
+            BorderBrush="#E2E8F0"
+            BorderThickness="0,0,0,1"
+            Padding="22,18">
+      <Border Background="#F8FBFF"
+              BorderBrush="#D7E2EE"
+              BorderThickness="1"
+              CornerRadius="16"
+              Padding="18">
+        <Grid ColumnDefinitions="Auto,*,Auto">
+          <Border Width="48"
+                  Height="48"
+                  CornerRadius="14"
+                  Background="#DBEAFE"
+                  VerticalAlignment="Top">
+            <TextBlock Text="SET"
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Center"
+                       Foreground="#1D4ED8"
+                       FontWeight="Bold"/>
+          </Border>
+          <StackPanel Grid.Column="1"
+                      Margin="14,0,0,0"
+                      Spacing="5">
+            <TextBlock Text="{Binding Texts.HeaderTitle}"
+                       FontSize="23"
+                       FontWeight="Bold"
+                       Foreground="#0F172A"/>
+            <TextBlock Text="{Binding Texts.HeaderSubtitle}"
+                       Foreground="#64748B"
+                       TextWrapping="Wrap"/>
+            <TextBlock Text="{Binding Texts.RequiresRestartHint}"
+                       Foreground="#64748B"
+                       FontSize="12"
+                       TextWrapping="Wrap"/>
+          </StackPanel>
+          <Border Grid.Column="2"
+                  Background="{Binding UnsavedStatusBackground}"
+                  BorderBrush="{Binding UnsavedStatusBorder}"
+                  BorderThickness="1"
+                  CornerRadius="999"
+                  Padding="12,5"
+                  VerticalAlignment="Top">
+            <TextBlock Text="{Binding UnsavedStatusText}"
+                       Foreground="{Binding UnsavedStatusForeground}"
+                       FontWeight="SemiBold"/>
+          </Border>
+        </Grid>
+      </Border>
+    </Border>
+
+    <Grid Grid.Row="1"
+          ColumnDefinitions="270,*"
+          MinHeight="0"
+          ClipToBounds="True">
+      <Border Grid.Column="0"
+              Background="#EDF3F9"
+              BorderBrush="#D7E2EE"
+              BorderThickness="0,0,1,0"
+              Padding="14">
+        <Grid RowDefinitions="Auto,*">
+          <TextBlock Grid.Row="0"
+                     Text="{Binding Texts.Sections}"
+                     FontWeight="Bold"
+                     Foreground="#0F172A"
+                     Margin="4,0,0,10"/>
+          <ListBox Grid.Row="1"
+                   ItemsSource="{Binding Sections}"
+                   SelectedItem="{Binding SelectedSection, Mode=TwoWay}"
+                   Background="Transparent"
+                   BorderThickness="0"
+                   VerticalAlignment="Stretch"
+                   ScrollViewer.VerticalScrollBarVisibility="Auto">
+            <ListBox.ItemTemplate>
+              <DataTemplate>
+                <Border Padding="10"
+                        CornerRadius="11"
+                        Margin="0,3"
+                        Background="#F8FAFC"
+                        BorderBrush="#E2E8F0"
+                        BorderThickness="1">
+                  <Grid ColumnDefinitions="36,*">
+                    <Border Width="28"
+                            Height="28"
+                            CornerRadius="8"
+                            Background="#DBEAFE"
+                            VerticalAlignment="Top">
+                      <TextBlock Text="{Binding Icon}"
+                                 HorizontalAlignment="Center"
+                                 VerticalAlignment="Center"
+                                 Foreground="#1D4ED8"
+                                 FontSize="11"
+                                 FontWeight="Bold"/>
+                    </Border>
+                    <StackPanel Grid.Column="1"
+                                Spacing="2">
+                      <TextBlock Text="{Binding Title}"
+                                 FontWeight="Bold"
+                                 Foreground="#0F172A"/>
+                      <TextBlock Text="{Binding Subtitle}"
+                                 FontSize="11"
+                                 Foreground="#64748B"
+                                 TextWrapping="Wrap"/>
+                    </StackPanel>
+                  </Grid>
+                </Border>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+        </Grid>
+      </Border>
+
+      <Grid Grid.Column="1"
+            RowDefinitions="*"
+            MinHeight="0"
+            ClipToBounds="True">
+      <ScrollViewer x:Name="SettingsContentScrollViewer"
+                    Grid.Row="0"
+                    Padding="24"
+                    HorizontalAlignment="Stretch"
+                    VerticalAlignment="Stretch"
+                    HorizontalScrollBarVisibility="Disabled"
+                    VerticalScrollBarVisibility="Auto"
+                    ClipToBounds="True">
+        <StackPanel>
+          <Border Background="#0F766E"
+                  CornerRadius="18"
+                  Padding="18"
+                  Margin="0,0,0,16">
+            <Grid ColumnDefinitions="*,Auto">
+              <StackPanel Spacing="5">
+                <TextBlock Text="{Binding SectionTitle}"
+                           Foreground="White"
+                           FontSize="22"
+                           FontWeight="Bold"/>
+                <TextBlock Text="{Binding SectionSubtitle}"
+                           Foreground="#CCFBF1"
+                           TextWrapping="Wrap"/>
+              </StackPanel>
+              <Border Grid.Column="1"
+                      Background="#FFFFFF"
+                      CornerRadius="999"
+                      Padding="10,4"
+                      VerticalAlignment="Top">
+                <TextBlock Text="{Binding Texts.SettingsOverview}"
+                           Foreground="#0F766E"
+                           FontWeight="Bold"/>
+              </Border>
+            </Grid>
+          </Border>
+
+          <StackPanel IsVisible="{Binding IsGeneralSelected}">
+            <Border Classes="settings-card">
+              <StackPanel Spacing="12">
+                <TextBlock Text="{Binding Texts.GeneralTitle}" Classes="settings-title"/>
+                <TextBlock Text="{Binding Texts.GeneralDescription}" Classes="settings-hint"/>
+                <Grid ColumnDefinitions="*,*">
+                  <StackPanel Spacing="4">
+                    <TextBlock Text="{Binding Texts.LanguageLabel}" Classes="settings-label"/>
+                    <ComboBox ItemsSource="{Binding LanguageOptions}"
+                              SelectedItem="{Binding SelectedLanguageOption, Mode=TwoWay}"/>
+                  </StackPanel>
+                  <StackPanel Grid.Column="1" Margin="14,0,0,0" Spacing="4">
+                    <TextBlock Text="{Binding Texts.ThemeLabel}" Classes="settings-label"/>
+                    <ComboBox ItemsSource="{Binding ThemeOptions}"
+                              SelectedItem="{Binding SelectedThemeOption, Mode=TwoWay}"/>
+                  </StackPanel>
+                </Grid>
+                <StackPanel Spacing="4">
+                  <TextBlock Text="{Binding Texts.UiSizeLabel}" Classes="settings-label"/>
+                  <ComboBox ItemsSource="{Binding DensityOptions}"
+                            SelectedItem="{Binding SelectedDensityOption, Mode=TwoWay}"
+                            MaxWidth="220"
+                            HorizontalAlignment="Left"/>
+                </StackPanel>
+              </StackPanel>
+            </Border>
+            <Border Classes="settings-card">
+              <StackPanel Spacing="10">
+                <CheckBox Content="{Binding Texts.ConfirmNewProject}"
+                          IsChecked="{Binding ConfirmNewProjectWithUnsavedChanges, Mode=TwoWay}"/>
+                <CheckBox Content="{Binding Texts.RecoveryAutosave}"
+                          IsChecked="{Binding EnableRecoveryAutosave, Mode=TwoWay}"/>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+
+          <StackPanel IsVisible="{Binding IsInterfaceSelected}">
+            <Border Classes="settings-card">
+              <StackPanel Spacing="12">
+                <TextBlock Text="{Binding Texts.InterfaceTitle}" Classes="settings-title"/>
+                <TextBlock Text="{Binding Texts.InterfaceDescription}" Classes="settings-hint"/>
+                <CheckBox Content="{Binding Texts.ExperimentalLayoutTab}"
+                          IsChecked="{Binding EnableExperimentalLayoutTab, Mode=TwoWay}"/>
+                <CheckBox Content="{Binding Texts.PropertyTooltips}"
+                          IsChecked="{Binding ShowPropertyTooltips, Mode=TwoWay}"/>
+                <CheckBox Content="{Binding Texts.CompactInspector}"
+                          IsChecked="{Binding CompactPropertyInspector, Mode=TwoWay}"/>
+                <CheckBox Content="{Binding Texts.AdvancedProperties}"
+                          IsChecked="{Binding ShowAdvancedProperties, Mode=TwoWay}"/>
+              </StackPanel>
+            </Border>
+            <Border Classes="settings-card">
+              <StackPanel Spacing="10">
+                <TextBlock Text="{Binding Texts.CanvasGrid}" Classes="settings-title"/>
+                <CheckBox Content="{Binding Texts.ShowCanvasGrid}"
+                          IsChecked="{Binding IsDesignerGridVisible, Mode=TwoWay}"/>
+                <CheckBox Content="{Binding Texts.SnapToGrid}"
+                          IsChecked="{Binding IsCanvasSnappingEnabled, Mode=TwoWay}"/>
+                <StackPanel Spacing="4" MaxWidth="220" HorizontalAlignment="Left">
+                  <TextBlock Text="{Binding Texts.GridStep}" Classes="settings-label"/>
+                  <TextBox Text="{Binding GridStep, Mode=TwoWay}" Watermark="10"/>
+                </StackPanel>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+
+          <StackPanel IsVisible="{Binding IsPreviewSelected}">
+            <Border Classes="settings-card">
+              <StackPanel Spacing="12">
+                <TextBlock Text="{Binding Texts.PreviewTitle}" Classes="settings-title"/>
+                <TextBlock Text="{Binding Texts.PreviewDescription}" Classes="settings-hint"/>
+                <CheckBox Content="{Binding Texts.RuntimeBadge}"
+                          IsChecked="{Binding ShowPreviewRuntimeBadge, Mode=TwoWay}"/>
+                <CheckBox Content="{Binding Texts.CompactRuntimeBadge}"
+                          IsChecked="{Binding CompactPreviewRuntimeBadge, Mode=TwoWay}"/>
+                <CheckBox Content="{Binding Texts.AutoHideRuntimeBadge}"
+                          IsChecked="{Binding AutoHidePreviewRuntimeBadge, Mode=TwoWay}"/>
+                <CheckBox Content="{Binding Texts.PreviewTopmost}"
+                          IsChecked="{Binding PreviewTopmost, Mode=TwoWay}"/>
+                <StackPanel Spacing="4" MaxWidth="220" HorizontalAlignment="Left">
+                  <TextBlock Text="{Binding Texts.PreviewZoom}" Classes="settings-label"/>
+                  <TextBox Text="{Binding PreviewDefaultZoomPercent, Mode=TwoWay}" Watermark="100"/>
+                </StackPanel>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+
+          <StackPanel IsVisible="{Binding IsExportSelected}">
+            <Border Classes="settings-card">
+              <StackPanel Spacing="12">
+                <TextBlock Text="{Binding Texts.ExportTitle}" Classes="settings-title"/>
+                <TextBlock Text="{Binding Texts.ExportDescription}" Classes="settings-hint"/>
+                <CheckBox Content="{Binding Texts.ValidateAfterExport}"
+                          IsChecked="{Binding ValidateBuildAfterExport, Mode=TwoWay}"/>
+                <CheckBox Content="{Binding Texts.VerboseBuildLogs}"
+                          IsChecked="{Binding VerboseBuildLogs, Mode=TwoWay}"/>
+                <CheckBox Content="{Binding Texts.KeepBuildArtifacts}"
+                          IsChecked="{Binding KeepSuccessfulBuildArtifacts, Mode=TwoWay}"/>
+                <CheckBox Content="{Binding Texts.CleanOldArtifacts}"
+                          IsChecked="{Binding CleanOldArtifactsAutomatically, Mode=TwoWay}"/>
+                <StackPanel Spacing="4" MaxWidth="240" HorizontalAlignment="Left">
+                  <TextBlock Text="{Binding Texts.BuildTimeout}" Classes="settings-label"/>
+                  <TextBox Text="{Binding BuildTimeoutSeconds, Mode=TwoWay}" Watermark="120"/>
+                </StackPanel>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+
+          <StackPanel IsVisible="{Binding IsNuGetSelected}">
+            <Border Classes="settings-card">
+              <StackPanel Spacing="12">
+                <TextBlock Text="{Binding Texts.NuGetTitle}" Classes="settings-title"/>
+                <TextBlock Text="{Binding Texts.NuGetDescription}" Classes="settings-hint"/>
+                <CheckBox Content="{Binding Texts.UseCustomNuGetSource}"
+                          IsChecked="{Binding UseCustomNuGetSource, Mode=TwoWay}"/>
+                <StackPanel Spacing="4">
+                  <TextBlock Text="{Binding Texts.NuGetSourcePath}" Classes="settings-label"/>
+                  <TextBox Text="{Binding CustomNuGetSource, Mode=TwoWay}"
+                           IsEnabled="{Binding UseCustomNuGetSource}"
+                           Watermark="https://api.nuget.org/v3/index.json or C:\packages"/>
+                </StackPanel>
+                <CheckBox Content="{Binding Texts.AllowHttpSource}"
+                          IsChecked="{Binding AllowInsecureNuGetSource, Mode=TwoWay}"
+                          IsEnabled="{Binding UseCustomNuGetSource}"/>
+                <CheckBox Content="{Binding Texts.NuGetFallback}"
+                          IsChecked="{Binding IncludeNuGetOrgFallback, Mode=TwoWay}"/>
+                <CheckBox Content="{Binding Texts.GenerateNuGetConfig}"
+                          IsChecked="{Binding GenerateNuGetConfigInExportedProject, Mode=TwoWay}"/>
+              </StackPanel>
+            </Border>
+            <Border Classes="settings-card">
+              <StackPanel Spacing="10">
+                <TextBlock Text="{Binding Texts.EffectiveSource}" Classes="settings-title"/>
+                <TextBlock Text="{Binding NuGetSummaryText}"
+                           Foreground="#1D4ED8"
+                           FontWeight="SemiBold"
+                           TextWrapping="Wrap"/>
+                <TextBlock Text="{Binding Texts.NuGetConfigLocationHint}" Classes="settings-hint"/>
+                <TextBlock Text="{Binding NuGetSourceTestStatusText}" Classes="settings-hint"/>
+                <WrapPanel>
+                  <Button Content="{Binding Texts.TestSource}"
+                          Classes="settings-secondary"
+                          Command="{Binding TestNuGetSourceCommand}"
+                          Margin="0,0,8,8"/>
+                  <Button Content="{Binding Texts.Clear}"
+                          Classes="settings-secondary"
+                          Command="{Binding ClearNuGetSourceCommand}"
+                          Margin="0,0,8,8"/>
+                </WrapPanel>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+
+          <StackPanel IsVisible="{Binding IsSqlSelected}">
+            <Border Classes="settings-card">
+              <StackPanel Spacing="12">
+                <TextBlock Text="{Binding Texts.SqlTitle}" Classes="settings-title"/>
+                <TextBlock Text="{Binding Texts.SqlDescription}" Classes="settings-hint"/>
+                <TextBlock Text="{Binding SqlStatusText}"
+                           Foreground="#1D4ED8"
+                           FontWeight="SemiBold"
+                           TextWrapping="Wrap"/>
+                <CheckBox Content="{Binding Texts.UseGlobalSqlSettings}"
+                          IsChecked="{Binding UseGlobalSqlServerSettings, Mode=TwoWay}"/>
+                <Grid ColumnDefinitions="*,*">
+                  <StackPanel Spacing="4">
+                    <TextBlock Text="{Binding Texts.ServerName}" Classes="settings-label"/>
+                    <TextBox Text="{Binding SqlServerName, Mode=TwoWay}" Watermark="localhost\SQLEXPRESS"/>
+                  </StackPanel>
+                  <StackPanel Grid.Column="1" Margin="14,0,0,0" Spacing="4">
+                    <TextBlock Text="{Binding Texts.DatabaseName}" Classes="settings-label"/>
+                    <TextBox Text="{Binding SqlDatabaseName, Mode=TwoWay}" Watermark="DemoDb"/>
+                  </StackPanel>
+                </Grid>
+                <Grid ColumnDefinitions="*,*">
+                  <StackPanel Spacing="4">
+                    <TextBlock Text="{Binding Texts.AuthenticationMode}" Classes="settings-label"/>
+                    <ComboBox ItemsSource="{Binding SqlAuthenticationOptions}"
+                              SelectedItem="{Binding SelectedSqlAuthenticationOption, Mode=TwoWay}"/>
+                  </StackPanel>
+                  <StackPanel Grid.Column="1" Margin="14,0,0,0" Spacing="4">
+                    <TextBlock Text="{Binding Texts.ConnectionTimeout}" Classes="settings-label"/>
+                    <TextBox Text="{Binding SqlConnectionTimeoutSeconds, Mode=TwoWay}" Watermark="15"/>
+                  </StackPanel>
+                </Grid>
+                <Grid ColumnDefinitions="*,*" IsVisible="{Binding IsSqlLoginSelected}">
+                  <StackPanel Spacing="4">
+                    <TextBlock Text="{Binding Texts.UserName}" Classes="settings-label"/>
+                    <TextBox Text="{Binding SqlUserName, Mode=TwoWay}" Watermark="sa"/>
+                  </StackPanel>
+                  <StackPanel Grid.Column="1" Margin="14,0,0,0" Spacing="4">
+                    <TextBlock Text="{Binding Texts.Password}" Classes="settings-label"/>
+                    <TextBox Text="{Binding SqlPassword, Mode=TwoWay}" PasswordChar="*" Watermark="Password"/>
+                    <CheckBox Content="{Binding Texts.SavePassword}"
+                              IsChecked="{Binding SqlSavePassword, Mode=TwoWay}"/>
+                  </StackPanel>
+                </Grid>
+                <TextBlock Text="{Binding Texts.PasswordWarning}"
+                           Classes="settings-hint"
+                           IsVisible="{Binding IsSqlLoginSelected}"/>
+                <Grid ColumnDefinitions="*,*">
+                  <StackPanel Spacing="4">
+                    <TextBlock Text="{Binding Texts.DefaultSchema}" Classes="settings-label"/>
+                    <TextBox Text="{Binding SqlDefaultSchema, Mode=TwoWay}" Watermark="dbo"/>
+                  </StackPanel>
+                  <StackPanel Grid.Column="1" Margin="14,0,0,0" Spacing="4">
+                    <TextBlock Text="{Binding Texts.PreviewTopN}" Classes="settings-label"/>
+                    <TextBox Text="{Binding SqlDefaultPreviewTopN, Mode=TwoWay}" Watermark="100"/>
+                  </StackPanel>
+                </Grid>
+                <WrapPanel>
+                  <CheckBox Content="{Binding Texts.TrustCertificate}"
+                            IsChecked="{Binding SqlTrustServerCertificate, Mode=TwoWay}"
+                            Margin="0,0,16,8"/>
+                  <CheckBox Content="{Binding Texts.EncryptConnection}"
+                            IsChecked="{Binding SqlEncryptConnection, Mode=TwoWay}"
+                            Margin="0,0,16,8"/>
+                  <CheckBox Content="{Binding Texts.ExportSqlConnectionString}"
+                            IsChecked="{Binding ExportSqlConnectionString, Mode=TwoWay}"
+                            Margin="0,0,16,8"/>
+                </WrapPanel>
+                <TextBlock Text="{Binding Texts.SqlSecretWarning}" Classes="settings-hint"/>
+              </StackPanel>
+            </Border>
+            <Border Classes="settings-card">
+              <StackPanel Spacing="10">
+                <TextBlock Text="{Binding Texts.EffectiveConnectionString}" Classes="settings-title"/>
+                <TextBlock Text="{Binding SqlConnectionPreviewText}"
+                           FontFamily="Consolas"
+                           FontSize="12"
+                           TextWrapping="Wrap"/>
+                <Button Content="{Binding Texts.TestConnection}"
+                        Classes="settings-secondary"
+                        Command="{Binding TestSqlConnectionCommand}"
+                        HorizontalAlignment="Left"/>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+
+          <StackPanel IsVisible="{Binding IsLogsSelected}">
+            <Border Classes="settings-card">
+              <StackPanel Spacing="12">
+                <TextBlock Text="{Binding Texts.LogsTitle}" Classes="settings-title"/>
+                <TextBlock Text="{Binding Texts.LogsDescription}" Classes="settings-hint"/>
+                <CheckBox Content="{Binding Texts.SaveLogsToFile}"
+                          IsChecked="{Binding SaveLogsToFile, Mode=TwoWay}"/>
+                <Grid ColumnDefinitions="*,*">
+                  <StackPanel Spacing="4">
+                    <TextBlock Text="{Binding Texts.LogLevel}" Classes="settings-label"/>
+                    <ComboBox ItemsSource="{Binding LogLevelOptions}"
+                              SelectedItem="{Binding SelectedLogLevelOption, Mode=TwoWay}"/>
+                  </StackPanel>
+                  <StackPanel Grid.Column="1" Margin="14,0,0,0" Spacing="4">
+                    <TextBlock Text="{Binding Texts.MaxLogFiles}" Classes="settings-label"/>
+                    <TextBox Text="{Binding MaxLogFilesCount, Mode=TwoWay}" Watermark="10"/>
+                  </StackPanel>
+                </Grid>
+                <StackPanel Spacing="4" MaxWidth="260" HorizontalAlignment="Left">
+                  <TextBlock Text="{Binding Texts.MaxLogFileSize}" Classes="settings-label"/>
+                  <TextBox Text="{Binding MaxLogFileSizeMb, Mode=TwoWay}" Watermark="20"/>
+                </StackPanel>
+                <TextBlock Text="{Binding Texts.LogsFolder}" Classes="settings-label"/>
+                <TextBlock Text="{Binding LogsFolderPath}" Classes="settings-hint"/>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+
+          <StackPanel IsVisible="{Binding IsAdvancedSelected}">
+            <Border Classes="settings-card">
+              <StackPanel Spacing="12">
+                <TextBlock Text="{Binding Texts.AdvancedTitle}" Classes="settings-title"/>
+                <TextBlock Text="{Binding Texts.AdvancedDescription}" Classes="settings-hint"/>
+                <Border Classes="settings-soft-card">
+                  <StackPanel Spacing="8">
+                    <CheckBox Content="{Binding Texts.TraceDiagnostics}"
+                              IsChecked="{Binding EnableTraceDiagnostics, Mode=TwoWay}"
+                              IsEnabled="False"/>
+                    <CheckBox Content="{Binding Texts.DeveloperWarnings}"
+                              IsChecked="{Binding EnableDeveloperWarnings, Mode=TwoWay}"
+                              IsEnabled="False"/>
+                    <CheckBox Content="{Binding Texts.ResetLayoutNextStart}"
+                              IsChecked="{Binding ResetLayoutOnNextStart, Mode=TwoWay}"
+                              IsEnabled="False"/>
+                    <TextBlock Text="{Binding Texts.ExperimentalDisabled}" Classes="settings-hint"/>
+                  </StackPanel>
+                </Border>
+                <TextBlock Text="{Binding Texts.SettingsFile}" Classes="settings-label"/>
+                <TextBlock Text="{Binding SettingsFilePath}" Classes="settings-hint"/>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+        </StackPanel>
+      </ScrollViewer>
+      </Grid>
+    </Grid>
+
+    <Border Grid.Row="2"
+            Background="#FFFFFF"
+            BorderBrush="#E2E8F0"
+            BorderThickness="0,1,0,0"
+            Padding="14">
+      <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto">
+        <TextBlock Text="{Binding StatusText}"
+                   VerticalAlignment="Center"
+                   Foreground="#475569"
+                   TextWrapping="Wrap"/>
+        <Button Grid.Column="1"
+                Content="{Binding Texts.ResetAll}"
+                Classes="settings-secondary"
+                Command="{Binding ResetToDefaultsCommand}"
+                Margin="0,0,8,0"/>
+        <Button Grid.Column="2"
+                Content="{Binding Texts.Apply}"
+                Classes="settings-secondary"
+                Command="{Binding ApplyCommand}"
+                Margin="0,0,8,0"/>
+        <Button Grid.Column="3"
+                Content="{Binding Texts.Save}"
+                Classes="settings-primary"
+                Command="{Binding SaveCommand}"
+                Margin="0,0,8,0"/>
+        <Button Grid.Column="4"
+                Content="{Binding Texts.Cancel}"
+                Classes="settings-secondary"
+                Command="{Binding CancelCommand}"/>
+      </Grid>
+    </Border>
+  </Grid>
+</Window>

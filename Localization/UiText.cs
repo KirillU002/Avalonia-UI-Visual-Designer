@@ -206,7 +206,101 @@ public static class UiText
             ["StartScreenDescription"] = "Создайте Form, откройте недавний проект или перейдите к docs."
         });
 
-    public static UiTextCatalog Current { get; } = Russian;
+    public static UiTextCatalog English { get; } = new(
+        UiLanguage.English,
+        new Dictionary<string, string>
+        {
+            ["NewProject"] = "New Project",
+            ["OpenProject"] = "Open Project",
+            ["Save"] = "Save",
+            ["SaveAs"] = "Save As...",
+            ["Undo"] = "Undo",
+            ["Redo"] = "Redo",
+            ["Preview"] = "Open Preview",
+            ["Export"] = "Export",
+            ["Help"] = "Help",
+            ["More"] = "More",
+            ["UnsavedChanges"] = "Unsaved changes",
+            ["Mode"] = "Mode",
+            ["RestoreBackup"] = "Restore backup...",
+            ["ResetInteractionState"] = "Reset interaction state",
+            ["OpenInteractionTrace"] = "Open Interaction Trace",
+            ["RecentFiles"] = "Recent files",
+            ["ProjectStructure"] = "Project structure",
+            ["Components"] = "Components",
+            ["Explorer"] = "Explorer",
+            ["AddForm"] = "+ Form",
+            ["AddAsset"] = "+ Asset",
+            ["Done"] = "Done",
+            ["Open"] = "Open",
+            ["Rename"] = "Rename",
+            ["DuplicateForm"] = "Duplicate Form",
+            ["Delete"] = "Delete",
+            ["ValidateBuild"] = "Validate Build",
+            ["ExportToProject"] = "Export to project",
+            ["LoadedDlls"] = "Loaded DLLs",
+            ["DllSearchWatermark"] = "Search by DLL, path, namespace, type, table, source, or column...",
+            ["Details"] = "Details",
+            ["CopyPath"] = "Copy path",
+            ["Reload"] = "Reload",
+            ["Remove"] = "Remove",
+            ["Sources"] = "Sources",
+            ["Types"] = "Types",
+            ["Tables"] = "Tables",
+            ["ErrorsWarnings"] = "Errors / Warnings",
+            ["Properties"] = "Properties",
+            ["Data"] = "Data",
+            ["Layout"] = "Layout",
+            ["Plugins"] = "Plugins",
+            ["Logic"] = "Logic",
+            ["ResetView"] = "Reset view",
+            ["Basic"] = "Basic",
+            ["Collapse"] = "Collapse",
+            ["SearchProperties"] = "Search properties...",
+            ["ExportPipeline"] = "Export Pipeline",
+            ["Refresh"] = "Refresh",
+            ["ExportZip"] = "Export ZIP",
+            ["GeneratedFiles"] = "Generated files",
+            ["CopyFile"] = "Copy file",
+            ["BuildValidation"] = "Build validation",
+            ["OpenValidationFolder"] = "Open validation folder",
+            ["OpenFullOutput"] = "Open full Output",
+            ["RequiredPackages"] = "Required packages",
+            ["NoAdditionalPackagesRequired"] = "No additional packages required.",
+            ["ExportDiagnostics"] = "Export diagnostics",
+            ["NoExportWarningsOrErrors"] = "No export errors or warnings.",
+            ["DataSources"] = "Data sources",
+            ["Add"] = "Add",
+            ["Create"] = "Create",
+            ["Fields"] = "Fields",
+            ["EditColumns"] = "Edit columns...",
+            ["OpenLogic"] = "Open Logic",
+            ["OpenFullDataTools"] = "Open all Data tools",
+            ["LogicRules"] = "Logic rules",
+            ["RuleEditor"] = "Rule editor",
+            ["Source"] = "Source",
+            ["Event"] = "Event",
+            ["Action"] = "Action",
+            ["Target"] = "Target",
+            ["Template"] = "Template",
+            ["Apply"] = "Apply",
+            ["Cancel"] = "Cancel",
+            ["Problems"] = "Problems",
+            ["Diagnostics"] = "Diagnostics",
+            ["Logs"] = "Logs",
+            ["Settings"] = "Settings",
+            ["Close"] = "Close",
+            ["Templates"] = "Templates",
+            ["RecentProjects"] = "Recent projects",
+            ["StartScreenDescription"] = "Create a Form, open a recent project, or go to docs."
+        });
+
+    public static UiTextCatalog Current => Russian;
+
+    public static UiTextCatalog ForLanguage(string? language)
+    {
+        return SettingsTextCatalog.IsEnglishLanguage(language) ? English : Russian;
+    }
 
     public static IReadOnlySet<string> TechnicalPropertyNames { get; } = new HashSet<string>
     {

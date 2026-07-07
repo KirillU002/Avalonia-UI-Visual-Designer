@@ -124,6 +124,7 @@ public partial class MainWindow : Window
     private MainWindowViewModel? _attachedViewModel;
     private PreviewWindow? _launchPreviewWindow;
     private HelpWindow? _helpWindow;
+    private SettingsWindow? _settingsWindow;
     private TextBox? _inlineCanvasEditor;
     private DesignControlModel? _inlineCanvasEditingModel;
     private string? _inlineCanvasEditingProperty;
@@ -1316,10 +1317,14 @@ public partial class MainWindow : Window
         _appSettings.PropertyGrid = VM.CapturePropertyGridSettings();
         _appSettings.PropertyGridFavorites = VM.CapturePropertyGridFavorites();
         _appSettings.PropertyGridCollapsedCategories = VM.CapturePropertyGridCollapsedCategories();
+        _appSettings.General = VM.CaptureGeneralSettings();
         _appSettings.CanvasEditor = VM.CaptureCanvasEditorSettings();
+        _appSettings.Interface = VM.CaptureInterfaceSettings();
         _appSettings.UiDensity = VM.CaptureUiDensitySettings();
         _appSettings.Preview = VM.CapturePreviewSettings();
         _appSettings.BuildAndLogs = VM.CaptureBuildAndLogsSettings();
+        _appSettings.SqlServer = VM.CaptureSqlServerSettings();
+        _appSettings.Advanced = VM.CaptureAdvancedSettings();
         _appSettings.ExportCache = VM.CaptureExportCache();
         _appSettings.Session = CaptureSessionState();
         await _appSettingsService.SaveAsync(_appSettings);
@@ -8042,6 +8047,42 @@ public partial class MainWindow : Window
         OpenHelpWindow();
     }
 
+    private void OpenSettingsButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        OpenSettingsWindow();
+    }
+
+    private void OpenSqlSettingsButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        OpenSettingsWindow("sql");
+    }
+
+    private void OpenSettingsWindow(string initialSectionId = "general")
+    {
+        if (_settingsWindow is { IsVisible: true })
+        {
+            if (_settingsWindow.DataContext is SettingsWindowViewModel settingsViewModel)
+                settingsViewModel.SelectSection(initialSectionId);
+
+            _settingsWindow.Activate();
+            VM.TraceDocumentDebug(
+                "SETTINGS_WINDOW_OPENED",
+                $"reuse=true; section={initialSectionId}; action=activate-existing",
+                toOutput: false);
+            return;
+        }
+
+        var settingsWindow = new SettingsWindow(VM, SaveAppSettingsNowAsync, _appSettingsService.SettingsFilePath, initialSectionId);
+        settingsWindow.Closed += SettingsWindow_Closed;
+        _settingsWindow = settingsWindow;
+        settingsWindow.Show(this);
+        settingsWindow.Activate();
+        VM.TraceDocumentDebug(
+            "SETTINGS_WINDOW_OPENED",
+            $"reuse=false; section={initialSectionId}; action=create-window",
+            toOutput: false);
+    }
+
     private void OpenHelpWindow()
     {
         if (_helpWindow is { IsVisible: true })
@@ -8060,6 +8101,15 @@ public partial class MainWindow : Window
 
         if (DataContext is MainWindowViewModel viewModel)
             viewModel.StatusText = "Открыта подробная справка по конструктору форм.";
+    }
+
+    private void SettingsWindow_Closed(object? sender, EventArgs e)
+    {
+        if (sender is SettingsWindow settingsWindow)
+            settingsWindow.Closed -= SettingsWindow_Closed;
+
+        if (ReferenceEquals(_settingsWindow, sender))
+            _settingsWindow = null;
     }
 
     private async Task LaunchPreviewAsync()

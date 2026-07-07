@@ -548,7 +548,7 @@
             BorderBrush="#1E293B"
             BorderThickness="0,0,0,1"
             IsVisible="{Binding IsDesignerShellHeaderVisible}">
-      <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,8,Auto,Auto,8,Auto,Auto,Auto,*,Auto,Auto,Auto">
+      <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,8,Auto,Auto,8,Auto,Auto,Auto,*,Auto,Auto,Auto,Auto">
         <TextBlock Text="Avalonia Designer"
                    Foreground="White"
                    FontSize="13"
@@ -644,6 +644,12 @@
         </Border>
 
         <Button Grid.Column="14"
+                Content="⚙"
+                Classes="toolbar-button"
+                Click="OpenSettingsButton_Click"
+                ToolTip.Tip="{Binding Texts.Settings}"/>
+
+        <Button Grid.Column="15"
                 Content="{Binding Texts.More}"
                 Classes="toolbar-button">
           <Button.Flyout>
@@ -5919,18 +5925,34 @@
                             CornerRadius="10"
                             Padding="10">
                       <StackPanel Spacing="8">
-                        <TextBlock Text="Подключение к SQL Server"
+                        <TextBlock Text="SQL Server"
                                    FontWeight="Bold"/>
-                        <TextBlock Text="Если DLL с сущностями пока нет, укажите строку подключения и таблицу или SQL-запрос. Дизайнер подтянет колонки и примерные значения прямо из БД."
+                        <TextBlock Text="Data source использует глобальные SQL Server настройки. Обычно достаточно настроить Server name и Database name один раз в Settings."
                                    Foreground="#475569"
                                    TextWrapping="Wrap"/>
 
-                        <StackPanel Spacing="4">
-                          <TextBlock Text="Строка подключения"
-                                     FontWeight="SemiBold"/>
-                          <TextBox Text="{Binding SelectedBindingSource.SourceConnectionString, Mode=TwoWay}"
-                                   Watermark="Server=.;Database=DemoDb;Trusted_Connection=True;TrustServerCertificate=True"/>
-                        </StackPanel>
+                        <Border Background="#EFF6FF"
+                                BorderBrush="#BFDBFE"
+                                BorderThickness="1"
+                                CornerRadius="10"
+                                Padding="10">
+                          <StackPanel Spacing="6">
+                            <TextBlock Text="{Binding GlobalSqlSettingsStatusText}"
+                                       Foreground="#1D4ED8"
+                                       FontWeight="SemiBold"
+                                       TextWrapping="Wrap"/>
+                            <TextBlock Text="{Binding DataSqlGlobalSettingsHint}"
+                                       Foreground="#475569"
+                                       FontSize="12"
+                                       TextWrapping="Wrap"/>
+                            <CheckBox Content="Использовать глобальные SQL Server настройки"
+                                      IsChecked="{Binding UseGlobalSqlServerSettings, Mode=TwoWay}"/>
+                            <Button Content="Открыть SQL настройки"
+                                    Classes="data-action-button"
+                                    Click="OpenSqlSettingsButton_Click"
+                                    HorizontalAlignment="Left"/>
+                          </StackPanel>
+                        </Border>
 
                         <Grid ColumnDefinitions="*,*">
                           <StackPanel Spacing="4">
@@ -5958,6 +5980,22 @@
                                    MinHeight="72"
                                    Watermark="SELECT Id, Name FROM dbo.Customers"/>
                         </StackPanel>
+
+                        <Grid ColumnDefinitions="*,*">
+                          <StackPanel Spacing="4">
+                            <TextBlock Text="Preview rows mode"
+                                       FontWeight="SemiBold"/>
+                            <ComboBox ItemsSource="{Binding AvailablePreviewRowModes}"
+                                      SelectedItem="{Binding SelectedBindingSource.PreviewRowMode, Mode=TwoWay}"/>
+                          </StackPanel>
+                          <StackPanel Grid.Column="1"
+                                      Spacing="4">
+                            <TextBlock Text="Top N"
+                                       FontWeight="SemiBold"/>
+                            <TextBox Text="{Binding SelectedBindingSource.PreviewTopN, Mode=TwoWay}"
+                                     Watermark="100"/>
+                          </StackPanel>
+                        </Grid>
 
                         <WrapPanel Orientation="Horizontal"
                                    ItemHeight="44"
@@ -6731,70 +6769,29 @@
                                   IsChecked="{Binding IncludeSampleData, Mode=TwoWay}"/>
                       </WrapPanel>
                       <Border Background="#F8FAFC"
-                              BorderBrush="#D7E2EE"
-                              BorderThickness="1"
-                              CornerRadius="10"
-                              Padding="10">
-                        <StackPanel Spacing="6">
-                          <TextBlock Text="Настройки"
-                                     FontWeight="Bold"/>
-                          <CheckBox Content="Показывать runtime-плашку в Preview"
-                                    IsChecked="{Binding ShowPreviewRuntimeBadge, Mode=TwoWay}"/>
-                          <CheckBox Content="Включить экспериментальную вкладку Layout"
-                                    IsChecked="{Binding EnableExperimentalLayoutTab, Mode=TwoWay}"/>
-                          <CheckBox Content="Подробные Build logs"
-                                    IsChecked="{Binding VerboseBuildLogs, Mode=TwoWay}"/>
-                          <CheckBox Content="Сохранять logs в файл"
-                                    IsChecked="{Binding SaveLogsToFile, Mode=TwoWay}"/>
-                          <CheckBox Content="Автоматически очищать старые artifacts"
-                                    IsChecked="{Binding CleanOldArtifactsAutomatically, Mode=TwoWay}"/>
-                          <CheckBox Content="Export SQL connection string в generated code"
-                                    IsChecked="{Binding ExportSqlConnectionString, Mode=TwoWay}"/>
-                          <TextBlock Text="Если выключено, SQL loader получит TODO вместо строки подключения. Включайте только для локального или безопасного Export."
-                                     Foreground="#64748B"
-                                     FontSize="12"
-                                     TextWrapping="Wrap"/>
-                        </StackPanel>
-                      </Border>
-                      <Border Background="#F8FAFC"
                               BorderBrush="#BFDBFE"
                               BorderThickness="1"
                               CornerRadius="10"
                               Padding="10">
                         <StackPanel Spacing="7">
-                          <TextBlock Text="NuGet"
+                          <TextBlock Text="Настройки Export / Build"
                                      FontWeight="Bold"/>
-                          <CheckBox Content="Использовать пользовательский NuGet source"
-                                    IsChecked="{Binding UseCustomNuGetSource, Mode=TwoWay}"/>
-                          <TextBox Watermark="https://api.nuget.org/v3/index.json or C:\packages"
-                                   Text="{Binding CustomNuGetSource, Mode=TwoWay}"
-                                   IsEnabled="{Binding UseCustomNuGetSource}"/>
-                          <CheckBox Content="Разрешить HTTP source"
-                                    IsChecked="{Binding AllowInsecureNuGetSource, Mode=TwoWay}"
-                                    IsEnabled="{Binding UseCustomNuGetSource}"/>
-                          <CheckBox Content="Добавить nuget.org fallback"
-                                    IsChecked="{Binding IncludeNuGetOrgFallback, Mode=TwoWay}"/>
-                          <CheckBox Content="Генерировать NuGet.config в exported project"
-                                    IsChecked="{Binding GenerateNuGetConfigInExportedProject, Mode=TwoWay}"/>
                           <TextBlock Text="{Binding NuGetSourceSummaryText}"
                                      Foreground="#475569"
                                      FontSize="12"
                                      TextWrapping="Wrap"/>
-                          <WrapPanel>
-                            <Button Content="Проверить source"
-                                    Classes="export-secondary"
-                                    Command="{Binding TestNuGetSourceCommand}"
-                                    Margin="0,0,6,6"/>
-                            <Button Content="Очистить"
-                                    Classes="export-secondary"
-                                    Command="{Binding ClearNuGetSourceCommand}"
-                                    Margin="0,0,6,6"/>
-                          </WrapPanel>
-                          <TextBlock Text="{Binding NuGetSourceTestStatusText}"
+                          <TextBlock Text="{Binding GlobalSqlSettingsStatusText}"
+                                     Foreground="#475569"
+                                     FontSize="12"
+                                     TextWrapping="Wrap"/>
+                          <TextBlock Text="Runtime badge, Layout tab, Build logs, artifacts, NuGet и SQL security теперь находятся в отдельном окне настроек."
                                      Foreground="#64748B"
                                      FontSize="12"
-                                     TextWrapping="Wrap"
-                                     IsVisible="{Binding HasNuGetSourceTestStatus}"/>
+                                     TextWrapping="Wrap"/>
+                          <Button Content="Открыть настройки"
+                                  Classes="export-secondary"
+                                  Click="OpenSettingsButton_Click"
+                                  HorizontalAlignment="Left"/>
                         </StackPanel>
                       </Border>
                     </StackPanel>

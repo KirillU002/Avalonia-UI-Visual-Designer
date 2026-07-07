@@ -60,6 +60,29 @@ internal static class Program
             new("HelpNavigationChangesSelectedSection", ConfigureSimpleFormExport, AssertHelpNavigationChangesSelectedSection),
             new("HelpLayoutWorksInMaximizedMode", ConfigureSimpleFormExport, AssertHelpLayoutWorksInMaximizedMode),
             new("HelpWindowDoesNotBlockMainDesigner", ConfigureSimpleFormExport, AssertHelpWindowDoesNotBlockMainDesigner),
+            new("SettingsButtonOpensSettingsWindow", ConfigureSimpleFormExport, AssertSettingsButtonOpensSettingsWindow),
+            new("SettingsWindowReusesExistingInstance", ConfigureSimpleFormExport, AssertSettingsWindowReusesExistingInstance),
+            new("ExportSettingsMovedOutOfExportPanel", ConfigureSimpleFormExport, AssertExportSettingsMovedOutOfExportPanel),
+            new("SettingsSectionsExist", ConfigureSimpleFormExport, AssertSettingsSectionsExist),
+            new("SqlSettingsBuildWindowsAuthConnectionString", ConfigureSimpleFormExport, AssertSqlSettingsBuildWindowsAuthConnectionString),
+            new("SqlSettingsBuildSqlLoginConnectionString", ConfigureSimpleFormExport, AssertSqlSettingsBuildSqlLoginConnectionString),
+            new("DataSqlPanelUsesGlobalSettings", ConfigureSimpleFormExport, AssertDataSqlPanelUsesGlobalSettings),
+            new("DataSqlPanelShowsWarningWhenGlobalSqlMissing", ConfigureSimpleFormExport, AssertDataSqlPanelShowsWarningWhenGlobalSqlMissing),
+            new("NuGetSettingsPersist", ConfigureSimpleFormExport, AssertNuGetSettingsPersist),
+            new("SettingsPersistBetweenRuns", ConfigureSimpleFormExport, AssertSettingsPersistBetweenRuns),
+            new("SettingsLanguageApplyUpdatesSettingsWindow", ConfigureSimpleFormExport, AssertSettingsLanguageApplyUpdatesSettingsWindow),
+            new("SettingsLanguagePersistsAfterRestart", ConfigureSimpleFormExport, AssertSettingsLanguagePersistsAfterRestart),
+            new("SettingsButtonsLocalized", ConfigureSimpleFormExport, AssertSettingsButtonsLocalized),
+            new("SettingsUnsavedIndicatorIsHumanReadable", ConfigureSimpleFormExport, AssertSettingsUnsavedIndicatorIsHumanReadable),
+            new("SettingsCancelDiscardsDraftChanges", ConfigureSimpleFormExport, AssertSettingsCancelDiscardsDraftChanges),
+            new("SettingsApplyKeepsWindowOpenAndAppliesValues", ConfigureSimpleFormExport, AssertSettingsApplyKeepsWindowOpenAndAppliesValues),
+            new("SettingsSavePersistsValues", ConfigureSimpleFormExport, AssertSettingsSavePersistsValues),
+            new("SettingsNoDeadInteractiveOptions", ConfigureSimpleFormExport, AssertSettingsNoDeadInteractiveOptions),
+            new("SettingsSqlWindowsAuthHidesCredentials", ConfigureSimpleFormExport, AssertSettingsSqlWindowsAuthHidesCredentials),
+            new("SettingsNugetSectionLocalizedAndPersists", ConfigureSimpleFormExport, AssertSettingsNugetSectionLocalizedAndPersists),
+            new("SettingsContentScrollViewerHasFiniteViewport", ConfigureSimpleFormExport, AssertSettingsContentScrollViewerHasFiniteViewport),
+            new("SettingsFooterOutsideScrollableContent", ConfigureSimpleFormExport, AssertSettingsFooterOutsideScrollableContent),
+            new("SettingsSectionChangeResetsContentScroll", ConfigureSimpleFormExport, AssertSettingsSectionChangeResetsContentScroll),
             new("ValidateBuildShowsRestoreAndBuildSteps", ConfigureSimpleFormExport, AssertValidateBuildShowsRestoreAndBuildSteps),
             new("ValidateBuildStoresDetailedLogs", ConfigureSimpleFormExport, AssertValidateBuildStoresDetailedLogs),
             new("ValidateBuildSettingsCanDisableAutoBuild", ConfigureSimpleFormExport, AssertValidateBuildSettingsCanDisableAutoBuild),
@@ -239,6 +262,19 @@ internal static class Program
             new("ResponsiveLayoutExport_StackPanel", ConfigureResponsiveStackPanelExport, AssertResponsiveStackPanelExport),
             new("ResponsiveLayoutExport_CanvasFallback", ConfigureResponsiveCanvasFallbackExport, AssertResponsiveCanvasFallbackExport)
         };
+
+        var scenarioFilter = Environment.GetEnvironmentVariable("SMOKE_SCENARIO_FILTER");
+        if (!string.IsNullOrWhiteSpace(scenarioFilter))
+        {
+            scenarios = scenarios
+                .Where(scenario => scenario.Name.Contains(scenarioFilter, StringComparison.OrdinalIgnoreCase))
+                .ToArray();
+
+            if (scenarios.Length == 0)
+                throw new InvalidOperationException($"No smoke scenarios matched SMOKE_SCENARIO_FILTER='{scenarioFilter}'.");
+
+            Console.WriteLine($"Scenario filter: {scenarioFilter} ({scenarios.Length} matched)");
+        }
 
         var failed = 0;
         foreach (var scenario in scenarios)
@@ -688,6 +724,417 @@ internal static class Program
         RequireEqual(controlsCount, context.ViewModel.Controls.Count, "Help Center navigation should not mutate designer controls.");
         RequireEqual(activeFormId, context.ViewModel.ActiveFormDocument?.Id ?? "", "Help Center navigation should not change active form.");
         RequireEqual(generatedXaml, context.ViewModel.GeneratedXaml, "Help Center navigation should not regenerate or mutate export output.");
+    }
+
+    private static void AssertSettingsButtonOpensSettingsWindow(SmokeContext context)
+    {
+        var xaml = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "Views", "MainWindow.axaml"), Encoding.UTF8);
+        var code = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "Views", "MainWindow.axaml.cs"), Encoding.UTF8);
+
+        RequireContains(xaml, "Click=\"OpenSettingsButton_Click\"", "Toolbar should expose a gear/settings button.");
+        RequireContains(xaml, "ToolTip.Tip=\"{Binding Texts.Settings}\"", "Settings button tooltip should follow the active UI language.");
+        RequireContains(code, "OpenSettingsWindow(", "Settings button should open the Settings window.");
+        RequireContains(code, "new SettingsWindow(VM", "MainWindow should create SettingsWindow with the editor ViewModel.");
+    }
+
+    private static void AssertSettingsWindowReusesExistingInstance(SmokeContext context)
+    {
+        var code = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "Views", "MainWindow.axaml.cs"), Encoding.UTF8);
+        RequireContains(code, "_settingsWindow is { IsVisible: true }", "OpenSettingsWindow should check existing visible SettingsWindow.");
+        RequireContains(code, "_settingsWindow.Activate();", "OpenSettingsWindow should activate existing SettingsWindow.");
+        RequireContains(code, "action=activate-existing", "Settings reuse should emit diagnostics.");
+    }
+
+    private static void AssertExportSettingsMovedOutOfExportPanel(SmokeContext context)
+    {
+        var mainWindowXaml = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "Views", "MainWindow.axaml"), Encoding.UTF8);
+        var settingsXaml = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "Views", "SettingsWindow.axaml"), Encoding.UTF8);
+
+        if (mainWindowXaml.Contains("Показывать runtime-плашку в Preview", StringComparison.Ordinal)
+            || mainWindowXaml.Contains("Использовать пользовательский NuGet source", StringComparison.Ordinal)
+            || mainWindowXaml.Contains("Export SQL connection string в generated code", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Export panel should not render detailed settings checkboxes directly.");
+        }
+
+        RequireContains(mainWindowXaml, "Настройки Export / Build", "Export panel should keep a compact settings summary.");
+        RequireContains(mainWindowXaml, "Открыть настройки", "Export panel should provide a Settings shortcut.");
+        RequireContains(settingsXaml, "Texts.RuntimeBadge", "Runtime badge setting should live in SettingsWindow.");
+        RequireContains(settingsXaml, "Texts.UseCustomNuGetSource", "NuGet setting should live in SettingsWindow.");
+        RequireContains(settingsXaml, "Texts.ExportSqlConnectionString", "SQL export security setting should live in SettingsWindow.");
+    }
+
+    private static void AssertSettingsSectionsExist(SmokeContext context)
+    {
+        var viewModel = new SettingsWindowViewModel(context.ViewModel, Path.Combine(Path.GetTempPath(), "app-settings.json"));
+        var sectionTitles = string.Join(Environment.NewLine, viewModel.Sections.Select(section => section.Title));
+
+        foreach (var title in new[]
+                 {
+                     "Общие",
+                     "Интерфейс",
+                     "Preview",
+                     "Export / Build",
+                     "NuGet",
+                     "SQL Server",
+                     "Logs / Diagnostics",
+                     "Advanced"
+                 })
+        {
+            RequireContains(sectionTitles, title, $"Settings should contain section '{title}'.");
+        }
+    }
+
+    private static void AssertSqlSettingsBuildWindowsAuthConnectionString(SmokeContext context)
+    {
+        var service = new SqlConnectionStringBuilderService();
+        var result = service.Build(new SqlServerSettingsModel
+        {
+            ServerName = "localhost",
+            DatabaseName = "DemoDb",
+            AuthenticationMode = SqlServerSettingsModel.AuthWindows,
+            TrustServerCertificate = true,
+            EncryptConnection = false
+        });
+
+        if (!result.Success)
+            throw new InvalidOperationException($"Windows auth SQL connection string should build: {result.ErrorMessage}");
+
+        RequireContains(result.ConnectionString, "Data Source=localhost", "Connection string should include Server name.");
+        RequireContains(result.ConnectionString, "Initial Catalog=DemoDb", "Connection string should include Database name.");
+        RequireContains(result.ConnectionString, "Integrated Security=True", "Windows auth should use Integrated Security.");
+        RequireContains(result.ConnectionString, "Trust Server Certificate=True", "Trust Server Certificate should be preserved.");
+    }
+
+    private static void AssertSqlSettingsBuildSqlLoginConnectionString(SmokeContext context)
+    {
+        var service = new SqlConnectionStringBuilderService();
+        var result = service.Build(new SqlServerSettingsModel
+        {
+            ServerName = "sql.local",
+            DatabaseName = "DemoDb",
+            AuthenticationMode = SqlServerSettingsModel.AuthSqlLogin,
+            UserName = "designer",
+            Password = "super-secret",
+            TrustServerCertificate = true
+        });
+
+        if (!result.Success)
+            throw new InvalidOperationException($"SQL login connection string should build: {result.ErrorMessage}");
+
+        RequireContains(result.ConnectionString, "User ID=designer", "SQL login should include User Id.");
+        RequireContains(result.ConnectionString, "Password=super-secret", "SQL login should include password in effective connection string.");
+        if (result.MaskedConnectionString.Contains("super-secret", StringComparison.Ordinal))
+            throw new InvalidOperationException("Masked connection string must not expose password.");
+        RequireContains(result.MaskedConnectionString, "Password=***", "Masked connection string should show password placeholder.");
+    }
+
+    private static void AssertDataSqlPanelUsesGlobalSettings(SmokeContext context)
+    {
+        var vm = context.ViewModel;
+        vm.UseGlobalSqlServerSettings = true;
+        vm.SqlServerName = "localhost";
+        vm.SqlDatabaseName = "DemoDb";
+        vm.SqlAuthenticationMode = SqlServerSettingsModel.AuthWindows;
+        vm.SqlTrustServerCertificate = true;
+
+        var source = new BindingSourceModel
+        {
+            Name = "Orders",
+            SourceKind = "SqlServer",
+            SourceTableName = "Orders",
+            SourceSchemaName = ""
+        };
+
+        var resolved = vm.ResolveSqlConnectionStringForSource(source);
+        RequireContains(resolved, "Data Source=localhost", "SQL source should resolve Server name from global settings.");
+        RequireContains(resolved, "Initial Catalog=DemoDb", "SQL source should resolve Database name from global settings.");
+
+        var changed = vm.TryApplyGlobalSqlSettings(source);
+        if (!changed)
+            throw new InvalidOperationException("TryApplyGlobalSqlSettings should update an empty SQL source.");
+        RequireContains(source.SourceConnectionString, "Data Source=localhost", "Data SQL source should receive resolved connection string.");
+        RequireEqual("dbo", source.SourceSchemaName, "Global SQL settings should provide default schema.");
+    }
+
+    private static void AssertDataSqlPanelShowsWarningWhenGlobalSqlMissing(SmokeContext context)
+    {
+        var vm = context.ViewModel;
+        vm.SqlServerName = "";
+        vm.SqlDatabaseName = "";
+        RequireContains(vm.GlobalSqlSettingsStatusText, "SQL Server не настроен", "Missing global SQL config should be visible to the user.");
+        RequireContains(vm.DataSqlGlobalSettingsHint, "Настройки", "Data SQL panel hint should direct user to Settings.");
+    }
+
+    private static void AssertNuGetSettingsPersist(SmokeContext context)
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "FormDesignerSettingsSmoke", Guid.NewGuid().ToString("N"));
+        var service = new AppSettingsService(tempDir);
+        var settings = new AppSettingsModel
+        {
+            BuildAndLogs = new BuildAndLogsSettingsModel
+            {
+                UseCustomNuGetSource = true,
+                CustomNuGetSource = "https://nuget.example/v3/index.json",
+                AllowInsecureNuGetSource = false,
+                IncludeNuGetOrgFallback = true,
+                GenerateNuGetConfigInExportedProject = true
+            }
+        };
+
+        service.SaveAsync(settings).GetAwaiter().GetResult();
+        var reloaded = service.Load();
+
+        if (!reloaded.BuildAndLogs.UseCustomNuGetSource
+            || !string.Equals(reloaded.BuildAndLogs.CustomNuGetSource, settings.BuildAndLogs.CustomNuGetSource, StringComparison.Ordinal)
+            || !reloaded.BuildAndLogs.GenerateNuGetConfigInExportedProject)
+        {
+            throw new InvalidOperationException("NuGet settings should persist through AppSettingsService.");
+        }
+    }
+
+    private static void AssertSettingsPersistBetweenRuns(SmokeContext context)
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "FormDesignerSettingsSmoke", Guid.NewGuid().ToString("N"));
+        var service = new AppSettingsService(tempDir);
+        var settings = new AppSettingsModel
+        {
+            General = new GeneralSettingsModel
+            {
+                Language = "Русский",
+                Theme = "Светлая",
+                ConfirmNewProjectWithUnsavedChanges = false,
+                EnableRecoveryAutosave = true
+            },
+            SqlServer = new SqlServerSettingsModel
+            {
+                ServerName = "localhost",
+                DatabaseName = "DemoDb",
+                AuthenticationMode = SqlServerSettingsModel.AuthWindows,
+                DefaultSchema = "sales",
+                DefaultPreviewTopN = 250
+            },
+            BuildAndLogs = new BuildAndLogsSettingsModel
+            {
+                VerboseBuildLogs = true,
+                LogLevel = "Debug",
+                MaxLogFilesCount = 7,
+                MaxLogFileSizeMb = 33
+            }
+        };
+
+        service.SaveAsync(settings).GetAwaiter().GetResult();
+        var reloaded = service.Load();
+
+        RequireEqual("localhost", reloaded.SqlServer.ServerName, "SQL Server name should persist between runs.");
+        RequireEqual("DemoDb", reloaded.SqlServer.DatabaseName, "SQL Database name should persist between runs.");
+        RequireEqual("sales", reloaded.SqlServer.DefaultSchema, "SQL default schema should persist between runs.");
+        RequireEqual(250, reloaded.SqlServer.DefaultPreviewTopN, "SQL preview Top N should persist between runs.");
+        RequireEqual("Debug", reloaded.BuildAndLogs.LogLevel, "Log level should persist between runs.");
+        RequireEqual(7, reloaded.BuildAndLogs.MaxLogFilesCount, "Max log files count should persist between runs.");
+        RequireEqual(33, reloaded.BuildAndLogs.MaxLogFileSizeMb, "Max log file size should persist between runs.");
+    }
+
+    private static void AssertSettingsLanguageApplyUpdatesSettingsWindow(SmokeContext context)
+    {
+        var settings = new SettingsWindowViewModel(context.ViewModel, Path.Combine(Path.GetTempPath(), "app-settings.json"));
+        settings.SelectedLanguageOption = FindSettingsOption(settings.LanguageOptions, SettingsTextCatalog.LanguageEnglish);
+
+        RequireEqual("Avalonia Designer Settings", settings.Texts.HeaderTitle, "Settings Window should update text immediately when English is selected.");
+        RequireEqual("Apply", settings.Texts.Apply, "Apply button text should switch to English.");
+        RequireEqual("Unsaved changes", settings.UnsavedStatusText, "Unsaved indicator should be localized after language switch.");
+
+        settings.ApplyCommand.Execute(null);
+        RequireEqual(SettingsTextCatalog.LanguageEnglish, context.ViewModel.InterfaceLanguage, "Apply should update main ViewModel language.");
+        RequireEqual("Settings", context.ViewModel.Texts.Settings, "Main ViewModel should expose English main UI text after Apply.");
+    }
+
+    private static void AssertSettingsLanguagePersistsAfterRestart(SmokeContext context)
+    {
+        context.ViewModel.InterfaceLanguage = SettingsTextCatalog.LanguageEnglish;
+        var captured = context.ViewModel.CaptureGeneralSettings();
+        var reloaded = CreateViewModel(context.Scenario.Name + "SettingsLanguageReloaded");
+        reloaded.ApplyAppSettings(new AppSettingsModel { General = captured });
+
+        RequireEqual(SettingsTextCatalog.LanguageEnglish, reloaded.InterfaceLanguage, "Selected language should be captured in settings.");
+        RequireEqual("Settings", reloaded.Texts.Settings, "Reloaded ViewModel should restore the English UI catalog.");
+    }
+
+    private static void AssertSettingsButtonsLocalized(SmokeContext context)
+    {
+        var settings = new SettingsWindowViewModel(context.ViewModel, Path.Combine(Path.GetTempPath(), "app-settings.json"));
+        RequireEqual("Применить", settings.Texts.Apply, "Russian Apply button should be localized.");
+        RequireEqual("Сохранить", settings.Texts.Save, "Russian Save button should be localized.");
+        RequireEqual("Отмена", settings.Texts.Cancel, "Russian Cancel button should be localized.");
+        RequireEqual("Сбросить всё", settings.Texts.ResetAll, "Russian Reset button should be localized.");
+
+        settings.SelectedLanguageOption = FindSettingsOption(settings.LanguageOptions, SettingsTextCatalog.LanguageEnglish);
+        RequireEqual("Apply", settings.Texts.Apply, "English Apply button should be localized.");
+        RequireEqual("Save", settings.Texts.Save, "English Save button should be localized.");
+        RequireEqual("Cancel", settings.Texts.Cancel, "English Cancel button should be localized.");
+        RequireEqual("Reset all", settings.Texts.ResetAll, "English Reset button should be localized.");
+    }
+
+    private static void AssertSettingsUnsavedIndicatorIsHumanReadable(SmokeContext context)
+    {
+        var settings = new SettingsWindowViewModel(context.ViewModel, Path.Combine(Path.GetTempPath(), "app-settings.json"));
+        RequireNotContains(settings.UnsavedStatusText, "True", "Saved status should not expose a boolean.");
+        RequireNotContains(settings.UnsavedStatusText, "False", "Saved status should not expose a boolean.");
+
+        settings.CustomNuGetSource = "https://nuget.example/v3/index.json";
+        RequireContains(settings.UnsavedStatusText, "несохран", "Unsaved status should be human-readable in Russian.");
+        RequireNotContains(settings.UnsavedStatusText, "True", "Unsaved status should not expose a boolean.");
+        RequireNotContains(settings.UnsavedStatusText, "False", "Unsaved status should not expose a boolean.");
+    }
+
+    private static void AssertSettingsCancelDiscardsDraftChanges(SmokeContext context)
+    {
+        context.ViewModel.InterfaceLanguage = SettingsTextCatalog.LanguageRussian;
+        var settings = new SettingsWindowViewModel(context.ViewModel, Path.Combine(Path.GetTempPath(), "app-settings.json"));
+        var closeRequested = false;
+        settings.CloseRequested += (_, _) => closeRequested = true;
+
+        settings.SelectedLanguageOption = FindSettingsOption(settings.LanguageOptions, SettingsTextCatalog.LanguageEnglish);
+        settings.CancelCommand.Execute(null);
+
+        if (!closeRequested)
+            throw new InvalidOperationException("Cancel should request closing the Settings window.");
+        RequireEqual(SettingsTextCatalog.LanguageRussian, context.ViewModel.InterfaceLanguage, "Cancel should discard draft language changes.");
+    }
+
+    private static void AssertSettingsApplyKeepsWindowOpenAndAppliesValues(SmokeContext context)
+    {
+        var settings = new SettingsWindowViewModel(context.ViewModel, Path.Combine(Path.GetTempPath(), "app-settings.json"));
+        var closeRequested = false;
+        settings.CloseRequested += (_, _) => closeRequested = true;
+
+        settings.SqlServerName = "localhost";
+        settings.SqlDatabaseName = "DemoDb";
+        settings.ApplyCommand.Execute(null);
+
+        if (closeRequested)
+            throw new InvalidOperationException("Apply should not close the Settings window.");
+        RequireEqual("localhost", context.ViewModel.SqlServerName, "Apply should copy SQL Server name to the main ViewModel.");
+        RequireEqual("DemoDb", context.ViewModel.SqlDatabaseName, "Apply should copy SQL Database name to the main ViewModel.");
+        if (settings.IsDirty)
+            throw new InvalidOperationException("Apply should clear dirty state after applying settings.");
+    }
+
+    private static void AssertSettingsSavePersistsValues(SmokeContext context)
+    {
+        var settings = new SettingsWindowViewModel(context.ViewModel, Path.Combine(Path.GetTempPath(), "app-settings.json"));
+        var saveRequested = false;
+        settings.SaveRequested += (_, _) => saveRequested = true;
+
+        settings.UseCustomNuGetSource = true;
+        settings.CustomNuGetSource = "https://nuget.example/v3/index.json";
+        settings.SaveCommand.Execute(null);
+
+        if (!saveRequested)
+            throw new InvalidOperationException("Save should request persistence through the window.");
+        if (!context.ViewModel.UseCustomNuGetSource)
+            throw new InvalidOperationException("Save should apply NuGet settings before persistence.");
+        RequireEqual("https://nuget.example/v3/index.json", context.ViewModel.CustomNuGetSource, "Save should copy custom NuGet source to the main ViewModel.");
+    }
+
+    private static void AssertSettingsNoDeadInteractiveOptions(SmokeContext context)
+    {
+        var xaml = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "Views", "SettingsWindow.axaml"), Encoding.UTF8);
+        RequireContains(xaml, "Texts.ExperimentalDisabled", "Experimental Advanced settings should be visibly marked.");
+        RequireContains(xaml, "IsEnabled=\"False\"", "Experimental Advanced options should be disabled instead of pretending to work.");
+        RequireNotContains(xaml, "Изменения: True", "Settings UI should not show raw boolean status.");
+        RequireNotContains(xaml, "Reset to defaults", "Settings buttons should be localized through the text catalog.");
+    }
+
+    private static void AssertSettingsSqlWindowsAuthHidesCredentials(SmokeContext context)
+    {
+        var settings = new SettingsWindowViewModel(context.ViewModel, Path.Combine(Path.GetTempPath(), "app-settings.json"));
+        settings.SelectedSqlAuthenticationOption = FindSettingsOption(settings.SqlAuthenticationOptions, SqlServerSettingsModel.AuthWindows);
+        if (settings.IsSqlLoginSelected)
+            throw new InvalidOperationException("Windows Authentication should hide SQL Login credential fields.");
+
+        settings.SelectedSqlAuthenticationOption = FindSettingsOption(settings.SqlAuthenticationOptions, SqlServerSettingsModel.AuthSqlLogin);
+        if (!settings.IsSqlLoginSelected)
+            throw new InvalidOperationException("SQL Login should show credential fields.");
+
+        var xaml = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "Views", "SettingsWindow.axaml"), Encoding.UTF8);
+        RequireContains(xaml, "IsVisible=\"{Binding IsSqlLoginSelected}\"", "SQL credential fields should be hidden for Windows Authentication.");
+    }
+
+    private static void AssertSettingsNugetSectionLocalizedAndPersists(SmokeContext context)
+    {
+        var settings = new SettingsWindowViewModel(context.ViewModel, Path.Combine(Path.GetTempPath(), "app-settings.json"));
+        settings.SelectedLanguageOption = FindSettingsOption(settings.LanguageOptions, SettingsTextCatalog.LanguageEnglish);
+        settings.SelectSection("nuget");
+
+        RequireEqual("Use custom NuGet source", settings.Texts.UseCustomNuGetSource, "NuGet setting label should be localized in English.");
+        RequireEqual("NuGet", settings.SectionTitle, "NuGet section title should stay technical and searchable.");
+
+        settings.UseCustomNuGetSource = true;
+        settings.CustomNuGetSource = "https://nuget.example/v3/index.json";
+        settings.AllowInsecureNuGetSource = false;
+        settings.IncludeNuGetOrgFallback = true;
+        settings.GenerateNuGetConfigInExportedProject = true;
+        settings.ApplyCommand.Execute(null);
+
+        if (!context.ViewModel.UseCustomNuGetSource)
+            throw new InvalidOperationException("NuGet section should apply custom source flag.");
+        RequireEqual("https://nuget.example/v3/index.json", context.ViewModel.CustomNuGetSource, "NuGet section should apply custom source value.");
+        if (!context.ViewModel.IncludeNuGetOrgFallback || !context.ViewModel.GenerateNuGetConfigInExportedProject)
+            throw new InvalidOperationException("NuGet fallback/config settings should apply and persist in the main ViewModel.");
+    }
+
+    private static void AssertSettingsContentScrollViewerHasFiniteViewport(SmokeContext context)
+    {
+        var xaml = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "Views", "SettingsWindow.axaml"), Encoding.UTF8);
+        RequireContains(xaml, "<Grid RowDefinitions=\"Auto,*,Auto\"", "Settings root should reserve fixed header/footer rows and a finite main row.");
+        RequireContains(xaml, "Grid.Row=\"1\"", "Settings should have an explicit main content row.");
+        RequireContains(xaml, "ColumnDefinitions=\"270,*\"", "Settings main content should split sidebar and page content.");
+        RequireContains(xaml, "x:Name=\"SettingsContentScrollViewer\"", "Selected page content should use a named ScrollViewer.");
+        RequireContains(xaml, "HorizontalScrollBarVisibility=\"Disabled\"", "Settings page content should not show horizontal scroll by default.");
+        RequireContains(xaml, "VerticalAlignment=\"Stretch\"", "Settings page ScrollViewer should stretch to the finite viewport.");
+        RequireContains(xaml, "ClipToBounds=\"True\"", "Settings layout should clip content to the viewport instead of drawing under the footer.");
+        RequireEqual(1, CountOccurrences(xaml, "<ScrollViewer"), "Only selected page content should be an explicit ScrollViewer in SettingsWindow XAML.");
+    }
+
+    private static void AssertSettingsFooterOutsideScrollableContent(SmokeContext context)
+    {
+        var xaml = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "Views", "SettingsWindow.axaml"), Encoding.UTF8);
+        var scrollStart = xaml.IndexOf("x:Name=\"SettingsContentScrollViewer\"", StringComparison.Ordinal);
+        var scrollEnd = xaml.IndexOf("</ScrollViewer>", scrollStart, StringComparison.Ordinal);
+        var footerStart = xaml.IndexOf("<Border Grid.Row=\"2\"", StringComparison.Ordinal);
+
+        if (scrollStart < 0 || scrollEnd < 0 || footerStart < 0)
+            throw new InvalidOperationException("Settings XAML should contain named content ScrollViewer and footer row.");
+        if (footerStart < scrollEnd)
+            throw new InvalidOperationException("Settings footer must stay outside selected page ScrollViewer.");
+    }
+
+    private static void AssertSettingsSectionChangeResetsContentScroll(SmokeContext context)
+    {
+        var code = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "Views", "SettingsWindow.axaml.cs"), Encoding.UTF8);
+        RequireContains(code, "SettingsViewModel_PropertyChanged", "Settings window should listen for selected section changes.");
+        RequireContains(code, "SettingsContentScrollViewer.Offset = new Vector(0, 0)", "Changing Settings section should reset page scroll to the top.");
+        RequireContains(code, "SettingsContentScrollViewer.InvalidateMeasure()", "Changing Settings section should invalidate content measure.");
+        RequireContains(code, "SETTINGS_CONTENT_SCROLL_RESET", "Settings section scroll reset should be diagnostic-friendly.");
+    }
+
+    private static SettingsOptionModel FindSettingsOption(IEnumerable<SettingsOptionModel> options, string value)
+    {
+        return options.Single(option => string.Equals(option.Value, value, StringComparison.Ordinal));
+    }
+
+    private static int CountOccurrences(string text, string value)
+    {
+        var count = 0;
+        var index = 0;
+        while ((index = text.IndexOf(value, index, StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            index += value.Length;
+        }
+
+        return count;
     }
 
     private static string BuildHelpContentText()

@@ -28,7 +28,26 @@ public class AppSettingsModel
 
     public BuildAndLogsSettingsModel BuildAndLogs { get; set; } = new();
 
+    public GeneralSettingsModel General { get; set; } = new();
+
+    public InterfaceSettingsModel Interface { get; set; } = new();
+
+    public SqlServerSettingsModel SqlServer { get; set; } = new();
+
+    public AdvancedSettingsModel Advanced { get; set; } = new();
+
     public AutosaveMetadataModel Autosave { get; set; } = new();
+}
+
+public sealed class GeneralSettingsModel
+{
+    public string Language { get; set; } = "Русский";
+
+    public string Theme { get; set; } = "Светлая";
+
+    public bool ConfirmNewProjectWithUnsavedChanges { get; set; } = true;
+
+    public bool EnableRecoveryAutosave { get; set; } = true;
 }
 
 public sealed class CanvasEditorSettingsModel
@@ -51,9 +70,28 @@ public sealed class UiDensitySettingsModel
     public string DensityMode { get; set; } = "Compact";
 }
 
+public sealed class InterfaceSettingsModel
+{
+    public bool ShowPropertyTooltips { get; set; } = true;
+
+    public bool CompactPropertyInspector { get; set; } = true;
+
+    public bool ShowAdvancedProperties { get; set; }
+
+    public int GridStep { get; set; } = 10;
+}
+
 public sealed class PreviewSettingsModel
 {
     public bool ShowRuntimeBadge { get; set; }
+
+    public bool CompactRuntimeBadge { get; set; } = true;
+
+    public bool AutoHideRuntimeBadge { get; set; } = true;
+
+    public bool PreviewTopmost { get; set; }
+
+    public int PreviewDefaultZoomPercent { get; set; } = 100;
 
     public bool EnableExperimentalLayoutTab { get; set; }
 }
@@ -82,11 +120,54 @@ public sealed class BuildAndLogsSettingsModel
 
     public bool ExportSqlConnectionString { get; set; }
 
+    public int BuildTimeoutSeconds { get; set; } = 120;
+
     public string LogLevel { get; set; } = "Info";
 
     public int MaxLogFilesCount { get; set; } = 10;
 
     public int MaxLogFileSizeMb { get; set; } = 20;
+}
+
+public sealed class SqlServerSettingsModel
+{
+    public const string AuthWindows = "Windows Authentication";
+    public const string AuthSqlLogin = "SQL Login";
+
+    public string ServerName { get; set; } = "";
+
+    public string DatabaseName { get; set; } = "";
+
+    public string AuthenticationMode { get; set; } = AuthWindows;
+
+    public string UserName { get; set; } = "";
+
+    public string Password { get; set; } = "";
+
+    public bool SavePassword { get; set; }
+
+    public bool TrustServerCertificate { get; set; } = true;
+
+    public bool EncryptConnection { get; set; }
+
+    public int ConnectionTimeoutSeconds { get; set; } = 15;
+
+    public string DefaultSchema { get; set; } = "dbo";
+
+    public int DefaultPreviewTopN { get; set; } = 100;
+
+    public bool UseGlobalSettingsForSqlSources { get; set; } = true;
+
+    public bool ExportConnectionStringInGeneratedCode { get; set; }
+}
+
+public sealed class AdvancedSettingsModel
+{
+    public bool EnableTraceDiagnostics { get; set; }
+
+    public bool EnableDeveloperWarnings { get; set; } = true;
+
+    public bool ResetLayoutOnNextStart { get; set; }
 }
 
 public sealed class PropertyGridUserSettings

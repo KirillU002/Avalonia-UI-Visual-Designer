@@ -282,7 +282,9 @@ public partial class MainWindowViewModel : ObservableObject
     public ObservableCollection<GeneratedFileTreeNodeModel> GeneratedFileTreeNodes { get; } = new();
     public ObservableCollection<RequiredPackageModel> RequiredPackages { get; } = new();
     public ObservableCollection<ExportDiagnosticModel> ExportDiagnostics { get; } = new();
-    public UiTextCatalog Texts { get; } = UiText.Current;
+
+    [ObservableProperty]
+    private UiTextCatalog texts = UiText.ForLanguage(SettingsTextCatalog.LanguageRussian);
     public ObservableCollection<string> AvailableOutputCategories { get; } = new()
     {
         OutputCategoryAll,
@@ -882,7 +884,40 @@ public partial class MainWindowViewModel : ObservableObject
     private string uiDensityMode = UiDensityCompact;
 
     [ObservableProperty]
+    private string interfaceLanguage = SettingsTextCatalog.LanguageRussian;
+
+    [ObservableProperty]
+    private string appThemeMode = SettingsTextCatalog.ThemeLight;
+
+    [ObservableProperty]
+    private bool confirmNewProjectWithUnsavedChanges = true;
+
+    [ObservableProperty]
+    private bool enableRecoveryAutosave = true;
+
+    [ObservableProperty]
+    private bool showPropertyTooltips = true;
+
+    [ObservableProperty]
+    private bool compactPropertyInspector = true;
+
+    [ObservableProperty]
+    private bool showAdvancedProperties;
+
+    [ObservableProperty]
     private bool showPreviewRuntimeBadge;
+
+    [ObservableProperty]
+    private bool compactPreviewRuntimeBadge = true;
+
+    [ObservableProperty]
+    private bool autoHidePreviewRuntimeBadge = true;
+
+    [ObservableProperty]
+    private bool previewTopmost;
+
+    [ObservableProperty]
+    private int previewDefaultZoomPercent = 100;
 
     [ObservableProperty]
     private bool enableExperimentalLayoutTab;
@@ -921,7 +956,64 @@ public partial class MainWindowViewModel : ObservableObject
     private bool exportSqlConnectionString;
 
     [ObservableProperty]
+    private int buildTimeoutSeconds = 120;
+
+    [ObservableProperty]
+    private string sqlServerName = "";
+
+    [ObservableProperty]
+    private string sqlDatabaseName = "";
+
+    [ObservableProperty]
+    private string sqlAuthenticationMode = SqlServerSettingsModel.AuthWindows;
+
+    [ObservableProperty]
+    private string sqlUserName = "";
+
+    [ObservableProperty]
+    private string sqlPassword = "";
+
+    [ObservableProperty]
+    private bool sqlSavePassword;
+
+    [ObservableProperty]
+    private bool sqlTrustServerCertificate = true;
+
+    [ObservableProperty]
+    private bool sqlEncryptConnection;
+
+    [ObservableProperty]
+    private int sqlConnectionTimeoutSeconds = 15;
+
+    [ObservableProperty]
+    private string sqlDefaultSchema = "dbo";
+
+    [ObservableProperty]
+    private int sqlDefaultPreviewTopN = 100;
+
+    [ObservableProperty]
+    private bool useGlobalSqlServerSettings = true;
+
+    [ObservableProperty]
+    private bool enableTraceDiagnostics;
+
+    [ObservableProperty]
+    private bool enableDeveloperWarnings = true;
+
+    [ObservableProperty]
+    private bool resetLayoutOnNextStart;
+
+    [ObservableProperty]
     private string nuGetSourceTestStatusText = "";
+
+    [ObservableProperty]
+    private string logLevel = "Info";
+
+    [ObservableProperty]
+    private int maxLogFilesCount = 10;
+
+    [ObservableProperty]
+    private int maxLogFileSizeMb = 20;
 
     [ObservableProperty]
     private string logsFolderPath = "";
@@ -1135,6 +1227,23 @@ public partial class MainWindowViewModel : ObservableObject
             : $"NuGet source: default NuGet.org ({ExportPipelineService.DefaultNuGetSourceUrl})";
     public bool IsCustomNuGetSourceEnabled => UseCustomNuGetSource;
     public bool HasNuGetSourceTestStatus => !string.IsNullOrWhiteSpace(NuGetSourceTestStatusText);
+    public bool IsGlobalSqlServerConfigured =>
+        !string.IsNullOrWhiteSpace(SqlServerName)
+        && !string.IsNullOrWhiteSpace(SqlDatabaseName);
+    public string GlobalSqlSettingsStatusText => IsGlobalSqlServerConfigured
+        ? $"SQL Server: {SqlServerName.Trim()} / {SqlDatabaseName.Trim()} / {SqlAuthenticationMode}"
+        : "SQL Server не настроен. Откройте Настройки → SQL Server.";
+    public string GlobalSqlConnectionPreviewText
+    {
+        get
+        {
+            var result = new SqlConnectionStringBuilderService().Build(CaptureSqlServerSettings());
+            return result.Success ? result.MaskedConnectionString : result.ErrorMessage;
+        }
+    }
+    public string DataSqlGlobalSettingsHint => IsGlobalSqlServerConfigured
+        ? "Используется глобальная SQL Server конфигурация из Settings. Connection string будет собрана автоматически."
+        : "SQL Server не настроен. Откройте Настройки → SQL Server.";
     public string ExportPipelineCompactSummary =>
         $"{ExportStatusText} · warnings {ExportChecklistWarningCount} · errors {ExportChecklistErrorCount} · packages {RequiredPackages.Count}";
     public string PerformanceDiagnosticsSummary =>
@@ -2635,6 +2744,8 @@ public partial class MainWindowViewModel : ObservableObject
     {
         if (!SaveLogsToFile)
             return;
+        if (!ShouldPersistWorkspaceLogEntry(entry))
+            return;
 
         try
         {
@@ -2643,7 +2754,7 @@ public partial class MainWindowViewModel : ObservableObject
                 : LogsFolderPath;
             Directory.CreateDirectory(folder);
 
-            var filePath = Path.Combine(folder, $"designer-{DateTime.UtcNow:yyyyMMdd}.log");
+            var filePath = ResolveWorkspaceLogFilePath(folder);
             var line = $"[{entry.TimestampUtc:O}] [{entry.Level}] [{entry.Category}] {entry.Message}";
             if (!string.IsNullOrWhiteSpace(entry.Details))
                 line += $" | {entry.Details.ReplaceLineEndings(" ")}";
@@ -2651,10 +2762,43 @@ public partial class MainWindowViewModel : ObservableObject
                 line += $" | document={entry.RelatedDocumentPath}";
 
             File.AppendAllText(filePath, line + Environment.NewLine, Encoding.UTF8);
+            PruneWorkspaceLogFiles(folder);
         }
         catch
         {
             // Logging must never break editor input, preview, export, or project operations.
+        }
+    }
+
+    private bool ShouldPersistWorkspaceLogEntry(WorkspaceLogEntryModel entry)
+    {
+        return NormalizeLogLevel(LogLevel) switch
+        {
+            "Error" => entry.Level == WorkspaceLogLevel.Error,
+            "Warning" => entry.Level is WorkspaceLogLevel.Error or WorkspaceLogLevel.Warning,
+            _ => true
+        };
+    }
+
+    private string ResolveWorkspaceLogFilePath(string folder)
+    {
+        var filePath = Path.Combine(folder, $"designer-{DateTime.UtcNow:yyyyMMdd}.log");
+        var maxBytes = Math.Max(1, MaxLogFileSizeMb) * 1024L * 1024L;
+        if (File.Exists(filePath) && new FileInfo(filePath).Length >= maxBytes)
+            return Path.Combine(folder, $"designer-{DateTime.UtcNow:yyyyMMdd-HHmmss}.log");
+
+        return filePath;
+    }
+
+    private void PruneWorkspaceLogFiles(string folder)
+    {
+        var maxFiles = Math.Clamp(MaxLogFilesCount, 1, 100);
+        foreach (var file in new DirectoryInfo(folder)
+                     .EnumerateFiles("designer-*.log")
+                     .OrderByDescending(file => file.LastWriteTimeUtc)
+                     .Skip(maxFiles))
+        {
+            file.Delete();
         }
     }
 
@@ -7175,12 +7319,16 @@ public partial class MainWindowViewModel : ObservableObject
         source.Name = GetUniqueBindingSourceName("SqlSource");
         source.Path = source.Name;
         source.ItemTypeName = "SqlRow";
-        source.Description = "Источник SQL Server. Укажите строку подключения и таблицу или SQL-запрос.";
+        source.Description = "Источник SQL Server. Использует глобальные SQL Server настройки из Settings.";
         source.SourceKind = "SqlServer";
-        source.SourceSchemaName = "dbo";
+        source.SourceSchemaName = string.IsNullOrWhiteSpace(SqlDefaultSchema) ? "dbo" : SqlDefaultSchema.Trim();
         source.SourceTableName = "";
         source.SourceQuery = "";
-        StatusText = "Создан SQL BindingSource. Заполните строку подключения и нажмите «Подтянуть из БД».";
+        source.PreviewTopN = Math.Clamp(SqlDefaultPreviewTopN, 1, 10000);
+        TryApplyGlobalSqlSettings(source);
+        StatusText = IsGlobalSqlServerConfigured
+            ? "Создан SQL BindingSource. Укажите таблицу или SQL-запрос и нажмите «Подтянуть из БД»."
+            : "Создан SQL BindingSource. Сначала откройте Настройки → SQL Server и укажите Server name / Database name.";
         RaiseBindingEditorProperties();
         return source;
     }
@@ -7428,13 +7576,14 @@ public partial class MainWindowViewModel : ObservableObject
 
         // Перечитываем схему из БД и затем "накладываем" ее на существующий источник,
         // чтобы сохранить ручные подписи, сортировки и видимость колонок.
-        var originalConnectionString = SelectedBindingSource.SourceConnectionString;
+        var originalConnectionString = ResolveSqlConnectionStringForSource(SelectedBindingSource);
         var importedSource = await CreateBindingSourceFromDatabaseAsync(SelectedBindingSource);
 
         var objectLabel = !string.IsNullOrWhiteSpace(importedSource.SourceQuery)
             ? "SQL-запрос"
             : $"{NormalizeSqlSchemaName(importedSource.SourceSchemaName)}.{NormalizeSqlTableName(importedSource.SourceTableName)}";
-        var usedCertificateFallback = !string.Equals(originalConnectionString, importedSource.SourceConnectionString, StringComparison.Ordinal);
+        var usedCertificateFallback = !string.IsNullOrWhiteSpace(originalConnectionString)
+            && !string.Equals(originalConnectionString, importedSource.SourceConnectionString, StringComparison.Ordinal);
 
         BeginUndoBatch();
         try
@@ -8905,10 +9054,14 @@ public partial class MainWindowViewModel : ObservableObject
     {
         ApplyExportCache(settings.ExportCache);
         ApplyPropertyGridSettings(settings.PropertyGrid, settings.PropertyGridFavorites, settings.PropertyGridCollapsedCategories);
+        ApplyGeneralSettings(settings.General);
         ApplyCanvasEditorSettings(settings.CanvasEditor);
+        ApplyInterfaceSettings(settings.Interface);
         ApplyUiDensitySettings(settings.UiDensity);
         ApplyPreviewSettings(settings.Preview);
         ApplyBuildAndLogsSettings(settings.BuildAndLogs);
+        ApplySqlServerSettings(settings.SqlServer);
+        ApplyAdvancedSettings(settings.Advanced);
 
         RecentFiles.Clear();
         foreach (var recentFile in settings.RecentFiles
@@ -8936,6 +9089,57 @@ public partial class MainWindowViewModel : ObservableObject
         ApplyEditorShellLayout(settings.Session.EditorShell);
     }
 
+    private void ApplyGeneralSettings(GeneralSettingsModel? settings)
+    {
+        InterfaceLanguage = SettingsTextCatalog.NormalizeLanguage(settings?.Language);
+        AppThemeMode = NormalizeAppThemeMode(settings?.Theme);
+        ConfirmNewProjectWithUnsavedChanges = settings?.ConfirmNewProjectWithUnsavedChanges ?? true;
+        EnableRecoveryAutosave = settings?.EnableRecoveryAutosave ?? true;
+    }
+
+    public GeneralSettingsModel CaptureGeneralSettings()
+    {
+        return new GeneralSettingsModel
+        {
+            Language = SettingsTextCatalog.NormalizeLanguage(InterfaceLanguage),
+            Theme = NormalizeAppThemeMode(AppThemeMode),
+            ConfirmNewProjectWithUnsavedChanges = ConfirmNewProjectWithUnsavedChanges,
+            EnableRecoveryAutosave = EnableRecoveryAutosave
+        };
+    }
+
+    private static string NormalizeAppThemeMode(string? theme)
+    {
+        if (string.Equals(theme, SettingsTextCatalog.ThemeDark, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(theme, "Dark", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(theme, "Тёмная", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(theme, "Темная", StringComparison.OrdinalIgnoreCase))
+        {
+            return SettingsTextCatalog.ThemeDark;
+        }
+
+        if (string.Equals(theme, SettingsTextCatalog.ThemeSystem, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(theme, "System", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(theme, "Системная", StringComparison.OrdinalIgnoreCase))
+        {
+            return SettingsTextCatalog.ThemeSystem;
+        }
+
+        return SettingsTextCatalog.ThemeLight;
+    }
+
+    private static string NormalizeLogLevel(string? value)
+    {
+        return value?.Trim() switch
+        {
+            "Error" => "Error",
+            "Warning" => "Warning",
+            "Debug" => "Debug",
+            "Trace" => "Trace",
+            _ => "Info"
+        };
+    }
+
     private void ApplyCanvasEditorSettings(CanvasEditorSettingsModel settings)
     {
         IsCanvasSnappingEnabled = settings.IsCanvasSnappingEnabled;
@@ -8959,6 +9163,26 @@ public partial class MainWindowViewModel : ObservableObject
         };
     }
 
+    private void ApplyInterfaceSettings(InterfaceSettingsModel? settings)
+    {
+        ShowPropertyTooltips = settings?.ShowPropertyTooltips ?? true;
+        CompactPropertyInspector = settings?.CompactPropertyInspector ?? true;
+        ShowAdvancedProperties = settings?.ShowAdvancedProperties ?? false;
+        if (settings?.GridStep is > 0)
+            SnapStep = Math.Clamp(settings.GridStep, 1, 200);
+    }
+
+    public InterfaceSettingsModel CaptureInterfaceSettings()
+    {
+        return new InterfaceSettingsModel
+        {
+            ShowPropertyTooltips = ShowPropertyTooltips,
+            CompactPropertyInspector = CompactPropertyInspector,
+            ShowAdvancedProperties = ShowAdvancedProperties,
+            GridStep = Math.Max(1, SnapStep)
+        };
+    }
+
     private void ApplyUiDensitySettings(UiDensitySettingsModel? settings)
     {
         UiDensityMode = AvailableUiDensityModes.Contains(settings?.DensityMode ?? "")
@@ -8979,6 +9203,10 @@ public partial class MainWindowViewModel : ObservableObject
     private void ApplyPreviewSettings(PreviewSettingsModel? settings)
     {
         ShowPreviewRuntimeBadge = settings?.ShowRuntimeBadge ?? false;
+        CompactPreviewRuntimeBadge = settings?.CompactRuntimeBadge ?? true;
+        AutoHidePreviewRuntimeBadge = settings?.AutoHideRuntimeBadge ?? true;
+        PreviewTopmost = settings?.PreviewTopmost ?? false;
+        PreviewDefaultZoomPercent = Math.Clamp(settings?.PreviewDefaultZoomPercent ?? 100, 25, 300);
         EnableExperimentalLayoutTab = settings?.EnableExperimentalLayoutTab ?? false;
         RefreshAvailableWorkspaceModes();
     }
@@ -8988,6 +9216,10 @@ public partial class MainWindowViewModel : ObservableObject
         return new PreviewSettingsModel
         {
             ShowRuntimeBadge = ShowPreviewRuntimeBadge,
+            CompactRuntimeBadge = CompactPreviewRuntimeBadge,
+            AutoHideRuntimeBadge = AutoHidePreviewRuntimeBadge,
+            PreviewTopmost = PreviewTopmost,
+            PreviewDefaultZoomPercent = Math.Clamp(PreviewDefaultZoomPercent, 25, 300),
             EnableExperimentalLayoutTab = EnableExperimentalLayoutTab
         };
     }
@@ -9005,6 +9237,10 @@ public partial class MainWindowViewModel : ObservableObject
         IncludeNuGetOrgFallback = settings?.IncludeNuGetOrgFallback ?? true;
         GenerateNuGetConfigInExportedProject = settings?.GenerateNuGetConfigInExportedProject ?? true;
         ExportSqlConnectionString = settings?.ExportSqlConnectionString ?? false;
+        BuildTimeoutSeconds = Math.Clamp(settings?.BuildTimeoutSeconds ?? 120, 10, 3600);
+        LogLevel = NormalizeLogLevel(settings?.LogLevel);
+        MaxLogFilesCount = Math.Clamp(settings?.MaxLogFilesCount ?? 10, 1, 100);
+        MaxLogFileSizeMb = Math.Clamp(settings?.MaxLogFileSizeMb ?? 20, 1, 1024);
         LogsFolderPath = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "AvaloniaUiVisualDesigner",
@@ -9025,7 +9261,66 @@ public partial class MainWindowViewModel : ObservableObject
             AllowInsecureNuGetSource = AllowInsecureNuGetSource,
             IncludeNuGetOrgFallback = IncludeNuGetOrgFallback,
             GenerateNuGetConfigInExportedProject = GenerateNuGetConfigInExportedProject,
-            ExportSqlConnectionString = ExportSqlConnectionString
+            ExportSqlConnectionString = ExportSqlConnectionString,
+            BuildTimeoutSeconds = Math.Clamp(BuildTimeoutSeconds, 10, 3600),
+            LogLevel = NormalizeLogLevel(LogLevel),
+            MaxLogFilesCount = Math.Clamp(MaxLogFilesCount, 1, 100),
+            MaxLogFileSizeMb = Math.Clamp(MaxLogFileSizeMb, 1, 1024)
+        };
+    }
+
+    private void ApplySqlServerSettings(SqlServerSettingsModel? settings)
+    {
+        SqlServerName = settings?.ServerName ?? "";
+        SqlDatabaseName = settings?.DatabaseName ?? "";
+        SqlAuthenticationMode = SqlConnectionStringBuilderService.NormalizeAuthMode(settings?.AuthenticationMode);
+        SqlUserName = settings?.UserName ?? "";
+        SqlPassword = settings?.SavePassword == true ? settings.Password : "";
+        SqlSavePassword = settings?.SavePassword ?? false;
+        SqlTrustServerCertificate = settings?.TrustServerCertificate ?? true;
+        SqlEncryptConnection = settings?.EncryptConnection ?? false;
+        SqlConnectionTimeoutSeconds = Math.Clamp(settings?.ConnectionTimeoutSeconds ?? 15, 1, 300);
+        SqlDefaultSchema = string.IsNullOrWhiteSpace(settings?.DefaultSchema) ? "dbo" : settings!.DefaultSchema.Trim();
+        SqlDefaultPreviewTopN = Math.Clamp(settings?.DefaultPreviewTopN ?? 100, 1, 10000);
+        UseGlobalSqlServerSettings = settings?.UseGlobalSettingsForSqlSources ?? true;
+        ExportSqlConnectionString = settings?.ExportConnectionStringInGeneratedCode ?? ExportSqlConnectionString;
+        RaiseSqlSettingsProperties();
+    }
+
+    public SqlServerSettingsModel CaptureSqlServerSettings()
+    {
+        return new SqlServerSettingsModel
+        {
+            ServerName = SqlServerName,
+            DatabaseName = SqlDatabaseName,
+            AuthenticationMode = SqlConnectionStringBuilderService.NormalizeAuthMode(SqlAuthenticationMode),
+            UserName = SqlUserName,
+            Password = SqlSavePassword ? SqlPassword : "",
+            SavePassword = SqlSavePassword,
+            TrustServerCertificate = SqlTrustServerCertificate,
+            EncryptConnection = SqlEncryptConnection,
+            ConnectionTimeoutSeconds = Math.Clamp(SqlConnectionTimeoutSeconds, 1, 300),
+            DefaultSchema = string.IsNullOrWhiteSpace(SqlDefaultSchema) ? "dbo" : SqlDefaultSchema.Trim(),
+            DefaultPreviewTopN = Math.Clamp(SqlDefaultPreviewTopN, 1, 10000),
+            UseGlobalSettingsForSqlSources = UseGlobalSqlServerSettings,
+            ExportConnectionStringInGeneratedCode = ExportSqlConnectionString
+        };
+    }
+
+    private void ApplyAdvancedSettings(AdvancedSettingsModel? settings)
+    {
+        EnableTraceDiagnostics = settings?.EnableTraceDiagnostics ?? false;
+        EnableDeveloperWarnings = settings?.EnableDeveloperWarnings ?? true;
+        ResetLayoutOnNextStart = settings?.ResetLayoutOnNextStart ?? false;
+    }
+
+    public AdvancedSettingsModel CaptureAdvancedSettings()
+    {
+        return new AdvancedSettingsModel
+        {
+            EnableTraceDiagnostics = EnableTraceDiagnostics,
+            EnableDeveloperWarnings = EnableDeveloperWarnings,
+            ResetLayoutOnNextStart = ResetLayoutOnNextStart
         };
     }
 
@@ -15883,17 +16178,75 @@ public partial class MainWindowViewModel : ObservableObject
         NotifyDesignerStateChanged();
     }
 
+    public string ResolveSqlConnectionStringForSource(BindingSourceModel source)
+    {
+        if (!string.IsNullOrWhiteSpace(source.SourceConnectionString))
+            return source.SourceConnectionString.Trim();
+
+        if (!UseGlobalSqlServerSettings)
+            return "";
+
+        var result = new SqlConnectionStringBuilderService().Build(CaptureSqlServerSettings());
+        if (!result.Success)
+        {
+            TraceDocumentDebug(
+                "SQL_CONNECTION_STRING_BUILT",
+                $"success=false; source={source.Name}; reason={result.ErrorMessage}",
+                toOutput: false,
+                warning: true);
+            return "";
+        }
+
+        TraceDocumentDebug(
+            "SQL_CONNECTION_STRING_BUILT",
+            $"success=true; source={source.Name}; summary={result.Summary}; masked={result.MaskedConnectionString}",
+            toOutput: false);
+        return result.ConnectionString;
+    }
+
+    public bool TryApplyGlobalSqlSettings(BindingSourceModel source)
+    {
+        if (!string.Equals(source.SourceKind, "SqlServer", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        var changed = false;
+        if (string.IsNullOrWhiteSpace(source.SourceSchemaName))
+        {
+            source.SourceSchemaName = string.IsNullOrWhiteSpace(SqlDefaultSchema) ? "dbo" : SqlDefaultSchema.Trim();
+            changed = true;
+        }
+
+        if (source.PreviewTopN <= 0)
+        {
+            source.PreviewTopN = Math.Clamp(SqlDefaultPreviewTopN, 1, 10000);
+            changed = true;
+        }
+
+        if (string.IsNullOrWhiteSpace(source.SourceConnectionString) && UseGlobalSqlServerSettings)
+        {
+            var resolved = ResolveSqlConnectionStringForSource(source);
+            if (!string.IsNullOrWhiteSpace(resolved))
+            {
+                source.SourceConnectionString = resolved;
+                changed = true;
+            }
+        }
+
+        return changed;
+    }
+
     private async Task<BindingSourceModel> CreateBindingSourceFromDatabaseAsync(BindingSourceModel template)
     {
-        if (string.IsNullOrWhiteSpace(template.SourceConnectionString))
-            throw new InvalidOperationException("Введите строку подключения SQL Server.");
+        var connectionString = ResolveSqlConnectionStringForSource(template);
+        if (string.IsNullOrWhiteSpace(connectionString))
+            throw new InvalidOperationException("SQL Server не настроен. Откройте Настройки → SQL Server и укажите Server name / Database name.");
 
         if (string.IsNullOrWhiteSpace(template.SourceQuery) && string.IsNullOrWhiteSpace(template.SourceTableName))
             throw new InvalidOperationException("Укажите таблицу или SQL-запрос.");
 
         // В дизайнере нам нужны только колонki и несколько образцов значений,
         // поэтому для чтения используется укороченный sample-запрос.
-        var schemaName = NormalizeSqlSchemaName(template.SourceSchemaName);
+        var schemaName = NormalizeSqlSchemaName(string.IsNullOrWhiteSpace(template.SourceSchemaName) ? SqlDefaultSchema : template.SourceSchemaName);
         var tableName = NormalizeSqlTableName(template.SourceTableName);
         var objectBaseName = !string.IsNullOrWhiteSpace(tableName)
             ? ExtractSqlObjectName(tableName)
@@ -15906,16 +16259,16 @@ public partial class MainWindowViewModel : ObservableObject
             Name = sourceName,
             Path = path,
             ItemTypeName = itemTypeName,
-            Description = BuildDatabaseSourceDescription(template.SourceConnectionString, schemaName, tableName, template.SourceQuery),
+            Description = BuildDatabaseSourceDescription(connectionString, schemaName, tableName, template.SourceQuery),
             SourceKind = "SqlServer",
             SourceTypeFullName = !string.IsNullOrWhiteSpace(template.SourceQuery) ? "SqlQuery" : $"{schemaName}.{tableName}",
             SourceTableName = tableName,
-            SourceConnectionString = template.SourceConnectionString,
+            SourceConnectionString = connectionString,
             SourceSchemaName = schemaName,
             SourceQuery = template.SourceQuery?.Trim() ?? ""
         };
 
-        var connectionResult = await OpenSqlConnectionForDesignerAsync(template.SourceConnectionString);
+        var connectionResult = await OpenSqlConnectionForDesignerAsync(connectionString);
         source.SourceConnectionString = connectionResult.EffectiveConnectionString;
 
         await using var connection = connectionResult.Connection;
@@ -22171,6 +22524,31 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(IsDenseUiDensity));
     }
 
+    partial void OnInterfaceLanguageChanged(string value)
+    {
+        var normalized = SettingsTextCatalog.NormalizeLanguage(value);
+        if (!string.Equals(value, normalized, StringComparison.Ordinal))
+        {
+            InterfaceLanguage = normalized;
+            return;
+        }
+
+        Texts = UiText.ForLanguage(normalized);
+        TraceDocumentDebug("SETTINGS_LANGUAGE_APPLIED", $"language={normalized}; requiresRestart=true", toOutput: false);
+    }
+
+    partial void OnAppThemeModeChanged(string value)
+    {
+        var normalized = NormalizeAppThemeMode(value);
+        if (!string.Equals(value, normalized, StringComparison.Ordinal))
+        {
+            AppThemeMode = normalized;
+            return;
+        }
+
+        TraceDocumentDebug("SETTINGS_THEME_APPLIED", $"theme={normalized}", toOutput: false);
+    }
+
     partial void OnShowPreviewRuntimeBadgeChanged(bool value)
     {
         TraceDocumentDebug(
@@ -22224,7 +22602,74 @@ public partial class MainWindowViewModel : ObservableObject
             "SETTINGS_CHANGED",
             $"key=ExportSqlConnectionString; value={value}; scope=user",
             toOutput: false);
+        OnPropertyChanged(nameof(GlobalSqlConnectionPreviewText));
         RaiseExportCacheProperties();
+    }
+
+    partial void OnSqlServerNameChanged(string value) => RaiseSqlSettingsProperties();
+
+    partial void OnSqlDatabaseNameChanged(string value) => RaiseSqlSettingsProperties();
+
+    partial void OnSqlAuthenticationModeChanged(string value) => RaiseSqlSettingsProperties();
+
+    partial void OnSqlUserNameChanged(string value) => RaiseSqlSettingsProperties();
+
+    partial void OnSqlPasswordChanged(string value) => RaiseSqlSettingsProperties();
+
+    partial void OnSqlSavePasswordChanged(bool value) => RaiseSqlSettingsProperties();
+
+    partial void OnSqlTrustServerCertificateChanged(bool value) => RaiseSqlSettingsProperties();
+
+    partial void OnSqlEncryptConnectionChanged(bool value) => RaiseSqlSettingsProperties();
+
+    partial void OnSqlConnectionTimeoutSecondsChanged(int value)
+    {
+        if (value < 1)
+        {
+            SqlConnectionTimeoutSeconds = 1;
+            return;
+        }
+
+        if (value > 300)
+        {
+            SqlConnectionTimeoutSeconds = 300;
+            return;
+        }
+
+        RaiseSqlSettingsProperties();
+    }
+
+    partial void OnSqlDefaultSchemaChanged(string value) => RaiseSqlSettingsProperties();
+
+    partial void OnSqlDefaultPreviewTopNChanged(int value)
+    {
+        if (value < 1)
+        {
+            SqlDefaultPreviewTopN = 1;
+            return;
+        }
+
+        if (value > 10000)
+        {
+            SqlDefaultPreviewTopN = 10000;
+            return;
+        }
+
+        RaiseSqlSettingsProperties();
+    }
+
+    partial void OnUseGlobalSqlServerSettingsChanged(bool value) => RaiseSqlSettingsProperties();
+
+    private void RaiseSqlSettingsProperties()
+    {
+        OnPropertyChanged(nameof(IsGlobalSqlServerConfigured));
+        OnPropertyChanged(nameof(GlobalSqlSettingsStatusText));
+        OnPropertyChanged(nameof(GlobalSqlConnectionPreviewText));
+        OnPropertyChanged(nameof(DataSqlGlobalSettingsHint));
+        TraceDocumentDebug(
+            "SQL_SETTINGS_CHANGED",
+            $"serverConfigured={!string.IsNullOrWhiteSpace(SqlServerName)}; databaseConfigured={!string.IsNullOrWhiteSpace(SqlDatabaseName)}; authMode={SqlAuthenticationMode}",
+            toOutput: false);
     }
 
     partial void OnNuGetSourceTestStatusTextChanged(string value)
