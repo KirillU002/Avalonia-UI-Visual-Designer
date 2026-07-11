@@ -364,28 +364,25 @@ public partial class PreviewWindow : Window
         }
     }
 
-    private IReadOnlyList<Dictionary<string, string>> GetCachedPreviewRows(string? bindingSourceId)
+    private bool TryGetCachedPreviewRows(
+        string? bindingSourceId,
+        out IReadOnlyList<Dictionary<string, string>> rows,
+        out string dataKind)
     {
+        rows = Array.Empty<Dictionary<string, string>>();
+        dataKind = string.Empty;
+
         var source = GetBindingSource(bindingSourceId);
         if (source is null)
-            return Array.Empty<Dictionary<string, string>>();
+            return false;
 
         var sourceKey = DataSourceIdentity.BuildKey(source);
-        return _previewRowsBySourceKey.TryGetValue(sourceKey, out var cached)
-            ? cached.Rows
-            : Array.Empty<Dictionary<string, string>>();
-    }
+        if (!_previewRowsBySourceKey.TryGetValue(sourceKey, out var cached))
+            return false;
 
-    private string GetCachedPreviewRowsDataKind(string? bindingSourceId)
-    {
-        var source = GetBindingSource(bindingSourceId);
-        if (source is null)
-            return string.Empty;
-
-        var sourceKey = DataSourceIdentity.BuildKey(source);
-        return _previewRowsBySourceKey.TryGetValue(sourceKey, out var cached)
-            ? cached.DataKind
-            : string.Empty;
+        rows = cached.Rows;
+        dataKind = cached.DataKind;
+        return true;
     }
 
     private Dictionary<string, string> GetPreviewDataGridFilterValues(string controlId)
@@ -406,7 +403,7 @@ public partial class PreviewWindow : Window
             return null;
 
         var sourceKey = DataSourceIdentity.BuildKey(source);
-        if (_previewRowsBySourceKey.TryGetValue(sourceKey, out var cached) && cached.Rows.Count > 0)
+        if (_previewRowsBySourceKey.TryGetValue(sourceKey, out var cached))
             return BindingPreviewItemsBuilder.ConvertRows(cached.Rows);
 
         if (ShouldSuppressSyntheticRowsForPreview(source))
@@ -1869,9 +1866,21 @@ public partial class PreviewWindow : Window
         var outerBorderColor = ParseColor(control.DataGridOuterBorderBrush, themePalette.AccentStrongBrush);
         var gridLineColor = ParseColor(control.DataGridGridLineBrush, "#D7E2EE");
         var rowForegroundColor = ParseColor(control.DataGridRowForeground, "#0F172A");
-        var sourceRows = GetCachedPreviewRows(control.BindingSourceId).Count > 0
-            ? ClonePreviewWindowRows(GetCachedPreviewRows(control.BindingSourceId))
-            : BuildPreviewWindowRows(visibleFields, Math.Max(24, (int)Math.Ceiling(control.Height / Math.Max(18, control.DataGridRowHeight)) + 8));
+        var previewBindingSource = GetBindingSource(control.BindingSourceId);
+        var hasCachedPreviewRows = TryGetCachedPreviewRows(control.BindingSourceId, out var cachedPreviewRows, out var previewRowsDataKind);
+        var suppressSyntheticRows = !hasCachedPreviewRows && ShouldSuppressSyntheticRowsForPreview(previewBindingSource);
+        var sourceRows = hasCachedPreviewRows
+            ? ClonePreviewWindowRows(cachedPreviewRows)
+            : suppressSyntheticRows
+                ? new List<Dictionary<string, string>>()
+                : BuildPreviewWindowRows(visibleFields, Math.Max(24, (int)Math.Ceiling(control.Height / Math.Max(18, control.DataGridRowHeight)) + 8));
+        TracePreviewWindowDataMode(control, previewBindingSource, sourceRows.Count, hasCachedPreviewRows, suppressSyntheticRows, previewRowsDataKind);
+        if (suppressSyntheticRows)
+        {
+            Debug.WriteLine(
+                "PREVIEW_DATAGRID_SYNTHETIC_ROWS_SUPPRESSED " +
+                $"grid={control.Name}; sourceKey={DataSourceIdentity.BuildKey(previewBindingSource)}; reason=real-source-awaiting-preview-rows");
+        }
         var filterValues = GetPreviewDataGridFilterValues(control.Id);
         var visibleRows = new ObservableCollection<Dictionary<string, string>>();
         var collectionView = CreateRuntimeDataGridCollectionView(visibleRows, groupedFields);
@@ -2675,14 +2684,12 @@ public partial class PreviewWindow : Window
         var visibleRowCount = Math.Min(MaxPreviewDataGridRows, Math.Max(4, (int)Math.Ceiling(availableRowsHeight / rowHeight)));
         var previewRowCount = Math.Min(MaxPreviewDataGridRows, Math.Max(18, visibleRowCount + 6));
         var previewBindingSource = GetBindingSource(control.BindingSourceId);
-        var sqlPreviewRows = GetCachedPreviewRows(control.BindingSourceId);
-        var previewRowsDataKind = GetCachedPreviewRowsDataKind(control.BindingSourceId);
-        var usesSqlPreviewRows = sqlPreviewRows.Count > 0;
-        var suppressSyntheticRows = !usesSqlPreviewRows && ShouldSuppressSyntheticRowsForPreview(previewBindingSource);
+        var hasCachedPreviewRows = TryGetCachedPreviewRows(control.BindingSourceId, out var loadedPreviewRows, out var previewRowsDataKind);
+        var suppressSyntheticRows = !hasCachedPreviewRows && ShouldSuppressSyntheticRowsForPreview(previewBindingSource);
         var previewRows = ApplyPreviewWindowSort(
             ApplyPreviewWindowFilter(
-                usesSqlPreviewRows
-                ? ClonePreviewWindowRows(sqlPreviewRows)
+                hasCachedPreviewRows
+                ? ClonePreviewWindowRows(loadedPreviewRows)
                 : suppressSyntheticRows
                 ? new List<Dictionary<string, string>>()
                 : BuildPreviewWindowRows(visibleFields, previewRowCount),
@@ -2690,10 +2697,18 @@ public partial class PreviewWindow : Window
                 filterValues,
                 control.FilterMode),
             visibleFields);
-        TracePreviewWindowDataMode(control, previewBindingSource, previewRows.Count, usesSqlPreviewRows, suppressSyntheticRows, previewRowsDataKind);
+        TracePreviewWindowDataMode(control, previewBindingSource, previewRows.Count, hasCachedPreviewRows, suppressSyntheticRows, previewRowsDataKind);
+        if (suppressSyntheticRows)
+        {
+            Debug.WriteLine(
+                "PREVIEW_DATAGRID_SYNTHETIC_ROWS_SUPPRESSED " +
+                $"grid={control.Name}; sourceKey={DataSourceIdentity.BuildKey(previewBindingSource)}; reason=real-source-awaiting-preview-rows");
+        }
         var renderedRowCount = suppressSyntheticRows
             ? 0
-            : Math.Min(MaxPreviewDataGridRows, Math.Max(previewRows.Count, usesSqlPreviewRows ? 1 : previewRowCount));
+            : hasCachedPreviewRows
+                ? Math.Min(MaxPreviewDataGridRows, previewRows.Count)
+                : Math.Min(MaxPreviewDataGridRows, Math.Max(previewRows.Count, previewRowCount));
 
         headerTable.RowDefinitions.Add(new RowDefinition(headerHeight, GridUnitType.Pixel));
         if (control.ShowFilterRow)
@@ -2765,7 +2780,7 @@ public partial class PreviewWindow : Window
                     selectedRowForeground,
                     bodyCellBorderThickness,
                     cellPadding,
-                    useSemanticFormatting: !usesSqlPreviewRows);
+                    useSemanticFormatting: !hasCachedPreviewRows);
 
                 Grid.SetRow(bodyCell, rowIndex);
                 Grid.SetColumn(bodyCell, columnIndex);

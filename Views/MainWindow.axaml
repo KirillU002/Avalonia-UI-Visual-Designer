@@ -3180,35 +3180,37 @@
                                                   HorizontalAlignment="Left"
                                                   VerticalAlignment="Center"/>
 
-                                        <Grid IsVisible="{Binding IsEnumEditor}"
-                                              ColumnDefinitions="*,Auto">
-                                          <TextBlock Text="{Binding Value}"
-                                                     Foreground="#334155"
-                                                     FontSize="12"
-                                                     VerticalAlignment="Center"
-                                                     TextTrimming="CharacterEllipsis"
-                                                     IsHitTestVisible="False"/>
-                                          <Button Grid.Column="1"
-                                                  Classes="property-action"
-                                                  Content="..."
-                                                  Click="PropertyGridOptionButton_Click"
-                                                  ToolTip.Tip="Выбрать значение"/>
-                                        </Grid>
+                                        <ComboBox IsVisible="{Binding IsEnumEditor}"
+                                                  ItemsSource="{Binding Options}"
+                                                  SelectedItem="{Binding SelectedOption, Mode=TwoWay}"
+                                                  MinWidth="80"
+                                                  MaxDropDownHeight="320"
+                                                  HorizontalAlignment="Stretch"
+                                                  VerticalAlignment="Center"
+                                                  ToolTip.Tip="{Binding Description}">
+                                          <ComboBox.ItemTemplate>
+                                            <DataTemplate x:DataType="vm:PropertyGridOptionViewModel">
+                                              <TextBlock Text="{Binding Title}"
+                                                         TextTrimming="CharacterEllipsis"/>
+                                            </DataTemplate>
+                                          </ComboBox.ItemTemplate>
+                                        </ComboBox>
 
-                                        <Grid IsVisible="{Binding IsBindingSourceEditor}"
-                                              ColumnDefinitions="*,Auto">
-                                          <TextBlock Text="{Binding Value}"
-                                                     Foreground="#334155"
-                                                     FontSize="12"
-                                                     VerticalAlignment="Center"
-                                                     TextTrimming="CharacterEllipsis"
-                                                     IsHitTestVisible="False"/>
-                                          <Button Grid.Column="1"
-                                                  Classes="property-action"
-                                                  Content="..."
-                                                  Click="PropertyGridOptionButton_Click"
-                                                  ToolTip.Tip="Выбрать BindingSource"/>
-                                        </Grid>
+                                        <ComboBox IsVisible="{Binding IsBindingSourceEditor}"
+                                                  ItemsSource="{Binding Options}"
+                                                  SelectedItem="{Binding SelectedOption, Mode=TwoWay}"
+                                                  MinWidth="80"
+                                                  MaxDropDownHeight="320"
+                                                  HorizontalAlignment="Stretch"
+                                                  VerticalAlignment="Center"
+                                                  ToolTip.Tip="{Binding Description}">
+                                          <ComboBox.ItemTemplate>
+                                            <DataTemplate x:DataType="vm:PropertyGridOptionViewModel">
+                                              <TextBlock Text="{Binding Title}"
+                                                         TextTrimming="CharacterEllipsis"/>
+                                            </DataTemplate>
+                                          </ComboBox.ItemTemplate>
+                                        </ComboBox>
 
                                         <Grid IsVisible="{Binding IsColorEditor}"
                                               ColumnDefinitions="Auto,*,Auto">
@@ -5140,19 +5142,20 @@
                                               Content="Включено"
                                               IsChecked="{Binding BoolValue, Mode=TwoWay}"/>
 
-                                    <Grid IsVisible="{Binding IsEnumEditor}"
-                                          ColumnDefinitions="*,Auto">
-                                      <TextBlock Text="{Binding StringValue}"
-                                                 Foreground="#334155"
-                                                 VerticalAlignment="Center"
-                                                 TextTrimming="CharacterEllipsis"
-                                                 IsHitTestVisible="False"/>
-                                      <Button Grid.Column="1"
-                                              Classes="property-action"
-                                              Content="..."
-                                              Click="OpenDescriptorEnumButton_Click"
-                                              ToolTip.Tip="Выбрать значение"/>
-                                    </Grid>
+                                    <ComboBox IsVisible="{Binding IsEnumEditor}"
+                                              ItemsSource="{Binding Options}"
+                                              SelectedItem="{Binding SelectedOption, Mode=TwoWay}"
+                                              MaxDropDownHeight="320"
+                                              HorizontalAlignment="Stretch"
+                                              VerticalAlignment="Center"
+                                              ToolTip.Tip="{Binding EditorHint}">
+                                      <ComboBox.ItemTemplate>
+                                        <DataTemplate x:DataType="contracts:PropertyOption">
+                                          <TextBlock Text="{Binding Title}"
+                                                     TextTrimming="CharacterEllipsis"/>
+                                        </DataTemplate>
+                                      </ComboBox.ItemTemplate>
+                                    </ComboBox>
                                   </StackPanel>
                                 </Border>
                               </DataTemplate>
@@ -6396,20 +6399,21 @@
                                                     IsChecked="{Binding BoolValue, Mode=TwoWay}"
                                                     HorizontalAlignment="Left"
                                                     VerticalAlignment="Center"/>
-                                          <Grid IsVisible="{Binding IsEnumEditor}"
-                                                ColumnDefinitions="*,Auto">
-                                            <TextBlock Text="{Binding Value}"
-                                                       Foreground="#334155"
-                                                       FontSize="12"
-                                                       VerticalAlignment="Center"
-                                                       TextTrimming="CharacterEllipsis"
-                                                       IsHitTestVisible="False"/>
-                                            <Button Grid.Column="1"
-                                                    Classes="property-action"
-                                                    Content="..."
-                                                    Click="PropertyGridOptionButton_Click"
-                                                    ToolTip.Tip="Select value"/>
-                                          </Grid>
+                                          <ComboBox IsVisible="{Binding IsEnumEditor}"
+                                                    ItemsSource="{Binding Options}"
+                                                    SelectedItem="{Binding SelectedOption, Mode=TwoWay}"
+                                                    MinWidth="80"
+                                                    MaxDropDownHeight="320"
+                                                    HorizontalAlignment="Stretch"
+                                                    VerticalAlignment="Center"
+                                                    ToolTip.Tip="{Binding Description}">
+                                            <ComboBox.ItemTemplate>
+                                              <DataTemplate x:DataType="vm:PropertyGridOptionViewModel">
+                                                <TextBlock Text="{Binding Title}"
+                                                           TextTrimming="CharacterEllipsis"/>
+                                              </DataTemplate>
+                                            </ComboBox.ItemTemplate>
+                                          </ComboBox>
                                           <TextBlock Text="{Binding Value}"
                                                      IsVisible="{Binding IsReadOnlyEditor}"
                                                      Foreground="#475569"

@@ -44,6 +44,7 @@ internal static class Program
             new("MissingLocalizationFallsBackToEnglishOrKey", ConfigureSimpleFormExport, AssertMissingLocalizationFallsBackToEnglishOrKey),
             new("PropertyDescriptionProviderHasRussianDescriptions", ConfigureSimpleFormExport, AssertPropertyDescriptionProviderHasRussianDescriptions),
             new("PropertyInspectorUsesRussianPropertyDescriptionTooltips", ConfigurePropertyInspectorUsesRussianPropertyDescriptionTooltips, AssertPropertyInspectorUsesRussianPropertyDescriptionTooltips),
+            new("PropertyInspectorEnumEditorsUseComboBox", ConfigurePropertyInspectorEnumEditorsUseComboBox, AssertPropertyInspectorEnumEditorsUseComboBox),
             new("LayoutPropertiesAvailableInPropertyInspector", ConfigureLayoutPropertiesAvailableInPropertyInspector, AssertLayoutPropertiesAvailableInPropertyInspector),
             new("LayoutTabCanBeHiddenWithoutBreakingProperties", ConfigureLayoutPropertiesAvailableInPropertyInspector, AssertLayoutTabCanBeHiddenWithoutBreakingProperties),
             new("RuntimeBadgeDoesNotAffectPreviewBounds", ConfigureRuntimeBadgeDoesNotAffectPreviewBounds, AssertRuntimeBadgeDoesNotAffectPreviewBounds),
@@ -140,6 +141,7 @@ internal static class Program
             new("SqlDataGridPreviewShowsNoDataWhenNoSourceAndDemoDisabled", ConfigureUnconfiguredSqlDataGridNoData, AssertSqlDataGridPreviewShowsNoDataWhenNoSourceAndDemoDisabled, RequiresRealDataGrid: true),
             new("SqlPreviewCacheInvalidatesWhenQueryChanges", ConfigureSqlDataGridExport, AssertSqlPreviewCacheInvalidatesWhenQueryChanges, RequiresRealDataGrid: true),
             new("SqlPreviewCacheKeyIncludesSourceKeyAndQueryHash", ConfigureSqlDataGridExport, AssertSqlPreviewCacheKeyIncludesSourceKeyAndQueryHash, RequiresRealDataGrid: true),
+            new("SqlPreviewUsesDistinctProviderRowsWithoutSyntheticExpansion", ConfigureSqlDataGridExport, AssertSqlPreviewUsesDistinctProviderRowsWithoutSyntheticExpansion, RequiresRealDataGrid: true),
             new("SqlDataGridPreviewRuntimeRowsMatch", ConfigureSqlDataGridPreviewRuntimeRowsMatch, AssertSqlDataGridPreviewRuntimeRowsMatch, RequiresRealDataGrid: true),
             new("SqlDataGridWithoutConnectionDoesNotPretendRealData", ConfigureUnconfiguredSqlDataGridDemoRows, AssertSqlDataGridWithoutConnectionDoesNotPretendRealData, RequiresRealDataGrid: true),
             new("DemoDataPreviewExportsDemoRows", ConfigureUnconfiguredSqlDataGridDemoRows, AssertDemoDataPreviewExportsDemoRows, RequiresRealDataGrid: true),
@@ -458,6 +460,43 @@ internal static class Program
             throw new InvalidOperationException("PropertyGrid Common category should be localized.");
         if (!context.ViewModel.PropertyGridCategories.Any(category => string.Equals(category.Title, "Внешний вид", StringComparison.Ordinal)))
             throw new InvalidOperationException("PropertyGrid Appearance category should be localized.");
+    }
+
+    private static void ConfigurePropertyInspectorEnumEditorsUseComboBox(MainWindowViewModel vm)
+    {
+        ConfigureSimpleFormExport(vm);
+
+        vm.ClearSelection();
+        var windowStateRow = GetPropertyGridRow(vm, nameof(MainWindowViewModel.FormWindowState));
+        var maximizedOption = windowStateRow.Options.FirstOrDefault(option => string.Equals(option.Value, MainWindowViewModel.WindowStateMaximized, StringComparison.Ordinal))
+            ?? throw new InvalidOperationException("WindowState enum row should expose Maximized/working-area option.");
+        windowStateRow.SelectedOption = maximizedOption;
+        RequireEqual(MainWindowViewModel.WindowStateMaximized, vm.FormWindowState, "WindowState ComboBox selection should apply through PropertyGrid row.");
+
+        var button = vm.Controls.Single(control => string.Equals(control.Name, "SaveButton", StringComparison.Ordinal));
+        vm.SelectSingleControl(button);
+        var horizontalAlignmentRow = GetPropertyGridRow(vm, nameof(DesignControlModel.HorizontalAlignment));
+        var centerOption = horizontalAlignmentRow.Options.FirstOrDefault(option => string.Equals(option.Value, "Center", StringComparison.Ordinal))
+            ?? throw new InvalidOperationException("HorizontalAlignment enum row should expose Center option.");
+        horizontalAlignmentRow.SelectedOption = centerOption;
+        RequireEqual("Center", button.HorizontalAlignment, "HorizontalAlignment ComboBox selection should apply to the selected control.");
+    }
+
+    private static void AssertPropertyInspectorEnumEditorsUseComboBox(SmokeContext context)
+    {
+        var xaml = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "Views", "MainWindow.axaml"), Encoding.UTF8);
+        var code = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "Views", "MainWindow.axaml.cs"), Encoding.UTF8);
+
+        RequireContains(xaml, "IsVisible=\"{Binding IsEnumEditor}\"", "Property Inspector should still render enum editor blocks.");
+        RequireContains(xaml, "SelectedItem=\"{Binding SelectedOption, Mode=TwoWay}\"", "Enum editors should bind ComboBox selection directly to SelectedOption.");
+        RequireContains(xaml, "ItemsSource=\"{Binding Options}\"", "Enum editors should display the row Options collection inline.");
+        RequireContains(xaml, "x:DataType=\"vm:PropertyGridOptionViewModel\"", "PropertyGrid enum ComboBox should display option titles.");
+        RequireContains(xaml, "x:DataType=\"contracts:PropertyOption\"", "Descriptor enum ComboBox should display descriptor option titles.");
+        RequireNotContains(xaml, "Click=\"PropertyGridOptionButton_Click\"", "PropertyGrid enum editor must not open a modal option dialog.");
+        RequireNotContains(xaml, "Click=\"OpenDescriptorEnumButton_Click\"", "Descriptor enum editor must not open a modal option dialog.");
+        RequireNotContains(code, "ShowPropertyGridOptionDialogAsync", "PropertyGrid modal option dialog code should be removed.");
+        RequireNotContains(code, "ShowDescriptorOptionDialogAsync", "Descriptor modal option dialog code should be removed.");
+        RequireNotContains(code, "OPTION_DIALOG_OPENED", "PropertyGrid option dialog diagnostics should not remain.");
     }
 
     private static void RequireTechnicalName(IReadOnlySet<string> names, string expected)
@@ -2036,6 +2075,34 @@ internal static class Program
         RequireNotEqual(customerRows[0]["Name"], orderRows[0]["Name"], "SQL preview cache/source identity must not mix rows between sources.");
     }
 
+    private static void AssertSqlPreviewUsesDistinctProviderRowsWithoutSyntheticExpansion(SmokeContext context)
+    {
+        using var provider = UseSqlPreviewRowsProvider((_, _, _, _) => SqlPreviewRowsMany(
+            new[] { ("Id", "1"), ("Name", "Иван"), ("Email", "ivan@example.com"), ("Status", "Москва") },
+            new[] { ("Id", "2"), ("Name", "Пётр"), ("Email", "petr@example.com"), ("Status", "Казань") },
+            new[] { ("Id", "3"), ("Name", "Анна"), ("Email", "anna@example.com"), ("Status", "Тула") }));
+
+        var source = GetOnlySqlSource(context);
+        source.AllowPreviewSampleFallback = false;
+        source.UseRealPreviewRowsIfAvailable = true;
+
+        var rows = context.ViewModel.LoadPreviewRowsForBindingSourceAsync(source).GetAwaiter().GetResult();
+
+        RequireEqual(3, rows.Count, "SQL preview must preserve the exact number of rows returned by the provider.");
+        RequireEqual("Иван", rows[0]["Name"], "SQL preview row 1 must keep the provider value.");
+        RequireEqual("Пётр", rows[1]["Name"], "SQL preview row 2 must not be copied from row 1.");
+        RequireEqual("Анна", rows[2]["Name"], "SQL preview row 3 must not be copied from row 1.");
+        RequireNotEqual(rows[0]["Name"], rows[1]["Name"], "SQL preview must not clone the first row down the table.");
+        RequireNotEqual(rows[0]["Status"], rows[2]["Status"], "SQL preview must not synthesize repeated rows from sample values.");
+
+        var previewWindowCode = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "Views", "PreviewWindow.axaml.cs"), Encoding.UTF8);
+        RequireContains(previewWindowCode, "TryGetCachedPreviewRows(control.BindingSourceId", "Preview Window should distinguish missing cache from an empty SQL result.");
+        RequireContains(previewWindowCode, "ShouldSuppressSyntheticRowsForPreview(previewBindingSource)", "Preview Window should suppress synthetic fallback for configured SQL sources.");
+        RequireContains(previewWindowCode, "PREVIEW_DATAGRID_SYNTHETIC_ROWS_SUPPRESSED", "Preview Window should log when SQL synthetic fallback is blocked.");
+        RequireNotContains(previewWindowCode, "GetCachedPreviewRows(control.BindingSourceId).Count > 0", "Preview Window must not use Count > 0 as the cache-exists check.");
+        RequireNotContains(string.Join("|", rows.SelectMany(row => row.Values)), "Ada Lovelace", "Configured SQL preview must not fall back to BindingSource sample values.");
+    }
+
     private static BindingSourceModel GetOnlySqlSource(SmokeContext context)
     {
         return context.ViewModel.BindingSources.First(source => string.Equals(source.SourceKind, "SqlServer", StringComparison.OrdinalIgnoreCase));
@@ -2048,6 +2115,14 @@ internal static class Program
             values.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase)
         };
         return Task.FromResult(rows);
+    }
+
+    private static Task<IReadOnlyList<Dictionary<string, string>>> SqlPreviewRowsMany(params (string Key, string Value)[][] rows)
+    {
+        IReadOnlyList<Dictionary<string, string>> result = rows
+            .Select(row => row.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase))
+            .ToList();
+        return Task.FromResult(result);
     }
 
     private static IDisposable UseSqlPreviewRowsProvider(
