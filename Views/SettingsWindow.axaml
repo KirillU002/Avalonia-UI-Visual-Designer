@@ -290,6 +290,26 @@
                           IsChecked="{Binding CompactPreviewRuntimeBadge, Mode=TwoWay}"/>
                 <CheckBox Content="{Binding Texts.AutoHideRuntimeBadge}"
                           IsChecked="{Binding AutoHidePreviewRuntimeBadge, Mode=TwoWay}"/>
+                <Border Background="#EFF6FF"
+                        BorderBrush="#BFDBFE"
+                        BorderThickness="1"
+                        CornerRadius="10"
+                        Padding="12"
+                        Margin="0,4,0,0">
+                  <StackPanel Spacing="8">
+                    <CheckBox Content="{Binding Texts.UseExportedAxamlPreview}"
+                              IsChecked="{Binding UseExportedAxamlPreview, Mode=TwoWay}"/>
+                    <TextBlock Text="{Binding Texts.UseExportedAxamlPreviewHint}"
+                               Classes="settings-hint"
+                               TextWrapping="Wrap"/>
+                    <CheckBox Content="{Binding Texts.FallbackToLegacyPreviewOnAxamlError}"
+                              IsChecked="{Binding FallbackToLegacyPreviewOnAxamlError, Mode=TwoWay}"/>
+                    <CheckBox Content="{Binding Texts.ShowGeneratedAxamlOnPreviewError}"
+                              IsChecked="{Binding ShowGeneratedAxamlOnPreviewError, Mode=TwoWay}"/>
+                    <CheckBox Content="{Binding Texts.CleanAxamlPreviewTemporaryFiles}"
+                              IsChecked="{Binding CleanAxamlPreviewTemporaryFiles, Mode=TwoWay}"/>
+                  </StackPanel>
+                </Border>
                 <CheckBox Content="{Binding Texts.PreviewTopmost}"
                           IsChecked="{Binding PreviewTopmost, Mode=TwoWay}"/>
                 <StackPanel Spacing="4" MaxWidth="220" HorizontalAlignment="Left">

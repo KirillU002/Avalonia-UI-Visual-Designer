@@ -6,6 +6,7 @@ using Avalonia.Data;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
+using Avalonia.Markup.Xaml;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
@@ -23,10 +24,13 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Data;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
 namespace FormDesigner.Views;
@@ -49,6 +53,7 @@ public partial class PreviewWindow : Window
     private readonly PreviewRuntimeService _previewRuntimeService = new();
     private readonly IDesignerRegistry _registry;
     private readonly bool _showRuntimeBadge;
+    private readonly ExportedAxamlPreviewModel? _exportedAxamlPreview;
     private RuntimeDataGridHeaderDragState? _runtimeDataGridHeaderDrag;
     private bool _isRenderingDocument;
     private bool _renderDocumentAgainRequested;
@@ -122,6 +127,17 @@ public partial class PreviewWindow : Window
             if (!string.IsNullOrWhiteSpace(form.Id))
                 _projectFormsById[form.Id] = form;
         }
+    }
+
+    public PreviewWindow(ExportedAxamlPreviewModel exportedAxamlPreview, IDesignerRegistry registry, bool showRuntimeBadge = false)
+        : this(
+            exportedAxamlPreview?.Document ?? throw new ArgumentNullException(nameof(exportedAxamlPreview)),
+            registry,
+            exportedAxamlPreview.ProjectForms,
+            exportedAxamlPreview.ActiveFormId,
+            showRuntimeBadge)
+    {
+        _exportedAxamlPreview = exportedAxamlPreview;
     }
 
     private PreviewRuntimeContext EnsurePreviewRuntimeContext()
@@ -202,19 +218,378 @@ public partial class PreviewWindow : Window
 
     private async void PreviewWindow_Opened(object? sender, EventArgs e)
     {
-        ShowLoading("Подготавливаем окно", "Собираем форму так, как её увидит пользователь при запуске.");
+        ShowLoading(
+            "Подготавливаем окно",
+            _exportedAxamlPreview is null
+                ? "Собираем форму так, как её увидит пользователь при запуске."
+                : "Загружаем Preview из экспортируемого AXAML.");
 
         try
         {
             await Task.Delay(180);
             EnsurePreviewRuntimeContext();
             await PreloadBindingPreviewRowsAsync();
-            RenderDocument();
+            if (_exportedAxamlPreview is null)
+                RenderDocument();
+            else
+                await LoadExportedAxamlPreviewAsync(_exportedAxamlPreview);
         }
         finally
         {
             HideLoading();
         }
+    }
+
+    private async Task LoadExportedAxamlPreviewAsync(ExportedAxamlPreviewModel preview)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        Debug.WriteLine($"AXAML_PREVIEW_LOAD_START mode=temporary-file; inMemory=false; axamlLength={preview.Axaml.Length}");
+
+        try
+        {
+            var normalizedAxaml = NormalizeExportedAxamlForPreviewLoad(preview.Axaml);
+            var tempFile = WriteTemporaryPreviewAxaml(normalizedAxaml);
+            object loadedRoot;
+            try
+            {
+                loadedRoot = AvaloniaXamlLoader.Load(new Uri(tempFile), new Uri(tempFile));
+            }
+            finally
+            {
+                if (preview.CleanTemporaryFiles)
+                    TryDeleteTemporaryPreviewFile(tempFile);
+            }
+
+            var content = ExtractPreviewContent(loadedRoot);
+            PreviewSurfaceBorder.Child = content;
+            ApplyExportedAxamlPreviewData(content, normalizedAxaml);
+            stopwatch.Stop();
+            Debug.WriteLine($"AXAML_PREVIEW_LOAD_SUCCESS rootType={loadedRoot.GetType().FullName}; elapsedMs={stopwatch.ElapsedMilliseconds}");
+            PreviewRuntimeStatusText.Text = "AXAML Preview ready";
+            ToolTip.SetTip(PreviewRuntimeStatusText, "Preview загружен из AXAML, который используется Export Pipeline.");
+        }
+        catch (Exception ex)
+        {
+            stopwatch.Stop();
+            Debug.WriteLine($"AXAML_PREVIEW_LOAD_FAILED exception={ex.GetType().FullName}; message={ex.Message}; elapsedMs={stopwatch.ElapsedMilliseconds}");
+            if (preview.FallbackToLegacyPreviewOnError)
+            {
+                Debug.WriteLine($"AXAML_PREVIEW_FALLBACK_TO_LEGACY reason={ex.GetType().Name}:{ex.Message}");
+                RuntimeBadgeOverlay.IsVisible = true;
+                PreviewRuntimeStatusText.Text = "AXAML Preview failed, legacy Preview opened";
+                ToolTip.SetTip(PreviewRuntimeStatusText, ex.Message);
+                RenderDocument();
+                return;
+            }
+
+            ShowExportedAxamlPreviewError(ex, preview.ShowGeneratedAxamlOnError ? preview.Axaml : "");
+        }
+
+        await Task.CompletedTask;
+    }
+
+    private static string NormalizeExportedAxamlForPreviewLoad(string axaml)
+    {
+        if (string.IsNullOrWhiteSpace(axaml))
+            throw new InvalidOperationException("Generated AXAML is empty.");
+
+        var normalized = Regex.Replace(axaml, "\\s+x:Class=\"[^\"]*\"", "", RegexOptions.CultureInvariant);
+        normalized = Regex.Replace(normalized, "\\s+(Click|SelectionChanged)=\"[^\"]*\"", "", RegexOptions.CultureInvariant);
+        return normalized;
+    }
+
+    private static string WriteTemporaryPreviewAxaml(string axaml)
+    {
+        var folder = Path.Combine(Path.GetTempPath(), "AvaloniaDesigner", "axaml-preview");
+        Directory.CreateDirectory(folder);
+        var path = Path.Combine(folder, $"preview-{Guid.NewGuid():N}.axaml");
+        File.WriteAllText(path, axaml, Encoding.UTF8);
+        return path;
+    }
+
+    private static void TryDeleteTemporaryPreviewFile(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+                File.Delete(path);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"AXAML_PREVIEW_TEMP_FILE_CLEANUP_FAILED path={path}; reason={ex.Message}");
+        }
+    }
+
+    private Control ExtractPreviewContent(object loadedRoot)
+    {
+        if (loadedRoot is Window loadedWindow)
+        {
+            Title = string.IsNullOrWhiteSpace(loadedWindow.Title) ? Title : loadedWindow.Title;
+            if (!double.IsNaN(loadedWindow.Width) && loadedWindow.Width > 0)
+                Width = loadedWindow.Width;
+            if (!double.IsNaN(loadedWindow.Height) && loadedWindow.Height > 0)
+                Height = loadedWindow.Height;
+
+            if (loadedWindow.Content is Control windowContent)
+            {
+                loadedWindow.Content = null;
+                return windowContent;
+            }
+        }
+
+        if (loadedRoot is Control control)
+            return control;
+
+        return new TextBlock
+        {
+            Text = "AXAML Preview loaded, but root visual is not a Control.",
+            Margin = new Thickness(24),
+            TextWrapping = TextWrapping.Wrap
+        };
+    }
+
+    private void ApplyExportedAxamlPreviewData(Control root, string axaml)
+    {
+        var bindings = ParseExportedAxamlDataGridBindings(axaml);
+        if (bindings.Count == 0)
+            return;
+
+        var dataGridControls = _document.Controls
+            .Where(control => string.Equals(control.Type, DesignerControlTypes.DataGrid, StringComparison.Ordinal))
+            .ToList();
+        var usedControlIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var binding in bindings)
+        {
+            var grid = root.FindControl<DataGrid>(binding.Name);
+            if (grid is null)
+                continue;
+
+            var control = dataGridControls.FirstOrDefault(item =>
+                    !usedControlIds.Contains(item.Id)
+                    && string.Equals(item.Name, binding.Name, StringComparison.OrdinalIgnoreCase))
+                ?? dataGridControls.FirstOrDefault(item => !usedControlIds.Contains(item.Id));
+            if (control is null)
+                continue;
+
+            usedControlIds.Add(control.Id);
+            var source = GetBindingSource(control.BindingSourceId);
+            if (source is null)
+                continue;
+
+            var rows = ResolveExportedAxamlPreviewRows(source, control);
+            grid.ItemsSource = BuildExportedAxamlDataGridView(source, binding, rows);
+            Debug.WriteLine(
+                "AXAML_PREVIEW_DATAGRID_ITEMSSOURCE_APPLIED " +
+                $"grid={binding.Name}; itemsSource={binding.ItemsSourcePath}; rows={rows.Count}; columns={binding.Columns.Count}");
+        }
+    }
+
+    private IReadOnlyList<Dictionary<string, string>> ResolveExportedAxamlPreviewRows(BindingSourceFileModel source, DesignerControlFileModel control)
+    {
+        var visibleFields = OrderBindingFieldsForDisplay(source.Fields.Where(field => field.IsVisible)).ToList();
+        if (TryGetCachedPreviewRows(source.Id, out var cachedRows, out var dataKind))
+        {
+            Debug.WriteLine(
+                "AXAML_PREVIEW_DATAGRID_ROWS_SOURCE " +
+                $"grid={control.Name}; sourceKey={DataSourceIdentity.BuildKey(source)}; kind={dataKind}; rows={cachedRows.Count}");
+            return ClonePreviewWindowRows(cachedRows);
+        }
+
+        if (ShouldSuppressSyntheticRowsForPreview(source))
+        {
+            Debug.WriteLine(
+                "AXAML_PREVIEW_DATAGRID_ROWS_SOURCE " +
+                $"grid={control.Name}; sourceKey={DataSourceIdentity.BuildKey(source)}; kind=NoSyntheticFallback; rows=0");
+            return Array.Empty<Dictionary<string, string>>();
+        }
+
+        var rowCount = Math.Min(MaxPreviewDataGridRows, Math.Max(8, (int)Math.Ceiling(control.Height / Math.Max(18, control.DataGridRowHeight))));
+        var demoRows = BuildPreviewWindowRows(visibleFields, rowCount);
+        Debug.WriteLine(
+            "AXAML_PREVIEW_DATAGRID_ROWS_SOURCE " +
+            $"grid={control.Name}; sourceKey={DataSourceIdentity.BuildKey(source)}; kind=DemoData; rows={demoRows.Count}");
+        return demoRows;
+    }
+
+    private static DataView BuildExportedAxamlDataGridView(
+        BindingSourceFileModel source,
+        ExportedAxamlDataGridBinding binding,
+        IReadOnlyList<Dictionary<string, string>> rows)
+    {
+        var visibleFields = OrderBindingFieldsForDisplay(source.Fields.Where(field => field.IsVisible)).ToList();
+        var bindingColumns = binding.Columns.Count > 0
+            ? binding.Columns
+            : visibleFields.Select(field => new ExportedAxamlDataGridColumn(field.Header, field.Path)).ToList();
+        var table = new DataTable(binding.ItemsSourcePath);
+        var usedColumns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var column in bindingColumns)
+        {
+            var columnName = string.IsNullOrWhiteSpace(column.BindingPath) ? column.Header : column.BindingPath;
+            columnName = EnsureUniqueDataColumnName(columnName, usedColumns);
+            table.Columns.Add(columnName, typeof(string));
+        }
+
+        foreach (var row in rows)
+        {
+            var dataRow = table.NewRow();
+            for (var index = 0; index < bindingColumns.Count; index++)
+            {
+                var field = index < visibleFields.Count ? visibleFields[index] : null;
+                dataRow[index] = ResolveExportedAxamlCellValue(row, field, bindingColumns[index].BindingPath);
+            }
+
+            table.Rows.Add(dataRow);
+        }
+
+        return table.DefaultView;
+    }
+
+    private static string EnsureUniqueDataColumnName(string value, ISet<string> used)
+    {
+        var baseName = string.IsNullOrWhiteSpace(value) ? "Field" : value.Trim();
+        var candidate = baseName;
+        var index = 2;
+        while (!used.Add(candidate))
+            candidate = $"{baseName}{index++}";
+
+        return candidate;
+    }
+
+    private static string ResolveExportedAxamlCellValue(
+        IReadOnlyDictionary<string, string> row,
+        BindingFieldFileModel? field,
+        string bindingPath)
+    {
+        if (!string.IsNullOrWhiteSpace(bindingPath) && row.TryGetValue(bindingPath, out var directValue))
+            return directValue;
+
+        if (field is not null)
+        {
+            if (row.TryGetValue(field.Path, out var pathValue))
+                return pathValue;
+            if (row.TryGetValue(field.Header, out var headerValue))
+                return headerValue;
+        }
+
+        return string.Empty;
+    }
+
+    private static IReadOnlyList<ExportedAxamlDataGridBinding> ParseExportedAxamlDataGridBindings(string axaml)
+    {
+        var result = new List<ExportedAxamlDataGridBinding>();
+        foreach (Match match in Regex.Matches(axaml, "<DataGrid(?=\\s|>)(?<attrs>[^>]*)>(?<body>[\\s\\S]*?)</DataGrid>", RegexOptions.CultureInvariant))
+        {
+            var attrs = match.Groups["attrs"].Value;
+            var name = ReadXamlAttribute(attrs, "x:Name");
+            if (string.IsNullOrWhiteSpace(name))
+                name = ReadXamlAttribute(attrs, "Name");
+            var itemsSource = ReadBindingPath(ReadXamlAttribute(attrs, "ItemsSource"));
+            if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(itemsSource))
+                continue;
+
+            var columns = new List<ExportedAxamlDataGridColumn>();
+            foreach (Match columnMatch in Regex.Matches(match.Groups["body"].Value, "<DataGrid(?:Text|CheckBox|Template)Column\\b(?<attrs>[^>]*)", RegexOptions.CultureInvariant))
+            {
+                var columnAttrs = columnMatch.Groups["attrs"].Value;
+                var header = ReadXamlAttribute(columnAttrs, "Header");
+                var bindingPath = ReadBindingPath(ReadXamlAttribute(columnAttrs, "Binding"));
+                if (!string.IsNullOrWhiteSpace(bindingPath))
+                    columns.Add(new ExportedAxamlDataGridColumn(header, bindingPath));
+            }
+
+            result.Add(new ExportedAxamlDataGridBinding(name, itemsSource, columns));
+        }
+
+        return result;
+    }
+
+    private static string ReadXamlAttribute(string attributes, string name)
+    {
+        var match = Regex.Match(attributes, $"{Regex.Escape(name)}=\"(?<value>[^\"]*)\"", RegexOptions.CultureInvariant);
+        return match.Success ? System.Net.WebUtility.HtmlDecode(match.Groups["value"].Value) : string.Empty;
+    }
+
+    private static string ReadBindingPath(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return string.Empty;
+
+        var match = Regex.Match(value, "\\{Binding\\s+(?<path>[^,}\\s]+)", RegexOptions.CultureInvariant);
+        return match.Success ? match.Groups["path"].Value.Trim() : string.Empty;
+    }
+
+    private void ShowExportedAxamlPreviewError(Exception exception, string generatedAxaml)
+    {
+        var errorText = $"AXAML Preview не удалось загрузить.\n\n{exception.GetType().Name}: {exception.Message}";
+        var stack = new StackPanel
+        {
+            Margin = new Thickness(24),
+            Spacing = 14
+        };
+        stack.Children.Add(new TextBlock
+        {
+            Text = "Ошибка AXAML Preview",
+            FontSize = 24,
+            FontWeight = FontWeight.Bold,
+            Foreground = Brushes.DarkRed
+        });
+        stack.Children.Add(new TextBlock
+        {
+            Text = errorText,
+            TextWrapping = TextWrapping.Wrap
+        });
+
+        if (!string.IsNullOrWhiteSpace(generatedAxaml))
+        {
+            stack.Children.Add(new TextBlock
+            {
+                Text = "Generated AXAML",
+                FontSize = 16,
+                FontWeight = FontWeight.SemiBold
+            });
+            stack.Children.Add(new TextBox
+            {
+                Text = generatedAxaml,
+                AcceptsReturn = true,
+                IsReadOnly = true,
+                FontFamily = FontFamily.Parse("Consolas"),
+                MinHeight = 280,
+                TextWrapping = TextWrapping.NoWrap
+            });
+        }
+
+        var actions = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Left
+        };
+        var copyButton = new Button { Content = "Копировать ошибку" };
+        copyButton.Click += async (_, _) =>
+        {
+            if (Clipboard is not null)
+                await Clipboard.SetTextAsync(errorText);
+        };
+        actions.Children.Add(copyButton);
+
+        var fallbackButton = new Button
+        {
+            Content = "Переключиться на обычный Preview",
+            Margin = new Thickness(8, 0, 0, 0)
+        };
+        fallbackButton.Click += (_, _) =>
+        {
+            Debug.WriteLine("AXAML_PREVIEW_FALLBACK_TO_LEGACY reason=user-requested-from-error-view");
+            RenderDocument();
+            RuntimeBadgeOverlay.IsVisible = true;
+            PreviewRuntimeStatusText.Text = "Legacy Preview opened";
+        };
+        actions.Children.Add(fallbackButton);
+        stack.Children.Add(actions);
+        PreviewSurfaceBorder.Child = new ScrollViewer { Content = stack };
+        RuntimeBadgeOverlay.IsVisible = true;
+        PreviewRuntimeStatusText.Text = "AXAML Preview failed";
+        ToolTip.SetTip(PreviewRuntimeStatusText, exception.Message);
     }
 
     private void PreviewWindow_KeyDown(object? sender, KeyEventArgs e)
@@ -4309,6 +4684,13 @@ public partial class PreviewWindow : Window
             _ => Stretch.Uniform
         };
     }
+
+    private sealed record ExportedAxamlDataGridBinding(
+        string Name,
+        string ItemsSourcePath,
+        IReadOnlyList<ExportedAxamlDataGridColumn> Columns);
+
+    private sealed record ExportedAxamlDataGridColumn(string Header, string BindingPath);
 
     private sealed class RuntimeDataGridHeaderDragState
     {

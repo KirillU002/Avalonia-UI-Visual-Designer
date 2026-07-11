@@ -101,6 +101,10 @@ internal static class Program
             new("PreviewAndExportHaveSameBounds", ConfigurePreviewExportBoundsForm, AssertPreviewAndExportHaveSameBounds),
             new("PreviewAndExportHaveSameKeyProperties", ConfigurePreviewExportPropertiesForm, AssertPreviewAndExportHaveSameKeyProperties),
             new("PreviewGenerationDoesNotMutateEditorState", ConfigurePreviewExportStateMutationForm, AssertPreviewGenerationDoesNotMutateEditorState),
+            new("AxamlPreviewSettingsAreAvailable", ConfigureSimpleFormExport, AssertAxamlPreviewSettingsAreAvailable),
+            new("AxamlPreviewUsesExportGenerator", ConfigurePreviewExportStateMutationForm, AssertAxamlPreviewUsesExportGenerator),
+            new("AxamlPreviewDoesNotMutateEditorState", ConfigurePreviewExportStateMutationForm, AssertAxamlPreviewDoesNotMutateEditorState),
+            new("AxamlPreviewLoaderUsesAvaloniaXamlLoader", ConfigureSimpleFormExport, AssertAxamlPreviewLoaderUsesAvaloniaXamlLoader),
             new("ExportGenerationDoesNotMutateEditorState", ConfigurePreviewExportStateMutationForm, AssertExportGenerationDoesNotMutateEditorState),
             new("ResizeFormDoesNotMoveCanvasControls", ConfigureResizeFormDoesNotMoveCanvasControls, AssertResizeFormDoesNotMoveCanvasControls),
             new("ResizePreviewWindowDoesNotChangeControlPositions", ConfigureResizePreviewWindowDoesNotChangeControlPositions, AssertResizePreviewWindowDoesNotChangeControlPositions),
@@ -120,6 +124,7 @@ internal static class Program
             new("ExportedDataGridRowsTextNotClippedByStyle", ConfigureRealDataGridExport, AssertExportedDataGridRowsTextNotClippedByStyle, RequiresRealDataGrid: true),
             new("ExportedDataGridDoesNotRequireInterFont", ConfigureRealDataGridExport, AssertExportedDataGridDoesNotRequireInterFont, RequiresRealDataGrid: true),
             new("PreviewExportDataGridCellStyleMatch", ConfigureRealDataGridExport, AssertPreviewExportDataGridCellStyleMatch, RequiresRealDataGrid: true),
+            new("AxamlPreviewDataGridUsesExportBinding", ConfigureRealDataGridExport, AssertAxamlPreviewDataGridUsesExportBinding, RequiresRealDataGrid: true),
             new("DataGridColumnWrapUsesTemplateColumn", ConfigureDataGridColumnWrapUsesTemplateColumn, AssertDataGridColumnWrapUsesTemplateColumn, RequiresRealDataGrid: true),
             new("DataGridColumnTrimmingExportedCorrectly", ConfigureDataGridColumnTrimmingExportedCorrectly, AssertDataGridColumnTrimmingExportedCorrectly, RequiresRealDataGrid: true),
             new("DataGridGroupingDoesNotGenerateInvalidBindings", ConfigureDataGridGroupingDoesNotGenerateInvalidBindings, AssertDataGridGroupingDoesNotGenerateInvalidBindings, RequiresRealDataGrid: true),
@@ -1512,6 +1517,75 @@ internal static class Program
         RequireEditorStateUnchanged(before, after, "Preview/export comparison should not mutate editor state.");
     }
 
+    private static void AssertAxamlPreviewSettingsAreAvailable(SmokeContext context)
+    {
+        var defaults = new AppSettingsModel();
+        if (defaults.Preview.UseExportedAxamlPreview)
+            throw new InvalidOperationException("UseExportedAxamlPreview should default to false.");
+        if (!defaults.Preview.FallbackToLegacyPreviewOnAxamlError)
+            throw new InvalidOperationException("AXAML Preview fallback should default to true.");
+
+        var settings = new SettingsWindowViewModel(context.ViewModel, Path.Combine(Path.GetTempPath(), "app-settings.json"));
+        settings.UseExportedAxamlPreview = true;
+        settings.FallbackToLegacyPreviewOnAxamlError = false;
+        settings.ShowGeneratedAxamlOnPreviewError = true;
+        settings.CleanAxamlPreviewTemporaryFiles = true;
+        settings.ApplyCommand.Execute(null);
+
+        if (!context.ViewModel.UseExportedAxamlPreview)
+            throw new InvalidOperationException("Settings Window should apply UseExportedAxamlPreview to the main ViewModel.");
+        if (context.ViewModel.FallbackToLegacyPreviewOnAxamlError)
+            throw new InvalidOperationException("Settings Window should apply AXAML Preview fallback setting.");
+
+        var xaml = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "Views", "SettingsWindow.axaml"), Encoding.UTF8);
+        RequireContains(xaml, "UseExportedAxamlPreview", "Settings Preview page should expose UseExportedAxamlPreview.");
+        RequireContains(SettingsTextCatalog.Russian.UseExportedAxamlPreview, "AXAML", "Russian settings catalog should describe AXAML Preview.");
+        RequireContains(SettingsTextCatalog.English.UseExportedAxamlPreview, "AXAML", "English settings catalog should describe AXAML Preview.");
+    }
+
+    private static void AssertAxamlPreviewUsesExportGenerator(SmokeContext context)
+    {
+        var payload = context.ViewModel.GenerateExportedAxamlPreviewSnapshot();
+        RequireContains(payload.Axaml, "SelectedButton", "AXAML Preview payload should include controls from the export generator.");
+        RequireContains(payload.Axaml, "x:Class=", "AXAML Preview payload should start from exported AXAML, before runtime loader normalization.");
+        RequireEqual(context.Xaml, payload.Axaml, "AXAML Preview should use the same AXAML generator output as Export.");
+
+        var viewModelSource = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "ViewModels", "MainWindowViewModel.cs"), Encoding.UTF8);
+        RequireContains(viewModelSource, "GenerateExportedAxamlPreviewSnapshot", "MainWindowViewModel should expose an AXAML Preview snapshot method.");
+        RequireContains(viewModelSource, "exportViewModel.GenerateXaml()", "AXAML Preview snapshot should call the existing Export AXAML generator on an isolated VM.");
+        RequireContains(viewModelSource, "AXAML_PREVIEW_GENERATION_START", "AXAML Preview generation diagnostics should be emitted.");
+        RequireContains(viewModelSource, "AXAML_PREVIEW_GENERATION_END", "AXAML Preview generation completion diagnostics should be emitted.");
+    }
+
+    private static void AssertAxamlPreviewDoesNotMutateEditorState(SmokeContext context)
+    {
+        context.ViewModel.UseExportedAxamlPreview = true;
+        context.ViewModel.InteractionTraceEntries.Clear();
+        var before = CaptureEditorState(context.ViewModel);
+        var beforeXaml = context.ViewModel.GeneratedXaml;
+        var beforeCSharp = context.ViewModel.GeneratedCSharp;
+
+        var payload = context.ViewModel.GenerateExportedAxamlPreviewSnapshot();
+
+        var after = CaptureEditorState(context.ViewModel);
+        RequireEditorStateUnchanged(before, after, "AXAML Preview snapshot generation should not mutate editor state.");
+        RequireEqual(beforeXaml, context.ViewModel.GeneratedXaml, "AXAML Preview snapshot generation should not overwrite current GeneratedXaml.");
+        RequireEqual(beforeCSharp, context.ViewModel.GeneratedCSharp, "AXAML Preview snapshot generation should not overwrite current GeneratedCSharp.");
+        RequireContains(payload.Axaml, "SelectedButton", "AXAML Preview snapshot should still produce usable AXAML.");
+        RequireNoTraceEvent(context, "AXAML_PREVIEW_EDITOR_STATE_MUTATION_DETECTED");
+    }
+
+    private static void AssertAxamlPreviewLoaderUsesAvaloniaXamlLoader(SmokeContext context)
+    {
+        var source = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "Views", "PreviewWindow.axaml.cs"), Encoding.UTF8);
+        RequireContains(source, "AvaloniaXamlLoader.Load(new Uri(tempFile), new Uri(tempFile))", "AXAML Preview should load generated AXAML through AvaloniaXamlLoader.");
+        RequireContains(source, "NormalizeExportedAxamlForPreviewLoad", "AXAML Preview should normalize exported AXAML only for isolated runtime loading.");
+        RequireContains(source, "AXAML_PREVIEW_LOAD_START", "AXAML Preview load diagnostics should be emitted.");
+        RequireContains(source, "AXAML_PREVIEW_LOAD_SUCCESS", "AXAML Preview success diagnostics should be emitted.");
+        RequireContains(source, "AXAML_PREVIEW_LOAD_FAILED", "AXAML Preview failure diagnostics should be emitted.");
+        RequireContains(source, "AXAML_PREVIEW_FALLBACK_TO_LEGACY", "AXAML Preview fallback diagnostics should be emitted.");
+    }
+
     private static void AssertExportGenerationDoesNotMutateEditorState(SmokeContext context)
     {
         context.ViewModel.InteractionTraceEntries.Clear();
@@ -1749,6 +1823,19 @@ internal static class Program
         var comparison = context.ViewModel.ComparePreviewAndExportForActiveDocument("PreviewExportDataGridCellStyleMatch");
         RequireNoPreviewExportMismatches(comparison);
         RequireContains(context.Xaml, "<Setter Property=\"Padding\" Value=\"10,4\" />", "Preview/export DataGrid cell style should use compact row padding.");
+    }
+
+    private static void AssertAxamlPreviewDataGridUsesExportBinding(SmokeContext context)
+    {
+        var payload = context.ViewModel.GenerateExportedAxamlPreviewSnapshot();
+        RequireEqual(context.Xaml, payload.Axaml, "AXAML Preview DataGrid should start from the same generated AXAML as Export.");
+        RequireContains(payload.Axaml, "ItemsSource=\"{Binding ProductsView}\"", "AXAML Preview payload should preserve exported DataGrid ItemsSource binding.");
+        RequireContains(payload.Axaml, "Binding=\"{Binding Title}\"", "AXAML Preview payload should preserve exported column binding paths.");
+
+        var source = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "Views", "PreviewWindow.axaml.cs"), Encoding.UTF8);
+        RequireContains(source, "ParseExportedAxamlDataGridBindings", "AXAML Preview should parse DataGrid ItemsSource and column binding paths from exported AXAML.");
+        RequireContains(source, "BuildExportedAxamlDataGridView", "AXAML Preview should build preview DataGrid data using exported binding paths.");
+        RequireContains(source, "AXAML_PREVIEW_DATAGRID_ITEMSSOURCE_APPLIED", "AXAML Preview should log DataGrid ItemsSource application.");
     }
 
     private static void ConfigureDataGridColumnWrapUsesTemplateColumn(MainWindowViewModel vm)

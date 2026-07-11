@@ -914,6 +914,18 @@ public partial class MainWindowViewModel : ObservableObject
     private bool autoHidePreviewRuntimeBadge = true;
 
     [ObservableProperty]
+    private bool useExportedAxamlPreview;
+
+    [ObservableProperty]
+    private bool fallbackToLegacyPreviewOnAxamlError = true;
+
+    [ObservableProperty]
+    private bool showGeneratedAxamlOnPreviewError = true;
+
+    [ObservableProperty]
+    private bool cleanAxamlPreviewTemporaryFiles = true;
+
+    [ObservableProperty]
     private bool previewTopmost;
 
     [ObservableProperty]
@@ -9205,6 +9217,10 @@ public partial class MainWindowViewModel : ObservableObject
         ShowPreviewRuntimeBadge = settings?.ShowRuntimeBadge ?? false;
         CompactPreviewRuntimeBadge = settings?.CompactRuntimeBadge ?? true;
         AutoHidePreviewRuntimeBadge = settings?.AutoHideRuntimeBadge ?? true;
+        UseExportedAxamlPreview = settings?.UseExportedAxamlPreview ?? false;
+        FallbackToLegacyPreviewOnAxamlError = settings?.FallbackToLegacyPreviewOnAxamlError ?? true;
+        ShowGeneratedAxamlOnPreviewError = settings?.ShowGeneratedAxamlOnPreviewError ?? true;
+        CleanAxamlPreviewTemporaryFiles = settings?.CleanAxamlPreviewTemporaryFiles ?? true;
         PreviewTopmost = settings?.PreviewTopmost ?? false;
         PreviewDefaultZoomPercent = Math.Clamp(settings?.PreviewDefaultZoomPercent ?? 100, 25, 300);
         EnableExperimentalLayoutTab = settings?.EnableExperimentalLayoutTab ?? false;
@@ -9218,6 +9234,10 @@ public partial class MainWindowViewModel : ObservableObject
             ShowRuntimeBadge = ShowPreviewRuntimeBadge,
             CompactRuntimeBadge = CompactPreviewRuntimeBadge,
             AutoHideRuntimeBadge = AutoHidePreviewRuntimeBadge,
+            UseExportedAxamlPreview = UseExportedAxamlPreview,
+            FallbackToLegacyPreviewOnAxamlError = FallbackToLegacyPreviewOnAxamlError,
+            ShowGeneratedAxamlOnPreviewError = ShowGeneratedAxamlOnPreviewError,
+            CleanAxamlPreviewTemporaryFiles = CleanAxamlPreviewTemporaryFiles,
             PreviewTopmost = PreviewTopmost,
             PreviewDefaultZoomPercent = Math.Clamp(PreviewDefaultZoomPercent, 25, 300),
             EnableExperimentalLayoutTab = EnableExperimentalLayoutTab
@@ -13653,6 +13673,97 @@ public partial class MainWindowViewModel : ObservableObject
             .Where(group => group.Count() > 1)
             .Select(group => $"{group.Key} ({string.Join(", ", group.Select(form => form.DisplayName))})")
             .ToList();
+    }
+
+    public ExportedAxamlPreviewModel GenerateExportedAxamlPreviewSnapshot()
+    {
+        PersistActiveFormDocumentState(refreshProjectViews: false);
+
+        var form = ActiveFormDocument
+            ?? CurrentProject.Forms.FirstOrDefault()
+            ?? throw new InvalidOperationException("Нет активной Form для AXAML Preview.");
+        var formClassNames = BuildProjectFormClassNameMap();
+        var className = formClassNames.TryGetValue(form.Id, out var mappedClassName)
+            ? mappedClassName
+            : ResolveExportWindowClassName();
+        var beforeActiveFormId = ActiveFormDocument?.Id ?? "";
+        var beforeSelectedControlId = SelectedControl?.Id ?? "";
+        var beforeGeneratedXaml = GeneratedXaml;
+        var beforeGeneratedCSharp = GeneratedCSharp;
+        var stopwatch = Stopwatch.StartNew();
+
+        TraceDocumentDebug(
+            "AXAML_PREVIEW_GENERATION_START",
+            $"document={form.DisplayName}:{form.Id}; controls={form.Document?.Controls.Count ?? Controls.Count}",
+            toOutput: false);
+
+        var exportViewModel = new MainWindowViewModel(_registry);
+        try
+        {
+            CopyExportSettingsTo(exportViewModel, className, form.Id);
+            exportViewModel.Workspace = CloneWorkspaceForExport();
+            exportViewModel.CurrentProjectPath = CurrentProjectPath;
+            exportViewModel.Workspace.Session.ActiveDocumentId = form.Id;
+            exportViewModel.ActiveFormDocument = exportViewModel.CurrentProject.Forms.FirstOrDefault(item =>
+                    string.Equals(item.Id, form.Id, StringComparison.OrdinalIgnoreCase))
+                ?? CloneFormDocumentForPreview(form);
+            exportViewModel._isGeneratingSecondaryFormExport = true;
+            exportViewModel.LoadDocumentSnapshotForExportGeneration(
+                exportViewModel.ActiveFormDocument,
+                CloneDocumentFileModel(exportViewModel.ActiveFormDocument.Document),
+                CurrentProjectPath);
+            exportViewModel.GenerateXaml();
+            stopwatch.Stop();
+
+            TraceDocumentDebug(
+                "AXAML_PREVIEW_GENERATION_END",
+                $"elapsedMs={stopwatch.ElapsedMilliseconds}; axamlLength={exportViewModel.GeneratedXaml.Length}; csharpLength={exportViewModel.GeneratedCSharp.Length}",
+                toOutput: false);
+
+            if (!string.Equals(beforeActiveFormId, ActiveFormDocument?.Id ?? "", StringComparison.Ordinal))
+            {
+                TraceDocumentDebug(
+                    "AXAML_PREVIEW_EDITOR_STATE_MUTATION_DETECTED",
+                    $"property=ActiveForm; before={beforeActiveFormId}; after={ActiveFormDocument?.Id ?? ""}",
+                    toOutput: true,
+                    warning: true);
+            }
+
+            if (!string.Equals(beforeSelectedControlId, SelectedControl?.Id ?? "", StringComparison.Ordinal))
+            {
+                TraceDocumentDebug(
+                    "AXAML_PREVIEW_EDITOR_STATE_MUTATION_DETECTED",
+                    $"property=SelectedControl; before={beforeSelectedControlId}; after={SelectedControl?.Id ?? ""}",
+                    toOutput: true,
+                    warning: true);
+            }
+
+            if (!string.Equals(beforeGeneratedXaml, GeneratedXaml, StringComparison.Ordinal)
+                || !string.Equals(beforeGeneratedCSharp, GeneratedCSharp, StringComparison.Ordinal))
+            {
+                TraceDocumentDebug(
+                    "AXAML_PREVIEW_EDITOR_STATE_MUTATION_DETECTED",
+                    "property=GeneratedFiles; before=current-editor-cache; after=changed",
+                    toOutput: true,
+                    warning: true);
+            }
+
+            return new ExportedAxamlPreviewModel
+            {
+                Axaml = exportViewModel.GeneratedXaml,
+                GeneratedCSharp = exportViewModel.GeneratedCSharp,
+                Document = CloneDocumentFileModel(exportViewModel.ActiveFormDocument.Document),
+                ProjectForms = exportViewModel.CurrentProject.Forms.Select(CloneFormDocumentForPreview).ToList(),
+                ActiveFormId = form.Id,
+                FallbackToLegacyPreviewOnError = FallbackToLegacyPreviewOnAxamlError,
+                ShowGeneratedAxamlOnError = ShowGeneratedAxamlOnPreviewError,
+                CleanTemporaryFiles = CleanAxamlPreviewTemporaryFiles
+            };
+        }
+        finally
+        {
+            exportViewModel.DisposeExportOnlyViewModel();
+        }
     }
 
     private (string Xaml, string CSharp) BuildSecondaryFormGeneratedFiles(DesignerFormDocument form, string className)

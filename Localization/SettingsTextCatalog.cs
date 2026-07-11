@@ -72,6 +72,11 @@ public sealed class SettingsTextCatalog
     public string RuntimeBadge => this[nameof(RuntimeBadge)];
     public string CompactRuntimeBadge => this[nameof(CompactRuntimeBadge)];
     public string AutoHideRuntimeBadge => this[nameof(AutoHideRuntimeBadge)];
+    public string UseExportedAxamlPreview => this[nameof(UseExportedAxamlPreview)];
+    public string UseExportedAxamlPreviewHint => this[nameof(UseExportedAxamlPreviewHint)];
+    public string FallbackToLegacyPreviewOnAxamlError => this[nameof(FallbackToLegacyPreviewOnAxamlError)];
+    public string ShowGeneratedAxamlOnPreviewError => this[nameof(ShowGeneratedAxamlOnPreviewError)];
+    public string CleanAxamlPreviewTemporaryFiles => this[nameof(CleanAxamlPreviewTemporaryFiles)];
     public string PreviewTopmost => this[nameof(PreviewTopmost)];
     public string PreviewZoom => this[nameof(PreviewZoom)];
 
@@ -254,6 +259,11 @@ public sealed class SettingsTextCatalog
             [nameof(RuntimeBadge)] = "Показывать runtime-плашку в Preview",
             [nameof(CompactRuntimeBadge)] = "Компактная runtime-плашка",
             [nameof(AutoHideRuntimeBadge)] = "Автоскрытие runtime-плашки",
+            [nameof(UseExportedAxamlPreview)] = "Использовать Preview из экспортируемого AXAML",
+            [nameof(UseExportedAxamlPreviewHint)] = "Preview будет строиться из того же AXAML, который используется при Export. Это помогает увидеть реальный результат будущего приложения.",
+            [nameof(FallbackToLegacyPreviewOnAxamlError)] = "При ошибке AXAML использовать обычный Preview",
+            [nameof(ShowGeneratedAxamlOnPreviewError)] = "Показывать generated AXAML при ошибке",
+            [nameof(CleanAxamlPreviewTemporaryFiles)] = "Очищать временные Preview files",
             [nameof(PreviewTopmost)] = "Preview открывать поверх всех окон",
             [nameof(PreviewZoom)] = "Preview масштаб по умолчанию, %",
 
@@ -380,6 +390,11 @@ public sealed class SettingsTextCatalog
             [nameof(RuntimeBadge)] = "Show runtime badge in Preview",
             [nameof(CompactRuntimeBadge)] = "Compact runtime badge",
             [nameof(AutoHideRuntimeBadge)] = "Auto-hide runtime badge",
+            [nameof(UseExportedAxamlPreview)] = "Use Preview from exported AXAML",
+            [nameof(UseExportedAxamlPreviewHint)] = "Preview will be built from the same AXAML used by Export, so it is closer to the generated application.",
+            [nameof(FallbackToLegacyPreviewOnAxamlError)] = "Fallback to legacy Preview on AXAML error",
+            [nameof(ShowGeneratedAxamlOnPreviewError)] = "Show generated AXAML when Preview fails",
+            [nameof(CleanAxamlPreviewTemporaryFiles)] = "Clean temporary Preview files",
             [nameof(PreviewTopmost)] = "Open Preview above other windows",
             [nameof(PreviewZoom)] = "Default Preview zoom, %",
 

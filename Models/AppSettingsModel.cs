@@ -89,6 +89,14 @@ public sealed class PreviewSettingsModel
 
     public bool AutoHideRuntimeBadge { get; set; } = true;
 
+    public bool UseExportedAxamlPreview { get; set; }
+
+    public bool FallbackToLegacyPreviewOnAxamlError { get; set; } = true;
+
+    public bool ShowGeneratedAxamlOnPreviewError { get; set; } = true;
+
+    public bool CleanAxamlPreviewTemporaryFiles { get; set; } = true;
+
     public bool PreviewTopmost { get; set; }
 
     public int PreviewDefaultZoomPercent { get; set; } = 100;

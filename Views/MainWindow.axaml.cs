@@ -8122,16 +8122,37 @@ public partial class MainWindow : Window
             VM.BeginBusy("Подготавливаем предпросмотр", "Собираем окно запуска и визуальные элементы формы.");
             await Task.Delay(160);
 
-            var snapshot = VM.CreatePreviewDocumentSnapshot();
-            var projectForms = VM.CreatePreviewProjectFormsSnapshot();
-
             if (_launchPreviewWindow is not null)
             {
                 _launchPreviewWindow.Close();
                 _launchPreviewWindow = null;
             }
 
-            var previewWindow = new PreviewWindow(snapshot, VM.Registry, projectForms, VM.ActiveFormDocument?.Id ?? string.Empty, VM.ShowPreviewRuntimeBadge);
+            Debug.WriteLine($"AXAML_PREVIEW_REQUESTED document={VM.ActiveDocumentName}:{VM.ActiveDocumentId}; setting={VM.UseExportedAxamlPreview}");
+            PreviewWindow previewWindow;
+            if (VM.UseExportedAxamlPreview)
+            {
+                try
+                {
+                    var exportedPreview = VM.GenerateExportedAxamlPreviewSnapshot();
+                    previewWindow = new PreviewWindow(exportedPreview, VM.Registry, VM.ShowPreviewRuntimeBadge);
+                }
+                catch (Exception ex) when (VM.FallbackToLegacyPreviewOnAxamlError)
+                {
+                    Debug.WriteLine($"AXAML_PREVIEW_FALLBACK_TO_LEGACY reason=generation-failed:{ex.GetType().Name}:{ex.Message}");
+                    VM.StatusText = $"AXAML Preview не удалось собрать, открыт обычный Preview: {ex.Message}";
+                    var fallbackSnapshot = VM.CreatePreviewDocumentSnapshot();
+                    var fallbackProjectForms = VM.CreatePreviewProjectFormsSnapshot();
+                    previewWindow = new PreviewWindow(fallbackSnapshot, VM.Registry, fallbackProjectForms, VM.ActiveFormDocument?.Id ?? string.Empty, VM.ShowPreviewRuntimeBadge);
+                }
+            }
+            else
+            {
+                var snapshot = VM.CreatePreviewDocumentSnapshot();
+                var projectForms = VM.CreatePreviewProjectFormsSnapshot();
+                previewWindow = new PreviewWindow(snapshot, VM.Registry, projectForms, VM.ActiveFormDocument?.Id ?? string.Empty, VM.ShowPreviewRuntimeBadge);
+            }
+
             previewWindow.Closed += LaunchPreviewWindow_Closed;
             _launchPreviewWindow = previewWindow;
             previewWindow.Show();

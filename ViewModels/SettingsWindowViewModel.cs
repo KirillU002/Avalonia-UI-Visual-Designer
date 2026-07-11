@@ -93,6 +93,18 @@ public sealed partial class SettingsWindowViewModel : ViewModelBase
     private bool autoHidePreviewRuntimeBadge = true;
 
     [ObservableProperty]
+    private bool useExportedAxamlPreview;
+
+    [ObservableProperty]
+    private bool fallbackToLegacyPreviewOnAxamlError = true;
+
+    [ObservableProperty]
+    private bool showGeneratedAxamlOnPreviewError = true;
+
+    [ObservableProperty]
+    private bool cleanAxamlPreviewTemporaryFiles = true;
+
+    [ObservableProperty]
     private bool previewTopmost;
 
     [ObservableProperty]
@@ -486,6 +498,10 @@ public sealed partial class SettingsWindowViewModel : ViewModelBase
         _source.ShowPreviewRuntimeBadge = ShowPreviewRuntimeBadge;
         _source.CompactPreviewRuntimeBadge = CompactPreviewRuntimeBadge;
         _source.AutoHidePreviewRuntimeBadge = AutoHidePreviewRuntimeBadge;
+        _source.UseExportedAxamlPreview = UseExportedAxamlPreview;
+        _source.FallbackToLegacyPreviewOnAxamlError = FallbackToLegacyPreviewOnAxamlError;
+        _source.ShowGeneratedAxamlOnPreviewError = ShowGeneratedAxamlOnPreviewError;
+        _source.CleanAxamlPreviewTemporaryFiles = CleanAxamlPreviewTemporaryFiles;
         _source.PreviewTopmost = PreviewTopmost;
         _source.PreviewDefaultZoomPercent = Math.Clamp(PreviewDefaultZoomPercent, 25, 300);
 
@@ -543,6 +559,10 @@ public sealed partial class SettingsWindowViewModel : ViewModelBase
         ShowPreviewRuntimeBadge = _source.ShowPreviewRuntimeBadge;
         CompactPreviewRuntimeBadge = _source.CompactPreviewRuntimeBadge;
         AutoHidePreviewRuntimeBadge = _source.AutoHidePreviewRuntimeBadge;
+        UseExportedAxamlPreview = _source.UseExportedAxamlPreview;
+        FallbackToLegacyPreviewOnAxamlError = _source.FallbackToLegacyPreviewOnAxamlError;
+        ShowGeneratedAxamlOnPreviewError = _source.ShowGeneratedAxamlOnPreviewError;
+        CleanAxamlPreviewTemporaryFiles = _source.CleanAxamlPreviewTemporaryFiles;
         PreviewTopmost = _source.PreviewTopmost;
         PreviewDefaultZoomPercent = _source.PreviewDefaultZoomPercent;
 
@@ -628,6 +648,10 @@ public sealed partial class SettingsWindowViewModel : ViewModelBase
         ShowPreviewRuntimeBadge = settings.ShowRuntimeBadge;
         CompactPreviewRuntimeBadge = settings.CompactRuntimeBadge;
         AutoHidePreviewRuntimeBadge = settings.AutoHideRuntimeBadge;
+        UseExportedAxamlPreview = settings.UseExportedAxamlPreview;
+        FallbackToLegacyPreviewOnAxamlError = settings.FallbackToLegacyPreviewOnAxamlError;
+        ShowGeneratedAxamlOnPreviewError = settings.ShowGeneratedAxamlOnPreviewError;
+        CleanAxamlPreviewTemporaryFiles = settings.CleanAxamlPreviewTemporaryFiles;
         PreviewTopmost = settings.PreviewTopmost;
         PreviewDefaultZoomPercent = settings.PreviewDefaultZoomPercent;
         EnableExperimentalLayoutTab = settings.EnableExperimentalLayoutTab;
@@ -759,7 +783,14 @@ public sealed partial class SettingsWindowViewModel : ViewModelBase
         Count(_source.IsCanvasSnappingEnabled != IsCanvasSnappingEnabled);
         Count(_source.SnapStep != GridStep);
         Count(_source.ShowPreviewRuntimeBadge != ShowPreviewRuntimeBadge);
+        Count(_source.CompactPreviewRuntimeBadge != CompactPreviewRuntimeBadge);
+        Count(_source.AutoHidePreviewRuntimeBadge != AutoHidePreviewRuntimeBadge);
+        Count(_source.UseExportedAxamlPreview != UseExportedAxamlPreview);
+        Count(_source.FallbackToLegacyPreviewOnAxamlError != FallbackToLegacyPreviewOnAxamlError);
+        Count(_source.ShowGeneratedAxamlOnPreviewError != ShowGeneratedAxamlOnPreviewError);
+        Count(_source.CleanAxamlPreviewTemporaryFiles != CleanAxamlPreviewTemporaryFiles);
         Count(_source.PreviewTopmost != PreviewTopmost);
+        Count(_source.PreviewDefaultZoomPercent != PreviewDefaultZoomPercent);
         Count(_source.ValidateBuildAfterExport != ValidateBuildAfterExport);
         Count(_source.VerboseBuildLogs != VerboseBuildLogs);
         Count(_source.KeepSuccessfulBuildArtifacts != KeepSuccessfulBuildArtifacts);
