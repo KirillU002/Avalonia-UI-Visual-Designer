@@ -5,7 +5,13 @@ namespace FormDesigner.Models;
 
 public sealed class ExportedAxamlPreviewModel
 {
+    public string ExportAxaml { get; init; } = "";
+
     public string Axaml { get; init; } = "";
+
+    public string RootElement { get; init; } = "";
+
+    public string RemovedXClass { get; init; } = "";
 
     public string GeneratedCSharp { get; init; } = "";
 
@@ -19,5 +25,4 @@ public sealed class ExportedAxamlPreviewModel
 
     public bool ShowGeneratedAxamlOnError { get; init; } = true;
 
-    public bool CleanTemporaryFiles { get; init; } = true;
 }

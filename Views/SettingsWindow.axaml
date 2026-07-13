@@ -306,8 +306,6 @@
                               IsChecked="{Binding FallbackToLegacyPreviewOnAxamlError, Mode=TwoWay}"/>
                     <CheckBox Content="{Binding Texts.ShowGeneratedAxamlOnPreviewError}"
                               IsChecked="{Binding ShowGeneratedAxamlOnPreviewError, Mode=TwoWay}"/>
-                    <CheckBox Content="{Binding Texts.CleanAxamlPreviewTemporaryFiles}"
-                              IsChecked="{Binding CleanAxamlPreviewTemporaryFiles, Mode=TwoWay}"/>
                   </StackPanel>
                 </Border>
                 <CheckBox Content="{Binding Texts.PreviewTopmost}"

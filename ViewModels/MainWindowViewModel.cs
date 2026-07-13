@@ -923,9 +923,6 @@ public partial class MainWindowViewModel : ObservableObject
     private bool showGeneratedAxamlOnPreviewError = true;
 
     [ObservableProperty]
-    private bool cleanAxamlPreviewTemporaryFiles = true;
-
-    [ObservableProperty]
     private bool previewTopmost;
 
     [ObservableProperty]
@@ -9220,7 +9217,6 @@ public partial class MainWindowViewModel : ObservableObject
         UseExportedAxamlPreview = settings?.UseExportedAxamlPreview ?? false;
         FallbackToLegacyPreviewOnAxamlError = settings?.FallbackToLegacyPreviewOnAxamlError ?? true;
         ShowGeneratedAxamlOnPreviewError = settings?.ShowGeneratedAxamlOnPreviewError ?? true;
-        CleanAxamlPreviewTemporaryFiles = settings?.CleanAxamlPreviewTemporaryFiles ?? true;
         PreviewTopmost = settings?.PreviewTopmost ?? false;
         PreviewDefaultZoomPercent = Math.Clamp(settings?.PreviewDefaultZoomPercent ?? 100, 25, 300);
         EnableExperimentalLayoutTab = settings?.EnableExperimentalLayoutTab ?? false;
@@ -9237,7 +9233,6 @@ public partial class MainWindowViewModel : ObservableObject
             UseExportedAxamlPreview = UseExportedAxamlPreview,
             FallbackToLegacyPreviewOnAxamlError = FallbackToLegacyPreviewOnAxamlError,
             ShowGeneratedAxamlOnPreviewError = ShowGeneratedAxamlOnPreviewError,
-            CleanAxamlPreviewTemporaryFiles = CleanAxamlPreviewTemporaryFiles,
             PreviewTopmost = PreviewTopmost,
             PreviewDefaultZoomPercent = Math.Clamp(PreviewDefaultZoomPercent, 25, 300),
             EnableExperimentalLayoutTab = EnableExperimentalLayoutTab
@@ -13713,11 +13708,50 @@ public partial class MainWindowViewModel : ObservableObject
                 CloneDocumentFileModel(exportViewModel.ActiveFormDocument.Document),
                 CurrentProjectPath);
             exportViewModel.GenerateXaml();
+            var exportAxaml = GeneratedAxamlService.Create(
+                exportViewModel.GeneratedXaml,
+                AxamlGenerationMode.Export);
+            TraceDocumentDebug(
+                "AXAML_PREVIEW_ROOT_TRANSFORM_START",
+                $"sourceRoot={exportAxaml.RootElement}; targetRoot=UserControl; mode={AxamlGenerationMode.RuntimePreview}",
+                toOutput: false);
+            var runtimePreviewAxaml = GeneratedAxamlService.Create(
+                exportAxaml.Axaml,
+                AxamlGenerationMode.RuntimePreview);
             stopwatch.Stop();
+
+            foreach (var propertyName in runtimePreviewAxaml.RemovedRootProperties)
+            {
+                TraceDocumentDebug(
+                    "AXAML_PREVIEW_ROOT_PROPERTY_REMOVED",
+                    $"property={propertyName}; reason=not supported by Runtime Preview UserControl root",
+                    toOutput: false);
+            }
+
+            TraceDocumentDebug(
+                "AXAML_PREVIEW_ROOT_TRANSFORM_END",
+                $"sourceRoot={exportAxaml.RootElement}; targetRoot={runtimePreviewAxaml.RootElement}; removedProperties={runtimePreviewAxaml.RemovedRootProperties.Count}; keptProperties={runtimePreviewAxaml.KeptRootPropertyCount}; normalizedPropertyElements={runtimePreviewAxaml.NormalizedRootPropertyElementCount}",
+                toOutput: false);
+
+            if (!string.IsNullOrWhiteSpace(runtimePreviewAxaml.RemovedXClass))
+            {
+                TraceDocumentDebug(
+                    "AXAML_PREVIEW_XCLASS_REMOVED",
+                    $"originalClass={runtimePreviewAxaml.RemovedXClass}; previewRoot={runtimePreviewAxaml.RootElement}",
+                    toOutput: false);
+            }
+
+            if (runtimePreviewAxaml.NormalizedXNameCount > 0)
+            {
+                TraceDocumentDebug(
+                    "AXAML_PREVIEW_XNAME_NORMALIZED",
+                    $"count={runtimePreviewAxaml.NormalizedXNameCount}; action=removed; reason=runtime loader without compiled x:Class",
+                    toOutput: false);
+            }
 
             TraceDocumentDebug(
                 "AXAML_PREVIEW_GENERATION_END",
-                $"elapsedMs={stopwatch.ElapsedMilliseconds}; axamlLength={exportViewModel.GeneratedXaml.Length}; csharpLength={exportViewModel.GeneratedCSharp.Length}",
+                $"elapsedMs={stopwatch.ElapsedMilliseconds}; axamlLength={runtimePreviewAxaml.Axaml.Length}; csharpLength={exportViewModel.GeneratedCSharp.Length}; mode={runtimePreviewAxaml.Mode}",
                 toOutput: false);
 
             if (!string.Equals(beforeActiveFormId, ActiveFormDocument?.Id ?? "", StringComparison.Ordinal))
@@ -13750,14 +13784,16 @@ public partial class MainWindowViewModel : ObservableObject
 
             return new ExportedAxamlPreviewModel
             {
-                Axaml = exportViewModel.GeneratedXaml,
+                ExportAxaml = exportAxaml.Axaml,
+                Axaml = runtimePreviewAxaml.Axaml,
+                RootElement = runtimePreviewAxaml.RootElement,
+                RemovedXClass = runtimePreviewAxaml.RemovedXClass,
                 GeneratedCSharp = exportViewModel.GeneratedCSharp,
                 Document = CloneDocumentFileModel(exportViewModel.ActiveFormDocument.Document),
                 ProjectForms = exportViewModel.CurrentProject.Forms.Select(CloneFormDocumentForPreview).ToList(),
                 ActiveFormId = form.Id,
                 FallbackToLegacyPreviewOnError = FallbackToLegacyPreviewOnAxamlError,
-                ShowGeneratedAxamlOnError = ShowGeneratedAxamlOnPreviewError,
-                CleanTemporaryFiles = CleanAxamlPreviewTemporaryFiles
+                ShowGeneratedAxamlOnError = ShowGeneratedAxamlOnPreviewError
             };
         }
         finally

@@ -95,8 +95,6 @@ public sealed class PreviewSettingsModel
 
     public bool ShowGeneratedAxamlOnPreviewError { get; set; } = true;
 
-    public bool CleanAxamlPreviewTemporaryFiles { get; set; } = true;
-
     public bool PreviewTopmost { get; set; }
 
     public int PreviewDefaultZoomPercent { get; set; } = 100;

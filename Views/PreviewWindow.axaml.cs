@@ -6,6 +6,7 @@ using Avalonia.Data;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
+using Avalonia.LogicalTree;
 using Avalonia.Markup.Xaml;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
@@ -29,7 +30,6 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
-using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
@@ -243,35 +243,57 @@ public partial class PreviewWindow : Window
     private async Task LoadExportedAxamlPreviewAsync(ExportedAxamlPreviewModel preview)
     {
         var stopwatch = Stopwatch.StartNew();
-        Debug.WriteLine($"AXAML_PREVIEW_LOAD_START mode=temporary-file; inMemory=false; axamlLength={preview.Axaml.Length}");
+        var xClass = ReadXClass(preview.Axaml);
+        var hasXClass = !string.IsNullOrWhiteSpace(xClass);
+        Debug.WriteLine(
+            "AXAML_PREVIEW_LOAD_START " +
+            $"mode=runtime-string; loader={RuntimeAxamlPreviewLoader.LoaderName}; inMemory=true; " +
+            $"axamlLength={preview.Axaml.Length}; hasXClass={hasXClass}; rootElement={preview.RootElement}; " +
+            $"baseUri={RuntimeAxamlPreviewLoader.SyntheticBaseUri}");
+        Debug.WriteLine(
+            "AXAML_PREVIEW_RUNTIME_LOAD_START " +
+            $"mode=RuntimePreview; loaderType={RuntimeAxamlPreviewLoader.LoaderName}; " +
+            $"axamlLength={preview.Axaml.Length}; hasXClass={hasXClass}; rootElement={preview.RootElement}");
+        Debug.WriteLine(
+            "AXAML_PREVIEW_THEME_APPLIED_BY_HOST " +
+            $"host={nameof(PreviewWindow)}; theme={RequestedThemeVariant}; previewRoot={preview.RootElement}");
 
         try
         {
-            var normalizedAxaml = NormalizeExportedAxamlForPreviewLoad(preview.Axaml);
-            var tempFile = WriteTemporaryPreviewAxaml(normalizedAxaml);
-            object loadedRoot;
-            try
-            {
-                loadedRoot = AvaloniaXamlLoader.Load(new Uri(tempFile), new Uri(tempFile));
-            }
-            finally
-            {
-                if (preview.CleanTemporaryFiles)
-                    TryDeleteTemporaryPreviewFile(tempFile);
-            }
+            if (hasXClass)
+                throw new InvalidOperationException($"Runtime Preview AXAML references unsupported x:Class '{xClass}'.");
+
+            var loadedRoot = RuntimeAxamlPreviewLoader.Load(preview.Axaml);
 
             var content = ExtractPreviewContent(loadedRoot);
             PreviewSurfaceBorder.Child = content;
-            ApplyExportedAxamlPreviewData(content, normalizedAxaml);
+            ApplyExportedAxamlPreviewData(content, preview.ExportAxaml);
             stopwatch.Stop();
             Debug.WriteLine($"AXAML_PREVIEW_LOAD_SUCCESS rootType={loadedRoot.GetType().FullName}; elapsedMs={stopwatch.ElapsedMilliseconds}");
+            Debug.WriteLine($"AXAML_PREVIEW_RUNTIME_LOAD_SUCCESS rootType={loadedRoot.GetType().FullName}; elapsedMs={stopwatch.ElapsedMilliseconds}");
             PreviewRuntimeStatusText.Text = "AXAML Preview ready";
             ToolTip.SetTip(PreviewRuntimeStatusText, "Preview загружен из AXAML, который используется Export Pipeline.");
         }
         catch (Exception ex)
         {
             stopwatch.Stop();
-            Debug.WriteLine($"AXAML_PREVIEW_LOAD_FAILED exception={ex.GetType().FullName}; message={ex.Message}; elapsedMs={stopwatch.ElapsedMilliseconds}");
+            var (line, position) = GetXamlErrorLocation(ex);
+            Debug.WriteLine(
+                "AXAML_PREVIEW_LOAD_FAILED " +
+                $"exception={ex.GetType().FullName}; message={ex.Message}; line={line}; position={position}; " +
+                $"loaderType={RuntimeAxamlPreviewLoader.LoaderName}; baseUri={RuntimeAxamlPreviewLoader.SyntheticBaseUri}; " +
+                $"elapsedMs={stopwatch.ElapsedMilliseconds}");
+            Debug.WriteLine(
+                "AXAML_PREVIEW_RUNTIME_LOAD_FAILED " +
+                $"exceptionType={ex.GetType().FullName}; message={ex.Message}; line={line}; position={position}; " +
+                $"loaderType={RuntimeAxamlPreviewLoader.LoaderName}; baseUri={RuntimeAxamlPreviewLoader.SyntheticBaseUri}");
+            var invalidRootProperty = ReadInvalidRuntimePreviewRootProperty(ex);
+            if (!string.IsNullOrWhiteSpace(invalidRootProperty))
+            {
+                Debug.WriteLine(
+                    "AXAML_PREVIEW_INVALID_ROOT_PROPERTY_DETECTED " +
+                    $"rootType={preview.RootElement}; property={invalidRootProperty}");
+            }
             if (preview.FallbackToLegacyPreviewOnError)
             {
                 Debug.WriteLine($"AXAML_PREVIEW_FALLBACK_TO_LEGACY reason={ex.GetType().Name}:{ex.Message}");
@@ -288,36 +310,40 @@ public partial class PreviewWindow : Window
         await Task.CompletedTask;
     }
 
-    private static string NormalizeExportedAxamlForPreviewLoad(string axaml)
+    private static string ReadXClass(string axaml)
     {
-        if (string.IsNullOrWhiteSpace(axaml))
-            throw new InvalidOperationException("Generated AXAML is empty.");
-
-        var normalized = Regex.Replace(axaml, "\\s+x:Class=\"[^\"]*\"", "", RegexOptions.CultureInvariant);
-        normalized = Regex.Replace(normalized, "\\s+(Click|SelectionChanged)=\"[^\"]*\"", "", RegexOptions.CultureInvariant);
-        return normalized;
+        var match = Regex.Match(axaml, "\\s+x:Class=\"(?<class>[^\"]*)\"", RegexOptions.CultureInvariant);
+        return match.Success ? match.Groups["class"].Value : "";
     }
 
-    private static string WriteTemporaryPreviewAxaml(string axaml)
+    private static (string Line, string Position) GetXamlErrorLocation(Exception exception)
     {
-        var folder = Path.Combine(Path.GetTempPath(), "AvaloniaDesigner", "axaml-preview");
-        Directory.CreateDirectory(folder);
-        var path = Path.Combine(folder, $"preview-{Guid.NewGuid():N}.axaml");
-        File.WriteAllText(path, axaml, Encoding.UTF8);
-        return path;
+        for (var current = exception; current is not null; current = current.InnerException)
+        {
+            var type = current.GetType();
+            var line = type.GetProperty("LineNumber")?.GetValue(current)?.ToString();
+            var position = type.GetProperty("LinePosition")?.GetValue(current)?.ToString()
+                           ?? type.GetProperty("ColumnNumber")?.GetValue(current)?.ToString();
+            if (!string.IsNullOrWhiteSpace(line) || !string.IsNullOrWhiteSpace(position))
+                return (line ?? "-", position ?? "-");
+        }
+
+        var match = Regex.Match(
+            exception.ToString(),
+            "(?:line|Line)\\s*(?<line>\\d+)[,;:]?\\s*(?:position|Position|column|Column)\\s*(?<position>\\d+)",
+            RegexOptions.CultureInvariant);
+        return match.Success
+            ? (match.Groups["line"].Value, match.Groups["position"].Value)
+            : ("-", "-");
     }
 
-    private static void TryDeleteTemporaryPreviewFile(string path)
+    private static string ReadInvalidRuntimePreviewRootProperty(Exception exception)
     {
-        try
-        {
-            if (File.Exists(path))
-                File.Delete(path);
-        }
-        catch (Exception ex)
-        {
-            Debug.WriteLine($"AXAML_PREVIEW_TEMP_FILE_CLEANUP_FAILED path={path}; reason={ex.Message}");
-        }
+        var match = Regex.Match(
+            exception.ToString(),
+            "Unable to resolve suitable regular or attached property\\s+(?<property>[^\\s]+)\\s+on type[^\\r\\n]*UserControl",
+            RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
+        return match.Success ? match.Groups["property"].Value : "";
     }
 
     private Control ExtractPreviewContent(object loadedRoot)
@@ -357,13 +383,20 @@ public partial class PreviewWindow : Window
         var dataGridControls = _document.Controls
             .Where(control => string.Equals(control.Type, DesignerControlTypes.DataGrid, StringComparison.Ordinal))
             .ToList();
+        var loadedDataGrids = EnumerateRuntimePreviewDataGrids(root).ToList();
         var usedControlIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var binding in bindings)
+        for (var bindingIndex = 0; bindingIndex < bindings.Count; bindingIndex++)
         {
-            var grid = root.FindControl<DataGrid>(binding.Name);
+            var binding = bindings[bindingIndex];
+            var grid = loadedDataGrids.ElementAtOrDefault(bindingIndex);
             if (grid is null)
+            {
+                Debug.WriteLine(
+                    "AXAML_PREVIEW_DATAGRID_RUNTIME_MAPPING_FAILED " +
+                    $"grid={binding.Name}; bindingIndex={bindingIndex}; loadedDataGrids={loadedDataGrids.Count}");
                 continue;
+            }
 
             var control = dataGridControls.FirstOrDefault(item =>
                     !usedControlIds.Contains(item.Id)
@@ -383,6 +416,15 @@ public partial class PreviewWindow : Window
                 "AXAML_PREVIEW_DATAGRID_ITEMSSOURCE_APPLIED " +
                 $"grid={binding.Name}; itemsSource={binding.ItemsSourcePath}; rows={rows.Count}; columns={binding.Columns.Count}");
         }
+    }
+
+    private static IEnumerable<DataGrid> EnumerateRuntimePreviewDataGrids(Control root)
+    {
+        if (root is DataGrid rootDataGrid)
+            yield return rootDataGrid;
+
+        foreach (var dataGrid in root.GetLogicalDescendants().OfType<DataGrid>())
+            yield return dataGrid;
     }
 
     private IReadOnlyList<Dictionary<string, string>> ResolveExportedAxamlPreviewRows(BindingSourceFileModel source, DesignerControlFileModel control)

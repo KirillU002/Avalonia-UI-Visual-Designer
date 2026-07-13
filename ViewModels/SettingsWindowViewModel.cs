@@ -102,9 +102,6 @@ public sealed partial class SettingsWindowViewModel : ViewModelBase
     private bool showGeneratedAxamlOnPreviewError = true;
 
     [ObservableProperty]
-    private bool cleanAxamlPreviewTemporaryFiles = true;
-
-    [ObservableProperty]
     private bool previewTopmost;
 
     [ObservableProperty]
@@ -501,7 +498,6 @@ public sealed partial class SettingsWindowViewModel : ViewModelBase
         _source.UseExportedAxamlPreview = UseExportedAxamlPreview;
         _source.FallbackToLegacyPreviewOnAxamlError = FallbackToLegacyPreviewOnAxamlError;
         _source.ShowGeneratedAxamlOnPreviewError = ShowGeneratedAxamlOnPreviewError;
-        _source.CleanAxamlPreviewTemporaryFiles = CleanAxamlPreviewTemporaryFiles;
         _source.PreviewTopmost = PreviewTopmost;
         _source.PreviewDefaultZoomPercent = Math.Clamp(PreviewDefaultZoomPercent, 25, 300);
 
@@ -562,7 +558,6 @@ public sealed partial class SettingsWindowViewModel : ViewModelBase
         UseExportedAxamlPreview = _source.UseExportedAxamlPreview;
         FallbackToLegacyPreviewOnAxamlError = _source.FallbackToLegacyPreviewOnAxamlError;
         ShowGeneratedAxamlOnPreviewError = _source.ShowGeneratedAxamlOnPreviewError;
-        CleanAxamlPreviewTemporaryFiles = _source.CleanAxamlPreviewTemporaryFiles;
         PreviewTopmost = _source.PreviewTopmost;
         PreviewDefaultZoomPercent = _source.PreviewDefaultZoomPercent;
 
@@ -651,7 +646,6 @@ public sealed partial class SettingsWindowViewModel : ViewModelBase
         UseExportedAxamlPreview = settings.UseExportedAxamlPreview;
         FallbackToLegacyPreviewOnAxamlError = settings.FallbackToLegacyPreviewOnAxamlError;
         ShowGeneratedAxamlOnPreviewError = settings.ShowGeneratedAxamlOnPreviewError;
-        CleanAxamlPreviewTemporaryFiles = settings.CleanAxamlPreviewTemporaryFiles;
         PreviewTopmost = settings.PreviewTopmost;
         PreviewDefaultZoomPercent = settings.PreviewDefaultZoomPercent;
         EnableExperimentalLayoutTab = settings.EnableExperimentalLayoutTab;
@@ -788,7 +782,6 @@ public sealed partial class SettingsWindowViewModel : ViewModelBase
         Count(_source.UseExportedAxamlPreview != UseExportedAxamlPreview);
         Count(_source.FallbackToLegacyPreviewOnAxamlError != FallbackToLegacyPreviewOnAxamlError);
         Count(_source.ShowGeneratedAxamlOnPreviewError != ShowGeneratedAxamlOnPreviewError);
-        Count(_source.CleanAxamlPreviewTemporaryFiles != CleanAxamlPreviewTemporaryFiles);
         Count(_source.PreviewTopmost != PreviewTopmost);
         Count(_source.PreviewDefaultZoomPercent != PreviewDefaultZoomPercent);
         Count(_source.ValidateBuildAfterExport != ValidateBuildAfterExport);

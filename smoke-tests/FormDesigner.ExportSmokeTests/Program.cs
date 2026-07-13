@@ -1,6 +1,8 @@
 ﻿using FormDesigner.DesignerSystem.Binding;
 using FormDesigner.DesignerSystem.BuiltIn;
+using Avalonia;
 using Avalonia.Controls;
+using Avalonia.LogicalTree;
 using FormDesigner.DesignerSystem.Infrastructure;
 using FormDesigner.Localization;
 using FormDesigner.Models;
@@ -22,7 +24,9 @@ internal static class Program
     private const string AvaloniaDesktopVersion = "11.1.1";
     private const int SmokeRunsToKeep = 5;
     private static readonly Dictionary<string, string> LinqToSqlSmokeDllCache = new(StringComparer.OrdinalIgnoreCase);
+    private static bool _avaloniaRuntimeInitialized;
 
+    [STAThread]
     public static int Main(string[] args)
     {
         var artifactsRoot = args.Length > 0
@@ -105,6 +109,13 @@ internal static class Program
             new("AxamlPreviewUsesExportGenerator", ConfigurePreviewExportStateMutationForm, AssertAxamlPreviewUsesExportGenerator),
             new("AxamlPreviewDoesNotMutateEditorState", ConfigurePreviewExportStateMutationForm, AssertAxamlPreviewDoesNotMutateEditorState),
             new("AxamlPreviewLoaderUsesAvaloniaXamlLoader", ConfigureSimpleFormExport, AssertAxamlPreviewLoaderUsesAvaloniaXamlLoader),
+            new("RuntimePreviewDoesNotUsePrecompiledResourceLoaderForTempFile", ConfigureSimpleFormExport, AssertRuntimePreviewDoesNotUsePrecompiledResourceLoaderForTempFile),
+            new("RuntimePreviewAxamlHasNoExportXClass", ConfigurePreviewExportStateMutationForm, AssertRuntimePreviewAxamlHasNoExportXClass),
+            new("RuntimePreviewUserControlDoesNotContainWindowOnlyProperties", ConfigurePreviewExportStateMutationForm, AssertRuntimePreviewUserControlDoesNotContainWindowOnlyProperties),
+            new("ExportWindowStillContainsWindowProperties", ConfigurePreviewExportStateMutationForm, AssertExportWindowStillContainsWindowProperties),
+            new("RuntimePreviewThemeAppliedByHost", ConfigureSimpleFormExport, AssertRuntimePreviewThemeAppliedByHost),
+            new("RuntimePreviewLoadsAxamlFromStringOrStream", ConfigureSimpleFormExport, AssertRuntimePreviewLoadsAxamlFromStringOrStream),
+            new("RuntimePreviewFailureShowsUsefulDiagnostics", ConfigureSimpleFormExport, AssertRuntimePreviewFailureShowsUsefulDiagnostics),
             new("ExportGenerationDoesNotMutateEditorState", ConfigurePreviewExportStateMutationForm, AssertExportGenerationDoesNotMutateEditorState),
             new("ResizeFormDoesNotMoveCanvasControls", ConfigureResizeFormDoesNotMoveCanvasControls, AssertResizeFormDoesNotMoveCanvasControls),
             new("ResizePreviewWindowDoesNotChangeControlPositions", ConfigureResizePreviewWindowDoesNotChangeControlPositions, AssertResizePreviewWindowDoesNotChangeControlPositions),
@@ -267,7 +278,9 @@ internal static class Program
             new("LayoutContainerExport", ConfigureLayoutContainerExport, AssertLayoutContainerExport),
             new("LayoutConversionExport", ConfigureLayoutConversionExport, AssertLayoutConversionExport),
             new("ResponsiveLayoutExport_StackPanel", ConfigureResponsiveStackPanelExport, AssertResponsiveStackPanelExport),
-            new("ResponsiveLayoutExport_CanvasFallback", ConfigureResponsiveCanvasFallbackExport, AssertResponsiveCanvasFallbackExport)
+            new("ResponsiveLayoutExport_CanvasFallback", ConfigureResponsiveCanvasFallbackExport, AssertResponsiveCanvasFallbackExport),
+            new("RuntimePreviewCanLoadSimpleWindow", ConfigureSimpleFormExport, AssertRuntimePreviewCanLoadSimpleWindow),
+            new("RuntimePreviewCanLoadDataGrid", ConfigureRealDataGridExport, AssertRuntimePreviewCanLoadDataGrid, RequiresRealDataGrid: true)
         };
 
         var scenarioFilter = Environment.GetEnvironmentVariable("SMOKE_SCENARIO_FILTER");
@@ -1529,7 +1542,6 @@ internal static class Program
         settings.UseExportedAxamlPreview = true;
         settings.FallbackToLegacyPreviewOnAxamlError = false;
         settings.ShowGeneratedAxamlOnPreviewError = true;
-        settings.CleanAxamlPreviewTemporaryFiles = true;
         settings.ApplyCommand.Execute(null);
 
         if (!context.ViewModel.UseExportedAxamlPreview)
@@ -1546,15 +1558,22 @@ internal static class Program
     private static void AssertAxamlPreviewUsesExportGenerator(SmokeContext context)
     {
         var payload = context.ViewModel.GenerateExportedAxamlPreviewSnapshot();
-        RequireContains(payload.Axaml, "SelectedButton", "AXAML Preview payload should include controls from the export generator.");
-        RequireContains(payload.Axaml, "x:Class=", "AXAML Preview payload should start from exported AXAML, before runtime loader normalization.");
-        RequireEqual(context.Xaml, payload.Axaml, "AXAML Preview should use the same AXAML generator output as Export.");
+        RequireContains(payload.Axaml, "<Button", "AXAML Preview payload should include controls from the export generator.");
+        RequireContains(payload.ExportAxaml, "x:Class=", "Export AXAML should retain its compiled x:Class.");
+        RequireNotContains(payload.Axaml, "AvaloniaApplication1.MainWindow", "Runtime Preview AXAML should not reference the exported code-behind class.");
+        RequireContains(payload.Axaml, "<UserControl", "Runtime Preview AXAML should use a safe UserControl root.");
+        RequireNotContains(payload.Axaml, "x:Class=", "Runtime Preview AXAML should not require a compiled XAML class directive.");
+        RequireEqual(context.Xaml, payload.ExportAxaml, "AXAML Preview should use the same AXAML generator output as Export.");
 
         var viewModelSource = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "ViewModels", "MainWindowViewModel.cs"), Encoding.UTF8);
         RequireContains(viewModelSource, "GenerateExportedAxamlPreviewSnapshot", "MainWindowViewModel should expose an AXAML Preview snapshot method.");
         RequireContains(viewModelSource, "exportViewModel.GenerateXaml()", "AXAML Preview snapshot should call the existing Export AXAML generator on an isolated VM.");
+        RequireContains(viewModelSource, "AxamlGenerationMode.RuntimePreview", "AXAML Preview should explicitly request the RuntimePreview AXAML mode.");
         RequireContains(viewModelSource, "AXAML_PREVIEW_GENERATION_START", "AXAML Preview generation diagnostics should be emitted.");
         RequireContains(viewModelSource, "AXAML_PREVIEW_GENERATION_END", "AXAML Preview generation completion diagnostics should be emitted.");
+        RequireContains(viewModelSource, "AXAML_PREVIEW_ROOT_TRANSFORM_START", "AXAML Preview root transformation start should be diagnosed.");
+        RequireContains(viewModelSource, "AXAML_PREVIEW_ROOT_PROPERTY_REMOVED", "Removed Window-only root properties should be diagnosed.");
+        RequireContains(viewModelSource, "AXAML_PREVIEW_ROOT_TRANSFORM_END", "AXAML Preview root transformation completion should be diagnosed.");
     }
 
     private static void AssertAxamlPreviewDoesNotMutateEditorState(SmokeContext context)
@@ -1571,19 +1590,256 @@ internal static class Program
         RequireEditorStateUnchanged(before, after, "AXAML Preview snapshot generation should not mutate editor state.");
         RequireEqual(beforeXaml, context.ViewModel.GeneratedXaml, "AXAML Preview snapshot generation should not overwrite current GeneratedXaml.");
         RequireEqual(beforeCSharp, context.ViewModel.GeneratedCSharp, "AXAML Preview snapshot generation should not overwrite current GeneratedCSharp.");
-        RequireContains(payload.Axaml, "SelectedButton", "AXAML Preview snapshot should still produce usable AXAML.");
+        RequireContains(payload.Axaml, "<Button", "AXAML Preview snapshot should still produce usable AXAML.");
         RequireNoTraceEvent(context, "AXAML_PREVIEW_EDITOR_STATE_MUTATION_DETECTED");
     }
 
     private static void AssertAxamlPreviewLoaderUsesAvaloniaXamlLoader(SmokeContext context)
     {
         var source = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "Views", "PreviewWindow.axaml.cs"), Encoding.UTF8);
-        RequireContains(source, "AvaloniaXamlLoader.Load(new Uri(tempFile), new Uri(tempFile))", "AXAML Preview should load generated AXAML through AvaloniaXamlLoader.");
-        RequireContains(source, "NormalizeExportedAxamlForPreviewLoad", "AXAML Preview should normalize exported AXAML only for isolated runtime loading.");
+        RequireContains(source, "RuntimeAxamlPreviewLoader.Load(preview.Axaml)", "AXAML Preview should load generated AXAML through the in-memory runtime loader.");
         RequireContains(source, "AXAML_PREVIEW_LOAD_START", "AXAML Preview load diagnostics should be emitted.");
         RequireContains(source, "AXAML_PREVIEW_LOAD_SUCCESS", "AXAML Preview success diagnostics should be emitted.");
         RequireContains(source, "AXAML_PREVIEW_LOAD_FAILED", "AXAML Preview failure diagnostics should be emitted.");
         RequireContains(source, "AXAML_PREVIEW_FALLBACK_TO_LEGACY", "AXAML Preview fallback diagnostics should be emitted.");
+    }
+
+    private static void AssertRuntimePreviewDoesNotUsePrecompiledResourceLoaderForTempFile(SmokeContext context)
+    {
+        var source = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "Views", "PreviewWindow.axaml.cs"), Encoding.UTF8);
+        RequireNotContains(source, "AvaloniaXamlLoader.Load(new Uri", "Runtime Preview must not use the precompiled-resource URI loader.");
+        RequireNotContains(source, "WriteTemporaryPreviewAxaml", "Runtime Preview must not write generated AXAML to a temporary resource file.");
+        RequireNotContains(source, "Path.GetTempPath()", "Runtime Preview must not construct temporary preview AXAML paths.");
+        RequireContains(source, "mode=runtime-string", "Runtime Preview diagnostics should identify the in-memory load mode.");
+    }
+
+    private static void AssertRuntimePreviewAxamlHasNoExportXClass(SmokeContext context)
+    {
+        var payload = context.ViewModel.GenerateExportedAxamlPreviewSnapshot();
+        RequireContains(payload.ExportAxaml, "x:Class=", "Export AXAML must keep x:Class.");
+        RequireNotContains(payload.Axaml, "AvaloniaApplication1.MainWindow", "Runtime Preview AXAML must remove the exported x:Class.");
+        RequireContains(payload.Axaml, "<UserControl", "Runtime Preview AXAML should use the safe UserControl root.");
+        RequireNotContains(payload.Axaml, "x:Class=", "Runtime Preview AXAML should be independent of compiled XAML class directives.");
+        RequireContains(payload.Axaml, "<Button", "Removing compiled XAML directives must preserve the exported control tree.");
+        if (string.IsNullOrWhiteSpace(payload.RemovedXClass))
+            throw new InvalidOperationException("Runtime Preview payload should record the removed export x:Class for diagnostics.");
+    }
+
+    private static void AssertRuntimePreviewUserControlDoesNotContainWindowOnlyProperties(SmokeContext context)
+    {
+        const string exportAxaml = @"<Window xmlns=""https://github.com/avaloniaui""
+                         xmlns:x=""http://schemas.microsoft.com/winfx/2006/xaml""
+                         x:Class=""Smoke.Window""
+                         Title=""Smoke""
+                         RequestedThemeVariant=""Light""
+                         Icon=""smoke.ico""
+                         WindowState=""Normal""
+                         WindowStartupLocation=""CenterScreen""
+                         CanResize=""True""
+                         CanMinimize=""True""
+                         CanMaximize=""True""
+                         ShowInTaskbar=""True""
+                         ShowActivated=""True""
+                         Topmost=""False""
+                         SystemDecorations=""Full""
+                         SizeToContent=""Manual""
+                         Position=""0,0""
+                         ClientSize=""640,480""
+                         TransparencyLevelHint=""None""
+                         TransparencyBackgroundFallback=""#FFFFFF""
+                         OffScreenMargin=""0""
+                         ExtendClientAreaToDecorationsHint=""False""
+                         ExtendClientAreaChromeHints=""Default""
+                         ExtendClientAreaTitleBarHeightHint=""0""
+                         Width=""640""
+                         Height=""480""
+                         Background=""#FFFFFF"">
+              <Window.Resources>
+                <SolidColorBrush x:Key=""PreviewBackground"">#FFFFFF</SolidColorBrush>
+              </Window.Resources>
+              <Window.Styles>
+                <Style Selector=""TextBox"">
+                  <Setter Property=""Foreground"" Value=""#000000"" />
+                </Style>
+              </Window.Styles>
+              <Canvas />
+            </Window>";
+
+        var preview = GeneratedAxamlService.Create(exportAxaml, AxamlGenerationMode.RuntimePreview);
+        var windowOnlyProperties = new[]
+        {
+            "Title",
+            "RequestedThemeVariant",
+            "Icon",
+            "WindowState",
+            "WindowStartupLocation",
+            "CanResize",
+            "CanMinimize",
+            "CanMaximize",
+            "ShowInTaskbar",
+            "ShowActivated",
+            "Topmost",
+            "SystemDecorations",
+            "SizeToContent",
+            "Position",
+            "ClientSize",
+            "TransparencyLevelHint",
+            "TransparencyBackgroundFallback",
+            "OffScreenMargin",
+            "ExtendClientAreaToDecorationsHint",
+            "ExtendClientAreaChromeHints",
+            "ExtendClientAreaTitleBarHeightHint"
+        };
+
+        RequireContains(preview.Axaml, "<UserControl", "Runtime Preview should replace the Window root with UserControl.");
+        RequireContains(preview.Axaml, "Width=\"640\"", "Runtime Preview should preserve Control-compatible Width.");
+        RequireContains(preview.Axaml, "Height=\"480\"", "Runtime Preview should preserve Control-compatible Height.");
+        RequireContains(preview.Axaml, "Background=\"#FFFFFF\"", "Runtime Preview should preserve Control-compatible Background.");
+        RequireContains(preview.Axaml, "<UserControl.Resources>", "Runtime Preview should retarget Window.Resources to UserControl.Resources.");
+        RequireContains(preview.Axaml, "<UserControl.Styles>", "Runtime Preview should retarget Window.Styles to UserControl.Styles.");
+        RequireNotContains(preview.Axaml, "<Window.Resources>", "Runtime Preview must not retain a Window-owned Resources property element.");
+        RequireNotContains(preview.Axaml, "<Window.Styles>", "Runtime Preview must not retain a Window-owned Styles property element.");
+        RequireEqual(2, preview.NormalizedRootPropertyElementCount, "Runtime Preview should report normalized root property elements.");
+        foreach (var propertyName in windowOnlyProperties)
+        {
+            RequireNotContains(
+                preview.Axaml,
+                propertyName + "=\"",
+                $"Runtime Preview UserControl must not contain Window-only property {propertyName}.");
+            if (!preview.RemovedRootProperties.Contains(propertyName, StringComparer.Ordinal))
+                throw new InvalidOperationException($"Runtime Preview transformation should report removed root property {propertyName}.");
+        }
+    }
+
+    private static void AssertExportWindowStillContainsWindowProperties(SmokeContext context)
+    {
+        var payload = context.ViewModel.GenerateExportedAxamlPreviewSnapshot();
+        var requiredWindowProperties = new[]
+        {
+            "Title",
+            "RequestedThemeVariant",
+            "WindowState",
+            "WindowStartupLocation",
+            "CanResize",
+            "ShowInTaskbar",
+            "Topmost",
+            "SystemDecorations"
+        };
+
+        RequireContains(payload.ExportAxaml, "<Window", "Export mode should retain the Window root.");
+        foreach (var propertyName in requiredWindowProperties)
+            RequireContains(payload.ExportAxaml, propertyName + "=\"", $"Export mode should retain Window property {propertyName}.");
+    }
+
+    private static void AssertRuntimePreviewThemeAppliedByHost(SmokeContext context)
+    {
+        var source = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "Views", "PreviewWindow.axaml.cs"), Encoding.UTF8);
+        RequireContains(source, "RequestedThemeVariant = ResolveThemeVariant(_document.FormTheme)", "PreviewWindow should apply the document theme to the Window host.");
+        RequireContains(source, "AXAML_PREVIEW_THEME_APPLIED_BY_HOST", "Runtime Preview should diagnose that theme selection belongs to the Window host.");
+
+        var payload = context.ViewModel.GenerateExportedAxamlPreviewSnapshot();
+        RequireNotContains(payload.Axaml, "RequestedThemeVariant=\"", "Runtime Preview UserControl must not receive RequestedThemeVariant.");
+    }
+
+    private static void AssertRuntimePreviewLoadsAxamlFromStringOrStream(SmokeContext context)
+    {
+        var source = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "Services", "RuntimeAxamlPreviewLoader.cs"), Encoding.UTF8);
+        RequireContains(source, "new RuntimeXamlLoaderDocument(new Uri(SyntheticBaseUri), axaml)", "Runtime Preview should create an in-memory runtime XAML document with a stable base URI.");
+        RequireContains(source, "AvaloniaRuntimeXamlLoader.Load(document, configuration)", "Runtime Preview should load the in-memory runtime XAML document.");
+        RequireContains(source, "SyntheticBaseUri", "Runtime Preview should use a stable synthetic base URI.");
+        RequireNotContains(source, "File.", "The runtime loader service must not read generated AXAML from a file.");
+    }
+
+    private static void AssertRuntimePreviewCanLoadSimpleWindow(SmokeContext context)
+    {
+        EnsureAvaloniaRuntimeInitialized();
+        try
+        {
+            RuntimeAxamlPreviewLoader.Load(@"<Window xmlns=""https://github.com/avaloniaui""><Button Content=""Direct"" /></Window>");
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException("Official Window/Button runtime loader baseline failed.", ex);
+        }
+        const string exportAxaml = @"<Window xmlns=""https://github.com/avaloniaui""
+                         xmlns:x=""http://schemas.microsoft.com/winfx/2006/xaml""
+                         x:Class=""Smoke.GeneratedWindow""
+                         Title=""Runtime preview""
+                         RequestedThemeVariant=""Light""
+                         WindowState=""Normal""
+                         WindowStartupLocation=""CenterScreen""
+                         CanResize=""True""
+                         ShowInTaskbar=""True""
+                         Topmost=""False""
+                         SystemDecorations=""Full"">
+              <Window.Resources>
+                <SolidColorBrush x:Key=""RuntimePreviewBackground"">#FFFFFF</SolidColorBrush>
+              </Window.Resources>
+              <Window.Styles>
+                <Style Selector=""TextBox"">
+                  <Setter Property=""Foreground"" Value=""#000000"" />
+                </Style>
+              </Window.Styles>
+              <Canvas Width=""640"" Height=""480"">
+                <TextBox x:Name=""RuntimeTextBox"" Text=""Runtime AXAML"" />
+                <TextBlock Text=""Runtime text"" />
+                <Button Content=""Runtime button"" />
+              </Canvas>
+            </Window>";
+
+        var axaml = GeneratedAxamlService.Create(exportAxaml, AxamlGenerationMode.RuntimePreview).Axaml;
+        var loaded = RuntimeAxamlPreviewLoader.Load(axaml);
+        if (loaded is not UserControl { Content: Canvas canvas })
+            throw new InvalidOperationException($"Runtime AXAML loader returned {loaded.GetType().FullName} instead of the safe Runtime Preview root.");
+        if (canvas.Children.OfType<TextBox>().SingleOrDefault()?.Text != "Runtime AXAML")
+            throw new InvalidOperationException("Runtime AXAML loader did not create the expected TextBox visual tree.");
+        if (canvas.Children.OfType<TextBlock>().SingleOrDefault()?.Text != "Runtime text")
+            throw new InvalidOperationException("Runtime AXAML loader did not create the expected TextBlock visual tree.");
+        if (!Equals(canvas.Children.OfType<Button>().SingleOrDefault()?.Content, "Runtime button"))
+            throw new InvalidOperationException("Runtime AXAML loader did not create the expected Button visual tree.");
+    }
+
+    private static void AssertRuntimePreviewCanLoadDataGrid(SmokeContext context)
+    {
+        EnsureAvaloniaRuntimeInitialized();
+        var payload = context.ViewModel.GenerateExportedAxamlPreviewSnapshot();
+        var loaded = RuntimeAxamlPreviewLoader.Load(payload.Axaml);
+        if (loaded is not UserControl root)
+            throw new InvalidOperationException($"Runtime AXAML loader returned {loaded.GetType().FullName} instead of the transformed UserControl root.");
+
+        var grid = root.GetLogicalDescendants().OfType<DataGrid>().SingleOrDefault()
+                   ?? throw new InvalidOperationException("Runtime AXAML Preview did not create the exported DataGrid visual.");
+
+        grid.ItemsSource = new[] { new RuntimePreviewSmokeRow { Name = "Real row" } };
+        if (grid.Columns.Count == 0)
+            throw new InvalidOperationException("Runtime AXAML DataGrid did not retain its exported columns.");
+        if (grid.ItemsSource?.Cast<object>().Count() != 1)
+            throw new InvalidOperationException("Runtime AXAML DataGrid did not accept its Preview ItemsSource.");
+    }
+
+    private static void EnsureAvaloniaRuntimeInitialized()
+    {
+        if (_avaloniaRuntimeInitialized || Application.Current is not null)
+        {
+            _avaloniaRuntimeInitialized = true;
+            return;
+        }
+
+        AppBuilder.Configure<FormDesigner.App>()
+            .UsePlatformDetect()
+            .WithInterFont()
+            .SetupWithoutStarting();
+        _avaloniaRuntimeInitialized = true;
+    }
+
+    private static void AssertRuntimePreviewFailureShowsUsefulDiagnostics(SmokeContext context)
+    {
+        var source = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "Views", "PreviewWindow.axaml.cs"), Encoding.UTF8);
+        RequireContains(source, "AXAML_PREVIEW_RUNTIME_LOAD_FAILED", "Runtime AXAML failures should emit a dedicated diagnostic event.");
+        RequireContains(source, "GetXamlErrorLocation", "Runtime AXAML failures should extract line and position information.");
+        RequireContains(source, "loaderType=", "Runtime AXAML failure diagnostics should include the loader type.");
+        RequireContains(source, "baseUri=", "Runtime AXAML failure diagnostics should include the base URI.");
+        RequireContains(source, "AXAML_PREVIEW_FALLBACK_TO_LEGACY", "Runtime AXAML failure should preserve the legacy Preview fallback.");
     }
 
     private static void AssertExportGenerationDoesNotMutateEditorState(SmokeContext context)
@@ -1828,7 +2084,8 @@ internal static class Program
     private static void AssertAxamlPreviewDataGridUsesExportBinding(SmokeContext context)
     {
         var payload = context.ViewModel.GenerateExportedAxamlPreviewSnapshot();
-        RequireEqual(context.Xaml, payload.Axaml, "AXAML Preview DataGrid should start from the same generated AXAML as Export.");
+        RequireEqual(context.Xaml, payload.ExportAxaml, "AXAML Preview DataGrid should start from the same generated AXAML as Export.");
+        RequireContains(payload.Axaml, "<UserControl", "Runtime AXAML Preview should use its safe in-memory root.");
         RequireContains(payload.Axaml, "ItemsSource=\"{Binding ProductsView}\"", "AXAML Preview payload should preserve exported DataGrid ItemsSource binding.");
         RequireContains(payload.Axaml, "Binding=\"{Binding Title}\"", "AXAML Preview payload should preserve exported column binding paths.");
 
@@ -6507,6 +6764,11 @@ Diagnostics:
         string DiagnosticsText);
 
     private sealed record ProcessResult(int ExitCode, string Output);
+
+    private sealed class RuntimePreviewSmokeRow
+    {
+        public string Name { get; init; } = "";
+    }
 
     private sealed class TemporaryExportProject : IDisposable
     {
