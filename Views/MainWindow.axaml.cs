@@ -5090,15 +5090,9 @@ public partial class MainWindow : Window
             rowForegroundColor,
             isDarkChrome ? Color.Parse("#CBD5E1") : Color.Parse("#94A3B8"),
             isDarkChrome ? 0.34 : 0.58));
-        var groupChipBackground = new SolidColorBrush(isDarkChrome
-            ? Color.FromArgb(34, 96, 165, 250)
-            : Color.Parse("#E0F2FE"));
-        var groupChipBorder = new SolidColorBrush(isDarkChrome
-            ? BlendColor(borderColor, glowColor, 0.38)
-            : BlendColor(Color.Parse("#BAE6FD"), glowColor, 0.24));
-        var groupChipForeground = new SolidColorBrush(isDarkChrome
-            ? Color.Parse("#DBEAFE")
-            : Color.Parse("#0C4A6E"));
+        var groupChipBackground = new SolidColorBrush(Color.Parse(DataGridGroupPanelVisualCatalog.ChipBackground));
+        var groupChipBorder = new SolidColorBrush(Color.Parse(DataGridGroupPanelVisualCatalog.ChipBorder));
+        var groupChipForeground = new SolidColorBrush(Color.Parse(DataGridGroupPanelVisualCatalog.ChipForeground));
         var showInteractivePreview = false;
         var showColumnResizeHandles = !showInteractivePreview && !model.IsLocked && VM.IsControlSelected(model);
         var filterValues = GetDataGridFilterValues(model.Id);
@@ -5116,25 +5110,19 @@ public partial class MainWindow : Window
         {
             var chips = new WrapPanel
             {
-                Margin = new Thickness(0, 0, 0, 10)
+                VerticalAlignment = VerticalAlignment.Center
             };
 
             if (groupedFields.Count == 0)
             {
-                chips.Children.Add(new Border
+                chips.Children.Add(new TextBlock
                 {
-                    Background = groupChipBackground,
-                    BorderBrush = groupChipBorder,
-                    BorderThickness = new Thickness(1),
-                    CornerRadius = new CornerRadius(14),
-                    Padding = new Thickness(12, 7),
-                    Child = new TextBlock
-                    {
-                        Text = "Перетащите колонку сюда для группировки",
-                        Foreground = groupChipForeground,
-                        FontSize = Math.Max(10, model.FontSize - 1),
-                        FontWeight = FontWeight.SemiBold
-                    }
+                    Text = DataGridGroupPanelVisualCatalog.PlaceholderText,
+                    Foreground = headerForeground,
+                    Opacity = DataGridGroupPanelVisualCatalog.PlaceholderOpacity,
+                    FontFamily = new FontFamily(model.FontFamily),
+                    FontSize = Math.Max(10, model.FontSize - 1),
+                    VerticalAlignment = VerticalAlignment.Center
                 });
             }
 
@@ -5146,8 +5134,14 @@ public partial class MainWindow : Window
                     BorderBrush = groupChipBorder,
                     BorderThickness = new Thickness(1),
                     CornerRadius = new CornerRadius(999),
-                    Padding = new Thickness(10, 5),
-                    Margin = new Thickness(0, 0, 8, 8),
+                    Padding = new Thickness(
+                        DataGridGroupPanelVisualCatalog.ChipPaddingHorizontal,
+                        DataGridGroupPanelVisualCatalog.ChipPaddingVertical),
+                    Margin = new Thickness(
+                        0,
+                        0,
+                        DataGridGroupPanelVisualCatalog.ChipMarginRight,
+                        DataGridGroupPanelVisualCatalog.ChipMarginBottom),
                     Child = new TextBlock
                     {
                         Text = $"Группа {field.GroupOrder + 1}: {field.Header}",
@@ -5158,8 +5152,19 @@ public partial class MainWindow : Window
                 });
             }
 
-            Grid.SetRow(chips, 0);
-            layout.Children.Add(chips);
+            var groupPanel = new Border
+            {
+                Background = headerBrush,
+                BorderBrush = separatorBrush,
+                BorderThickness = new Thickness(0, 0, 0, 1),
+                Padding = new Thickness(
+                    DataGridGroupPanelVisualCatalog.PaddingHorizontal,
+                    DataGridGroupPanelVisualCatalog.PaddingVertical),
+                MinHeight = DataGridGroupPanelVisualCatalog.MinHeight,
+                Child = chips
+            };
+            Grid.SetRow(groupPanel, 0);
+            layout.Children.Add(groupPanel);
         }
 
         var tableChrome = new Border
@@ -5172,7 +5177,7 @@ public partial class MainWindow : Window
             Child = new Grid
             {
                 Background = chromeBrush,
-                RowDefinitions = showSummaryFooter ? new RowDefinitions("Auto,Auto,*,Auto") : new RowDefinitions("Auto,Auto,*"),
+                RowDefinitions = showSummaryFooter ? new RowDefinitions("Auto,*,Auto") : new RowDefinitions("Auto,*"),
                 ClipToBounds = true
             }
         };
@@ -5182,42 +5187,6 @@ public partial class MainWindow : Window
 
         var tableContainer = (Grid)tableChrome.Child!;
         tableContainer.IsHitTestVisible = showInteractivePreview || showColumnResizeHandles;
-
-        var titleGrid = new Grid
-        {
-            ColumnDefinitions = new ColumnDefinitions("6,*"),
-            IsHitTestVisible = showInteractivePreview
-        };
-        titleGrid.Children.Add(new Border
-        {
-            Background = accentBrush,
-            Width = isDarkChrome ? 7 : 6,
-            Height = 26,
-            CornerRadius = new CornerRadius(999),
-            VerticalAlignment = VerticalAlignment.Center
-        });
-
-        var titleText = new TextBlock
-        {
-            Text = GetModernDataGridTitle(model),
-            FontFamily = new FontFamily(model.FontFamily),
-            FontSize = Math.Max(14, model.FontSize + 1),
-            FontWeight = FontWeight.Bold,
-            Foreground = titleForeground,
-            VerticalAlignment = VerticalAlignment.Center,
-            TextTrimming = TextTrimming.CharacterEllipsis
-        };
-        Grid.SetColumn(titleText, 1);
-        titleGrid.Children.Add(titleText);
-
-        var titleShell = new Border
-        {
-            Background = Brushes.Transparent,
-            Padding = new Thickness(16, 14, 16, 10),
-            Child = titleGrid,
-            IsHitTestVisible = showInteractivePreview
-        };
-        tableContainer.Children.Add(titleShell);
 
         var headerTable = new Grid
         {
@@ -5255,46 +5224,32 @@ public partial class MainWindow : Window
         var availableRowsHeight = Math.Max(rowHeight, model.Height - headerHeight - filterHeight - footerHeight - groupedAreaHeight - 12);
         var visibleRowCount = Math.Min(MaxPreviewDataGridRows, Math.Max(4, (int)Math.Ceiling(availableRowsHeight / rowHeight)));
         var previewRowCount = Math.Min(MaxPreviewDataGridRows, Math.Max(18, visibleRowCount + 6));
-        var previewBindingSource = showInteractivePreview
-            ? GetActiveBindingSource(model.BindingSourceId)
-            : null;
-        var sqlPreviewRows = showInteractivePreview
-            ? GetCachedInteractivePreviewRows(model.BindingSourceId)
-            : Array.Empty<Dictionary<string, string>>();
+        var previewBindingSource = GetActiveBindingSource(model.BindingSourceId);
+        var sqlPreviewRows = GetCachedInteractivePreviewRows(model.BindingSourceId);
         var usesSqlPreviewRows = sqlPreviewRows.Count > 0;
-        var suppressSyntheticRows = showInteractivePreview
-            && !usesSqlPreviewRows
+        var suppressSyntheticRows = !usesSqlPreviewRows
             && ShouldSuppressSyntheticRowsForPreview(previewBindingSource);
-        var previewRows = showInteractivePreview
-            ? ApplyModernPreviewSort(
-                ApplyModernPreviewFilter(
-                    usesSqlPreviewRows
+        var previewRows = ApplyModernPreviewSort(
+            ApplyModernPreviewFilter(
+                usesSqlPreviewRows
                     ? ClonePreviewRows(sqlPreviewRows)
                     : suppressSyntheticRows
-                    ? new List<Dictionary<string, string>>()
-                    : BuildModernPreviewRows(visibleFields, previewRowCount),
-                    visibleFields,
-                    filterValues,
-                    model.FilterMode),
+                        ? new List<Dictionary<string, string>>()
+                        : BuildModernPreviewRows(visibleFields, previewRowCount),
                 visibleFields,
-                model.Id)
-            : new List<Dictionary<string, string>>();
-        if (showInteractivePreview)
-            TraceDataGridPreviewDataMode(model, previewBindingSource, previewRows.Count, usesSqlPreviewRows, suppressSyntheticRows);
-        var renderedRowCount = showInteractivePreview
-            ? suppressSyntheticRows
-                ? 0
-                : Math.Min(MaxPreviewDataGridRows, Math.Max(previewRows.Count, usesSqlPreviewRows ? 1 : previewRowCount))
-            : previewRowCount;
+                filterValues,
+                model.FilterMode),
+            visibleFields,
+            model.Id);
+        TraceDataGridPreviewDataMode(model, previewBindingSource, previewRows.Count, usesSqlPreviewRows, suppressSyntheticRows);
+        var renderedRowCount = Math.Min(MaxPreviewDataGridRows, previewRows.Count);
         var summaryRows = previewRows.Count > 0
             ? previewRows
-            : suppressSyntheticRows
-            ? new List<Dictionary<string, string>>()
-            : BuildModernPreviewRows(visibleFields, previewRowCount);
+            : new List<Dictionary<string, string>>();
 
-        headerTable.RowDefinitions.Add(new RowDefinition(headerHeight, GridUnitType.Pixel));
         if (model.ShowFilterRow)
             headerTable.RowDefinitions.Add(new RowDefinition(filterHeight, GridUnitType.Pixel));
+        headerTable.RowDefinitions.Add(new RowDefinition(headerHeight, GridUnitType.Pixel));
         for (var rowIndex = 0; rowIndex < renderedRowCount; rowIndex++)
             bodyTable.RowDefinitions.Add(new RowDefinition(rowHeight, GridUnitType.Pixel));
         if (showSummaryFooter)
@@ -5340,7 +5295,7 @@ public partial class MainWindow : Window
                 showInteractivePreview,
                 () => ToggleModernDataGridSort(model, field));
 
-            Grid.SetRow(headerCell, 0);
+            Grid.SetRow(headerCell, model.ShowFilterRow ? 1 : 0);
             Grid.SetColumn(headerCell, columnIndex);
             headerTable.Children.Add(headerCell);
 
@@ -5356,7 +5311,7 @@ public partial class MainWindow : Window
                     new Thickness(0, 0, model.DataGridShowColumnLines ? 1 : 0, model.DataGridShowRowLines ? 1 : 0),
                     showInteractivePreview);
 
-                Grid.SetRow(filterCell, 1);
+                Grid.SetRow(filterCell, 0);
                 Grid.SetColumn(filterCell, columnIndex);
                 headerTable.Children.Add(filterCell);
             }
@@ -5367,17 +5322,15 @@ public partial class MainWindow : Window
                     ? chromeBrush
                     : alternateRowBrush;
 
-                var rowKey = showInteractivePreview && rowIndex < previewRows.Count
+                var rowKey = rowIndex < previewRows.Count
                     ? CreateModernDataGridRowKey(previewRows[rowIndex], rowIndex)
                     : rowIndex.ToString(CultureInfo.InvariantCulture);
-                var rowValues = showInteractivePreview && rowIndex < previewRows.Count
+                var rowValues = rowIndex < previewRows.Count
                     ? previewRows[rowIndex]
                     : null;
                 var isSelectedRow = showInteractivePreview && IsRuntimeDataGridRowSelected(model.Id, rowKey);
-                var content = showInteractivePreview
-                    ? rowIndex < previewRows.Count
-                        ? previewRows[rowIndex].GetValueOrDefault(field.Path, string.Empty)
-                        : string.Empty
+                var content = rowIndex < previewRows.Count
+                    ? previewRows[rowIndex].GetValueOrDefault(field.Path, string.Empty)
                     : string.Empty;
 
                 var bodyCell = CreateModernDataGridBodyCell(
@@ -5436,7 +5389,7 @@ public partial class MainWindow : Window
 
         if (model.DataGridShowHeader || model.ShowFilterRow)
         {
-            Grid.SetRow(headerShell, 1);
+            Grid.SetRow(headerShell, 0);
             tableContainer.Children.Add(headerShell);
         }
         var scrollViewer = new ScrollViewer
@@ -5447,7 +5400,7 @@ public partial class MainWindow : Window
             IsHitTestVisible = showInteractivePreview
         };
 
-        Grid.SetRow(scrollViewer, 2);
+        Grid.SetRow(scrollViewer, 1);
         tableContainer.Children.Add(scrollViewer);
 
         if (showSummaryFooter)
@@ -5462,7 +5415,7 @@ public partial class MainWindow : Window
                 IsHitTestVisible = showInteractivePreview
             };
 
-            Grid.SetRow(footerShell, 3);
+            Grid.SetRow(footerShell, 2);
             tableContainer.Children.Add(footerShell);
         }
 
@@ -8200,8 +8153,13 @@ public partial class MainWindow : Window
         {
             var result = await PreviewRowsLoader.LoadRowsAsync(source);
             _previewRowsBySourceKey[sourceKey] = (signature, result.Rows);
+            var rowsAppliedEvent = result.IsRealData
+                ? "DATAGRID_PREVIEW_REAL_ROWS_APPLIED"
+                : result.DataKind is "SampleRows" or "DemoData"
+                    ? "DATAGRID_PREVIEW_SAMPLE_ROWS_USED"
+                    : "DATAGRID_PREVIEW_EMPTY_ROWS_APPLIED";
             VM.TraceDocumentDebug(
-                result.IsRealData ? "DATAGRID_PREVIEW_REAL_ROWS_APPLIED" : "DATAGRID_PREVIEW_SAMPLE_ROWS_USED",
+                rowsAppliedEvent,
                 $"sourceKey={sourceKey}; grid={VM.SelectedControl?.Name ?? "-"}; rows={result.Rows.Count}; dataKind={result.DataKind}; reason={result.Reason}",
                 toOutput: false);
             VM.TraceDocumentDebug(
@@ -8262,7 +8220,17 @@ public partial class MainWindow : Window
 
         var sourceKey = DataSourceIdentity.BuildKey(source);
         if (_previewRowsBySourceKey.TryGetValue(sourceKey, out var cached))
-            return cached.Rows;
+        {
+            var signature = PreviewRowsLoader.BuildSignature(source);
+            if (string.Equals(cached.Signature, signature, StringComparison.Ordinal))
+                return cached.Rows;
+
+            _previewRowsBySourceKey.Remove(sourceKey);
+            VM.TraceDocumentDebug(
+                "PREVIEW_DATA_CACHE_INVALIDATED",
+                $"key={sourceKey}; reason=source-signature-changed",
+                toOutput: false);
+        }
 
         SchedulePreviewRowsLoad(source);
         return Array.Empty<Dictionary<string, string>>();
@@ -8339,7 +8307,7 @@ public partial class MainWindow : Window
 
         VM.TraceDocumentDebug(
             "DATAGRID_PREVIEW_DATA_MODE",
-            $"grid={control.Name}; mode={mode}; rows={rowCount}; sourceConfigured={PreviewRowsLoader.CanLoad(source)}; demoFallback={source.AllowPreviewSampleFallback}",
+            $"grid={control.Name}; mode={mode}; rows={rowCount}; sourceConfigured={PreviewRowsLoader.CanLoad(source)}; explicitDemo={DataGridRuntimeDataModeResolver.IsExplicitDemoEnabled(source)}",
             toOutput: false);
         VM.TraceDocumentDebug(
             "PREVIEW_DATAGRID_DATA_MODE",

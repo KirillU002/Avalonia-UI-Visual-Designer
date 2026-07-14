@@ -410,11 +410,22 @@ public partial class PreviewWindow : Window
             if (source is null)
                 continue;
 
-            var rows = ResolveExportedAxamlPreviewRows(source, control);
+            var expectedMode = DataGridRuntimeDataModeResolver.Resolve(
+                source,
+                _exportedAxamlPreview?.IncludeDemoData ?? false);
+            var rows = ResolveExportedAxamlPreviewRows(source, control, expectedMode, out var appliedMode);
             grid.ItemsSource = BuildExportedAxamlDataGridView(source, binding, rows);
             Debug.WriteLine(
                 "AXAML_PREVIEW_DATAGRID_ITEMSSOURCE_APPLIED " +
                 $"grid={binding.Name}; itemsSource={binding.ItemsSourcePath}; rows={rows.Count}; columns={binding.Columns.Count}");
+            if (expectedMode.Mode != appliedMode)
+            {
+                Debug.WriteLine(
+                    "PREVIEW_EXPORT_DATAGRID_MODE_MISMATCH " +
+                    $"grid={binding.Name}; previewMode={appliedMode}; exportMode={expectedMode.Mode}; reason={expectedMode.Reason}");
+            }
+
+            LogExportedAxamlDataGridStructure(grid, binding.Name, control, source, rows.Count);
         }
     }
 
@@ -427,31 +438,74 @@ public partial class PreviewWindow : Window
             yield return dataGrid;
     }
 
-    private IReadOnlyList<Dictionary<string, string>> ResolveExportedAxamlPreviewRows(BindingSourceFileModel source, DesignerControlFileModel control)
+    private IReadOnlyList<Dictionary<string, string>> ResolveExportedAxamlPreviewRows(
+        BindingSourceFileModel source,
+        DesignerControlFileModel control,
+        DataGridRuntimeDataModeResolution expectedMode,
+        out DataGridRuntimeDataMode appliedMode)
     {
         var visibleFields = OrderBindingFieldsForDisplay(source.Fields.Where(field => field.IsVisible)).ToList();
         if (TryGetCachedPreviewRows(source.Id, out var cachedRows, out var dataKind))
         {
+            var cachedIsRealData = string.Equals(dataKind, "RealData", StringComparison.OrdinalIgnoreCase);
+            var cachedMatchesMode = expectedMode.Mode switch
+            {
+                DataGridRuntimeDataMode.Demo => !cachedIsRealData,
+                DataGridRuntimeDataMode.Sql or DataGridRuntimeDataMode.Dll => cachedIsRealData,
+                _ => false
+            };
+            if (cachedMatchesMode)
+            {
+                appliedMode = expectedMode.Mode;
+                Debug.WriteLine(
+                    "AXAML_PREVIEW_DATAGRID_ROWS_SOURCE " +
+                    $"grid={control.Name}; sourceKey={DataSourceIdentity.BuildKey(source)}; mode={appliedMode}; kind={dataKind}; rows={cachedRows.Count}");
+                return ClonePreviewWindowRows(cachedRows);
+            }
+
             Debug.WriteLine(
-                "AXAML_PREVIEW_DATAGRID_ROWS_SOURCE " +
-                $"grid={control.Name}; sourceKey={DataSourceIdentity.BuildKey(source)}; kind={dataKind}; rows={cachedRows.Count}");
-            return ClonePreviewWindowRows(cachedRows);
+                "AXAML_PREVIEW_DATAGRID_CACHE_IGNORED " +
+                $"grid={control.Name}; sourceKey={DataSourceIdentity.BuildKey(source)}; expectedMode={expectedMode.Mode}; cachedKind={dataKind}; reason=cache data kind does not match export mode");
         }
 
-        if (ShouldSuppressSyntheticRowsForPreview(source))
+        if (expectedMode.Mode != DataGridRuntimeDataMode.Demo)
         {
+            appliedMode = expectedMode.Mode;
             Debug.WriteLine(
                 "AXAML_PREVIEW_DATAGRID_ROWS_SOURCE " +
-                $"grid={control.Name}; sourceKey={DataSourceIdentity.BuildKey(source)}; kind=NoSyntheticFallback; rows=0");
+                $"grid={control.Name}; sourceKey={DataSourceIdentity.BuildKey(source)}; mode={appliedMode}; kind=NoSyntheticFallback; rows=0; reason={expectedMode.Reason}");
             return Array.Empty<Dictionary<string, string>>();
         }
 
         var rowCount = Math.Min(MaxPreviewDataGridRows, Math.Max(8, (int)Math.Ceiling(control.Height / Math.Max(18, control.DataGridRowHeight))));
         var demoRows = BuildPreviewWindowRows(visibleFields, rowCount);
+        appliedMode = DataGridRuntimeDataMode.Demo;
         Debug.WriteLine(
             "AXAML_PREVIEW_DATAGRID_ROWS_SOURCE " +
-            $"grid={control.Name}; sourceKey={DataSourceIdentity.BuildKey(source)}; kind=DemoData; rows={demoRows.Count}");
+            $"grid={control.Name}; sourceKey={DataSourceIdentity.BuildKey(source)}; mode={appliedMode}; kind=DemoData; rows={demoRows.Count}");
         return demoRows;
+    }
+
+    private static void LogExportedAxamlDataGridStructure(
+        DataGrid grid,
+        string gridName,
+        DesignerControlFileModel control,
+        BindingSourceFileModel source,
+        int rowCount)
+    {
+        var host = grid.GetLogicalParent() as Grid;
+        var groupedFields = source.Fields.Any(field => field.IsVisible && field.GroupOrder >= 0);
+        var expectsGroupPanel = control.AllowGrouping && (control.ShowGroupPanel || groupedFields);
+        var groupPanelRow = expectsGroupPanel ? 0 : -1;
+        var filterRow = control.ShowFilterRow ? (expectsGroupPanel ? 1 : 0) : -1;
+        var groupPanelVisible = groupPanelRow >= 0
+            && host?.Children.Any(child => Grid.GetRow(child) == groupPanelRow && child is Border && child.IsVisible) == true;
+        var filterRowVisible = filterRow >= 0
+            && host?.Children.Any(child => Grid.GetRow(child) == filterRow && child is Grid && child.IsVisible) == true;
+        var dataGridRow = host is null ? -1 : Grid.GetRow(grid);
+        Debug.WriteLine(
+            "AXAML_PREVIEW_DATAGRID_STRUCTURE " +
+            $"grid={gridName}; groupPanelVisible={groupPanelVisible}; filterRowVisible={filterRowVisible}; columns={grid.Columns.Count}; rows={rowCount}; dataGridRow={dataGridRow}; rowDefinitions={host?.RowDefinitions.Count ?? 0}");
     }
 
     private static DataView BuildExportedAxamlDataGridView(
@@ -796,6 +850,14 @@ public partial class PreviewWindow : Window
         var sourceKey = DataSourceIdentity.BuildKey(source);
         if (!_previewRowsBySourceKey.TryGetValue(sourceKey, out var cached))
             return false;
+
+        var signature = PreviewRowsLoader.BuildSignature(CreateRuntimeBindingSourceModel(source));
+        if (!string.Equals(cached.Signature, signature, StringComparison.Ordinal))
+        {
+            _previewRowsBySourceKey.Remove(sourceKey);
+            Debug.WriteLine($"PREVIEW_DATA_CACHE_INVALIDATED key={sourceKey}; reason=source-signature-changed");
+            return false;
+        }
 
         rows = cached.Rows;
         dataKind = cached.DataKind;
@@ -1328,6 +1390,7 @@ public partial class PreviewWindow : Window
             PreviewSortColumn = source.PreviewSortColumn,
             PreviewSortDirection = BindingSourceModel.NormalizePreviewSortDirection(source.PreviewSortDirection),
             UseRealPreviewRowsIfAvailable = source.UseRealPreviewRowsIfAvailable,
+            UseDemoData = source.UseDemoData,
             AllowPreviewSampleFallback = source.AllowPreviewSampleFallback
         }).Select(model =>
         {
@@ -1360,6 +1423,7 @@ public partial class PreviewWindow : Window
             PreviewSortColumn = source.PreviewSortColumn,
             PreviewSortDirection = BindingSourceModel.NormalizePreviewSortDirection(source.PreviewSortDirection),
             UseRealPreviewRowsIfAvailable = source.UseRealPreviewRowsIfAvailable,
+            UseDemoData = source.UseDemoData,
             AllowPreviewSampleFallback = source.AllowPreviewSampleFallback
         };
 
@@ -2381,7 +2445,6 @@ public partial class PreviewWindow : Window
         var rows = new RowDefinitions();
         if (showGroupPanel)
             rows.Add(new RowDefinition(GridLength.Auto));
-        rows.Add(new RowDefinition(GridLength.Auto));
         if (control.ShowFilterRow)
             rows.Add(new RowDefinition(GridLength.Auto));
         rows.Add(new RowDefinition(1, GridUnitType.Star));
@@ -2406,18 +2469,13 @@ public partial class PreviewWindow : Window
 
             if (groupedFields.Count == 0)
             {
-                chips.Children.Add(new Border
+                chips.Children.Add(new TextBlock
                 {
-                    Background = Brushes.Transparent,
-                    BorderThickness = new Thickness(0),
-                    Padding = new Thickness(4, 2),
-                    Child = new TextBlock
-                    {
-                        Text = "Перетащите колонку сюда для группировки",
-                        Foreground = new SolidColorBrush(Color.Parse("#0C4A6E")),
-                        FontSize = Math.Max(10, control.FontSize - 1),
-                        FontWeight = FontWeight.SemiBold
-                    }
+                    Text = DataGridGroupPanelVisualCatalog.PlaceholderText,
+                    Foreground = new SolidColorBrush(ParseColor(control.DataGridHeaderForeground, "#0F172A")),
+                    Opacity = DataGridGroupPanelVisualCatalog.PlaceholderOpacity,
+                    FontSize = Math.Max(10, control.FontSize - 1),
+                    VerticalAlignment = VerticalAlignment.Center
                 });
             }
 
@@ -2431,13 +2489,13 @@ public partial class PreviewWindow : Window
 
             var groupDropTarget = new Border
             {
-                Background = new SolidColorBrush(Color.Parse(groupedFields.Count == 0 ? "#EFF6FF" : "#F8FAFC")),
-                BorderBrush = new SolidColorBrush(Color.Parse("#7DD3FC")),
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(14),
-                Padding = new Thickness(10, 7),
-                Margin = new Thickness(0, 0, 0, 8),
-                MinHeight = 38,
+                Background = new SolidColorBrush(headerBackgroundColor),
+                BorderBrush = new SolidColorBrush(gridLineColor),
+                BorderThickness = new Thickness(0, 0, 0, 1),
+                Padding = new Thickness(
+                    DataGridGroupPanelVisualCatalog.PaddingHorizontal,
+                    DataGridGroupPanelVisualCatalog.PaddingVertical),
+                MinHeight = DataGridGroupPanelVisualCatalog.MinHeight,
                 Child = chips
             };
             AttachRuntimeDataGridGroupDropTarget(groupDropTarget, control);
@@ -2447,24 +2505,6 @@ public partial class PreviewWindow : Window
             Grid.SetRow(groupDropTarget, rowIndex++);
             layout.Children.Add(groupDropTarget);
         }
-
-        var titleShell = new Border
-        {
-            Background = new SolidColorBrush(headerBackgroundColor),
-            BorderBrush = new SolidColorBrush(gridLineColor),
-            BorderThickness = new Thickness(0, 0, 0, control.DataGridShowRowLines ? 1 : 0),
-            Padding = new Thickness(16, 10),
-            Child = new TextBlock
-            {
-                Text = GetModernDataGridTitle(control),
-                FontFamily = new FontFamily(control.FontFamily),
-                FontSize = Math.Max(14, control.FontSize + 1),
-                FontWeight = FontWeight.Bold,
-                Foreground = new SolidColorBrush(ParseColor(control.DataGridHeaderForeground, "#0F172A"))
-            }
-        };
-        Grid.SetRow(titleShell, rowIndex++);
-        layout.Children.Add(titleShell);
 
         if (control.ShowFilterRow)
         {
@@ -2619,7 +2659,7 @@ public partial class PreviewWindow : Window
             Padding = new Thickness(0),
             Background = Brushes.Transparent,
             BorderBrush = Brushes.Transparent,
-            Foreground = new SolidColorBrush(Color.Parse("#0C4A6E")),
+            Foreground = new SolidColorBrush(Color.Parse(DataGridGroupPanelVisualCatalog.ChipForeground)),
             FontSize = Math.Max(12, control.FontSize),
             FontWeight = FontWeight.Bold
         };
@@ -2632,12 +2672,18 @@ public partial class PreviewWindow : Window
 
         var chip = new Border
         {
-            Background = new SolidColorBrush(Color.Parse("#E0F2FE")),
-            BorderBrush = new SolidColorBrush(Color.Parse("#7DD3FC")),
+            Background = new SolidColorBrush(Color.Parse(DataGridGroupPanelVisualCatalog.ChipBackground)),
+            BorderBrush = new SolidColorBrush(Color.Parse(DataGridGroupPanelVisualCatalog.ChipBorder)),
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(999),
-            Padding = new Thickness(10, 5),
-            Margin = new Thickness(0, 0, 8, 8),
+            Padding = new Thickness(
+                DataGridGroupPanelVisualCatalog.ChipPaddingHorizontal,
+                DataGridGroupPanelVisualCatalog.ChipPaddingVertical),
+            Margin = new Thickness(
+                0,
+                0,
+                DataGridGroupPanelVisualCatalog.ChipMarginRight,
+                DataGridGroupPanelVisualCatalog.ChipMarginBottom),
             Cursor = new Cursor(StandardCursorType.Hand),
             Child = new StackPanel
             {
@@ -2648,7 +2694,7 @@ public partial class PreviewWindow : Window
                     new TextBlock
                     {
                         Text = $"Группа {field.GroupOrder + 1}: {field.Header}",
-                        Foreground = new SolidColorBrush(Color.Parse("#0C4A6E")),
+                        Foreground = new SolidColorBrush(Color.Parse(DataGridGroupPanelVisualCatalog.ChipForeground)),
                         FontSize = Math.Max(10, control.FontSize - 1),
                         FontWeight = FontWeight.SemiBold,
                         VerticalAlignment = VerticalAlignment.Center
@@ -4030,7 +4076,7 @@ public partial class PreviewWindow : Window
             $"grid={control.Name}; mode={mode}; sourceKind={source.SourceKind}; sourceKey={DataSourceIdentity.BuildKey(source)}; hasConnectionString={!string.IsNullOrWhiteSpace(source.SourceConnectionString)}; hasQuery={!string.IsNullOrWhiteSpace(source.SourceQuery) || !string.IsNullOrWhiteSpace(source.SourceTableName)}; rows={rowCount}; suppressed={suppressed}");
         Debug.WriteLine(
             "DATAGRID_PREVIEW_DATA_MODE " +
-            $"grid={control.Name}; mode={mode}; rows={rowCount}; sourceConfigured={SqlPreviewDataLoader.CanLoad(source) || (!string.IsNullOrWhiteSpace(source.SourceAssemblyPath) && !string.IsNullOrWhiteSpace(source.SourceTypeFullName))}; demoFallback={source.AllowPreviewSampleFallback}; suppressed={suppressed}");
+            $"grid={control.Name}; mode={mode}; rows={rowCount}; sourceConfigured={SqlPreviewDataLoader.CanLoad(source) || (!string.IsNullOrWhiteSpace(source.SourceAssemblyPath) && !string.IsNullOrWhiteSpace(source.SourceTypeFullName))}; explicitDemo={DataGridRuntimeDataModeResolver.IsExplicitDemoEnabled(source)}; suppressed={suppressed}");
     }
 
     private static List<Dictionary<string, string>> ClonePreviewWindowRows(IReadOnlyList<Dictionary<string, string>> rows)

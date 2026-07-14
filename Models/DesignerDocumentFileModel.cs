@@ -202,7 +202,8 @@ public class BindingSourceFileModel
     public string PreviewSortColumn { get; set; } = "";
     public string PreviewSortDirection { get; set; } = BindingFieldModel.SortDirectionAscending;
     public bool UseRealPreviewRowsIfAvailable { get; set; } = true;
-    public bool AllowPreviewSampleFallback { get; set; } = true;
+    public bool UseDemoData { get; set; }
+    public bool AllowPreviewSampleFallback { get; set; }
     public List<BindingFieldFileModel> Fields { get; set; } = new();
 }
 

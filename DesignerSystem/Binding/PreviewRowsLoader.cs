@@ -65,29 +65,13 @@ internal static class PreviewRowsLoader
         if (source is null || !source.Fields.Any(field => field.IsVisible))
             return DataModeNoData;
 
-        var mode = BindingSourceModel.NormalizePreviewRowMode(source.PreviewRowMode);
-        if (mode == BindingSourceModel.PreviewRowModeSchemaOnly)
-            return DataModeSchemaOnly;
-
-        if (DataSourceIdentity.IsSqlServer(source.SourceKind))
-            return SqlPreviewDataLoader.CanLoad(source) && source.UseRealPreviewRowsIfAvailable
-                ? DataModeRealSqlData
-                : AllowsDemoRows(source)
-                    ? DataModeDemoData
-                    : DataModeSchemaOnly;
-
-        if (DataSourceIdentity.IsAssembly(source.SourceKind))
+        return DataGridRuntimeDataModeResolver.Resolve(source).Mode switch
         {
-            if (mode == BindingSourceModel.PreviewRowModeSampleRows)
-                return AllowsDemoRows(source) ? DataModeDemoData : DataModeSchemaOnly;
-
-            if (CanLoad(source) && source.UseRealPreviewRowsIfAvailable)
-                return DataModeRealDllData;
-
-            return AllowsDemoRows(source) ? DataModeDemoData : DataModeSchemaOnly;
-        }
-
-        return AllowsDemoRows(source) ? DataModeDemoData : DataModeSchemaOnly;
+            DataGridRuntimeDataMode.Demo => DataModeDemoData,
+            DataGridRuntimeDataMode.Sql => DataModeRealSqlData,
+            DataGridRuntimeDataMode.Dll => DataModeRealDllData,
+            _ => DataModeSchemaOnly
+        };
     }
 
     public static string ResolveDataMode(BindingSourceFileModel? source)
@@ -95,33 +79,13 @@ internal static class PreviewRowsLoader
         if (source is null || !source.Fields.Any(field => field.IsVisible))
             return DataModeNoData;
 
-        var mode = BindingSourceModel.NormalizePreviewRowMode(source.PreviewRowMode);
-        if (mode == BindingSourceModel.PreviewRowModeSchemaOnly)
-            return DataModeSchemaOnly;
-
-        if (DataSourceIdentity.IsSqlServer(source.SourceKind))
-            return SqlPreviewDataLoader.CanLoad(source) && source.UseRealPreviewRowsIfAvailable
-                ? DataModeRealSqlData
-                : AllowsDemoRows(source)
-                    ? DataModeDemoData
-                    : DataModeSchemaOnly;
-
-        if (DataSourceIdentity.IsAssembly(source.SourceKind))
+        return DataGridRuntimeDataModeResolver.Resolve(source).Mode switch
         {
-            if (mode == BindingSourceModel.PreviewRowModeSampleRows)
-                return AllowsDemoRows(source) ? DataModeDemoData : DataModeSchemaOnly;
-
-            if (!string.IsNullOrWhiteSpace(source.SourceAssemblyPath)
-                && !string.IsNullOrWhiteSpace(source.SourceTypeFullName)
-                && source.UseRealPreviewRowsIfAvailable)
-            {
-                return DataModeRealDllData;
-            }
-
-            return AllowsDemoRows(source) ? DataModeDemoData : DataModeSchemaOnly;
-        }
-
-        return AllowsDemoRows(source) ? DataModeDemoData : DataModeSchemaOnly;
+            DataGridRuntimeDataMode.Demo => DataModeDemoData,
+            DataGridRuntimeDataMode.Sql => DataModeRealSqlData,
+            DataGridRuntimeDataMode.Dll => DataModeRealDllData,
+            _ => DataModeSchemaOnly
+        };
     }
 
     public static bool ShouldSuppressSyntheticRows(BindingSourceModel? source)
@@ -129,21 +93,7 @@ internal static class PreviewRowsLoader
         if (source is null)
             return false;
 
-        var mode = BindingSourceModel.NormalizePreviewRowMode(source.PreviewRowMode);
-        if (mode == BindingSourceModel.PreviewRowModeSchemaOnly)
-            return true;
-
-        if (DataSourceIdentity.IsSqlServer(source.SourceKind))
-        {
-            if (SqlPreviewDataLoader.CanLoad(source) && source.UseRealPreviewRowsIfAvailable)
-                return mode is BindingSourceModel.PreviewRowModeTopN or BindingSourceModel.PreviewRowModeAllRows;
-
-            return !AllowsDemoRows(source);
-        }
-
-        return DataSourceIdentity.IsAssembly(source.SourceKind)
-            && source.UseRealPreviewRowsIfAvailable
-            && mode is BindingSourceModel.PreviewRowModeTopN or BindingSourceModel.PreviewRowModeAllRows;
+        return DataGridRuntimeDataModeResolver.Resolve(source).Mode != DataGridRuntimeDataMode.Demo;
     }
 
     public static bool ShouldSuppressSyntheticRows(BindingSourceFileModel? source)
@@ -151,21 +101,7 @@ internal static class PreviewRowsLoader
         if (source is null)
             return false;
 
-        var mode = BindingSourceModel.NormalizePreviewRowMode(source.PreviewRowMode);
-        if (mode == BindingSourceModel.PreviewRowModeSchemaOnly)
-            return true;
-
-        if (DataSourceIdentity.IsSqlServer(source.SourceKind))
-        {
-            if (SqlPreviewDataLoader.CanLoad(source) && source.UseRealPreviewRowsIfAvailable)
-                return mode is BindingSourceModel.PreviewRowModeTopN or BindingSourceModel.PreviewRowModeAllRows;
-
-            return !AllowsDemoRows(source);
-        }
-
-        return DataSourceIdentity.IsAssembly(source.SourceKind)
-            && source.UseRealPreviewRowsIfAvailable
-            && mode is BindingSourceModel.PreviewRowModeTopN or BindingSourceModel.PreviewRowModeAllRows;
+        return DataGridRuntimeDataModeResolver.Resolve(source).Mode != DataGridRuntimeDataMode.Demo;
     }
 
     public static string BuildSignature(BindingSourceModel source)
@@ -183,6 +119,7 @@ internal static class PreviewRowsLoader
             Normalize(source.PreviewSortColumn),
             BindingSourceModel.NormalizePreviewSortDirection(source.PreviewSortDirection),
             source.UseRealPreviewRowsIfAvailable,
+            source.UseDemoData,
             source.AllowPreviewSampleFallback);
     }
 
@@ -192,10 +129,11 @@ internal static class PreviewRowsLoader
         bool updateSourceStatus = true)
     {
         var mode = BindingSourceModel.NormalizePreviewRowMode(source.PreviewRowMode);
-        if (mode == BindingSourceModel.PreviewRowModeSchemaOnly)
+        var runtimeMode = DataGridRuntimeDataModeResolver.Resolve(source);
+        if (runtimeMode.Mode == DataGridRuntimeDataMode.Empty)
             return Complete(source, Array.Empty<Dictionary<string, string>>(), false, "SchemaOnly", "Загружена только схема источника.", "schema-only", updateSourceStatus);
 
-        if (mode == BindingSourceModel.PreviewRowModeSampleRows)
+        if (runtimeMode.Mode == DataGridRuntimeDataMode.Demo)
         {
             var rows = BuildSampleRows(source, Math.Max(1, source.PreviewTopN));
             return Complete(source, rows, false, "SampleRows", "Используются demo rows, реальные данные не загружались.", "sample-mode", updateSourceStatus);
@@ -218,7 +156,7 @@ internal static class PreviewRowsLoader
                 Debug.WriteLine($"DATAGRID_PREVIEW_TOP_N_APPLIED sourceKey={DataSourceIdentity.BuildKey(source)}; topN={source.PreviewTopN}; rowsBefore={beforeCount}; rowsAfter={limitedRows.Count}");
                 return Complete(source, limitedRows, true, "RealData", $"Загружены реальные SQL rows: {limitedRows.Count}.", "sql", updateSourceStatus);
             }
-            catch (Exception ex) when (source.AllowPreviewSampleFallback)
+            catch (Exception ex) when (AllowsDemoRows(source))
             {
                 Debug.WriteLine(
                     "PREVIEW_SQL_ROWS_LOAD_FAILED " +
@@ -229,11 +167,16 @@ internal static class PreviewRowsLoader
                 var fallbackRows = BuildSampleRows(source, Math.Max(1, source.PreviewTopN));
                 return Complete(source, fallbackRows, false, "SampleRows", $"Используются demo rows, реальные SQL данные не загружены. Причина: {ex.Message}", ex.Message, updateSourceStatus);
             }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"PREVIEW_SQL_ROWS_LOAD_FAILED sourceKey={sourceKey}; reason={ex.Message}");
+                return Complete(source, Array.Empty<Dictionary<string, string>>(), false, DataModeRealSqlData, $"Не удалось загрузить реальные SQL rows: {ex.Message}", ex.Message, updateSourceStatus);
+            }
         }
 
         if (DataSourceIdentity.IsSqlServer(source.SourceKind))
         {
-            if (source.AllowPreviewSampleFallback)
+            if (AllowsDemoRows(source))
             {
                 var rows = BuildSampleRows(source, Math.Max(1, source.PreviewTopN));
                 Debug.WriteLine(
@@ -264,7 +207,7 @@ internal static class PreviewRowsLoader
                     Debug.WriteLine($"DATAGRID_PREVIEW_TOP_N_APPLIED sourceKey={DataSourceIdentity.BuildKey(source)}; topN={source.PreviewTopN}; rowsBefore={beforeCount}; rowsAfter={limitedRows.Count}");
                     return Complete(source, limitedRows, true, "RealData", $"Загружены реальные DLL rows: {limitedRows.Count}.", "dll-provider", updateSourceStatus);
                 }
-                catch (Exception ex) when (source.AllowPreviewSampleFallback)
+                catch (Exception ex) when (AllowsDemoRows(source))
                 {
                     Debug.WriteLine($"DLL_TABLE_REAL_ROWS_LOAD_FAILED sourceKey={DataSourceIdentity.BuildKey(source)}; reason={ex.Message}");
                     var fallbackRows = BuildSampleRows(source, Math.Max(1, source.PreviewTopN));
@@ -277,7 +220,7 @@ internal static class PreviewRowsLoader
                 }
             }
 
-            if (source.AllowPreviewSampleFallback)
+            if (AllowsDemoRows(source))
             {
                 var fallbackRows = BuildSampleRows(source, Math.Max(1, source.PreviewTopN));
                 return Complete(source, fallbackRows, false, "SampleRows", "Используются demo rows, загрузка реальных DLL данных отключена.", "real-disabled", updateSourceStatus);
@@ -349,9 +292,13 @@ internal static class PreviewRowsLoader
             source.PreviewRowsStatus = status;
         }
 
-        Debug.WriteLine(isRealData
-            ? $"DATAGRID_PREVIEW_REAL_ROWS_APPLIED sourceKey={DataSourceIdentity.BuildKey(source)}; rows={rows.Count}; source={DataSourceIdentity.BuildDisplayName(source)}"
-            : $"DATAGRID_PREVIEW_SAMPLE_ROWS_USED sourceKey={DataSourceIdentity.BuildKey(source)}; reason={reason}; rows={rows.Count}");
+        var diagnosticEvent = isRealData
+            ? "DATAGRID_PREVIEW_REAL_ROWS_APPLIED"
+            : dataKind is "SampleRows" or "DemoData"
+                ? "DATAGRID_PREVIEW_SAMPLE_ROWS_USED"
+                : "DATAGRID_PREVIEW_EMPTY_ROWS_APPLIED";
+        Debug.WriteLine(
+            $"{diagnosticEvent} sourceKey={DataSourceIdentity.BuildKey(source)}; dataKind={dataKind}; reason={reason}; rows={rows.Count}; source={DataSourceIdentity.BuildDisplayName(source)}");
 
         return new PreviewRowsLoadResult(rows, isRealData, dataKind, status, reason);
     }
@@ -563,14 +510,12 @@ internal static class PreviewRowsLoader
 
     private static bool AllowsDemoRows(BindingSourceModel source)
     {
-        return source.AllowPreviewSampleFallback
-            && BindingSourceModel.NormalizePreviewRowMode(source.PreviewRowMode) != BindingSourceModel.PreviewRowModeSchemaOnly;
+        return DataGridRuntimeDataModeResolver.IsExplicitDemoEnabled(source);
     }
 
     private static bool AllowsDemoRows(BindingSourceFileModel source)
     {
-        return source.AllowPreviewSampleFallback
-            && BindingSourceModel.NormalizePreviewRowMode(source.PreviewRowMode) != BindingSourceModel.PreviewRowModeSchemaOnly;
+        return DataGridRuntimeDataModeResolver.IsExplicitDemoEnabled(source);
     }
 
     private static string CreateDemoValue(DemoField field, int rowIndex)

@@ -4048,7 +4048,7 @@ public partial class MainWindowViewModel : ObservableObject
                     : PreviewRowsLoader.ResolveDataMode(source);
         TraceDocumentDebug(
             "DATAGRID_PREVIEW_DATA_MODE",
-            $"source={source.Name}; mode={dataMode}; rows={result.Rows.Count}; sourceConfigured={PreviewRowsLoader.CanLoad(source)}; demoFallback={source.AllowPreviewSampleFallback}",
+            $"source={source.Name}; mode={dataMode}; rows={result.Rows.Count}; sourceConfigured={PreviewRowsLoader.CanLoad(source)}; explicitDemo={DataGridRuntimeDataModeResolver.IsExplicitDemoEnabled(source)}",
             toOutput: false);
         TraceDocumentDebug(
             "PREVIEW_DATAGRID_DATA_MODE",
@@ -13571,34 +13571,40 @@ public partial class MainWindowViewModel : ObservableObject
     private IEnumerable<GeneratedFileModel> BuildGeneratedFiles()
     {
         var formClassNames = BuildProjectFormClassNameMap();
-        var activeFormId = _exportActiveFormIdOverride ?? ActiveFormDocument?.Id ?? "";
-        var className = !string.IsNullOrWhiteSpace(activeFormId) && formClassNames.TryGetValue(activeFormId, out var mappedActiveClass)
-            ? mappedActiveClass
+        var primaryForm = CurrentProject.Forms.FirstOrDefault();
+        var primaryFormId = primaryForm?.Id ?? "";
+        var activeFormId = ActiveFormDocument?.Id ?? "";
+        var className = !string.IsNullOrWhiteSpace(primaryFormId) && formClassNames.TryGetValue(primaryFormId, out var mappedPrimaryClass)
+            ? mappedPrimaryClass
             : IsMainWindowExportTarget ? "MainWindow" : "Form1Window";
+        var primaryFiles = primaryForm is not null
+            && !string.Equals(primaryFormId, activeFormId, StringComparison.OrdinalIgnoreCase)
+                ? BuildFormGeneratedFiles(primaryForm, className, isSecondaryForm: false)
+                : (Xaml: GeneratedXaml, CSharp: GeneratedCSharp, BindingGuide: GeneratedBindingGuide);
         yield return new GeneratedFileModel
         {
             Path = $"{className}.axaml",
-            Content = GeneratedXaml,
-            Severity = string.IsNullOrWhiteSpace(GeneratedXaml) || HasExportNamespaceError() ? ExportChecklistSeverity.Error : ExportChecklistSeverity.Ok
+            Content = primaryFiles.Xaml,
+            Severity = string.IsNullOrWhiteSpace(primaryFiles.Xaml) || HasExportNamespaceError() ? ExportChecklistSeverity.Error : ExportChecklistSeverity.Ok
         };
         yield return new GeneratedFileModel
         {
             Path = $"{className}.axaml.cs",
-            Content = GeneratedCSharp,
-            Severity = string.IsNullOrWhiteSpace(GeneratedCSharp) || HasExportNamespaceError() ? ExportChecklistSeverity.Error : ExportChecklistSeverity.Ok
+            Content = primaryFiles.CSharp,
+            Severity = string.IsNullOrWhiteSpace(primaryFiles.CSharp) || HasExportNamespaceError() ? ExportChecklistSeverity.Error : ExportChecklistSeverity.Ok
         };
 
-        if (!string.IsNullOrWhiteSpace(GeneratedBindingGuide))
+        if (!string.IsNullOrWhiteSpace(primaryFiles.BindingGuide))
         {
             yield return new GeneratedFileModel
             {
                 Path = "README.generated.md",
-                Content = GeneratedBindingGuide,
+                Content = primaryFiles.BindingGuide,
                 Severity = ExportChecklistSeverity.Ok
             };
         }
 
-        foreach (var form in CurrentProject.Forms.Where(form => !string.Equals(form.Id, ActiveFormDocument?.Id, StringComparison.OrdinalIgnoreCase)))
+        foreach (var form in CurrentProject.Forms.Where(form => !string.Equals(form.Id, primaryFormId, StringComparison.OrdinalIgnoreCase)))
         {
             var secondaryClassName = formClassNames.TryGetValue(form.Id, out var mappedClassName)
                 ? mappedClassName
@@ -13632,15 +13638,18 @@ public partial class MainWindowViewModel : ObservableObject
 
     private Dictionary<string, string> BuildProjectFormClassNameMap()
     {
-        var activeFormId = _exportActiveFormIdOverride ?? ActiveFormDocument?.Id ?? "";
+        var primaryFormId = CurrentProject.Forms.FirstOrDefault()?.Id
+            ?? _exportActiveFormIdOverride
+            ?? ActiveFormDocument?.Id
+            ?? "";
         var used = new HashSet<string>(UnsafeGeneratedIdentifiers, StringComparer.OrdinalIgnoreCase);
         var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        var activeClassName = ResolveExportWindowClassName();
+        var primaryClassName = IsMainWindowExportTarget ? "MainWindow" : "Form1Window";
 
-        if (!string.IsNullOrWhiteSpace(activeFormId))
+        if (!string.IsNullOrWhiteSpace(primaryFormId))
         {
-            result[activeFormId] = activeClassName;
-            used.Add(activeClassName);
+            result[primaryFormId] = primaryClassName;
+            used.Add(primaryClassName);
         }
 
         foreach (var form in CurrentProject.Forms)
@@ -13792,6 +13801,7 @@ public partial class MainWindowViewModel : ObservableObject
                 Document = CloneDocumentFileModel(exportViewModel.ActiveFormDocument.Document),
                 ProjectForms = exportViewModel.CurrentProject.Forms.Select(CloneFormDocumentForPreview).ToList(),
                 ActiveFormId = form.Id,
+                IncludeDemoData = IncludeSampleData,
                 FallbackToLegacyPreviewOnError = FallbackToLegacyPreviewOnAxamlError,
                 ShowGeneratedAxamlOnError = ShowGeneratedAxamlOnPreviewError
             };
@@ -13804,9 +13814,18 @@ public partial class MainWindowViewModel : ObservableObject
 
     private (string Xaml, string CSharp) BuildSecondaryFormGeneratedFiles(DesignerFormDocument form, string className)
     {
+        var files = BuildFormGeneratedFiles(form, className, isSecondaryForm: true);
+        return (files.Xaml, files.CSharp);
+    }
+
+    private (string Xaml, string CSharp, string BindingGuide) BuildFormGeneratedFiles(
+        DesignerFormDocument form,
+        string className,
+        bool isSecondaryForm)
+    {
         TraceDocumentDebug(
             "BUILD_SECONDARY_FORM_GENERATION_PURE",
-            $"form={form.DisplayName}:{form.Id}; controls={form.Document?.Controls.Count ?? 0}; activeDocument={ActiveDocumentName}:{ActiveDocumentId}; selected={SelectedControl?.Name ?? "-"}:{SelectedControl?.Id ?? "-"}; reason=secondary export uses snapshot-only context",
+            $"form={form.DisplayName}:{form.Id}; controls={form.Document?.Controls.Count ?? 0}; activeDocument={ActiveDocumentName}:{ActiveDocumentId}; selected={SelectedControl?.Name ?? "-"}:{SelectedControl?.Id ?? "-"}; role={(isSecondaryForm ? "secondary" : "primary")}; reason=form export uses snapshot-only context",
             toOutput: false);
 
         var exportViewModel = new MainWindowViewModel(_registry);
@@ -13825,11 +13844,12 @@ public partial class MainWindowViewModel : ObservableObject
                 CloneDocumentFileModel(exportViewModel.ActiveFormDocument.Document),
                 CurrentProjectPath);
             exportViewModel.GenerateXaml();
+            TraceIsolatedFormSqlExportContext(exportViewModel, form, className, isSecondaryForm);
             TraceDocumentDebug(
                 "BUILD_SECONDARY_FORM_GENERATION_PURE",
-                $"form={form.DisplayName}:{form.Id}; controls={form.Document?.Controls.Count ?? 0}; generatedAxaml={exportViewModel.GeneratedXaml.Length}; generatedCode={exportViewModel.GeneratedCSharp.Length}",
+                $"form={form.DisplayName}:{form.Id}; controls={form.Document?.Controls.Count ?? 0}; generatedAxaml={exportViewModel.GeneratedXaml.Length}; generatedCode={exportViewModel.GeneratedCSharp.Length}; role={(isSecondaryForm ? "secondary" : "primary")}",
                 toOutput: false);
-            return (exportViewModel.GeneratedXaml, exportViewModel.GeneratedCSharp);
+            return (exportViewModel.GeneratedXaml, exportViewModel.GeneratedCSharp, exportViewModel.GeneratedBindingGuide);
         }
         finally
         {
@@ -13986,10 +14006,105 @@ public partial class MainWindowViewModel : ObservableObject
         target.IncludeCrudSkeleton = IncludeCrudSkeleton;
         target.IncludeCommunityToolkitAttributes = IncludeCommunityToolkitAttributes;
         target.IncludePluginRuntimeReferences = IncludePluginRuntimeReferences;
+        target.ExportSqlConnectionString = ExportSqlConnectionString;
+        target.SqlServerName = SqlServerName;
+        target.SqlDatabaseName = SqlDatabaseName;
+        target.SqlAuthenticationMode = SqlAuthenticationMode;
+        target.SqlUserName = SqlUserName;
+        target.SqlPassword = SqlPassword;
+        target.SqlSavePassword = SqlSavePassword;
+        target.SqlTrustServerCertificate = SqlTrustServerCertificate;
+        target.SqlEncryptConnection = SqlEncryptConnection;
+        target.SqlConnectionTimeoutSeconds = SqlConnectionTimeoutSeconds;
+        target.SqlDefaultSchema = SqlDefaultSchema;
+        target.SqlDefaultPreviewTopN = SqlDefaultPreviewTopN;
+        target.UseGlobalSqlServerSettings = UseGlobalSqlServerSettings;
         target._exportNamespaceOverride = ResolveExportNamespace();
         target._exportWindowClassNameOverride = className;
         target._exportViewModelClassNameOverride = $"{className}ViewModel";
         target._exportActiveFormIdOverride = formId;
+    }
+
+    private void TraceIsolatedFormSqlExportContext(
+        MainWindowViewModel exportViewModel,
+        DesignerFormDocument form,
+        string className,
+        bool isSecondaryForm)
+    {
+        var sqlGrids = exportViewModel.Controls
+            .Where(control => control.Type == DesignerControlTypes.DataGrid)
+            .Select(control => new
+            {
+                Control = control,
+                Source = exportViewModel.GetBindingSource(control.BindingSourceId)
+            })
+            .Where(item => item.Source is not null && IsSqlServerSource(item.Source))
+            .ToList();
+        TraceDocumentDebug(
+            "EXPORT_FORM_SQL_CONTEXT_START",
+            $"form={form.DisplayName}:{form.Id}; grids={sqlGrids.Count}; viewmodel={className}ViewModel; isolated=true; role={(isSecondaryForm ? "secondary" : "primary")}",
+            toOutput: false);
+
+        var contexts = exportViewModel.BuildCrudGenerationContexts();
+        foreach (var item in sqlGrids)
+        {
+            var source = item.Source!;
+            var runtimeMode = exportViewModel.ResolveRuntimeDataModeForExport(source);
+            var context = contexts.FirstOrDefault(candidate =>
+                string.Equals(candidate.Source.Id, source.Id, StringComparison.OrdinalIgnoreCase));
+            var effectiveConnectionString = exportViewModel.ResolveSqlConnectionStringForExport(source);
+            var hasConnectionString = !string.IsNullOrWhiteSpace(effectiveConnectionString);
+            var hasCommandText = !string.IsNullOrWhiteSpace(source.SourceQuery)
+                || !string.IsNullOrWhiteSpace(source.SourceTableName);
+
+            TraceDocumentDebug(
+                "EXPORT_FORM_SQL_GRID_RESOLVED",
+                $"form={form.DisplayName}:{form.Id}; grid={item.Control.Name}; sourceKey={DataSourceIdentity.BuildKey(source)}; hasConnectionString={hasConnectionString}; hasQuery={hasCommandText}; table={source.SourceTableName}; mode={runtimeMode.Mode}",
+                toOutput: false);
+            if (isSecondaryForm)
+            {
+                TraceDocumentDebug(
+                    "SECONDARY_FORM_SQL_EXPORT_CONTEXT",
+                    $"form={form.DisplayName}:{form.Id}; grid={item.Control.Name}; sourceKey={DataSourceIdentity.BuildKey(source)}; hasConnectionString={hasConnectionString}; hasQuery={hasCommandText}; table={source.SourceTableName}; provider=Microsoft.Data.SqlClient",
+                    toOutput: false);
+            }
+
+            if (context is null)
+                continue;
+
+            var plan = exportViewModel.BuildSqlRuntimeExportPlan(context, runtimeMode);
+            if (plan.ShouldGenerateLoader)
+            {
+                TraceDocumentDebug(
+                    "EXPORT_FORM_SQL_LOADER_GENERATED",
+                    $"form={form.DisplayName}:{form.Id}; grid={item.Control.Name}; loader={plan.LoaderMethodName}; viewmodel={className}ViewModel; autoCall={plan.ShouldCallLoader}",
+                    toOutput: false);
+            }
+            if (!plan.HasConnectionString)
+            {
+                TraceDocumentDebug(
+                    "EXPORT_FORM_SQL_CONNECTION_MISSING",
+                    $"form={form.DisplayName}:{form.Id}; grid={item.Control.Name}; reason={plan.ConnectionStringReason}",
+                    toOutput: false,
+                    warning: true);
+            }
+            if (!plan.ShouldCallLoader)
+            {
+                TraceDocumentDebug(
+                    "EXPORT_SECONDARY_FORM_SQL_ROWS_LOAD_SKIPPED",
+                    $"form={form.DisplayName}:{form.Id}; grid={item.Control.Name}; reason={(plan.ShouldGenerateLoader ? plan.ConnectionStringReason : plan.SkipReason)}",
+                    toOutput: false,
+                    warning: runtimeMode.Mode == DataGridRuntimeDataMode.Sql);
+            }
+        }
+
+        if (isSecondaryForm && contexts.Count > 0)
+        {
+            TraceDocumentDebug(
+                "EXPORT_SECONDARY_FORM_DATACONTEXT_GENERATED",
+                $"form={form.DisplayName}:{form.Id}; viewmodel={className}ViewModel",
+                toOutput: false);
+        }
     }
 
     private void DisposeExportOnlyViewModel()
@@ -14094,7 +14209,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     private IEnumerable<RequiredPackageModel> BuildRequiredPackageModels()
     {
-        foreach (var packageId in GetRequiredExportNuGetPackages().Distinct(StringComparer.OrdinalIgnoreCase))
+        foreach (var packageId in GetRequiredProjectExportNuGetPackages())
         {
             yield return new RequiredPackageModel
             {
@@ -14104,6 +14219,45 @@ public partial class MainWindowViewModel : ObservableObject
                 Severity = ExportChecklistSeverity.Warning
             };
         }
+    }
+
+    private IReadOnlyList<string> GetRequiredProjectExportNuGetPackages()
+    {
+        var packageIds = new HashSet<string>(GetRequiredExportNuGetPackages(), StringComparer.OrdinalIgnoreCase);
+        foreach (var form in CurrentProject.Forms)
+        {
+            var document = form.Document;
+            if (document is null)
+                continue;
+
+            var dataGrids = document.Controls
+                .Where(control => string.Equals(control.Type, DesignerControlTypes.DataGrid, StringComparison.Ordinal))
+                .ToList();
+            if (dataGrids.Count == 0)
+                continue;
+
+            if (ShouldExportRealDataGrid)
+                packageIds.Add("Avalonia.Controls.DataGrid");
+
+            var boundSourceIds = dataGrids
+                .Select(control => control.BindingSourceId)
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var boundSources = document.BindingSources
+                .Where(source => boundSourceIds.Contains(source.Id))
+                .ToList();
+            if (boundSources.Any(source => source.Fields.Any(field => field.IsVisible && !string.IsNullOrWhiteSpace(field.Path))))
+                packageIds.Add("CommunityToolkit.Mvvm");
+            if (boundSources.Any(source =>
+                    DataSourceIdentity.IsSqlServer(source.SourceKind)
+                    && (!string.IsNullOrWhiteSpace(source.SourceQuery)
+                        || !string.IsNullOrWhiteSpace(source.SourceTableName))))
+            {
+                packageIds.Add("Microsoft.Data.SqlClient");
+            }
+        }
+
+        return packageIds.OrderBy(id => id, StringComparer.OrdinalIgnoreCase).ToList();
     }
 
     private IEnumerable<ExportDiagnosticModel> BuildExportDiagnosticModels()
@@ -14276,7 +14430,17 @@ public partial class MainWindowViewModel : ObservableObject
             IncludeCrudSkeleton,
             IncludeCommunityToolkitAttributes,
             IncludePluginRuntimeReferences,
-            ExportSqlConnectionString);
+            ExportSqlConnectionString,
+            UseGlobalSqlServerSettings,
+            SqlServerName,
+            SqlDatabaseName,
+            SqlAuthenticationMode,
+            SqlUserName,
+            GetSnapshotHash(SqlPassword),
+            SqlTrustServerCertificate,
+            SqlEncryptConnection,
+            SqlConnectionTimeoutSeconds,
+            SqlDefaultSchema);
     }
 
     private static string GetSnapshotHash(string snapshot)
@@ -15130,9 +15294,13 @@ public partial class MainWindowViewModel : ObservableObject
         var buttonControls = Controls.Where(control => control.Type == DesignerControlTypes.Button).ToList();
         var textBoxControls = Controls.Where(control => control.Type == DesignerControlTypes.TextBox).ToList();
         var crudContexts = BuildCrudGenerationContexts();
+        var runtimeDataModes = crudContexts.ToDictionary(
+            context => context.Source.Id,
+            context => ResolveRuntimeDataModeForExport(context.Source),
+            StringComparer.OrdinalIgnoreCase);
         var sqlRuntimePlans = crudContexts
             .Where(context => IsSqlServerSource(context.Source))
-            .Select(BuildSqlRuntimeExportPlan)
+            .Select(context => BuildSqlRuntimeExportPlan(context, runtimeDataModes[context.Source.Id]))
             .ToDictionary(plan => plan.Context.Source.Id, StringComparer.OrdinalIgnoreCase);
         var sqlLoaderPlans = sqlRuntimePlans.Values
             .Where(plan => plan.ShouldGenerateLoader)
@@ -15140,9 +15308,17 @@ public partial class MainWindowViewModel : ObservableObject
         var hasSqlRuntimeLoaders = sqlLoaderPlans.Count > 0;
         var exportSeedRowsBySourceId = crudContexts.ToDictionary(
             context => context.Source.Id,
-            context => BuildRuntimeSeedRows(context),
+            context => BuildRuntimeSeedRows(context, runtimeDataModes[context.Source.Id]),
             StringComparer.OrdinalIgnoreCase);
         var runtimeDataGridChecks = new List<RuntimeDataGridSelfCheck>();
+        var sqlGridCount = Controls.Count(control =>
+            control.Type == DesignerControlTypes.DataGrid
+            && GetBindingSource(control.BindingSourceId) is { } source
+            && IsSqlServerSource(source));
+        TraceDocumentDebug(
+            "EXPORT_FORM_SQL_CONTEXT_START",
+            $"form={ActiveDocumentName}:{currentFormId}; grids={sqlGridCount}; viewmodel={viewModelClassName}; isolated={_isGeneratingSecondaryFormExport}",
+            toOutput: false);
         foreach (var control in Controls.Where(control => control.Type == DesignerControlTypes.DataGrid))
         {
             var source = GetBindingSource(control.BindingSourceId);
@@ -15171,10 +15347,29 @@ public partial class MainWindowViewModel : ObservableObject
                 .Where(name => !string.IsNullOrWhiteSpace(name))
                 .ToList();
             var gridNameText = gridNames.Count == 0 ? context.Source.Name : string.Join(",", gridNames);
+            var runtimeDataMode = runtimeDataModes[context.Source.Id];
             var generatedRowCount = exportSeedRowsBySourceId.TryGetValue(context.Source.Id, out var exportSeedRows)
                 ? exportSeedRows.Count
                 : 0;
             var previewRowCount = generatedRowCount;
+            TraceDocumentDebug(
+                "DATAGRID_RUNTIME_DATA_MODE_RESOLVED",
+                $"form={ActiveDocumentName}; grid={gridNameText}; mode={runtimeDataMode.Mode}; reason={runtimeDataMode.Reason}; sourceConfigured={runtimeDataMode.SourceConfigured}; explicitDemoEnabled={runtimeDataMode.ExplicitDemoEnabled}",
+                toOutput: false);
+            if (runtimeDataMode.Mode == DataGridRuntimeDataMode.Demo)
+            {
+                TraceDocumentDebug(
+                    "DATAGRID_DEMO_SEED_GENERATED",
+                    $"grid={gridNameText}; rows={generatedRowCount}; explicitDemoEnabled={runtimeDataMode.ExplicitDemoEnabled}",
+                    toOutput: false);
+            }
+            else
+            {
+                TraceDocumentDebug(
+                    "DATAGRID_DEMO_SEED_GENERATION_SKIPPED",
+                    $"grid={gridNameText}; reason=runtime mode is {runtimeDataMode.Mode}: {runtimeDataMode.Reason}",
+                    toOutput: false);
+            }
             TraceDocumentDebug(
                 "EXPORT_DATAGRID_RUNTIME_BINDING_START",
                 $"form={ActiveDocumentName}; grid={gridNameText}; sourceKind={context.Source.SourceKind}; previewRows={previewRowCount}; columns={context.Fields.Count}",
@@ -15210,19 +15405,46 @@ public partial class MainWindowViewModel : ObservableObject
             if (sqlRuntimePlans.TryGetValue(context.Source.Id, out var sqlPlan))
             {
                 TraceSqlRuntimeExportPlan(sqlPlan, gridNameText);
-                if (sqlPlan.ShouldGenerateSeedRows)
+                TraceDocumentDebug(
+                    "EXPORT_FORM_SQL_GRID_RESOLVED",
+                    $"form={ActiveDocumentName}:{currentFormId}; grid={gridNameText}; sourceKey={DataSourceIdentity.BuildKey(context.Source)}; hasConnectionString={sqlPlan.HasConnectionString}; hasQuery={sqlPlan.HasCommandText}; table={context.Source.SourceTableName}; mode={sqlPlan.RuntimeMode}",
+                    toOutput: false);
+                if (sqlPlan.ShouldGenerateLoader)
+                {
+                    TraceDocumentDebug(
+                        "EXPORT_FORM_SQL_LOADER_GENERATED",
+                        $"form={ActiveDocumentName}:{currentFormId}; grid={gridNameText}; loader={sqlPlan.LoaderMethodName}; viewmodel={viewModelClassName}; autoCall={sqlPlan.ShouldCallLoader}",
+                        toOutput: false);
+                }
+                if (!sqlPlan.HasConnectionString)
+                {
+                    TraceDocumentDebug(
+                        "EXPORT_FORM_SQL_CONNECTION_MISSING",
+                        $"form={ActiveDocumentName}:{currentFormId}; grid={gridNameText}; reason={sqlPlan.ConnectionStringReason}",
+                        toOutput: false,
+                        warning: true);
+                }
+                if (!sqlPlan.ShouldCallLoader)
+                {
+                    TraceDocumentDebug(
+                        "EXPORT_SECONDARY_FORM_SQL_ROWS_LOAD_SKIPPED",
+                        $"form={ActiveDocumentName}:{currentFormId}; grid={gridNameText}; reason={(sqlPlan.ShouldGenerateLoader ? sqlPlan.ConnectionStringReason : sqlPlan.SkipReason)}",
+                        toOutput: false,
+                        warning: sqlPlan.RuntimeMode == DataGridRuntimeDataMode.Sql.ToString());
+                }
+                if (runtimeDataMode.Mode == DataGridRuntimeDataMode.Demo)
                 {
                     TraceDocumentDebug(
                         "EXPORT_DATAGRID_LOADER_GENERATED",
-                        $"source={context.Source.Name}; loader=Seed{context.ItemTypeName}; mode={ResolveExportSeedMode(context.Source)}; rowsGenerated={generatedRowCount}",
+                        $"source={context.Source.Name}; loader=Seed{context.ItemTypeName}; mode={runtimeDataMode.Mode}; rowsGenerated={generatedRowCount}",
                         toOutput: false);
                 }
             }
-            else
+            else if (runtimeDataMode.Mode == DataGridRuntimeDataMode.Demo)
             {
                 TraceDocumentDebug(
                     "EXPORT_DATAGRID_LOADER_GENERATED",
-                    $"source={context.Source.Name}; loader=Seed{context.ItemTypeName}; mode={ResolveExportSeedMode(context.Source)}; rowsGenerated={generatedRowCount}",
+                    $"source={context.Source.Name}; loader=Seed{context.ItemTypeName}; mode={runtimeDataMode.Mode}; rowsGenerated={generatedRowCount}",
                     toOutput: false);
             }
         }
@@ -15276,7 +15498,7 @@ public partial class MainWindowViewModel : ObservableObject
         if (packages.Count > 0)
         {
             sb.AppendLine();
-            sb.AppendLine("// NuGet-пакеты, которые нужно установить для этого demo-кода:");
+            sb.AppendLine("// NuGet-пакеты, используемые сгенерированным проектом:");
             foreach (var package in packages)
                 sb.AppendLine($"// - {package}");
         }
@@ -15633,7 +15855,8 @@ public partial class MainWindowViewModel : ObservableObject
                 }
                 else
                 {
-                    sb.AppendLine($"        Seed{context.ItemTypeName}();");
+                    if (runtimeDataModes[context.Source.Id].Mode == DataGridRuntimeDataMode.Demo)
+                        sb.AppendLine($"        Seed{context.ItemTypeName}();");
                     sb.AppendLine($"        Apply{context.ItemTypeName}Filter();");
                 }
                 sb.AppendLine($"        System.Diagnostics.Debug.WriteLine($\"RUNTIME_DATAGRID_COLLECTION_CREATED source={EscapeCSharp(context.Source.Name)} collection={context.ViewCollectionPropertyName} rows={{{context.ViewCollectionPropertyName}.Count}}\");");
@@ -15771,8 +15994,7 @@ public partial class MainWindowViewModel : ObservableObject
                 var seedRows = exportSeedRowsBySourceId.TryGetValue(context.Source.Id, out var rows)
                     ? rows
                     : Array.Empty<Dictionary<string, string>>();
-                var shouldGenerateSeedMethod = !sqlRuntimePlans.TryGetValue(context.Source.Id, out var sqlPlanForSeed)
-                    || sqlPlanForSeed.ShouldGenerateSeedRows;
+                var shouldGenerateSeedMethod = runtimeDataModes[context.Source.Id].Mode == DataGridRuntimeDataMode.Demo;
                 if (shouldGenerateSeedMethod)
                 {
                     sb.AppendLine($"    private void Seed{context.ItemTypeName}()");
@@ -16175,6 +16397,7 @@ public partial class MainWindowViewModel : ObservableObject
         var preservePreviewSortColumn = existing.PreviewSortColumn;
         var preservePreviewSortDirection = existing.PreviewSortDirection;
         var preserveUseRealPreviewRowsIfAvailable = existing.UseRealPreviewRowsIfAvailable;
+        var preserveUseDemoData = existing.UseDemoData;
         var preserveAllowPreviewSampleFallback = existing.AllowPreviewSampleFallback;
 
         existing.Name = GetUniqueBindingSourceName(preserveName, existing.Id);
@@ -16190,6 +16413,7 @@ public partial class MainWindowViewModel : ObservableObject
         existing.PreviewSortColumn = preservePreviewSortColumn;
         existing.PreviewSortDirection = BindingSourceModel.NormalizePreviewSortDirection(preservePreviewSortDirection);
         existing.UseRealPreviewRowsIfAvailable = preserveUseRealPreviewRowsIfAvailable;
+        existing.UseDemoData = preserveUseDemoData;
         existing.AllowPreviewSampleFallback = preserveAllowPreviewSampleFallback;
 
         existing.Fields.Clear();
@@ -18422,15 +18646,16 @@ public partial class MainWindowViewModel : ObservableObject
         }
     }
 
-    private IReadOnlyList<Dictionary<string, string>> BuildRuntimeSeedRows(CrudGenerationContext context)
+    private IReadOnlyList<Dictionary<string, string>> BuildRuntimeSeedRows(
+        CrudGenerationContext context,
+        DataGridRuntimeDataModeResolution runtimeDataMode)
     {
         if (context.Fields.Count == 0)
             return Array.Empty<Dictionary<string, string>>();
 
-        var dataMode = PreviewRowsLoader.ResolveDataMode(context.Source);
         TraceDocumentDebug(
             "DATAGRID_EXPORT_DATA_MODE",
-            $"source={context.Source.Name}; sourceKind={context.Source.SourceKind}; mode={dataMode}; rowsConfigured={context.Source.Fields.Count}; sourceConfigured={PreviewRowsLoader.CanLoad(context.Source)}",
+            $"source={context.Source.Name}; sourceKind={context.Source.SourceKind}; mode={runtimeDataMode.Mode}; rowsConfigured={context.Source.Fields.Count}; sourceConfigured={runtimeDataMode.SourceConfigured}; reason={runtimeDataMode.Reason}",
             toOutput: false);
 
         if (DataSourceIdentity.IsSqlServer(context.Source.SourceKind) && !SqlPreviewDataLoader.CanLoad(context.Source))
@@ -18442,78 +18667,60 @@ public partial class MainWindowViewModel : ObservableObject
                 warning: true);
         }
 
-        if (DataSourceIdentity.IsSqlServer(context.Source.SourceKind)
-            && string.Equals(dataMode, PreviewRowsLoader.DataModeRealSqlData, StringComparison.Ordinal))
+        if (runtimeDataMode.Mode != DataGridRuntimeDataMode.Demo)
         {
+            var reason = runtimeDataMode.Mode switch
+            {
+                DataGridRuntimeDataMode.Sql => "runtime SQL loader will populate the collection",
+                DataGridRuntimeDataMode.Dll => "DLL source is configured, but no portable runtime DLL loader is generated",
+                _ => "source is not configured and demo data is disabled"
+            };
+            var shouldWarnAboutEmptyRuntime = runtimeDataMode.Mode is DataGridRuntimeDataMode.Empty or DataGridRuntimeDataMode.Dll;
             TraceDocumentDebug(
                 "EXPORT_DATAGRID_EMPTY_COLLECTION_GENERATED",
-                $"source={context.Source.Name}; sourceKind={context.Source.SourceKind}; mode={dataMode}; reason=runtime SQL loader will populate the collection",
-                toOutput: false);
-            return Array.Empty<Dictionary<string, string>>();
-        }
-
-        if (string.Equals(dataMode, PreviewRowsLoader.DataModeNoData, StringComparison.Ordinal)
-            || string.Equals(dataMode, PreviewRowsLoader.DataModeSchemaOnly, StringComparison.Ordinal))
-        {
-            TraceDocumentDebug(
-                "EXPORT_DATAGRID_EMPTY_COLLECTION_GENERATED",
-                $"source={context.Source.Name}; sourceKind={context.Source.SourceKind}; mode={dataMode}; reason=demo rows disabled or schema-only source",
+                $"source={context.Source.Name}; sourceKind={context.Source.SourceKind}; mode={runtimeDataMode.Mode}; reason={reason}",
                 toOutput: false,
-                warning: true);
+                warning: shouldWarnAboutEmptyRuntime);
             TraceDocumentDebug(
                 "EXPORT_DATAGRID_COLLECTION_EMPTY",
-                $"source={context.Source.Name}; sourceKind={context.Source.SourceKind}; reason=demo rows disabled or schema-only source; mode={dataMode}",
+                $"source={context.Source.Name}; sourceKind={context.Source.SourceKind}; reason={reason}; mode={runtimeDataMode.Mode}",
                 toOutput: false,
-                warning: true);
-            return Array.Empty<Dictionary<string, string>>();
-        }
-
-        if (DataSourceIdentity.IsAssembly(context.Source.SourceKind) && PreviewRowsLoader.CanLoad(context.Source))
-        {
-            try
-            {
-                var result = PreviewRowsLoader.LoadRowsAsync(context.Source, updateSourceStatus: false).GetAwaiter().GetResult();
-                if (result.Rows.Count > 0)
-                {
-                    TraceDocumentDebug(
-                        "EXPORT_DATAGRID_ROWS_GENERATED",
-                        $"source={context.Source.Name}; sourceKind={context.Source.SourceKind}; mode={(result.IsRealData ? "DllRealRows" : result.DataKind)}; rows={result.Rows.Count}",
-                        toOutput: false);
-                    return result.Rows;
-                }
-            }
-            catch (Exception ex)
+                warning: shouldWarnAboutEmptyRuntime);
+            if (runtimeDataMode.Mode == DataGridRuntimeDataMode.Dll)
             {
                 TraceDocumentDebug(
                     "EXPORT_DATAGRID_RUNTIME_DATA_WARNING",
-                    $"source={context.Source.Name}; reason={ex.Message}",
+                    $"source={context.Source.Name}; sourceKind={context.Source.SourceKind}; reason={reason}",
                     toOutput: true,
                     warning: true);
             }
+            return Array.Empty<Dictionary<string, string>>();
         }
 
         var demoRows = PreviewRowsLoader.BuildSampleRows(context.Source, RuntimeDataGridSampleRowCount);
         TraceDocumentDebug(
             "EXPORT_DATAGRID_DEMO_ROWS_GENERATED",
-            $"source={context.Source.Name}; sourceKind={context.Source.SourceKind}; mode={dataMode}; rows={demoRows.Count}; columns={context.Fields.Count}",
+            $"source={context.Source.Name}; sourceKind={context.Source.SourceKind}; mode={runtimeDataMode.Mode}; rows={demoRows.Count}; columns={context.Fields.Count}; explicitDemoEnabled={runtimeDataMode.ExplicitDemoEnabled}",
             toOutput: false);
         return demoRows;
     }
 
-    private SqlRuntimeExportPlan BuildSqlRuntimeExportPlan(CrudGenerationContext context)
+    private SqlRuntimeExportPlan BuildSqlRuntimeExportPlan(
+        CrudGenerationContext context,
+        DataGridRuntimeDataModeResolution runtimeDataMode)
     {
         var source = context.Source;
-        var dataMode = PreviewRowsLoader.ResolveDataMode(source);
-        var hasConnectionString = !string.IsNullOrWhiteSpace(source.SourceConnectionString);
+        var effectiveConnectionString = ResolveSqlConnectionStringForExport(source);
+        var hasConnectionString = !string.IsNullOrWhiteSpace(effectiveConnectionString);
         var hasQuery = !string.IsNullOrWhiteSpace(source.SourceQuery);
         var hasTable = !string.IsNullOrWhiteSpace(source.SourceTableName);
         var hasCommandText = hasQuery || hasTable;
-        var isRealSqlData = string.Equals(dataMode, PreviewRowsLoader.DataModeRealSqlData, StringComparison.Ordinal);
-        var isDemoData = string.Equals(dataMode, PreviewRowsLoader.DataModeDemoData, StringComparison.Ordinal);
+        var isRealSqlData = runtimeDataMode.Mode == DataGridRuntimeDataMode.Sql;
+        var isDemoData = runtimeDataMode.Mode == DataGridRuntimeDataMode.Demo;
         var shouldGenerateLoader = hasCommandText && (isRealSqlData || !hasConnectionString);
         var shouldExportConnectionString = shouldGenerateLoader && hasConnectionString && ExportSqlConnectionString;
         var connectionStringValue = shouldExportConnectionString
-            ? source.SourceConnectionString.Trim()
+            ? effectiveConnectionString
             : "TODO: set SQL Server connection string";
         var commandText = hasCommandText
             ? BuildSqlImportCommandText(source.SourceSchemaName, source.SourceTableName, source.SourceQuery)
@@ -18532,7 +18739,7 @@ public partial class MainWindowViewModel : ObservableObject
         return new SqlRuntimeExportPlan
         {
             Context = context,
-            RuntimeMode = isRealSqlData ? PreviewRowsLoader.DataModeRealSqlData : dataMode,
+            RuntimeMode = runtimeDataMode.Mode.ToString(),
             HasConnectionString = hasConnectionString,
             HasCommandText = hasCommandText,
             ShouldGenerateLoader = shouldGenerateLoader,
@@ -18544,6 +18751,40 @@ public partial class MainWindowViewModel : ObservableObject
             SkipReason = skipReason,
             ConnectionStringReason = connectionReason
         };
+    }
+
+    private DataGridRuntimeDataModeResolution ResolveRuntimeDataModeForExport(BindingSourceModel source)
+    {
+        if (!IsSqlServerSource(source) || !string.IsNullOrWhiteSpace(source.SourceConnectionString))
+            return DataGridRuntimeDataModeResolver.Resolve(source, IncludeSampleData);
+
+        var effectiveConnectionString = ResolveSqlConnectionStringForExport(source);
+        if (string.IsNullOrWhiteSpace(effectiveConnectionString))
+            return DataGridRuntimeDataModeResolver.Resolve(source, IncludeSampleData);
+
+        var exportSource = source.Clone();
+        exportSource.SourceConnectionString = effectiveConnectionString;
+        return DataGridRuntimeDataModeResolver.Resolve(exportSource, IncludeSampleData);
+    }
+
+    private string ResolveSqlConnectionStringForExport(BindingSourceModel source)
+    {
+        if (!string.IsNullOrWhiteSpace(source.SourceConnectionString))
+            return source.SourceConnectionString.Trim();
+
+        if (!UseGlobalSqlServerSettings)
+            return "";
+
+        var settings = CaptureSqlServerSettings();
+        if (string.Equals(settings.AuthenticationMode, SqlServerSettingsModel.AuthSqlLogin, StringComparison.Ordinal)
+            && ExportSqlConnectionString
+            && !string.IsNullOrWhiteSpace(SqlPassword))
+        {
+            settings.Password = SqlPassword;
+        }
+
+        var result = new SqlConnectionStringBuilderService().Build(settings);
+        return result.Success ? result.ConnectionString : "";
     }
 
     private void TraceSqlRuntimeExportPlan(SqlRuntimeExportPlan plan, string gridNameText)
@@ -18592,29 +18833,8 @@ public partial class MainWindowViewModel : ObservableObject
                 "EXPORT_SQL_LOADER_SKIPPED",
                 $"grid={gridNameText}; reason={plan.SkipReason}",
                 toOutput: false,
-                warning: !string.Equals(plan.RuntimeMode, PreviewRowsLoader.DataModeDemoData, StringComparison.Ordinal));
+                warning: !string.Equals(plan.RuntimeMode, DataGridRuntimeDataMode.Demo.ToString(), StringComparison.Ordinal));
         }
-    }
-
-    private static string ResolveExportSeedMode(BindingSourceModel source)
-    {
-        if (IsSqlServerSource(source))
-        {
-            var dataMode = PreviewRowsLoader.ResolveDataMode(source);
-            if (string.Equals(dataMode, PreviewRowsLoader.DataModeDemoData, StringComparison.Ordinal))
-                return "DemoData";
-            if (string.Equals(dataMode, PreviewRowsLoader.DataModeRealSqlData, StringComparison.Ordinal))
-                return "RealSqlData";
-
-            return dataMode;
-        }
-
-        if (DataSourceIdentity.IsAssembly(source.SourceKind))
-            return string.Equals(source.PreviewRowsDataKind, "RealData", StringComparison.OrdinalIgnoreCase)
-                ? "DllRealRows"
-                : "DllSampleRowsOrSchemaFallback";
-
-        return "SampleRows";
     }
 
     private static bool TryGetSeedValue(IReadOnlyDictionary<string, string> rowValues, BindingFieldModel field, out string value)
@@ -19379,7 +19599,7 @@ public partial class MainWindowViewModel : ObservableObject
             var nextHostRow = 0;
 
             if (shouldExportGroupPanel)
-                AppendDataGridGroupPanelXaml(sb, groupedFields, headerBackground, gridLineBrush, indentLevel + 1, nextHostRow++);
+                AppendDataGridGroupPanelXaml(sb, groupedFields, headerBackground, headerForeground, gridLineBrush, indentLevel + 1, nextHostRow++);
 
             if (shouldExportFilterRow)
                 AppendDataGridFilterRowXaml(sb, control, crudContext, visibleFields, headerBackground, gridLineBrush, cellPadding, indentLevel + 1, nextHostRow);
@@ -19912,22 +20132,23 @@ public partial class MainWindowViewModel : ObservableObject
         StringBuilder sb,
         IReadOnlyList<BindingFieldModel> groupedFields,
         string headerBackground,
+        string headerForeground,
         string gridLineBrush,
         int indentLevel,
         int rowIndex)
     {
-        sb.AppendLine($"{Indent(indentLevel)}<Border Grid.Row=\"{rowIndex}\" Background=\"{headerBackground}\" BorderBrush=\"{gridLineBrush}\" BorderThickness=\"0,0,0,1\" Padding=\"10,8\">");
+        sb.AppendLine($"{Indent(indentLevel)}<Border Grid.Row=\"{rowIndex}\" Background=\"{headerBackground}\" BorderBrush=\"{gridLineBrush}\" BorderThickness=\"0,0,0,1\" Padding=\"{ToInvariant(DataGridGroupPanelVisualCatalog.PaddingHorizontal)},{ToInvariant(DataGridGroupPanelVisualCatalog.PaddingVertical)}\" MinHeight=\"{ToInvariant(DataGridGroupPanelVisualCatalog.MinHeight)}\">");
         if (groupedFields.Count == 0)
         {
-            sb.AppendLine($"{Indent(indentLevel + 1)}<TextBlock Text=\"Перетащите колонку сюда для группировки\" Opacity=\"0.62\" VerticalAlignment=\"Center\" />");
+            sb.AppendLine($"{Indent(indentLevel + 1)}<TextBlock Text=\"{EscapeXml(DataGridGroupPanelVisualCatalog.PlaceholderText)}\" Foreground=\"{headerForeground}\" Opacity=\"{ToInvariant(DataGridGroupPanelVisualCatalog.PlaceholderOpacity)}\" VerticalAlignment=\"Center\" />");
         }
         else
         {
             sb.AppendLine($"{Indent(indentLevel + 1)}<WrapPanel>");
             foreach (var field in groupedFields)
             {
-                sb.AppendLine($"{Indent(indentLevel + 2)}<Border Background=\"#E0F2FE\" BorderBrush=\"#7DD3FC\" BorderThickness=\"1\" CornerRadius=\"999\" Padding=\"10,5\" Margin=\"0,0,8,6\">");
-                sb.AppendLine($"{Indent(indentLevel + 3)}<TextBlock Text=\"Группа {field.GroupOrder + 1}: {EscapeXml(field.Header)}\" Foreground=\"#0C4A6E\" FontWeight=\"SemiBold\" />");
+                sb.AppendLine($"{Indent(indentLevel + 2)}<Border Background=\"{DataGridGroupPanelVisualCatalog.ChipBackground}\" BorderBrush=\"{DataGridGroupPanelVisualCatalog.ChipBorder}\" BorderThickness=\"1\" CornerRadius=\"999\" Padding=\"{ToInvariant(DataGridGroupPanelVisualCatalog.ChipPaddingHorizontal)},{ToInvariant(DataGridGroupPanelVisualCatalog.ChipPaddingVertical)}\" Margin=\"0,0,{ToInvariant(DataGridGroupPanelVisualCatalog.ChipMarginRight)},{ToInvariant(DataGridGroupPanelVisualCatalog.ChipMarginBottom)}\">");
+                sb.AppendLine($"{Indent(indentLevel + 3)}<TextBlock Text=\"Группа {field.GroupOrder + 1}: {EscapeXml(field.Header)}\" Foreground=\"{DataGridGroupPanelVisualCatalog.ChipForeground}\" FontWeight=\"SemiBold\" />");
                 sb.AppendLine($"{Indent(indentLevel + 2)}</Border>");
             }
             sb.AppendLine($"{Indent(indentLevel + 1)}</WrapPanel>");
@@ -20133,6 +20354,7 @@ public partial class MainWindowViewModel : ObservableObject
             PreviewSortColumn = source.PreviewSortColumn,
             PreviewSortDirection = BindingSourceModel.NormalizePreviewSortDirection(source.PreviewSortDirection),
             UseRealPreviewRowsIfAvailable = source.UseRealPreviewRowsIfAvailable,
+            UseDemoData = source.UseDemoData,
             AllowPreviewSampleFallback = source.AllowPreviewSampleFallback,
             Fields = source.Fields.Select(ToBindingFieldFileModel).ToList()
         };
@@ -20235,6 +20457,7 @@ public partial class MainWindowViewModel : ObservableObject
             PreviewSortColumn = sourceFile.PreviewSortColumn,
             PreviewSortDirection = BindingSourceModel.NormalizePreviewSortDirection(sourceFile.PreviewSortDirection),
             UseRealPreviewRowsIfAvailable = sourceFile.UseRealPreviewRowsIfAvailable,
+            UseDemoData = sourceFile.UseDemoData,
             AllowPreviewSampleFallback = sourceFile.AllowPreviewSampleFallback
         };
 
@@ -21891,11 +22114,12 @@ public partial class MainWindowViewModel : ObservableObject
             && e.PropertyName is nameof(BindingSourceModel.PreviewRowMode)
                 or nameof(BindingSourceModel.PreviewTopN)
                 or nameof(BindingSourceModel.PreviewSortColumn)
-                or nameof(BindingSourceModel.PreviewSortDirection))
+                or nameof(BindingSourceModel.PreviewSortDirection)
+                or nameof(BindingSourceModel.UseDemoData))
         {
             TraceDocumentDebug(
                 "DATAGRID_PREVIEW_ROWS_MODE_CHANGED",
-                $"source={previewSource.Name}; mode={previewSource.PreviewRowMode}; topN={previewSource.PreviewTopN}; sort={previewSource.PreviewSortColumn} {previewSource.PreviewSortDirection}",
+                $"source={previewSource.Name}; mode={previewSource.PreviewRowMode}; explicitDemo={previewSource.UseDemoData}; topN={previewSource.PreviewTopN}; sort={previewSource.PreviewSortColumn} {previewSource.PreviewSortDirection}",
                 toOutput: false);
         }
 

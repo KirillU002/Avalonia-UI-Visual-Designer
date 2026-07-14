@@ -21,6 +21,8 @@ public sealed class ExportedAxamlPreviewModel
 
     public string ActiveFormId { get; init; } = "";
 
+    public bool IncludeDemoData { get; init; }
+
     public bool FallbackToLegacyPreviewOnError { get; init; } = true;
 
     public bool ShowGeneratedAxamlOnError { get; init; } = true;

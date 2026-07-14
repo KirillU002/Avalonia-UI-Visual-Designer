@@ -126,7 +126,7 @@ internal static class Program
             new("RealDataGridExportUsesValidColumnTags", ConfigureRealDataGridExport, AssertRealDataGridExportUsesValidColumnTags, RequiresRealDataGrid: true),
             new("DataGridExportGeneratesItemsSourceProperty", ConfigureRealDataGridExport, AssertDataGridExportGeneratesItemsSourceProperty, RequiresRealDataGrid: true),
             new("DataGridExportGeneratesRowDto", ConfigureRealDataGridExport, AssertDataGridExportGeneratesRowDto, RequiresRealDataGrid: true),
-            new("DataGridExportGeneratesSampleData", ConfigureRealDataGridExport, AssertDataGridExportGeneratesSampleData, RequiresRealDataGrid: true),
+            new("DataGridExportGeneratesSampleData", ConfigureRealDataGridExportWithDemo, AssertDataGridExportGeneratesSampleData, RequiresRealDataGrid: true),
             new("DataGridExportBuildsWithoutManualFix", ConfigureRealDataGridExport, AssertDataGridExportBuildsWithoutManualFix, RequiresRealDataGrid: true),
             new("DataGridHeaderTemplateDoesNotGenerateEmptyBinding", ConfigureDataGridBindingSourceWorkflow, AssertDataGridHeaderTemplateDoesNotGenerateEmptyBinding, RequiresRealDataGrid: true),
             new("DataGridExportSettingsForSortResizeScroll", ConfigureRealDataGridExport, AssertDataGridExportSettingsForSortResizeScroll, RequiresRealDataGrid: true),
@@ -168,9 +168,21 @@ internal static class Program
             new("GeneratedDataGridAppAxamlIncludesDataGridTheme", ConfigureUnconfiguredSqlDataGridDemoRows, AssertGeneratedDataGridAppAxamlIncludesDataGridTheme, RequiresRealDataGrid: true),
             new("GeneratedDataGridRuntimeSelfCheckGenerated", ConfigureUnconfiguredSqlDataGridDemoRows, AssertGeneratedDataGridRuntimeSelfCheckGenerated, RequiresRealDataGrid: true),
             new("GeneratedDataGridWithFilterAndGroupPanelStillShowsRows", ConfigureUnconfiguredSqlDataGridDemoRows, AssertGeneratedDataGridWithFilterAndGroupPanelStillShowsRows, RequiresRealDataGrid: true),
+            new("DataGridWithoutSourceExportsEmptyCollection", ConfigureUnconfiguredSqlDataGridNoData, AssertDataGridWithoutSourceExportsEmptyCollection, RequiresRealDataGrid: true),
+            new("DataGridDemoRowsGeneratedOnlyWhenExplicitlyEnabled", ConfigureUnconfiguredSqlDataGridDemoRows, AssertDataGridDemoRowsGeneratedOnlyWhenExplicitlyEnabled, RequiresRealDataGrid: true),
+            new("AxamlPreviewEmptyDataGridKeepsGroupPanel", ConfigureUnconfiguredSqlDataGridNoData, AssertAxamlPreviewEmptyDataGridKeepsGroupPanel, RequiresRealDataGrid: true),
+            new("AxamlPreviewAndExportUseSameDataMode", ConfigureUnconfiguredSqlDataGridNoData, AssertAxamlPreviewAndExportUseSameDataMode, RequiresRealDataGrid: true),
+            new("RuntimePreviewDoesNotDropGroupPanelHostRows", ConfigureUnconfiguredSqlDataGridNoData, AssertRuntimePreviewDoesNotDropGroupPanelHostRows, RequiresRealDataGrid: true),
+            new("SqlDataGridDoesNotGenerateDemoSeed", ConfigureSqlDataGridExport, AssertSqlDataGridDoesNotGenerateDemoSeed, RequiresRealDataGrid: true),
             new("SqlDataGridAutoPromotesVisualExportToRuntimeRows", ConfigureSqlDataGridAutoPromotesVisualExportToRuntimeRows, AssertSqlDataGridAutoPromotesVisualExportToRuntimeRows, RequiresRealDataGrid: true),
             new("MultiFormSqlDataGridExportBuildsWithDistinctDtos", ConfigureMultiFormSqlDataGridExportBuildsWithDistinctDtos, AssertMultiFormSqlDataGridExportBuildsWithDistinctDtos, RequiresRealDataGrid: true),
             new("FiveFormSqlDataGridsExportBuilds", ConfigureFiveFormSqlDataGridsExportBuilds, AssertFiveFormSqlDataGridsExportBuilds, RequiresRealDataGrid: true),
+            new("MultiFormSqlExportGeneratesConnectionForEveryForm", ConfigureMultiFormSqlExportWithGlobalAndDistinctSources, AssertMultiFormSqlExportGeneratesConnectionForEveryForm, RequiresRealDataGrid: true),
+            new("MultiFormSqlExportGeneratesLoaderForEveryGrid", ConfigureMultiFormSqlExportWithGlobalAndDistinctSources, AssertMultiFormSqlExportGeneratesLoaderForEveryGrid, RequiresRealDataGrid: true),
+            new("MultiFormSqlExportAssignsDataContextForEveryWindow", ConfigureMultiFormSqlExportWithGlobalAndDistinctSources, AssertMultiFormSqlExportAssignsDataContextForEveryWindow, RequiresRealDataGrid: true),
+            new("MultiFormSqlExportLoadsRowsForSecondaryForms", ConfigureMultiFormSqlExportWithGlobalAndDistinctSources, AssertMultiFormSqlExportLoadsRowsForSecondaryForms, RequiresRealDataGrid: true),
+            new("MultiFormSqlExportDoesNotDependOnActiveForm", ConfigureMultiFormSqlExportWithGlobalAndDistinctSources, AssertMultiFormSqlExportDoesNotDependOnActiveForm, RequiresRealDataGrid: true),
+            new("MultiFormSqlExportSupportsDifferentSourcesPerForm", ConfigureMultiFormSqlExportWithGlobalAndDistinctSources, AssertMultiFormSqlExportSupportsDifferentSourcesPerForm, RequiresRealDataGrid: true),
             new("DllDataGridPreviewRuntimeRowsMatch", ConfigureDllTableDataGridExport, AssertDllDataGridPreviewRuntimeRowsMatch, RequiresRealDataGrid: true),
             new("ManualDataGridPreviewRuntimeRowsMatch", ConfigureManualColumnsViaColumnEditor, AssertManualDataGridPreviewRuntimeRowsMatch, RequiresRealDataGrid: true),
             new("DllTableDataGridExportGeneratesUnderstandableBinding", ConfigureDllTableDataGridExport, AssertDllTableDataGridExportGeneratesUnderstandableBinding, RequiresRealDataGrid: true),
@@ -1953,6 +1965,12 @@ internal static class Program
         vm.Controls.Add(DataGrid("ProductsGrid", source.Id, 32, 42, 720, 360));
     }
 
+    private static void ConfigureRealDataGridExportWithDemo(MainWindowViewModel vm)
+    {
+        ConfigureRealDataGridExport(vm);
+        vm.BindingSources.Single().UseDemoData = true;
+    }
+
     private static void AssertRealDataGridExport(SmokeContext context)
     {
         RequireContains(context.Xaml, "<DataGrid", "Generated XAML should use real Avalonia DataGrid.");
@@ -2499,7 +2517,7 @@ internal static class Program
     {
         var source = SqlRuntimeMismatchSource("sql-preview-runtime-source", "RuntimeRows", "SqlRow");
         source.UseRealPreviewRowsIfAvailable = false;
-        source.AllowPreviewSampleFallback = true;
+        source.UseDemoData = true;
         vm.BindingSources.Add(source);
         vm.DataGridExportMode = MainWindowViewModel.DataGridExportModeReal;
         vm.Controls.Add(DataGrid("RuntimeGrid", source.Id, 32, 42, 720, 360));
@@ -2637,11 +2655,86 @@ internal static class Program
         RequireGeneratedViewModelCollectionHasRows(context, "SqlSourceView", 1);
     }
 
+    private static void AssertDataGridWithoutSourceExportsEmptyCollection(SmokeContext context)
+    {
+        RequireContains(context.Xaml, "ItemsSource=\"{Binding SqlSourceView}\"", "Empty DataGrid should keep an explicit runtime ItemsSource binding.");
+        RequireContains(context.CSharp, "public ObservableCollection<SqlRow> SqlSource { get; } = new();", "Empty DataGrid should still generate its source collection.");
+        RequireContains(context.CSharp, "ApplySqlRowFilter();", "Empty DataGrid should safely initialize its filtered view.");
+        RequireNotContains(context.CSharp, "SeedSqlRow", "DataGrid without a configured source and demo disabled must not generate a seed method or call.");
+        RequireNotContains(context.CSharp, "SqlSource.Add(new SqlRow", "Empty mode must not add synthetic rows.");
+        RequireTraceEvent(context, "DATAGRID_RUNTIME_DATA_MODE_RESOLVED");
+        RequireTraceEvent(context, "DATAGRID_DEMO_SEED_GENERATION_SKIPPED");
+        RequireGeneratedViewModelCollectionRowCount(context, "SqlSourceView", expectedRows: 0);
+    }
+
+    private static void AssertDataGridDemoRowsGeneratedOnlyWhenExplicitlyEnabled(SmokeContext context)
+    {
+        var source = context.ViewModel.BindingSources.Single();
+        RequireEqual(true, source.UseDemoData, "Demo smoke configuration must opt in explicitly through UseDemoData.");
+        RequireContains(context.CSharp, "SeedSqlRow();", "Explicit Demo mode should call the generated seed method.");
+        RequireContains(context.CSharp, "private void SeedSqlRow()", "Explicit Demo mode should generate a seed method.");
+        RequireContains(context.CSharp, "SqlSource.Add(new SqlRow", "Explicit Demo mode should populate the runtime collection.");
+        RequireTraceEvent(context, "DATAGRID_DEMO_SEED_GENERATED");
+    }
+
+    private static void AssertAxamlPreviewEmptyDataGridKeepsGroupPanel(SmokeContext context)
+    {
+        var payload = context.ViewModel.GenerateExportedAxamlPreviewSnapshot();
+        RequireContains(payload.Axaml, "RowDefinitions=\"Auto,Auto,*\"", "RuntimePreview AXAML should preserve group/filter/DataGrid host rows.");
+        RequireContains(payload.Axaml, DataGridGroupPanelVisualCatalog.PlaceholderText, "RuntimePreview AXAML should preserve the grouping panel.");
+        RequireContains(payload.Axaml, "Grid.Row=\"0\"", "Grouping panel should remain in the first host row.");
+        RequireContains(payload.Axaml, "Grid.Row=\"1\"", "Filter row should remain in the second host row.");
+        RequireContains(payload.Axaml, "Grid.Row=\"2\"", "DataGrid should remain in the star-sized host row.");
+        RequireNotContains(payload.GeneratedCSharp, "SeedSqlRow", "Empty AXAML Preview must use the same no-seed runtime mode as Export.");
+    }
+
+    private static void AssertAxamlPreviewAndExportUseSameDataMode(SmokeContext context)
+    {
+        var payload = context.ViewModel.GenerateExportedAxamlPreviewSnapshot();
+        RequireEqual(false, payload.IncludeDemoData, "AXAML Preview payload should carry the export demo-data setting.");
+        RequireEqual(context.Xaml, payload.ExportAxaml, "AXAML Preview must start from the exact Export AXAML.");
+        RequireNotContains(context.CSharp, "SeedSqlRow", "Export Empty mode must not contain a seed method.");
+        RequireNotContains(payload.GeneratedCSharp, "SeedSqlRow", "AXAML Preview Empty mode must not contain a seed method.");
+    }
+
+    private static void AssertRuntimePreviewDoesNotDropGroupPanelHostRows(SmokeContext context)
+    {
+        var payload = context.ViewModel.GenerateExportedAxamlPreviewSnapshot();
+        RequireContains(payload.ExportAxaml, "RowDefinitions=\"Auto,Auto,*\"", "Export AXAML should generate three DataGrid host rows.");
+        RequireContains(payload.Axaml, "RowDefinitions=\"Auto,Auto,*\"", "RuntimePreview transformation must preserve DataGrid host RowDefinitions.");
+        RequireContains(payload.Axaml, DataGridGroupPanelVisualCatalog.PlaceholderText, "RuntimePreview transformation must preserve group panel content.");
+        RequireContains(payload.Axaml, "MinHeight=\"40\"", "RuntimePreview grouping panel should use the shared visual catalog dimensions.");
+
+        EnsureAvaloniaRuntimeInitialized();
+        var loaded = RuntimeAxamlPreviewLoader.Load(payload.Axaml) as UserControl
+            ?? throw new InvalidOperationException("RuntimePreview DataGrid payload did not load as UserControl.");
+        var grid = loaded.GetLogicalDescendants().OfType<DataGrid>().SingleOrDefault()
+            ?? throw new InvalidOperationException("RuntimePreview visual tree does not contain the exported DataGrid.");
+        var host = grid.GetLogicalParent() as Grid
+            ?? throw new InvalidOperationException("RuntimePreview DataGrid host Grid was dropped during transformation.");
+        RequireEqual(3, host.RowDefinitions.Count, "RuntimePreview DataGrid host should retain group, filter and content rows.");
+        RequireEqual(2, Grid.GetRow(grid), "RuntimePreview DataGrid should remain in the third host row.");
+        if (!host.Children.Any(child => Grid.GetRow(child) == 0)
+            || !host.Children.Any(child => Grid.GetRow(child) == 1))
+        {
+            throw new InvalidOperationException("RuntimePreview DataGrid host lost its grouping panel or filter row.");
+        }
+    }
+
+    private static void AssertSqlDataGridDoesNotGenerateDemoSeed(SmokeContext context)
+    {
+        RequireNotContains(context.CSharp, "SeedCustomerRow", "Configured SQL mode must never generate demo seed code.");
+        RequireNotContains(context.CSharp, "Customers.Add(new CustomerRow", "Configured SQL mode must not populate fake rows.");
+        RequireContains(context.CSharp, "LoadCustomerRowFromSql", "Configured SQL mode should generate its real SQL loader.");
+        RequireTraceEvent(context, "DATAGRID_RUNTIME_DATA_MODE_RESOLVED");
+        RequireTraceEvent(context, "DATAGRID_DEMO_SEED_GENERATION_SKIPPED");
+    }
+
     private static void ConfigureSqlDataGridAutoPromotesVisualExportToRuntimeRows(MainWindowViewModel vm)
     {
         var source = SqlRuntimeMismatchSource("sql-auto-runtime-source", "AutoRows", "SqlRow");
         source.UseRealPreviewRowsIfAvailable = false;
-        source.AllowPreviewSampleFallback = true;
+        source.UseDemoData = true;
         vm.BindingSources.Add(source);
         vm.DataGridExportMode = MainWindowViewModel.DataGridExportModeVisual;
         vm.Controls.Add(DataGrid("AutoRuntimeGrid", source.Id, 32, 42, 720, 360));
@@ -2737,6 +2830,144 @@ internal static class Program
         RequireContains(allCode, "RUNTIME_DATAGRID_COLLECTION_CREATED", "Generated runtime should trace row collections for multi-form SQL grids.");
     }
 
+    private static void ConfigureMultiFormSqlExportWithGlobalAndDistinctSources(MainWindowViewModel vm)
+    {
+        vm.ExportTarget = MainWindowViewModel.ExportTargetMainWindow;
+        vm.DataGridExportMode = MainWindowViewModel.DataGridExportModeReal;
+        vm.ExportSqlConnectionString = true;
+        vm.UseGlobalSqlServerSettings = true;
+        vm.SqlServerName = "global-sql-host";
+        vm.SqlDatabaseName = "GlobalDesignerDb";
+        vm.SqlAuthenticationMode = SqlServerSettingsModel.AuthWindows;
+        vm.SqlTrustServerCertificate = true;
+        vm.SqlEncryptConnection = false;
+        var form1 = vm.ActiveFormDocument ?? throw new InvalidOperationException("Form1 missing.");
+
+        var source1 = MultiFormSqlSource(
+            "orders-global-source",
+            "OrdersRows",
+            "OrderRow",
+            "Orders",
+            "SELECT [Id], [Name] FROM [dbo].[Orders]");
+        vm.BindingSources.Add(source1);
+        vm.Controls.Add(DataGrid("OrdersGrid", source1.Id, 32, 42, 720, 320));
+
+        var form2 = vm.CreateNewForm();
+        form2.Name = "Form2";
+        form2.Document.FormTitle = "Form2";
+        vm.FormTitle = "Form2";
+        var source2 = MultiFormSqlSource(
+            "audit-explicit-source",
+            "AuditRows",
+            "AuditRow",
+            "AuditEntries",
+            "SELECT [Id], [Name] FROM [audit].[AuditEntries]");
+        source2.SourceSchemaName = "audit";
+        source2.SourceConnectionString = "Server=form2-sql-host;Database=Form2AuditDb;Trusted_Connection=True;TrustServerCertificate=True";
+        vm.BindingSources.Add(source2);
+        vm.Controls.Add(DataGrid("AuditGrid", source2.Id, 32, 42, 720, 320));
+
+        var form3 = vm.CreateNewForm();
+        form3.Name = "Form3";
+        form3.Document.FormTitle = "Form3";
+        vm.FormTitle = "Form3";
+        var source3 = MultiFormSqlSource(
+            "reports-global-source",
+            "ReportRows",
+            "ReportRow",
+            "Reports",
+            "SELECT [Id], [Name] FROM [reporting].[Reports]");
+        source3.SourceSchemaName = "reporting";
+        vm.BindingSources.Add(source3);
+        vm.Controls.Add(DataGrid("ReportsGrid", source3.Id, 32, 42, 720, 320));
+
+        SwitchToForm(vm, form1.Id);
+    }
+
+    private static void AssertMultiFormSqlExportGeneratesConnectionForEveryForm(SmokeContext context)
+    {
+        var mainCode = RequireGeneratedFile(context, "MainWindow.axaml.cs").Content;
+        var form2Code = RequireGeneratedFile(context, "Form2.axaml.cs").Content;
+        var form3Code = RequireGeneratedFile(context, "Form3.axaml.cs").Content;
+
+        RequireContains(mainCode, "Data Source=global-sql-host", "Form1 should resolve the global SQL Server name.");
+        RequireContains(mainCode, "Initial Catalog=GlobalDesignerDb", "Form1 should resolve the global SQL database.");
+        RequireContains(form2Code, "Server=form2-sql-host;Database=Form2AuditDb", "Form2 should preserve its source-specific connection string.");
+        RequireContains(form3Code, "Data Source=global-sql-host", "Form3 should receive global SQL settings in its isolated export context.");
+        RequireContains(form3Code, "Initial Catalog=GlobalDesignerDb", "Form3 should receive the global SQL database.");
+        RequireNotContains(GetGeneratedFilesText(context), "TODO: set SQL Server connection string", "Configured multi-form SQL export must not emit placeholder connection strings.");
+        RequireTraceEvent(context, "SECONDARY_FORM_SQL_EXPORT_CONTEXT");
+        RequireTraceEvent(context, "EXPORT_FORM_SQL_GRID_RESOLVED");
+    }
+
+    private static void AssertMultiFormSqlExportGeneratesLoaderForEveryGrid(SmokeContext context)
+    {
+        var mainCode = RequireGeneratedFile(context, "MainWindow.axaml.cs").Content;
+        var form2Code = RequireGeneratedFile(context, "Form2.axaml.cs").Content;
+        var form3Code = RequireGeneratedFile(context, "Form3.axaml.cs").Content;
+
+        RequireContains(mainCode, "public void LoadOrderRowFromSql()", "Form1 SQL loader should be generated.");
+        RequireContains(form2Code, "public void LoadAuditRowFromSql()", "Form2 SQL loader should be generated.");
+        RequireContains(form3Code, "public void LoadReportRowFromSql()", "Form3 SQL loader should be generated.");
+        RequireContains(GetGeneratedFilesText(context), "Microsoft.Data.SqlClient", "The exported project should include the SQL client package for all forms.");
+        RequireTraceEvent(context, "EXPORT_FORM_SQL_LOADER_GENERATED");
+    }
+
+    private static void AssertMultiFormSqlExportAssignsDataContextForEveryWindow(SmokeContext context)
+    {
+        var mainCode = RequireGeneratedFile(context, "MainWindow.axaml.cs").Content;
+        var form2Code = RequireGeneratedFile(context, "Form2.axaml.cs").Content;
+        var form3Code = RequireGeneratedFile(context, "Form3.axaml.cs").Content;
+        RequireContains(mainCode, "var viewModel = new MainWindowViewModel();", "Form1 should construct MainWindowViewModel.");
+        RequireContains(mainCode, "DataContext = viewModel;", "Form1 should assign its ViewModel as DataContext.");
+        RequireContains(form2Code, "var viewModel = new Form2ViewModel();", "Form2 should construct Form2ViewModel.");
+        RequireContains(form2Code, "DataContext = viewModel;", "Form2 should assign its ViewModel as DataContext.");
+        RequireContains(form3Code, "var viewModel = new Form3ViewModel();", "Form3 should construct Form3ViewModel.");
+        RequireContains(form3Code, "DataContext = viewModel;", "Form3 should assign its ViewModel as DataContext.");
+        RequireTraceEvent(context, "EXPORT_SECONDARY_FORM_DATACONTEXT_GENERATED");
+    }
+
+    private static void AssertMultiFormSqlExportLoadsRowsForSecondaryForms(SmokeContext context)
+    {
+        var form2Code = RequireGeneratedFile(context, "Form2.axaml.cs").Content;
+        var form3Code = RequireGeneratedFile(context, "Form3.axaml.cs").Content;
+        RequireContains(form2Code, "LoadAuditRowFromSql();", "Form2 ViewModel constructor should call its SQL loader.");
+        RequireContains(form3Code, "LoadReportRowFromSql();", "Form3 ViewModel constructor should call its SQL loader.");
+        RequireContains(form2Code, "public ObservableCollection<AuditRow> AuditRowsView { get; } = new();", "Form2 should expose its own ItemsSource collection.");
+        RequireContains(form3Code, "public ObservableCollection<ReportRow> ReportRowsView { get; } = new();", "Form3 should expose its own ItemsSource collection.");
+    }
+
+    private static void AssertMultiFormSqlExportDoesNotDependOnActiveForm(SmokeContext context)
+    {
+        var before = context.GeneratedFiles
+            .ToDictionary(file => file.Path, file => file.Content, StringComparer.OrdinalIgnoreCase);
+        var form3 = context.ViewModel.CurrentProject.Forms.Single(form => string.Equals(form.Name, "Form3", StringComparison.Ordinal));
+        SwitchToForm(context.ViewModel, form3.Id);
+        context.ViewModel.GenerateXaml();
+        var after = context.ViewModel.GeneratedFiles
+            .ToDictionary(file => file.Path, file => file.Content, StringComparer.OrdinalIgnoreCase);
+
+        if (before.Count != after.Count)
+            throw new InvalidOperationException("Changing active form changed the number of generated form files.");
+        foreach (var pair in before)
+        {
+            if (!after.TryGetValue(pair.Key, out var content) || !string.Equals(pair.Value, content, StringComparison.Ordinal))
+                throw new InvalidOperationException($"Changing active form changed generated file '{pair.Key}'.");
+        }
+    }
+
+    private static void AssertMultiFormSqlExportSupportsDifferentSourcesPerForm(SmokeContext context)
+    {
+        var mainCode = RequireGeneratedFile(context, "MainWindow.axaml.cs").Content;
+        var form2Code = RequireGeneratedFile(context, "Form2.axaml.cs").Content;
+        var form3Code = RequireGeneratedFile(context, "Form3.axaml.cs").Content;
+        RequireContains(mainCode, "FROM [dbo].[Orders]", "Form1 should use the Orders query.");
+        RequireContains(form2Code, "FROM [audit].[AuditEntries]", "Form2 should use the Audit query.");
+        RequireContains(form3Code, "FROM [reporting].[Reports]", "Form3 should use the Reports query.");
+        RequireNotContains(mainCode, "Form2AuditDb", "Form1 must not receive Form2 SQL settings.");
+        RequireNotContains(form3Code, "Form2AuditDb", "Form3 must not receive Form2 SQL settings.");
+    }
+
     private static void ConfigureDllTableDataGridExport(MainWindowViewModel vm)
     {
         var source = DllOrdersSource();
@@ -2759,16 +2990,17 @@ internal static class Program
     private static void AssertDllDataGridPreviewRuntimeRowsMatch(SmokeContext context)
     {
         RequireContains(context.Xaml, "ItemsSource=\"{Binding SalesOrdersView}\"", "DLL DataGrid runtime should bind to generated ViewModel collection.");
-        RequireContains(context.CSharp, "SalesOrders.Add(new OrderRow", "DLL DataGrid should seed portable sample rows.");
-        RequireContains(context.CSharp, "OrderId = 1001", "DLL DataGrid sample rows should use schema sample values.");
+        RequireNotContains(context.CSharp, "SeedOrderRow", "DLL DataGrid must not silently generate demo seed rows.");
+        RequireNotContains(context.CSharp, "SalesOrders.Add(new OrderRow", "DLL DataGrid without an exported runtime provider should stay empty.");
         RequireContains(context.CSharp, "RUNTIME_DATAGRID_COLLECTION_CREATED", "Generated runtime should trace DLL DataGrid collection row count.");
-        RequireTraceEvent(context, "EXPORT_DATAGRID_ROWS_GENERATED");
+        RequireTraceEvent(context, "DATAGRID_DEMO_SEED_GENERATION_SKIPPED");
     }
 
     private static void AssertManualDataGridPreviewRuntimeRowsMatch(SmokeContext context)
     {
         RequireContains(context.Xaml, "ItemsSource=\"{Binding ManualGridItemsView}\"", "Manual DataGrid runtime should bind to generated ViewModel collection.");
-        RequireContains(context.CSharp, "ManualGridItems.Add(new ManualGridRow", "Manual DataGrid should seed sample rows.");
+        RequireNotContains(context.CSharp, "SeedManualGridRow", "Manual DataGrid must not generate seed rows unless Demo mode is explicitly enabled.");
+        RequireNotContains(context.CSharp, "ManualGridItems.Add(new ManualGridRow", "Manual DataGrid should stay empty when Demo mode is disabled.");
         RequireContains(context.CSharp, "RUNTIME_DATAGRID_COLLECTION_CREATED", "Generated runtime should trace manual DataGrid collection row count.");
         RequireTraceEvent(context, "EXPORT_DATAGRID_ITEMSSOURCE_GENERATED");
     }
@@ -5514,6 +5746,35 @@ internal static class Program
         return source;
     }
 
+    private static BindingSourceModel MultiFormSqlSource(
+        string id,
+        string path,
+        string itemTypeName,
+        string tableName,
+        string query)
+    {
+        var source = new BindingSourceModel
+        {
+            Id = id,
+            Name = $"{itemTypeName}Source",
+            Path = path,
+            ItemTypeName = itemTypeName,
+            Description = "Multi-form SQL export source.",
+            SourceKind = "SqlServer",
+            SourceConnectionString = "",
+            SourceSchemaName = "dbo",
+            SourceTableName = tableName,
+            SourceQuery = query,
+            PreviewRowMode = BindingSourceModel.PreviewRowModeTopN,
+            UseRealPreviewRowsIfAvailable = true,
+            UseDemoData = false,
+            AllowPreviewSampleFallback = false
+        };
+        source.Fields.Add(Field("Id", "Id", "1", "int", "90"));
+        source.Fields.Add(Field("Name", "Name", "row", "string", "2*"));
+        return source;
+    }
+
     private static BindingSourceModel UnconfiguredSqlSource(bool allowDemoRows)
     {
         var source = new BindingSourceModel
@@ -5528,9 +5789,10 @@ internal static class Program
             SourceSchemaName = "dbo",
             SourceTableName = "",
             SourceQuery = "",
-            PreviewRowMode = allowDemoRows ? BindingSourceModel.PreviewRowModeTopN : BindingSourceModel.PreviewRowModeSchemaOnly,
+            PreviewRowMode = allowDemoRows ? BindingSourceModel.PreviewRowModeSampleRows : BindingSourceModel.PreviewRowModeSchemaOnly,
             PreviewTopN = 6,
-            AllowPreviewSampleFallback = allowDemoRows
+            UseDemoData = allowDemoRows,
+            AllowPreviewSampleFallback = false
         };
         source.Fields.Add(Field("Колонка 1", "Field1", "1", "int", "*"));
         source.Fields.Add(Field("Колонка 2", "Field2", "2", "int", "*"));
@@ -6646,10 +6908,10 @@ Diagnostics:
         return string.Join(Environment.NewLine, context.ViewModel.RequiredPackages.Select(package => $"{package.Id} {package.Version}"));
     }
 
-    private static void RequireGeneratedFile(SmokeContext context, string path)
+    private static GeneratedFileModel RequireGeneratedFile(SmokeContext context, string path)
     {
-        if (!context.GeneratedFiles.Any(file => string.Equals(file.Path, path, StringComparison.OrdinalIgnoreCase)))
-            throw new InvalidOperationException($"Generated file missing: {path}");
+        return context.GeneratedFiles.FirstOrDefault(file => string.Equals(file.Path, path, StringComparison.OrdinalIgnoreCase))
+            ?? throw new InvalidOperationException($"Generated file missing: {path}");
     }
 
     private static void RequireSecondaryGeneratedFiles(SmokeContext context)

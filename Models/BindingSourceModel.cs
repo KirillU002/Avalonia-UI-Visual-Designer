@@ -67,7 +67,10 @@ public partial class BindingSourceModel : ObservableObject
     private bool useRealPreviewRowsIfAvailable = true;
 
     [ObservableProperty]
-    private bool allowPreviewSampleFallback = true;
+    private bool useDemoData;
+
+    [ObservableProperty]
+    private bool allowPreviewSampleFallback;
 
     [ObservableProperty]
     private string previewRowsDataKind = "";
@@ -102,6 +105,7 @@ public partial class BindingSourceModel : ObservableObject
             PreviewSortColumn = PreviewSortColumn,
             PreviewSortDirection = NormalizePreviewSortDirection(PreviewSortDirection),
             UseRealPreviewRowsIfAvailable = UseRealPreviewRowsIfAvailable,
+            UseDemoData = UseDemoData,
             AllowPreviewSampleFallback = AllowPreviewSampleFallback,
             PreviewRowsDataKind = PreviewRowsDataKind,
             PreviewRowsStatus = PreviewRowsStatus

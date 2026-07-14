@@ -5386,6 +5386,10 @@
                                         SelectedItem="{Binding SelectedBindingSourceForControl.PreviewSortDirection, Mode=TwoWay}"/>
                             </Grid>
 
+                            <CheckBox Content="Использовать demo data"
+                                      IsChecked="{Binding SelectedBindingSourceForControl.UseDemoData, Mode=TwoWay}"
+                                      ToolTip.Tip="Тестовые строки создаются только при явно включённом demo-режиме."/>
+
                             <TextBlock Text="{Binding SelectedBindingPreviewRowsStatus}"
                                        Foreground="#475569"
                                        TextWrapping="Wrap"
@@ -5999,6 +6003,10 @@
                                      Watermark="100"/>
                           </StackPanel>
                         </Grid>
+
+                        <CheckBox Content="Использовать demo data"
+                                  IsChecked="{Binding SelectedBindingSource.UseDemoData, Mode=TwoWay}"
+                                  ToolTip.Tip="Если выключено, ненастроенный SQL source остаётся пустым и тестовые строки не создаются."/>
 
                         <WrapPanel Orientation="Horizontal"
                                    ItemHeight="44"
