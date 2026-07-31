@@ -31,7 +31,7 @@
 - [ ] Назначить BindingSource на `DataGrid`.
 - [ ] Создать/обновить колонки DataGrid из BindingSource.
 - [ ] В Export checklist указано `Real Avalonia DataGrid`, если выбран real mode.
-- [ ] Required NuGet показывает `Avalonia.Controls.DataGrid 11.1.1`.
+- [ ] Required NuGet показывает `Avalonia.Controls.DataGrid 11.1.5`.
 
 ## 5. Logic / Interactions
 
@@ -63,7 +63,7 @@
 
 - [ ] Выполнить export в отдельную папку.
 - [ ] Проверить, что файлы записаны без неожиданного overwrite.
-- [ ] В target project установлен `Avalonia.Controls.DataGrid 11.1.1`, если используется Real DataGrid.
+- [ ] В target project установлен `Avalonia.Controls.DataGrid 11.1.5`, если используется Real DataGrid.
 - [ ] `dotnet build` target project проходит.
 - [ ] Exported `MainWindow` открывает `Form2`.
 
@@ -80,4 +80,3 @@
 - Smoke tests не заменяют ручную проверку preview и canvas drag/drop.
 - Plugin controls без runtime DLL экспортируются как placeholder.
 - Export overwrite workflow требует ручного подтверждения и проверки.
-

@@ -276,7 +276,7 @@ public class ExportCacheModel
 
     public string LayoutExportMode { get; set; } = "Canvas layout";
 
-    public string XamlVerbosity { get; set; } = "Компактный";
+    public string XamlVerbosity { get; set; } = "Полный со стилями";
 
     public bool IncludeExportComments { get; set; }
 

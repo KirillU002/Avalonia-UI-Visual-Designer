@@ -219,12 +219,30 @@ public static class ThemeResourceKeys
     public const string ButtonForegroundBrush = "ThemeButtonForegroundBrush";
     public const string ButtonBorderBrush = "ThemeButtonBorderBrush";
     public const string AccentBrush = "ThemeAccentBrush";
+    public const string AccentHoverBrush = "ThemeAccentHoverBrush";
+    public const string AccentPressedBrush = "ThemeAccentPressedBrush";
     public const string AccentStrongBrush = "ThemeAccentStrongBrush";
     public const string AccentForegroundBrush = "ThemeAccentForegroundBrush";
+    public const string AccentSubtleBrush = "ThemeAccentSubtleBrush";
+    public const string AccentSubtleHoverBrush = "ThemeAccentSubtleHoverBrush";
+    public const string FocusBorderBrush = "ThemeFocusBorderBrush";
+    public const string ControlSurfaceBrush = "ThemeControlSurfaceBrush";
+    public const string ControlHoverBrush = "ThemeControlHoverBrush";
+    public const string ControlPressedBrush = "ThemeControlPressedBrush";
+    public const string ControlDisabledBrush = "ThemeControlDisabledBrush";
+    public const string DisabledTextBrush = "ThemeDisabledTextBrush";
     public const string DataGridHeaderBackgroundBrush = "ThemeDataGridHeaderBackgroundBrush";
+    public const string DataGridHeaderHoverBrush = "ThemeDataGridHeaderHoverBrush";
     public const string DataGridHeaderForegroundBrush = "ThemeDataGridHeaderForegroundBrush";
     public const string DataGridRowBackgroundBrush = "ThemeDataGridRowBackgroundBrush";
     public const string DataGridAlternateRowBackgroundBrush = "ThemeDataGridAlternateRowBackgroundBrush";
+    public const string DataGridHoverRowBackgroundBrush = "ThemeDataGridHoverRowBackgroundBrush";
+    public const string DataGridSelectedRowBackgroundBrush = "ThemeDataGridSelectedRowBackgroundBrush";
+    public const string DataGridSelectedRowForegroundBrush = "ThemeDataGridSelectedRowForegroundBrush";
+    public const string DataGridGridLineBrush = "ThemeDataGridGridLineBrush";
+    public const string GroupChipBackgroundBrush = "ThemeGroupChipBackgroundBrush";
+    public const string GroupChipBorderBrush = "ThemeGroupChipBorderBrush";
+    public const string GroupChipForegroundBrush = "ThemeGroupChipForegroundBrush";
 }
 
 public sealed class FormThemePalette

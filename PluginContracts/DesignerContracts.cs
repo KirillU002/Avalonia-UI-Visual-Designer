@@ -2,6 +2,8 @@ using Avalonia.Controls;
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
+using System.Reflection;
 using System.Text.Json;
 
 namespace FormDesigner.PluginContracts;
@@ -33,6 +35,7 @@ public sealed class DesignPropertyDescriptor
 {
     public string Key { get; init; } = "";
     public string Title { get; init; } = "";
+    public string Description { get; init; } = "";
     public string Category { get; init; } = "General";
     public PropertyEditorKind Editor { get; init; }
     public string? BuiltInPropertyName { get; init; }
@@ -79,6 +82,93 @@ public sealed class BindingImportDiagnostics
     public IReadOnlyList<string> LoaderExceptionMessages { get; init; } = Array.Empty<string>();
     public IReadOnlyList<string> CandidateTypeNames { get; init; } = Array.Empty<string>();
     public IReadOnlyList<string> InfrastructureTypeNames { get; init; } = Array.Empty<string>();
+}
+
+/// <summary>
+/// Optional provider metadata for a descriptor. Existing descriptors do not
+/// need to implement this contract: the host supplies sensible defaults for
+/// built-in and user-installed controls.
+/// </summary>
+public interface IDesignerControlProviderMetadata
+{
+    string ProviderId { get; }
+    string ProviderTitle { get; }
+    string ToolboxGroup { get; }
+    string ToolboxBadge { get; }
+    int ToolboxGroupOrder => 100;
+}
+
+public sealed record DesignerPackageReference(
+    string PackageId,
+    string Version,
+    string Reason);
+
+public sealed record DesignerApplicationStyleContribution(
+    string XmlNamespacePrefix,
+    string XmlNamespace,
+    string StyleAxaml,
+    string Description);
+
+public sealed class DesignerExportContributionContext
+{
+    public IReadOnlyCollection<string> UsedControlTypeKeys { get; init; } = Array.Empty<string>();
+
+    public bool UsesControl(string typeKey)
+    {
+        return !string.IsNullOrWhiteSpace(typeKey)
+            && UsedControlTypeKeys.Contains(typeKey, StringComparer.OrdinalIgnoreCase);
+    }
+}
+
+public sealed class DesignerExportContributions
+{
+    public IReadOnlyList<DesignerPackageReference> Packages { get; init; } = Array.Empty<DesignerPackageReference>();
+    public IReadOnlyList<DesignerApplicationStyleContribution> ApplicationStyles { get; init; } = Array.Empty<DesignerApplicationStyleContribution>();
+}
+
+/// <summary>
+/// Optional plugin capability for declaring dependencies and application-level
+/// styles required by controls that are actually used in an exported project.
+/// </summary>
+public interface IDesignerExportContributionProvider
+{
+    string ProviderId { get; }
+    DesignerExportContributions GetExportContributions(DesignerExportContributionContext context);
+}
+
+public sealed class DesignerRuntimePreviewContributionContext
+{
+    public IReadOnlyCollection<string> UsedControlTypeKeys { get; init; } = Array.Empty<string>();
+
+    public bool UsesControl(string typeKey)
+    {
+        return !string.IsNullOrWhiteSpace(typeKey)
+            && UsedControlTypeKeys.Contains(typeKey, StringComparer.OrdinalIgnoreCase);
+    }
+}
+
+/// <summary>
+/// In-memory dependencies required by the Runtime AXAML Preview. The contribution deliberately
+/// carries Assembly objects instead of paths so plugin load-context identity stays intact.
+/// </summary>
+public sealed class DesignerRuntimePreviewContribution
+{
+    public string ProviderId { get; init; } = "";
+    public IReadOnlyList<Assembly> Assemblies { get; init; } = Array.Empty<Assembly>();
+    public Action? Initialize { get; init; }
+
+    /// <summary>
+    /// Applies plugin resources to the isolated Runtime AXAML preview subtree after it has
+    /// been loaded. Plugin themes must not mutate Application.Current.Styles because that
+    /// would restyle the designer chrome itself.
+    /// </summary>
+    public Action<Control>? ApplyToPreviewRoot { get; init; }
+}
+
+public interface IDesignerRuntimePreviewContributionProvider
+{
+    string ProviderId { get; }
+    DesignerRuntimePreviewContribution? GetRuntimePreviewContribution(DesignerRuntimePreviewContributionContext context);
 }
 
 public sealed class BindingImportResult
@@ -146,10 +236,14 @@ public interface IDesignerRegistry
 {
     void RegisterControl(IControlDescriptor descriptor);
     void RegisterBindingProvider(IBindingMetadataProvider provider);
+    void RegisterExportContributionProvider(IDesignerExportContributionProvider provider);
+    void RegisterRuntimePreviewContributionProvider(IDesignerRuntimePreviewContributionProvider provider);
     bool TryGetControl(string typeKey, out IControlDescriptor descriptor);
     IControlDescriptor GetRequiredControl(string typeKey);
     IReadOnlyList<IControlDescriptor> GetControls();
     IReadOnlyList<IBindingMetadataProvider> GetBindingProviders();
+    IReadOnlyList<IDesignerExportContributionProvider> GetExportContributionProviders();
+    IReadOnlyList<IDesignerRuntimePreviewContributionProvider> GetRuntimePreviewContributionProviders();
 }
 
 public interface IControlDescriptor
@@ -192,6 +286,15 @@ public interface IPreviewContext
 public interface IPreviewBindingItemsProvider
 {
     IEnumerable? GetItems(string bindingSourceId);
+}
+
+/// <summary>
+/// Resolves the collection property generated for a BindingSource during export.
+/// Plugin descriptors use this instead of duplicating the host ViewModel naming rules.
+/// </summary>
+public interface IRuntimeBindingExportPathProvider
+{
+    string GetItemsSourcePath(BindingSourceMetadata? bindingSource);
 }
 
 public interface IXamlExportContext

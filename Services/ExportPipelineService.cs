@@ -1,4 +1,5 @@
 ﻿using FormDesigner.Models;
+using FormDesigner.PluginContracts;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -14,8 +15,8 @@ namespace FormDesigner.Services;
 public sealed class ExportPipelineService
 {
     public const string DefaultNuGetSourceUrl = "https://api.nuget.org/v3/index.json";
-    private const string AvaloniaVersion = "11.1.1";
-    private const string AvaloniaDesktopVersion = "11.1.1";
+    private const string AvaloniaVersion = "11.1.5";
+    private const string AvaloniaDesktopVersion = "11.1.5";
     private const int ValidationRunsToKeep = 5;
 
     public ExportResult CreateResult(
@@ -23,13 +24,15 @@ public sealed class ExportPipelineService
         IEnumerable<GeneratedFileModel> generatedFiles,
         IEnumerable<RequiredPackageModel> requiredPackages,
         IEnumerable<ExportDiagnosticModel> diagnostics,
-        ExportBuildValidationResult? buildValidation = null)
+        ExportBuildValidationResult? buildValidation = null,
+        IEnumerable<DesignerApplicationStyleContribution>? applicationStyleContributions = null)
     {
         return new ExportResult
         {
             Profile = profile,
             GeneratedFiles = generatedFiles.ToList(),
             RequiredPackages = requiredPackages.ToList(),
+            ApplicationStyleContributions = NormalizeApplicationStyleContributions(applicationStyleContributions),
             Diagnostics = DeduplicateDiagnostics(diagnostics).ToList(),
             BuildValidation = buildValidation ?? new ExportBuildValidationResult(),
             GeneratedUtc = DateTime.UtcNow
@@ -260,7 +263,7 @@ public sealed class ExportPipelineService
         Func<string, Task>? logAsync = null)
     {
         var includeDataGridTheme = RequiresDataGridTheme(result);
-        await File.WriteAllTextAsync(Path.Combine(targetFolder, "App.axaml"), BuildAppXaml(result.Profile.ProjectNamespace, includeDataGridTheme), Encoding.UTF8, cancellationToken).ConfigureAwait(false);
+        await File.WriteAllTextAsync(Path.Combine(targetFolder, "App.axaml"), BuildAppXaml(result.Profile.ProjectNamespace, includeDataGridTheme, result.ApplicationStyleContributions), Encoding.UTF8, cancellationToken).ConfigureAwait(false);
         await LogDataGridThemeAsync(logAsync, includeDataGridTheme, Path.Combine(targetFolder, "App.axaml")).ConfigureAwait(false);
         await File.WriteAllTextAsync(Path.Combine(targetFolder, "App.axaml.cs"), BuildAppCode(result.Profile.ProjectNamespace), Encoding.UTF8, cancellationToken).ConfigureAwait(false);
         await File.WriteAllTextAsync(Path.Combine(targetFolder, "Program.cs"), BuildProgramCode(result.Profile.ProjectNamespace), Encoding.UTF8, cancellationToken).ConfigureAwait(false);
@@ -316,7 +319,7 @@ public sealed class ExportPipelineService
             yield return file;
         }
 
-        yield return new GeneratedFileModel { Path = "App.axaml", Content = BuildAppXaml(result.Profile.ProjectNamespace, RequiresDataGridTheme(result)) };
+        yield return new GeneratedFileModel { Path = "App.axaml", Content = BuildAppXaml(result.Profile.ProjectNamespace, RequiresDataGridTheme(result), result.ApplicationStyleContributions) };
         yield return new GeneratedFileModel { Path = "App.axaml.cs", Content = BuildAppCode(result.Profile.ProjectNamespace) };
         yield return new GeneratedFileModel { Path = "Program.cs", Content = BuildProgramCode(result.Profile.ProjectNamespace) };
         yield return new GeneratedFileModel { Path = BuildExportProjectFileName(result), Content = BuildProjectFile(result.RequiredPackages) };
@@ -332,7 +335,7 @@ public sealed class ExportPipelineService
     {
         Directory.CreateDirectory(projectPath);
         await WriteGeneratedSourceFilesAsync(result, projectPath, cancellationToken).ConfigureAwait(false);
-        await File.WriteAllTextAsync(Path.Combine(projectPath, "App.axaml"), BuildAppXaml(result.Profile.ProjectNamespace, RequiresDataGridTheme(result)), Encoding.UTF8, cancellationToken).ConfigureAwait(false);
+        await File.WriteAllTextAsync(Path.Combine(projectPath, "App.axaml"), BuildAppXaml(result.Profile.ProjectNamespace, RequiresDataGridTheme(result), result.ApplicationStyleContributions), Encoding.UTF8, cancellationToken).ConfigureAwait(false);
         await File.WriteAllTextAsync(Path.Combine(projectPath, "App.axaml.cs"), BuildAppCode(result.Profile.ProjectNamespace), Encoding.UTF8, cancellationToken).ConfigureAwait(false);
         await File.WriteAllTextAsync(Path.Combine(projectPath, "Program.cs"), BuildProgramCode(result.Profile.ProjectNamespace), Encoding.UTF8, cancellationToken).ConfigureAwait(false);
         await File.WriteAllTextAsync(Path.Combine(projectPath, "ExportValidation.csproj"), BuildProjectFile(result.RequiredPackages), Encoding.UTF8, cancellationToken).ConfigureAwait(false);
@@ -526,21 +529,60 @@ public sealed class ExportPipelineService
 ";
     }
 
-    private static string BuildAppXaml(string ns, bool includeDataGridTheme)
+    private static string BuildAppXaml(
+        string ns,
+        bool includeDataGridTheme,
+        IReadOnlyList<DesignerApplicationStyleContribution>? applicationStyleContributions = null)
     {
         var dataGridStyleInclude = includeDataGridTheme
             ? "    <StyleInclude Source=\"avares://Avalonia.Controls.DataGrid/Themes/Fluent.xaml\" />\n"
             : "";
+        var styleContributions = applicationStyleContributions ?? Array.Empty<DesignerApplicationStyleContribution>();
+        var namespaceLines = string.Join(
+            Environment.NewLine,
+            styleContributions.Select(contribution =>
+                $"             xmlns:{EscapeXml(contribution.XmlNamespacePrefix)}=\"{EscapeXml(contribution.XmlNamespace)}\""));
+        if (!string.IsNullOrWhiteSpace(namespaceLines))
+            namespaceLines += Environment.NewLine;
+
+        var contributionStyles = string.Join(
+            Environment.NewLine,
+            styleContributions.Select(contribution => $"    {contribution.StyleAxaml.Trim()}"));
+        if (!string.IsNullOrWhiteSpace(contributionStyles))
+            contributionStyles += Environment.NewLine;
+
         return $@"<Application xmlns=""https://github.com/avaloniaui""
              xmlns:x=""http://schemas.microsoft.com/winfx/2006/xaml""
-             x:Class=""{ns}.App""
+{namespaceLines}             x:Class=""{ns}.App""
              RequestedThemeVariant=""Default"">
   <Application.Styles>
     <FluentTheme />
 {dataGridStyleInclude.TrimEnd()}
+{contributionStyles.TrimEnd()}
   </Application.Styles>
 </Application>
 ";
+    }
+
+    private static IReadOnlyList<DesignerApplicationStyleContribution> NormalizeApplicationStyleContributions(
+        IEnumerable<DesignerApplicationStyleContribution>? applicationStyleContributions)
+    {
+        if (applicationStyleContributions is null)
+            return Array.Empty<DesignerApplicationStyleContribution>();
+
+        return applicationStyleContributions
+            .Where(contribution => !string.IsNullOrWhiteSpace(contribution.XmlNamespacePrefix)
+                                  && !string.IsNullOrWhiteSpace(contribution.XmlNamespace)
+                                  && !string.IsNullOrWhiteSpace(contribution.StyleAxaml))
+            .GroupBy(contribution => new
+            {
+                contribution.XmlNamespacePrefix,
+                contribution.XmlNamespace,
+                contribution.StyleAxaml
+            })
+            .Select(group => group.First())
+            .OrderBy(contribution => contribution.XmlNamespacePrefix, StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     private static bool RequiresDataGridTheme(ExportResult result)
@@ -630,12 +672,21 @@ internal sealed class Program
         var hasSqlRuntimeLoader = generatedCodeText.Contains("FromSql()", StringComparison.Ordinal)
             || generatedCodeText.Contains("new SqlConnection(", StringComparison.Ordinal);
         var hasSqlConnectionTodo = generatedCodeText.Contains("TODO: set SQL Server connection string", StringComparison.Ordinal);
+        var hasEremexControls = result.RequiredPackages.Any(package =>
+            string.Equals(package.Id, "Eremex.Avalonia.Controls", StringComparison.OrdinalIgnoreCase));
         var sqlRuntimeNotes = hasSqlRuntimeLoader
             ? $@"
 ## SQL DataGrid runtime
 - SQL DataGrid loaders are generated as `Load...FromSql()` methods.
 {(hasSqlConnectionTodo ? "- SQL connection string export was disabled or incomplete. Replace `TODO: set SQL Server connection string` before calling the loader." : "- The exported code contains the SQL connection string that was explicitly allowed in Export settings. Move it to configuration/secrets before production use.")}
 - The SQL query/table mapping is generated from the Data mode source schema."
+            : "";
+        var eremexNotes = hasEremexControls
+            ? @"
+## Eremex controls
+- This project uses Eremex packages through ordinary `PackageReference` entries.
+- Eremex is Bring Your Own Package / Bring Your Own License: use your own NuGet access and a valid trial or license.
+- Do not copy license keys into source control or diagnostics."
             : "";
 
         return $@"# Generated Avalonia Export
@@ -651,7 +702,7 @@ Layout: {result.Profile.LayoutExportMode}
 2. Run `dotnet restore`.
 3. Run `dotnet build`.
 
-The generated project targets `net6.0` and uses Avalonia `11.1.1`.
+The generated project targets `net6.0` and uses Avalonia `11.1.5`.
 
 ## Restore/build
 From this folder run:
@@ -667,11 +718,11 @@ NuGet sources:
 {string.Join(Environment.NewLine, sourceLines)}
 
 ## NuGet notes
-- Real DataGrid export requires `Avalonia.Controls.DataGrid 11.1.1`.
+- Real DataGrid export requires `Avalonia.Controls.DataGrid 11.1.5`.
 - Generated bindings are runtime bindings unless a real exported ViewModel type exists.
 - If your NuGet source is HTTP/intranet-only, the generated `NuGet.config` must mark that source with `allowInsecureConnections=""true""`.
 - This export clears `packageSourceMapping` in the local `NuGet.config` so user/global source mapping does not block restore for the generated project.
-{sqlRuntimeNotes}
+{sqlRuntimeNotes}{eremexNotes}
 
 ## Files
 {string.Join(Environment.NewLine, result.GeneratedFiles.Select(file => $"- {file.Path} ({file.StatusText})"))}

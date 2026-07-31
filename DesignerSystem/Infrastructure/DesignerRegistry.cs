@@ -9,6 +9,8 @@ public sealed class DesignerRegistry : IDesignerRegistry
 {
     private readonly Dictionary<string, IControlDescriptor> _controls = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<IBindingMetadataProvider> _bindingProviders = new();
+    private readonly List<IDesignerExportContributionProvider> _exportContributionProviders = new();
+    private readonly List<IDesignerRuntimePreviewContributionProvider> _runtimePreviewContributionProviders = new();
     private readonly List<PluginLoadReport> _pluginLoadReports = new();
 
     public void RegisterControl(IControlDescriptor descriptor)
@@ -28,6 +30,38 @@ public sealed class DesignerRegistry : IDesignerRegistry
     {
         ArgumentNullException.ThrowIfNull(provider);
         _bindingProviders.Add(provider);
+    }
+
+    public void RegisterExportContributionProvider(IDesignerExportContributionProvider provider)
+    {
+        ArgumentNullException.ThrowIfNull(provider);
+
+        if (string.IsNullOrWhiteSpace(provider.ProviderId))
+            throw new InvalidOperationException("Export contribution provider id cannot be empty.");
+
+        if (_exportContributionProviders.Any(existing =>
+                string.Equals(existing.ProviderId, provider.ProviderId, StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new InvalidOperationException($"Export contribution provider '{provider.ProviderId}' is already registered.");
+        }
+
+        _exportContributionProviders.Add(provider);
+    }
+
+    public void RegisterRuntimePreviewContributionProvider(IDesignerRuntimePreviewContributionProvider provider)
+    {
+        ArgumentNullException.ThrowIfNull(provider);
+
+        if (string.IsNullOrWhiteSpace(provider.ProviderId))
+            throw new InvalidOperationException("Runtime Preview contribution provider id cannot be empty.");
+
+        if (_runtimePreviewContributionProviders.Any(existing =>
+                string.Equals(existing.ProviderId, provider.ProviderId, StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new InvalidOperationException($"Runtime Preview contribution provider '{provider.ProviderId}' is already registered.");
+        }
+
+        _runtimePreviewContributionProviders.Add(provider);
     }
 
     public bool TryGetControl(string typeKey, out IControlDescriptor descriptor)
@@ -59,6 +93,20 @@ public sealed class DesignerRegistry : IDesignerRegistry
     public IReadOnlyList<IBindingMetadataProvider> GetBindingProviders()
     {
         return _bindingProviders.ToList();
+    }
+
+    public IReadOnlyList<IDesignerExportContributionProvider> GetExportContributionProviders()
+    {
+        return _exportContributionProviders
+            .OrderBy(provider => provider.ProviderId, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    public IReadOnlyList<IDesignerRuntimePreviewContributionProvider> GetRuntimePreviewContributionProviders()
+    {
+        return _runtimePreviewContributionProviders
+            .OrderBy(provider => provider.ProviderId, StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     public int LastPluginAssemblyScanCount { get; private set; }
@@ -102,5 +150,7 @@ public sealed class DesignerRegistry : IDesignerRegistry
             _controls.Remove(key);
 
         _bindingProviders.RemoveAll(provider => provider.GetType().Assembly != hostAssembly);
+        _exportContributionProviders.RemoveAll(provider => provider.GetType().Assembly != hostAssembly);
+        _runtimePreviewContributionProviders.RemoveAll(provider => provider.GetType().Assembly != hostAssembly);
     }
 }

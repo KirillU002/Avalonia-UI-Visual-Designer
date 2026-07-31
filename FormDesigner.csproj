@@ -19,6 +19,7 @@
     <AvaloniaXaml Remove="artifacts\**\*.axaml" />
     <AvaloniaXaml Remove="smoke-tests\**\*.axaml" />
     <AvaloniaXaml Remove="templates\**\*.axaml" />
+    <AvaloniaXaml Remove="Plugins\**\*.axaml" />
     <AvaloniaResource Remove="artifacts\**\*.axaml" />
     <AvaloniaResource Remove="smoke-tests\**\*.axaml" />
     <AvaloniaResource Remove="templates\**\*.axaml" />
@@ -51,6 +52,7 @@
     <PackageReference Include="Avalonia.Themes.Fluent" Version="11.1.5" />
     <PackageReference Include="Avalonia.Fonts.Inter" Version="11.1.5" />
     <PackageReference Include="Avalonia.Markup.Xaml.Loader" Version="11.1.5" />
+    <PackageReference Include="Avalonia.Svg.Skia" Version="11.0.0.18" />
     <!--Condition below is needed to remove Avalonia.Diagnostics package from build output in Release configuration.-->
     <PackageReference Include="Avalonia.Diagnostics" Version="11.1.5">
       <IncludeAssets Condition="'$(Configuration)' != 'Debug'">None</IncludeAssets>
@@ -64,6 +66,7 @@
   <ItemGroup>
     <ProjectReference Include="PluginContracts\FormDesigner.PluginContracts.csproj" />
     <ProjectReference Include="Plugins\DemoDesignerPlugin\DemoDesignerPlugin.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="Plugins\EremexDesignerPlugin\EremexDesignerPlugin.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="Plugins\MinimalDesignerPlugin\MinimalDesignerPlugin.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 </Project>

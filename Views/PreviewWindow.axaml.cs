@@ -30,6 +30,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
@@ -263,11 +264,14 @@ public partial class PreviewWindow : Window
             if (hasXClass)
                 throw new InvalidOperationException($"Runtime Preview AXAML references unsupported x:Class '{xClass}'.");
 
-            var loadedRoot = RuntimeAxamlPreviewLoader.Load(preview.Axaml);
+            var pluginAssemblies = PrepareRuntimePreviewPluginContributions(preview);
+            var loadedRoot = RuntimeAxamlPreviewLoader.Load(preview.Axaml, pluginAssemblies);
 
             var content = ExtractPreviewContent(loadedRoot);
+            ApplyRuntimePreviewPluginStyles(loadedRoot as Control ?? content, preview);
             PreviewSurfaceBorder.Child = content;
             ApplyExportedAxamlPreviewData(content, preview.ExportAxaml);
+            LogResolvedRuntimePreviewPluginControls(content, pluginAssemblies);
             stopwatch.Stop();
             Debug.WriteLine($"AXAML_PREVIEW_LOAD_SUCCESS rootType={loadedRoot.GetType().FullName}; elapsedMs={stopwatch.ElapsedMilliseconds}");
             Debug.WriteLine($"AXAML_PREVIEW_RUNTIME_LOAD_SUCCESS rootType={loadedRoot.GetType().FullName}; elapsedMs={stopwatch.ElapsedMilliseconds}");
@@ -278,6 +282,7 @@ public partial class PreviewWindow : Window
         {
             stopwatch.Stop();
             var (line, position) = GetXamlErrorLocation(ex);
+            var (xmlNamespace, tag) = FindRuntimePreviewPluginTag(preview.Axaml);
             Debug.WriteLine(
                 "AXAML_PREVIEW_LOAD_FAILED " +
                 $"exception={ex.GetType().FullName}; message={ex.Message}; line={line}; position={position}; " +
@@ -287,6 +292,12 @@ public partial class PreviewWindow : Window
                 "AXAML_PREVIEW_RUNTIME_LOAD_FAILED " +
                 $"exceptionType={ex.GetType().FullName}; message={ex.Message}; line={line}; position={position}; " +
                 $"loaderType={RuntimeAxamlPreviewLoader.LoaderName}; baseUri={RuntimeAxamlPreviewLoader.SyntheticBaseUri}");
+            if (!string.IsNullOrWhiteSpace(tag))
+            {
+                Debug.WriteLine(
+                    "AXAML_PREVIEW_PLUGIN_TYPE_RESOLVE_FAILED " +
+                    $"xmlNamespace={xmlNamespace}; tag={tag}; availableAssemblies={string.Join(",", preview.RuntimePreviewContributions.SelectMany(contribution => contribution.Assemblies).Select(assembly => assembly.FullName).Distinct())}; reason={ex.Message}");
+            }
             var invalidRootProperty = ReadInvalidRuntimePreviewRootProperty(ex);
             if (!string.IsNullOrWhiteSpace(invalidRootProperty))
             {
@@ -308,6 +319,92 @@ public partial class PreviewWindow : Window
         }
 
         await Task.CompletedTask;
+    }
+
+    private static (string XmlNamespace, string Tag) FindRuntimePreviewPluginTag(string axaml)
+    {
+        var tagMatch = Regex.Matches(axaml, "<(?<prefix>[A-Za-z_][A-Za-z0-9_]*):(?<tag>[A-Za-z_][A-Za-z0-9_]*)")
+            .Cast<Match>()
+            .FirstOrDefault(match => !string.Equals(match.Groups["prefix"].Value, "x", StringComparison.OrdinalIgnoreCase));
+        if (tagMatch is null)
+            return (string.Empty, string.Empty);
+
+        var prefix = tagMatch.Groups["prefix"].Value;
+        var namespaceMatch = Regex.Match(
+            axaml,
+            $"xmlns:{Regex.Escape(prefix)}=\\\"(?<namespace>[^\\\"]+)\\\"",
+            RegexOptions.CultureInvariant);
+        return (namespaceMatch.Groups["namespace"].Value, $"{prefix}:{tagMatch.Groups["tag"].Value}");
+    }
+
+    private static IReadOnlyList<System.Reflection.Assembly> PrepareRuntimePreviewPluginContributions(ExportedAxamlPreviewModel preview)
+    {
+        var assemblies = new List<System.Reflection.Assembly>();
+        foreach (var contribution in preview.RuntimePreviewContributions)
+        {
+            try
+            {
+                contribution.Initialize?.Invoke();
+                foreach (var assembly in contribution.Assemblies.Where(assembly => assembly is not null))
+                {
+                    assemblies.Add(assembly);
+                    Debug.WriteLine(
+                        "AXAML_PREVIEW_ASSEMBLY_PRELOADED " +
+                        $"provider={contribution.ProviderId}; assembly={assembly.FullName}; " +
+                        $"assemblyLoadContext={System.Runtime.Loader.AssemblyLoadContext.GetLoadContext(assembly)?.Name ?? "Default"}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(
+                    "AXAML_PREVIEW_PLUGIN_CONTRIBUTION_FAILED " +
+                    $"provider={contribution.ProviderId}; exception={ex.GetType().Name}; reason={ex.Message}");
+                throw;
+            }
+        }
+
+        return assemblies
+            .GroupBy(assembly => assembly.FullName, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .ToList();
+    }
+
+    private static void ApplyRuntimePreviewPluginStyles(Control previewRoot, ExportedAxamlPreviewModel preview)
+    {
+        foreach (var contribution in preview.RuntimePreviewContributions)
+        {
+            if (contribution.ApplyToPreviewRoot is null)
+                continue;
+
+            try
+            {
+                contribution.ApplyToPreviewRoot(previewRoot);
+                Debug.WriteLine(
+                    "AXAML_PREVIEW_PLUGIN_STYLE_SCOPE_APPLIED " +
+                    $"provider={contribution.ProviderId}; rootType={previewRoot.GetType().FullName}");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine(
+                    "AXAML_PREVIEW_PLUGIN_STYLE_SCOPE_FAILED " +
+                    $"provider={contribution.ProviderId}; exception={ex.GetType().Name}; reason={ex.Message}");
+                throw;
+            }
+        }
+    }
+
+    private static void LogResolvedRuntimePreviewPluginControls(
+        Control root,
+        IReadOnlyList<System.Reflection.Assembly> pluginAssemblies)
+    {
+        var pluginAssemblySet = pluginAssemblies.ToHashSet();
+        foreach (var control in root.GetLogicalDescendants().OfType<Control>()
+                     .Where(control => pluginAssemblySet.Contains(control.GetType().Assembly)))
+        {
+            Debug.WriteLine(
+                "AXAML_PREVIEW_PLUGIN_TYPE_RESOLVED " +
+                $"clrType={control.GetType().FullName}; assembly={control.GetType().Assembly.FullName}");
+        }
     }
 
     private static string ReadXClass(string axaml)
@@ -377,33 +474,101 @@ public partial class PreviewWindow : Window
     private void ApplyExportedAxamlPreviewData(Control root, string axaml)
     {
         var bindings = ParseExportedAxamlDataGridBindings(axaml);
+        if (bindings.Count > 0)
+        {
+            var dataGridControls = _document.Controls
+                .Where(control => string.Equals(control.Type, DesignerControlTypes.DataGrid, StringComparison.Ordinal))
+                .ToList();
+            var loadedDataGrids = EnumerateRuntimePreviewDataGrids(root).ToList();
+            var usedControlIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            for (var bindingIndex = 0; bindingIndex < bindings.Count; bindingIndex++)
+            {
+                var binding = bindings[bindingIndex];
+                var grid = loadedDataGrids.ElementAtOrDefault(bindingIndex);
+                if (grid is null)
+                {
+                    Debug.WriteLine(
+                        "AXAML_PREVIEW_DATAGRID_RUNTIME_MAPPING_FAILED " +
+                        $"grid={binding.Name}; bindingIndex={bindingIndex}; loadedDataGrids={loadedDataGrids.Count}");
+                    continue;
+                }
+
+                var control = dataGridControls.FirstOrDefault(item =>
+                        !usedControlIds.Contains(item.Id)
+                        && string.Equals(item.Name, binding.Name, StringComparison.OrdinalIgnoreCase))
+                    ?? dataGridControls.FirstOrDefault(item => !usedControlIds.Contains(item.Id));
+                if (control is null)
+                    continue;
+
+                usedControlIds.Add(control.Id);
+                var source = GetBindingSource(control.BindingSourceId);
+                if (source is null)
+                    continue;
+
+                var expectedMode = DataGridRuntimeDataModeResolver.Resolve(
+                    source,
+                    _exportedAxamlPreview?.IncludeDemoData ?? false);
+                var rows = ResolveExportedAxamlPreviewRows(source, control, expectedMode, out var appliedMode);
+                grid.ItemsSource = BuildExportedAxamlDataGridView(source, binding, rows);
+                Debug.WriteLine(
+                    "AXAML_PREVIEW_DATAGRID_ITEMSSOURCE_APPLIED " +
+                    $"grid={binding.Name}; itemsSource={binding.ItemsSourcePath}; rows={rows.Count}; columns={binding.Columns.Count}");
+                if (expectedMode.Mode != appliedMode)
+                {
+                    Debug.WriteLine(
+                        "PREVIEW_EXPORT_DATAGRID_MODE_MISMATCH " +
+                        $"grid={binding.Name}; previewMode={appliedMode}; exportMode={expectedMode.Mode}; reason={expectedMode.Reason}");
+                }
+
+                LogExportedAxamlDataGridStructure(grid, binding.Name, control, source, rows.Count);
+            }
+        }
+
+        ApplyExportedAxamlPluginItemsSourceBindings(root, axaml);
+    }
+
+    private static IEnumerable<DataGrid> EnumerateRuntimePreviewDataGrids(Control root)
+    {
+        if (root is DataGrid rootDataGrid)
+            yield return rootDataGrid;
+
+        foreach (var dataGrid in root.GetLogicalDescendants().OfType<DataGrid>())
+            yield return dataGrid;
+    }
+
+    private void ApplyExportedAxamlPluginItemsSourceBindings(Control root, string axaml)
+    {
+        var bindings = ParseExportedAxamlPluginItemsSourceBindings(axaml);
         if (bindings.Count == 0)
             return;
 
-        var dataGridControls = _document.Controls
-            .Where(control => string.Equals(control.Type, DesignerControlTypes.DataGrid, StringComparison.Ordinal))
+        var sourceBoundPluginControls = _document.Controls
+            .Where(control => !string.Equals(control.Type, DesignerControlTypes.DataGrid, StringComparison.Ordinal)
+                              && !string.IsNullOrWhiteSpace(control.BindingSourceId))
             .ToList();
-        var loadedDataGrids = EnumerateRuntimePreviewDataGrids(root).ToList();
+        var runtimeItemsControls = EnumerateRuntimePreviewControls(root)
+            .Where(control => TryGetWritableItemsSourceProperty(control, out _))
+            .ToList();
         var usedControlIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         for (var bindingIndex = 0; bindingIndex < bindings.Count; bindingIndex++)
         {
             var binding = bindings[bindingIndex];
-            var grid = loadedDataGrids.ElementAtOrDefault(bindingIndex);
-            if (grid is null)
-            {
-                Debug.WriteLine(
-                    "AXAML_PREVIEW_DATAGRID_RUNTIME_MAPPING_FAILED " +
-                    $"grid={binding.Name}; bindingIndex={bindingIndex}; loadedDataGrids={loadedDataGrids.Count}");
-                continue;
-            }
-
-            var control = dataGridControls.FirstOrDefault(item =>
+            var control = sourceBoundPluginControls.FirstOrDefault(item =>
                     !usedControlIds.Contains(item.Id)
                     && string.Equals(item.Name, binding.Name, StringComparison.OrdinalIgnoreCase))
-                ?? dataGridControls.FirstOrDefault(item => !usedControlIds.Contains(item.Id));
-            if (control is null)
+                ?? sourceBoundPluginControls.FirstOrDefault(item => !usedControlIds.Contains(item.Id));
+            var runtimeControl = runtimeItemsControls.FirstOrDefault(item =>
+                    string.Equals(item.Name, binding.Name, StringComparison.OrdinalIgnoreCase))
+                ?? runtimeItemsControls.ElementAtOrDefault(bindingIndex);
+            if (control is null || runtimeControl is null || !TryGetWritableItemsSourceProperty(runtimeControl, out var itemsSourceProperty))
+            {
+                Debug.WriteLine(
+                    "AXAML_PREVIEW_PLUGIN_ITEMSSOURCE_MAPPING_FAILED " +
+                    $"name={binding.Name}; bindingIndex={bindingIndex}; modelCandidates={sourceBoundPluginControls.Count}; runtimeCandidates={runtimeItemsControls.Count}");
                 continue;
+            }
 
             usedControlIds.Add(control.Id);
             var source = GetBindingSource(control.BindingSourceId);
@@ -414,28 +579,46 @@ public partial class PreviewWindow : Window
                 source,
                 _exportedAxamlPreview?.IncludeDemoData ?? false);
             var rows = ResolveExportedAxamlPreviewRows(source, control, expectedMode, out var appliedMode);
-            grid.ItemsSource = BuildExportedAxamlDataGridView(source, binding, rows);
-            Debug.WriteLine(
-                "AXAML_PREVIEW_DATAGRID_ITEMSSOURCE_APPLIED " +
-                $"grid={binding.Name}; itemsSource={binding.ItemsSourcePath}; rows={rows.Count}; columns={binding.Columns.Count}");
-            if (expectedMode.Mode != appliedMode)
+            try
+            {
+                itemsSourceProperty.SetValue(
+                    runtimeControl,
+                    BuildExportedAxamlDataGridView(
+                        source,
+                        new ExportedAxamlDataGridBinding(binding.Name, binding.ItemsSourcePath, Array.Empty<ExportedAxamlDataGridColumn>()),
+                        rows));
+                Debug.WriteLine(
+                    "AXAML_PREVIEW_PLUGIN_ITEMSSOURCE_APPLIED " +
+                    $"control={binding.Name}; runtimeType={runtimeControl.GetType().FullName}; itemsSource={binding.ItemsSourcePath}; rows={rows.Count}; mode={appliedMode}");
+                if (expectedMode.Mode != appliedMode)
+                {
+                    Debug.WriteLine(
+                        "PREVIEW_EXPORT_DATAGRID_MODE_MISMATCH " +
+                        $"grid={binding.Name}; previewMode={appliedMode}; exportMode={expectedMode.Mode}; reason={expectedMode.Reason}");
+                }
+            }
+            catch (Exception ex)
             {
                 Debug.WriteLine(
-                    "PREVIEW_EXPORT_DATAGRID_MODE_MISMATCH " +
-                    $"grid={binding.Name}; previewMode={appliedMode}; exportMode={expectedMode.Mode}; reason={expectedMode.Reason}");
+                    "AXAML_PREVIEW_PLUGIN_ITEMSSOURCE_APPLY_FAILED " +
+                    $"control={binding.Name}; runtimeType={runtimeControl.GetType().FullName}; exception={ex.GetType().Name}; reason={ex.Message}; stackTrace={ex}");
             }
-
-            LogExportedAxamlDataGridStructure(grid, binding.Name, control, source, rows.Count);
         }
     }
 
-    private static IEnumerable<DataGrid> EnumerateRuntimePreviewDataGrids(Control root)
+    private static IEnumerable<Control> EnumerateRuntimePreviewControls(Control root)
     {
-        if (root is DataGrid rootDataGrid)
-            yield return rootDataGrid;
+        yield return root;
+        foreach (var control in root.GetLogicalDescendants().OfType<Control>())
+            yield return control;
+    }
 
-        foreach (var dataGrid in root.GetLogicalDescendants().OfType<DataGrid>())
-            yield return dataGrid;
+    private static bool TryGetWritableItemsSourceProperty(Control control, out PropertyInfo property)
+    {
+        property = control.GetType().GetProperty("ItemsSource", BindingFlags.Instance | BindingFlags.Public)!;
+        return property is not null
+            && property.CanWrite
+            && typeof(IEnumerable).IsAssignableFrom(property.PropertyType);
     }
 
     private IReadOnlyList<Dictionary<string, string>> ResolveExportedAxamlPreviewRows(
@@ -595,6 +778,32 @@ public partial class PreviewWindow : Window
             }
 
             result.Add(new ExportedAxamlDataGridBinding(name, itemsSource, columns));
+        }
+
+        return result;
+    }
+
+    private static IReadOnlyList<ExportedAxamlPluginItemsSourceBinding> ParseExportedAxamlPluginItemsSourceBindings(string axaml)
+    {
+        var result = new List<ExportedAxamlPluginItemsSourceBinding>();
+        foreach (Match match in Regex.Matches(
+                     axaml,
+                     "<(?<tag>[A-Za-z_][A-Za-z0-9_.:-]*)(?=\\s|/?>)(?<attrs>[^>]*)/?>",
+                     RegexOptions.CultureInvariant))
+        {
+            var tag = match.Groups["tag"].Value;
+            if (string.Equals(tag, "DataGrid", StringComparison.Ordinal))
+                continue;
+
+            var attrs = match.Groups["attrs"].Value;
+            var name = ReadXamlAttribute(attrs, "x:Name");
+            if (string.IsNullOrWhiteSpace(name))
+                name = ReadXamlAttribute(attrs, "Name");
+            var itemsSource = ReadBindingPath(ReadXamlAttribute(attrs, "ItemsSource"));
+            if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(itemsSource))
+                continue;
+
+            result.Add(new ExportedAxamlPluginItemsSourceBinding(tag, name, itemsSource));
         }
 
         return result;
@@ -924,6 +1133,26 @@ public partial class PreviewWindow : Window
         return DesignerThemeCatalog.NormalizeThemeName(themeName) == DesignerThemeCatalog.Dark
             ? ThemeVariant.Dark
             : ThemeVariant.Light;
+    }
+
+    private FormDesignTokens CreatePreviewDesignTokens()
+    {
+        return GeneratedFormDesignSystem.CreateTokens(
+            DesignerThemeCatalog.Get(_document.FormTheme),
+            _document.SurfaceBackground);
+    }
+
+    private static string ResolvePreviewDesignColor(
+        string? currentValue,
+        string legacyDefaultValue,
+        FormDesignTokens tokens,
+        string tokenKey)
+    {
+        return GeneratedFormDesignSystem.ResolveDefaultOrCustom(
+            currentValue,
+            legacyDefaultValue,
+            tokens,
+            tokenKey);
     }
 
     private void RenderDocument()
@@ -1307,14 +1536,15 @@ public partial class PreviewWindow : Window
                 .ToList(),
             BindingMetadataMapper.ToMetadataMap(ToRuntimeBindingSources()));
 
-        try
-        {
-            return descriptor.BuildPreview(new DesignControlFileNodeAdapter(control), context);
-        }
-        catch
-        {
-            return CreateMissingPreview(control);
-        }
+        return PluginPreviewControlBuilder.TryBuild(
+            "LegacyPreview",
+            descriptor,
+            new DesignControlFileNodeAdapter(control),
+            context,
+            out var preview,
+            out var failure)
+            ? preview!
+            : CreateMissingPreview(control, failure);
     }
 
     private Control CreateBuiltInPreviewControl(DesignerControlFileModel control)
@@ -1350,9 +1580,12 @@ public partial class PreviewWindow : Window
         };
     }
 
-    private Control CreateMissingPreview(DesignerControlFileModel control)
+    private Control CreateMissingPreview(DesignerControlFileModel control, PluginPreviewBuildFailure? failure = null)
     {
-        return new Border
+        var message = failure is null
+            ? $"{control.Type}\nНет доступного preview"
+            : $"Не удалось отобразить {control.Type}\nПричина: {failure.UserMessage}";
+        var preview = new Border
         {
             Width = control.Width,
             Height = control.Height,
@@ -1362,11 +1595,19 @@ public partial class PreviewWindow : Window
             CornerRadius = new CornerRadius(8),
             Child = new TextBlock
             {
-                Text = $"{control.Type}\nНет доступного preview",
+                Text = message,
                 Margin = new Thickness(12),
                 TextWrapping = TextWrapping.Wrap
             }
         };
+
+        if (failure is not null)
+        {
+            ToolTip.SetTip(preview, $"{failure.ExceptionType}: {failure.StackTrace}");
+            PluginPreviewControlBuilder.LogPlaceholderReplacement("LegacyPreview", failure);
+        }
+
+        return preview;
     }
 
     private IReadOnlyList<BindingSourceModel> ToRuntimeBindingSources()
@@ -1581,6 +1822,7 @@ public partial class PreviewWindow : Window
 
     private Control CreateButtonPreview(DesignerControlFileModel control)
     {
+        var tokens = CreatePreviewDesignTokens();
         var text = _runtimeButtonContentByControlId.TryGetValue(control.Id, out var runtimeContent)
             ? runtimeContent
             : ResolvePreviewTextValue(control, string.IsNullOrWhiteSpace(control.Text) ? "Кнопка" : control.Text);
@@ -1589,8 +1831,8 @@ public partial class PreviewWindow : Window
         {
             Width = control.Width,
             Height = control.Height,
-            Background = ParseBrush(control.Background, "#2563EB"),
-            BorderBrush = ParseBrush(control.BorderBrush, "#1D4ED8"),
+            Background = ParseBrush(ResolvePreviewDesignColor(control.Background, "#2563EB", tokens, ThemeResourceKeys.ButtonBackgroundBrush), tokens[ThemeResourceKeys.ButtonBackgroundBrush]),
+            BorderBrush = ParseBrush(ResolvePreviewDesignColor(control.BorderBrush, "#1D4ED8", tokens, ThemeResourceKeys.ButtonBorderBrush), tokens[ThemeResourceKeys.ButtonBorderBrush]),
             BorderThickness = UniformThickness(control.BorderThickness),
             CornerRadius = UniformCornerRadius(control.CornerRadius),
             Padding = UniformThickness(control.Padding),
@@ -1598,7 +1840,7 @@ public partial class PreviewWindow : Window
             Content = CreatePreviewText(
                 text,
                 control,
-                control.Foreground,
+                ResolvePreviewDesignColor(control.Foreground, "#FFFFFF", tokens, ThemeResourceKeys.ButtonForegroundBrush),
                 HorizontalAlignment.Center,
                 VerticalAlignment.Center)
         };
@@ -1614,6 +1856,7 @@ public partial class PreviewWindow : Window
 
     private Control CreateTextBoxPreview(DesignerControlFileModel control)
     {
+        var tokens = CreatePreviewDesignTokens();
         var hasDesignText = !string.IsNullOrWhiteSpace(control.Text) || !string.IsNullOrWhiteSpace(control.TextBindingPath);
         var text = hasDesignText
             ? ResolvePreviewTextValue(control, string.IsNullOrWhiteSpace(control.Text) ? string.Empty : control.Text)
@@ -1628,9 +1871,9 @@ public partial class PreviewWindow : Window
             FontFamily = new FontFamily(control.FontFamily),
             FontSize = Math.Max(8, control.FontSize),
             FontWeight = ParseFontWeight(control.FontWeight),
-            Foreground = ParseBrush(control.Foreground, "#0F172A"),
-            Background = ParseBrush(control.Background, "#FFFFFF"),
-            BorderBrush = ParseBrush(control.BorderBrush, "#94A3B8"),
+            Foreground = ParseBrush(ResolvePreviewDesignColor(control.Foreground, "#0F172A", tokens, ThemeResourceKeys.TextBrush), tokens[ThemeResourceKeys.TextBrush]),
+            Background = ParseBrush(ResolvePreviewDesignColor(control.Background, "#FFFFFF", tokens, ThemeResourceKeys.InputBackgroundBrush), tokens[ThemeResourceKeys.InputBackgroundBrush]),
+            BorderBrush = ParseBrush(ResolvePreviewDesignColor(control.BorderBrush, "#94A3B8", tokens, ThemeResourceKeys.BorderBrush), tokens[ThemeResourceKeys.BorderBrush]),
             BorderThickness = UniformThickness(control.BorderThickness),
             CornerRadius = UniformCornerRadius(control.CornerRadius),
             Padding = UniformThickness(control.Padding),
@@ -1649,6 +1892,7 @@ public partial class PreviewWindow : Window
 
     private Control CreateTextBlockPreview(DesignerControlFileModel control)
     {
+        var tokens = CreatePreviewDesignTokens();
         var text = _runtimeTextBlockValuesByControlId.TryGetValue(control.Id, out var runtimeText)
             ? runtimeText
             : ResolvePreviewTextValue(control, string.IsNullOrWhiteSpace(control.Text) ? "Текст" : control.Text);
@@ -1661,7 +1905,7 @@ public partial class PreviewWindow : Window
             Child = CreatePreviewText(
                 text,
                 control,
-                control.Foreground,
+                ResolvePreviewDesignColor(control.Foreground, "#0F172A", tokens, ThemeResourceKeys.TextBrush),
                 HorizontalAlignment.Left,
                 VerticalAlignment.Center)
         };
@@ -1669,6 +1913,7 @@ public partial class PreviewWindow : Window
 
     private Control CreateCheckBoxPreview(DesignerControlFileModel control)
     {
+        var tokens = CreatePreviewDesignTokens();
         var caption = ResolvePreviewTextValue(control, string.IsNullOrWhiteSpace(control.Text) ? "Флажок" : control.Text);
         var checkBox = new CheckBox
         {
@@ -1679,7 +1924,7 @@ public partial class PreviewWindow : Window
             FontFamily = new FontFamily(control.FontFamily),
             FontSize = Math.Max(8, control.FontSize),
             FontWeight = ParseFontWeight(control.FontWeight),
-            Foreground = ParseBrush(control.Foreground, "#0F172A"),
+            Foreground = ParseBrush(ResolvePreviewDesignColor(control.Foreground, "#0F172A", tokens, ThemeResourceKeys.TextBrush), tokens[ThemeResourceKeys.TextBrush]),
             Padding = new Thickness(6, 0),
             VerticalContentAlignment = VerticalAlignment.Center
         };
@@ -1702,6 +1947,7 @@ public partial class PreviewWindow : Window
 
     private Control CreateBorderPreview(DesignerControlFileModel control)
     {
+        var tokens = CreatePreviewDesignTokens();
         var text = _runtimeTextBlockValuesByControlId.TryGetValue(control.Id, out var runtimeText)
             ? runtimeText
             : ResolvePreviewTextValue(control, control.Text);
@@ -1709,8 +1955,8 @@ public partial class PreviewWindow : Window
         {
             Width = control.Width,
             Height = control.Height,
-            Background = ParseBrush(control.Background, "#F8FAFC"),
-            BorderBrush = ParseBrush(control.BorderBrush, "#CBD5E1"),
+            Background = ParseBrush(ResolvePreviewDesignColor(control.Background, "#F8FAFC", tokens, ThemeResourceKeys.ContainerBackgroundBrush), tokens[ThemeResourceKeys.ContainerBackgroundBrush]),
+            BorderBrush = ParseBrush(ResolvePreviewDesignColor(control.BorderBrush, "#CBD5E1", tokens, ThemeResourceKeys.BorderBrush), tokens[ThemeResourceKeys.BorderBrush]),
             BorderThickness = UniformThickness(control.BorderThickness),
             CornerRadius = UniformCornerRadius(control.CornerRadius),
             Padding = UniformThickness(control.Padding),
@@ -1719,7 +1965,7 @@ public partial class PreviewWindow : Window
                 : CreatePreviewText(
                     text,
                     control,
-                    control.Foreground,
+                    ResolvePreviewDesignColor(control.Foreground, "#0F172A", tokens, ThemeResourceKeys.TextBrush),
                     HorizontalAlignment.Left,
                     VerticalAlignment.Top)
         };
@@ -2260,10 +2506,16 @@ public partial class PreviewWindow : Window
 
     private Control CreateDataGridEmptyStatePreview(DesignerControlFileModel control, string title, string description)
     {
-        var themePalette = DesignerThemeCatalog.Get(_document.FormTheme);
-        var backgroundColor = ParseColor(control.DataGridRowBackground, themePalette.DataGridRowBackground);
-        var borderColor = ParseColor(control.DataGridOuterBorderBrush, themePalette.AccentStrongBrush);
-        var foregroundColor = ParseColor(control.DataGridRowForeground, "#0F172A");
+        var tokens = CreatePreviewDesignTokens();
+        var backgroundColor = ParseColor(
+            ResolvePreviewDesignColor(control.DataGridRowBackground, "#FFFFFF", tokens, ThemeResourceKeys.DataGridRowBackgroundBrush),
+            tokens[ThemeResourceKeys.DataGridRowBackgroundBrush]);
+        var borderColor = ParseColor(
+            ResolvePreviewDesignColor(control.DataGridOuterBorderBrush, "#60A5FA", tokens, ThemeResourceKeys.AccentStrongBrush),
+            tokens[ThemeResourceKeys.AccentStrongBrush]);
+        var foregroundColor = ParseColor(
+            ResolvePreviewDesignColor(control.DataGridRowForeground, "#0F172A", tokens, ThemeResourceKeys.TextBrush),
+            tokens[ThemeResourceKeys.TextBrush]);
         var isDark = IsDarkColor(backgroundColor);
         var mutedColor = BlendColor(foregroundColor, isDark ? Color.Parse("#CBD5E1") : Color.Parse("#64748B"), 0.55);
 
@@ -2340,13 +2592,25 @@ public partial class PreviewWindow : Window
         var hasWrappedTextColumns = visibleFields.Any(field =>
             string.Equals(BindingFieldModel.NormalizeTextWrapping(field.TextWrapping), BindingFieldModel.TextWrappingWrap, StringComparison.Ordinal));
 
-        var themePalette = DesignerThemeCatalog.Get(_document.FormTheme);
-        var headerBackgroundColor = ParseColor(control.DataGridHeaderBackground, themePalette.DataGridHeaderBackground);
-        var bodyBackgroundColor = ParseColor(control.DataGridRowBackground, themePalette.DataGridRowBackground);
-        var alternateRowColor = ParseColor(control.DataGridAlternateRowBackground, themePalette.DataGridAlternateRowBackground);
-        var outerBorderColor = ParseColor(control.DataGridOuterBorderBrush, themePalette.AccentStrongBrush);
-        var gridLineColor = ParseColor(control.DataGridGridLineBrush, "#D7E2EE");
-        var rowForegroundColor = ParseColor(control.DataGridRowForeground, "#0F172A");
+        var tokens = CreatePreviewDesignTokens();
+        var headerBackgroundColor = ParseColor(
+            ResolvePreviewDesignColor(control.DataGridHeaderBackground, "#E2E8F0", tokens, ThemeResourceKeys.DataGridHeaderBackgroundBrush),
+            tokens[ThemeResourceKeys.DataGridHeaderBackgroundBrush]);
+        var bodyBackgroundColor = ParseColor(
+            ResolvePreviewDesignColor(control.DataGridRowBackground, "#FFFFFF", tokens, ThemeResourceKeys.DataGridRowBackgroundBrush),
+            tokens[ThemeResourceKeys.DataGridRowBackgroundBrush]);
+        var alternateRowColor = ParseColor(
+            ResolvePreviewDesignColor(control.DataGridAlternateRowBackground, "#F8FAFC", tokens, ThemeResourceKeys.DataGridAlternateRowBackgroundBrush),
+            tokens[ThemeResourceKeys.DataGridAlternateRowBackgroundBrush]);
+        var outerBorderColor = ParseColor(
+            ResolvePreviewDesignColor(control.DataGridOuterBorderBrush, "#60A5FA", tokens, ThemeResourceKeys.AccentStrongBrush),
+            tokens[ThemeResourceKeys.AccentStrongBrush]);
+        var gridLineColor = ParseColor(
+            ResolvePreviewDesignColor(control.DataGridGridLineBrush, "#D7E2EE", tokens, ThemeResourceKeys.DataGridGridLineBrush),
+            tokens[ThemeResourceKeys.DataGridGridLineBrush]);
+        var rowForegroundColor = ParseColor(
+            ResolvePreviewDesignColor(control.DataGridRowForeground, "#0F172A", tokens, ThemeResourceKeys.TextBrush),
+            tokens[ThemeResourceKeys.TextBrush]);
         var previewBindingSource = GetBindingSource(control.BindingSourceId);
         var hasCachedPreviewRows = TryGetCachedPreviewRows(control.BindingSourceId, out var cachedPreviewRows, out var previewRowsDataKind);
         var suppressSyntheticRows = !hasCachedPreviewRows && ShouldSuppressSyntheticRowsForPreview(previewBindingSource);
@@ -2472,7 +2736,9 @@ public partial class PreviewWindow : Window
                 chips.Children.Add(new TextBlock
                 {
                     Text = DataGridGroupPanelVisualCatalog.PlaceholderText,
-                    Foreground = new SolidColorBrush(ParseColor(control.DataGridHeaderForeground, "#0F172A")),
+                    Foreground = new SolidColorBrush(ParseColor(
+                        ResolvePreviewDesignColor(control.DataGridHeaderForeground, "#0F172A", tokens, ThemeResourceKeys.DataGridHeaderForegroundBrush),
+                        tokens[ThemeResourceKeys.DataGridHeaderForegroundBrush])),
                     Opacity = DataGridGroupPanelVisualCatalog.PlaceholderOpacity,
                     FontSize = Math.Max(10, control.FontSize - 1),
                     VerticalAlignment = VerticalAlignment.Center
@@ -2617,7 +2883,8 @@ public partial class PreviewWindow : Window
     private void AttachRuntimeDataGridGroupDropTarget(Border groupDropTarget, DesignerControlFileModel control)
     {
         var normalBackground = groupDropTarget.Background;
-        var activeBackground = new SolidColorBrush(Color.Parse("#DBEAFE"));
+        var tokens = CreatePreviewDesignTokens();
+        var activeBackground = new SolidColorBrush(Color.Parse(tokens[ThemeResourceKeys.DataGridSelectedRowBackgroundBrush]));
 
         DragDrop.SetAllowDrop(groupDropTarget, true);
         groupDropTarget.AddHandler(DragDrop.DragOverEvent, (_, e) =>
@@ -2649,6 +2916,8 @@ public partial class PreviewWindow : Window
 
     private Border CreateRuntimeDataGridGroupChip(DesignerControlFileModel control, BindingFieldFileModel field)
     {
+        var tokens = CreatePreviewDesignTokens();
+        var foreground = new SolidColorBrush(Color.Parse(tokens[ThemeResourceKeys.GroupChipForegroundBrush]));
         var removeButton = new Button
         {
             Content = "×",
@@ -2659,7 +2928,7 @@ public partial class PreviewWindow : Window
             Padding = new Thickness(0),
             Background = Brushes.Transparent,
             BorderBrush = Brushes.Transparent,
-            Foreground = new SolidColorBrush(Color.Parse(DataGridGroupPanelVisualCatalog.ChipForeground)),
+            Foreground = foreground,
             FontSize = Math.Max(12, control.FontSize),
             FontWeight = FontWeight.Bold
         };
@@ -2672,8 +2941,8 @@ public partial class PreviewWindow : Window
 
         var chip = new Border
         {
-            Background = new SolidColorBrush(Color.Parse(DataGridGroupPanelVisualCatalog.ChipBackground)),
-            BorderBrush = new SolidColorBrush(Color.Parse(DataGridGroupPanelVisualCatalog.ChipBorder)),
+            Background = new SolidColorBrush(Color.Parse(tokens[ThemeResourceKeys.GroupChipBackgroundBrush])),
+            BorderBrush = new SolidColorBrush(Color.Parse(tokens[ThemeResourceKeys.GroupChipBorderBrush])),
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(999),
             Padding = new Thickness(
@@ -2694,7 +2963,7 @@ public partial class PreviewWindow : Window
                     new TextBlock
                     {
                         Text = $"Группа {field.GroupOrder + 1}: {field.Header}",
-                        Foreground = new SolidColorBrush(Color.Parse(DataGridGroupPanelVisualCatalog.ChipForeground)),
+                        Foreground = foreground,
                         FontSize = Math.Max(10, control.FontSize - 1),
                         FontWeight = FontWeight.SemiBold,
                         VerticalAlignment = VerticalAlignment.Center
@@ -2722,16 +2991,17 @@ public partial class PreviewWindow : Window
 
     private Button CreateRuntimeDataGridClearGroupingButton(DesignerControlFileModel control)
     {
+        var tokens = CreatePreviewDesignTokens();
         var button = new Button
         {
             Content = "Очистить группировку",
-            Background = new SolidColorBrush(Color.Parse("#F8FAFC")),
-            BorderBrush = new SolidColorBrush(Color.Parse("#CBD5E1")),
+            Background = new SolidColorBrush(Color.Parse(tokens[ThemeResourceKeys.ControlSurfaceBrush])),
+            BorderBrush = new SolidColorBrush(Color.Parse(tokens[ThemeResourceKeys.BorderBrush])),
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(999),
             Padding = new Thickness(10, 5),
             Margin = new Thickness(0, 0, 8, 8),
-            Foreground = new SolidColorBrush(Color.Parse("#334155")),
+            Foreground = new SolidColorBrush(Color.Parse(tokens[ThemeResourceKeys.MutedTextBrush])),
             FontSize = Math.Max(10, control.FontSize - 1),
             FontWeight = FontWeight.SemiBold
         };
@@ -4779,6 +5049,11 @@ public partial class PreviewWindow : Window
         IReadOnlyList<ExportedAxamlDataGridColumn> Columns);
 
     private sealed record ExportedAxamlDataGridColumn(string Header, string BindingPath);
+
+    private sealed record ExportedAxamlPluginItemsSourceBinding(
+        string TagName,
+        string Name,
+        string ItemsSourcePath);
 
     private sealed class RuntimeDataGridHeaderDragState
     {

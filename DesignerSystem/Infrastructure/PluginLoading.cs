@@ -6,6 +6,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.Loader;
+using System.Text.Json;
 
 namespace FormDesigner.DesignerSystem.Infrastructure;
 
@@ -47,6 +48,31 @@ public sealed class PluginLoadContext : AssemblyLoadContext
 
     protected override Assembly? Load(AssemblyName assemblyName)
     {
+        // Avalonia controls are passed directly to the host visual tree. They must always use
+        // the host's Avalonia assembly identities, irrespective of a plugin's package patch.
+        var hostAssembly = AssemblyLoadContext.Default.Assemblies.FirstOrDefault(assembly =>
+            string.Equals(assembly.GetName().Name, assemblyName.Name, StringComparison.OrdinalIgnoreCase)
+            && (assemblyName.Version is null || assembly.GetName().Version == assemblyName.Version));
+        if (hostAssembly is not null)
+            return hostAssembly;
+
+        if (IsAvaloniaAssembly(assemblyName))
+        {
+            var loadedHostAssembly = AssemblyLoadContext.Default.Assemblies.FirstOrDefault(assembly =>
+                string.Equals(assembly.GetName().Name, assemblyName.Name, StringComparison.OrdinalIgnoreCase));
+            if (loadedHostAssembly is not null)
+                return loadedHostAssembly;
+
+            try
+            {
+                return AssemblyLoadContext.Default.LoadFromAssemblyName(new AssemblyName(assemblyName.Name!));
+            }
+            catch (FileNotFoundException)
+            {
+                // Avalonia extension packages not used by the host may remain plugin-local.
+            }
+        }
+
         if (!string.IsNullOrWhiteSpace(assemblyName.Name)
             && _sharedAssemblies.TryGetValue(assemblyName.Name, out var sharedAssembly))
         {
@@ -55,6 +81,11 @@ public sealed class PluginLoadContext : AssemblyLoadContext
 
         var path = _resolver.ResolveAssemblyToPath(assemblyName);
         return path is null ? null : LoadFromAssemblyPath(path);
+    }
+
+    private static bool IsAvaloniaAssembly(AssemblyName assemblyName)
+    {
+        return assemblyName.Name?.StartsWith("Avalonia", StringComparison.OrdinalIgnoreCase) == true;
     }
 
     protected override IntPtr LoadUnmanagedDll(string unmanagedDllName)
@@ -67,9 +98,10 @@ public sealed class PluginLoadContext : AssemblyLoadContext
 public sealed class PluginLoader
 {
     private static readonly Version SupportedApiVersion = new(1, 0, 0);
+    private static readonly object RetainedContextsGate = new();
+    private static readonly List<PluginLoadContext> RetainedContexts = new();
 
     private readonly IDesignerLogger _logger;
-    private readonly List<PluginLoadContext> _loadedContexts = new();
 
     public PluginLoader(IDesignerLogger logger)
     {
@@ -94,9 +126,7 @@ public sealed class PluginLoader
             return Array.Empty<PluginLoadReport>();
         }
 
-        var assemblyPaths = Directory.GetFiles(folderPath, "*.dll", SearchOption.AllDirectories)
-            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
-            .ToList();
+        var assemblyPaths = FindPluginAssemblyPaths(folderPath);
 
         if (registry is DesignerRegistry metadataRegistry)
             metadataRegistry.SetPluginScanMetadata(folderPath, assemblyPaths.Count);
@@ -117,8 +147,9 @@ public sealed class PluginLoader
 
     private IReadOnlyList<PluginLoadReport> LoadPluginAssembly(string assemblyPath, IDesignerRegistry registry)
     {
+        PluginRuntimeAssemblyBridge.EnsureRuntimeAssembliesAvailable(assemblyPath, _logger);
         var loadContext = new PluginLoadContext(assemblyPath);
-        _loadedContexts.Add(loadContext);
+        RetainContext(loadContext);
 
         try
         {
@@ -156,6 +187,52 @@ public sealed class PluginLoader
                     new[] { FormatExceptionMessage(ex) })
             };
         }
+    }
+
+    /// <summary>
+    /// Plugin descriptors and preview styles can load dependencies lazily, long after plugin
+    /// discovery completes. Keep their collectible contexts alive for the host lifetime instead
+    /// of allowing a temporary loader instance to make those dependencies unavailable.
+    /// </summary>
+    public static void ReleaseRetainedContexts()
+    {
+        List<PluginLoadContext> contexts;
+        lock (RetainedContextsGate)
+        {
+            contexts = RetainedContexts.ToList();
+            RetainedContexts.Clear();
+        }
+
+        foreach (var context in contexts)
+            context.Unload();
+    }
+
+    private static void RetainContext(PluginLoadContext context)
+    {
+        lock (RetainedContextsGate)
+            RetainedContexts.Add(context);
+    }
+
+    private static List<string> FindPluginAssemblyPaths(string folderPath)
+    {
+        var candidates = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var directory in Directory.GetDirectories(folderPath, "*", SearchOption.AllDirectories)
+                     .Prepend(folderPath))
+        {
+            var directoryName = Path.GetFileName(directory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+            foreach (var assemblyPath in Directory.GetFiles(directory, "*.dll", SearchOption.TopDirectoryOnly))
+            {
+                var assemblyName = Path.GetFileNameWithoutExtension(assemblyPath);
+                var hasDependencyManifest = File.Exists(Path.ChangeExtension(assemblyPath, ".deps.json"));
+                var matchesPackageFolder = assemblyName.Equals(directoryName, StringComparison.OrdinalIgnoreCase);
+                if (hasDependencyManifest || matchesPackageFolder)
+                    candidates.Add(assemblyPath);
+            }
+        }
+
+        return candidates
+            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     private PluginLoadReport LoadPluginType(
@@ -209,6 +286,30 @@ public sealed class PluginLoader
                 catch (Exception ex)
                 {
                     errors.Add($"Binding provider '{bindingProvider.Id}' was not registered: {FormatExceptionMessage(ex)}");
+                }
+            }
+
+            if (plugin is IDesignerExportContributionProvider exportContributionProvider)
+            {
+                try
+                {
+                    registry.RegisterExportContributionProvider(exportContributionProvider);
+                }
+                catch (Exception ex)
+                {
+                    errors.Add($"Export contribution provider '{exportContributionProvider.ProviderId}' was not registered: {FormatExceptionMessage(ex)}");
+                }
+            }
+
+            if (plugin is IDesignerRuntimePreviewContributionProvider runtimePreviewContributionProvider)
+            {
+                try
+                {
+                    registry.RegisterRuntimePreviewContributionProvider(runtimePreviewContributionProvider);
+                }
+                catch (Exception ex)
+                {
+                    errors.Add($"Runtime Preview contribution provider '{runtimePreviewContributionProvider.ProviderId}' was not registered: {FormatExceptionMessage(ex)}");
                 }
             }
 
@@ -425,6 +526,26 @@ public sealed class PluginLoader
         {
             return _innerRegistry.GetBindingProviders().Concat(BindingProviders).ToList();
         }
+
+        public void RegisterExportContributionProvider(IDesignerExportContributionProvider provider)
+        {
+            _innerRegistry.RegisterExportContributionProvider(provider);
+        }
+
+        public void RegisterRuntimePreviewContributionProvider(IDesignerRuntimePreviewContributionProvider provider)
+        {
+            _innerRegistry.RegisterRuntimePreviewContributionProvider(provider);
+        }
+
+        public IReadOnlyList<IDesignerExportContributionProvider> GetExportContributionProviders()
+        {
+            return _innerRegistry.GetExportContributionProviders();
+        }
+
+        public IReadOnlyList<IDesignerRuntimePreviewContributionProvider> GetRuntimePreviewContributionProviders()
+        {
+            return _innerRegistry.GetRuntimePreviewContributionProviders();
+        }
     }
 
     private sealed record PluginTypeDiscovery(
@@ -432,3 +553,132 @@ public sealed class PluginLoader
         IReadOnlyList<string> LoaderErrors);
 }
 
+internal static class PluginRuntimeAssemblyBridge
+{
+    private const string ManifestFileName = "plugin.runtime.json";
+    private static readonly object Gate = new();
+    private static readonly Dictionary<string, string> AssemblyPaths = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly HashSet<string> LoadingAssemblies = new(StringComparer.OrdinalIgnoreCase);
+    private static bool _resolverAttached;
+
+    public static void EnsureRuntimeAssembliesAvailable(string pluginAssemblyPath, IDesignerLogger logger)
+    {
+        var pluginDirectory = Path.GetDirectoryName(pluginAssemblyPath);
+        if (string.IsNullOrWhiteSpace(pluginDirectory))
+            return;
+
+        var manifestPath = Path.Combine(pluginDirectory, ManifestFileName);
+        if (!File.Exists(manifestPath))
+            return;
+
+        PluginRuntimeManifest? manifest;
+        try
+        {
+            manifest = JsonSerializer.Deserialize<PluginRuntimeManifest>(
+                File.ReadAllText(manifestPath),
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException($"Runtime manifest '{manifestPath}' is invalid: {ex.Message}", ex);
+        }
+
+        var runtimeAssemblyPaths = (manifest?.RuntimeAssemblies ?? new List<string>())
+            .Where(fileName => !string.IsNullOrWhiteSpace(fileName))
+            .Select(fileName => Path.GetFullPath(Path.Combine(pluginDirectory, fileName)))
+            .ToList();
+        if (runtimeAssemblyPaths.Count == 0)
+            return;
+
+        lock (Gate)
+        {
+            RegisterPluginDirectoryAssemblies(pluginDirectory);
+            if (!_resolverAttached)
+            {
+                AssemblyLoadContext.Default.Resolving += ResolveDefaultAssembly;
+                _resolverAttached = true;
+            }
+
+            foreach (var runtimeAssemblyPath in runtimeAssemblyPaths)
+                LoadIntoDefaultContext(runtimeAssemblyPath, logger);
+        }
+    }
+
+    private static void RegisterPluginDirectoryAssemblies(string pluginDirectory)
+    {
+        foreach (var assemblyPath in Directory.GetFiles(pluginDirectory, "*.dll", SearchOption.TopDirectoryOnly))
+        {
+            try
+            {
+                var assemblyName = AssemblyName.GetAssemblyName(assemblyPath).Name;
+                if (!string.IsNullOrWhiteSpace(assemblyName) && !assemblyName.StartsWith("Avalonia", StringComparison.OrdinalIgnoreCase))
+                    AssemblyPaths[assemblyName] = assemblyPath;
+            }
+            catch (BadImageFormatException)
+            {
+                // Native and unsupported files are irrelevant to managed runtime resolution.
+            }
+        }
+    }
+
+    private static void LoadIntoDefaultContext(string assemblyPath, IDesignerLogger logger)
+    {
+        if (!File.Exists(assemblyPath))
+            throw new FileNotFoundException("A runtime assembly declared by a plugin manifest is missing.", assemblyPath);
+
+        var requestedName = AssemblyName.GetAssemblyName(assemblyPath);
+        var loadedAssembly = AssemblyLoadContext.Default.Assemblies.FirstOrDefault(assembly =>
+            string.Equals(assembly.GetName().Name, requestedName.Name, StringComparison.OrdinalIgnoreCase));
+        if (loadedAssembly is not null)
+        {
+            if (loadedAssembly.GetName().Version != requestedName.Version)
+            {
+                throw new InvalidOperationException(
+                    $"Runtime assembly '{requestedName.Name}' version {requestedName.Version} conflicts with " +
+                    $"already loaded version {loadedAssembly.GetName().Version}.");
+            }
+
+            return;
+        }
+
+        logger.Info($"PLUGIN_RUNTIME_ASSEMBLY_BRIDGE_PRELOAD assembly={requestedName.FullName}; path={assemblyPath}");
+        AssemblyLoadContext.Default.LoadFromAssemblyPath(assemblyPath);
+    }
+
+    private static Assembly? ResolveDefaultAssembly(AssemblyLoadContext context, AssemblyName assemblyName)
+    {
+        if (context != AssemblyLoadContext.Default || string.IsNullOrWhiteSpace(assemblyName.Name))
+            return null;
+
+        var existingAssembly = AssemblyLoadContext.Default.Assemblies.FirstOrDefault(assembly =>
+            string.Equals(assembly.GetName().Name, assemblyName.Name, StringComparison.OrdinalIgnoreCase));
+        if (existingAssembly is not null)
+            return existingAssembly;
+
+        lock (Gate)
+        {
+            if (!AssemblyPaths.TryGetValue(assemblyName.Name, out var assemblyPath)
+                || LoadingAssemblies.Contains(assemblyName.Name))
+            {
+                return null;
+            }
+
+            try
+            {
+                LoadingAssemblies.Add(assemblyName.Name);
+                var assembly = AssemblyLoadContext.Default.LoadFromAssemblyPath(assemblyPath);
+                Trace.WriteLine($"PLUGIN_RUNTIME_ASSEMBLY_BRIDGE_RESOLVED assembly={assembly.FullName}; path={assemblyPath}");
+                return assembly;
+            }
+            finally
+            {
+                LoadingAssemblies.Remove(assemblyName.Name);
+            }
+        }
+    }
+
+    private sealed class PluginRuntimeManifest
+    {
+        public List<string> RuntimeAssemblies { get; init; } = new();
+    }
+}

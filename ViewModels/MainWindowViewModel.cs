@@ -87,6 +87,7 @@ public partial class MainWindowViewModel : ObservableObject
     public const string PropertyGridCategoryBehavior = "Behavior";
     public const string PropertyGridCategoryInteraction = "Interaction";
     public const string PropertyGridCategoryExport = "Export";
+    public const string PropertyGridCategoryEremexDataGrid = "Eremex DataGrid";
     public const string PropertyGridCategoryAdvanced = "Advanced";
     private static readonly IReadOnlyDictionary<string, string> PropertyGridCategoryTitles = new Dictionary<string, string>(StringComparer.Ordinal)
     {
@@ -98,6 +99,7 @@ public partial class MainWindowViewModel : ObservableObject
         [PropertyGridCategoryBehavior] = "Поведение",
         [PropertyGridCategoryInteraction] = "Логика",
         [PropertyGridCategoryExport] = "Export",
+        [PropertyGridCategoryEremexDataGrid] = "Eremex DataGrid",
         [PropertyGridCategoryAdvanced] = "Дополнительно"
     };
     private const int RuntimeDataGridSampleRowCount = 6;
@@ -255,8 +257,9 @@ public partial class MainWindowViewModel : ObservableObject
     private string _canvasRenderedDocumentId = "";
     private int _propertiesTabRefreshVersion;
 
-    // Toolbox теперь строится из registry дескрипторов, а не из зашитого списка.
+    // Toolbox строится из registry descriptors and groups controls by provider metadata.
     public ObservableCollection<ToolboxItem> ToolboxItems { get; } = new();
+    public ObservableCollection<ToolboxGroupModel> ToolboxGroups { get; } = new();
     public ObservableCollection<ToolboxItem> PluginToolboxItems { get; } = new();
     public ObservableCollection<EditorCommand> EditorCommands => _editorCommandService.Commands;
     public ObservableCollection<EditorCommand> CommandPaletteCommands { get; } = new();
@@ -612,6 +615,9 @@ public partial class MainWindowViewModel : ObservableObject
     private string commandPaletteSearchText = "";
 
     [ObservableProperty]
+    private string toolboxSearchText = "";
+
+    [ObservableProperty]
     private EditorCommand? selectedCommandPaletteCommand;
 
     private StructureTreeItemModel? selectedStructureItem;
@@ -671,7 +677,7 @@ public partial class MainWindowViewModel : ObservableObject
     private string exportProjectNamespace = "AvaloniaApplication1";
 
     [ObservableProperty]
-    private string xamlVerbosity = XamlVerbosityCompact;
+    private string xamlVerbosity = XamlVerbosityFullStyled;
 
     [ObservableProperty]
     private string layoutExportMode = LayoutExportModeCanvas;
@@ -1038,7 +1044,7 @@ public partial class MainWindowViewModel : ObservableObject
     private bool HasRuntimeDataGridBindingSource()
     {
         return Controls
-            .Where(control => control.Type == DesignerControlTypes.DataGrid)
+            .Where(IsDataBindingControl)
             .Any(control => GetBindingSource(control.BindingSourceId) is { } source
                 && HasVisibleBindingFields(source)
                 && (ShouldExportRealDataGrid || IsRuntimeGeneratedBindingSource(source)));
@@ -1528,6 +1534,7 @@ public partial class MainWindowViewModel : ObservableObject
     public bool CanEditDataGridAdvancedVisuals => false;
     public bool CanEditDataGridTextAlignment => false;
     public bool HasDescriptorCustomProperties => DescriptorCustomPropertyEditors.Count > 0;
+    public bool HasToolboxGroups => ToolboxGroups.Any(group => group.Items.Count > 0);
     public bool HasImportedDllCatalog => FilteredImportedDllCatalog.Count > 0;
     public bool HasAnyImportedDllCatalogEntries => ImportedDllCatalog.Count > 0;
     public bool HasPluginToolboxItems => PluginToolboxItems.Count > 0;
@@ -3100,26 +3107,56 @@ public partial class MainWindowViewModel : ObservableObject
     private void RefreshToolboxItemsFromRegistry()
     {
         ToolboxItems.Clear();
+        ToolboxGroups.Clear();
         PluginToolboxItems.Clear();
 
+        var groups = new Dictionary<string, ToolboxGroupModel>(StringComparer.OrdinalIgnoreCase);
         foreach (var descriptor in _registry.GetControls())
         {
             if (descriptor is MissingPluginDescriptor)
                 continue;
 
-            var targetCollection = ShouldShowInMainToolbox(descriptor)
-                ? ToolboxItems
-                : PluginToolboxItems;
+            if (!MatchesToolboxSearch(descriptor, ToolboxSearchText))
+                continue;
 
-            targetCollection.Add(new ToolboxItem
+            var provider = ResolveToolboxProvider(descriptor);
+            var item = new ToolboxItem
             {
                 Title = descriptor.Title,
                 Type = descriptor.TypeKey,
                 Category = descriptor.Category,
-                Description = descriptor.Description
-            });
+                Description = descriptor.Description,
+                ProviderId = provider.ProviderId,
+                ProviderBadge = provider.Badge
+            };
+
+            ToolboxItems.Add(item);
+
+            if (!groups.TryGetValue(provider.GroupTitle, out var group))
+            {
+                group = new ToolboxGroupModel(provider.GroupTitle, provider.ProviderId, provider.Badge, provider.GroupOrder);
+                groups.Add(provider.GroupTitle, group);
+            }
+
+            group.Items.Add(item);
         }
 
+        foreach (var group in groups.Values
+                     .OrderBy(group => group.SortOrder)
+                     .ThenBy(group => group.Title, StringComparer.OrdinalIgnoreCase))
+        {
+            var orderedItems = group.Items
+                .OrderBy(item => item.Category, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(item => item.Title, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            group.Items.Clear();
+            foreach (var item in orderedItems)
+                group.Items.Add(item);
+
+            ToolboxGroups.Add(group);
+        }
+
+        OnPropertyChanged(nameof(HasToolboxGroups));
         OnPropertyChanged(nameof(HasPluginToolboxItems));
     }
 
@@ -3153,14 +3190,45 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(ReusableTemplatesSummary));
     }
 
-    private bool ShouldShowInMainToolbox(IControlDescriptor descriptor)
+    private ToolboxProviderInfo ResolveToolboxProvider(IControlDescriptor descriptor)
     {
-        if (!IsPluginDescriptor(descriptor))
+        if (descriptor is IDesignerControlProviderMetadata metadata
+            && !string.IsNullOrWhiteSpace(metadata.ProviderId))
+        {
+            return new ToolboxProviderInfo(
+                metadata.ProviderId.Trim(),
+                string.IsNullOrWhiteSpace(metadata.ToolboxGroup) ? metadata.ProviderTitle : metadata.ToolboxGroup,
+                string.IsNullOrWhiteSpace(metadata.ToolboxBadge) ? "PL" : metadata.ToolboxBadge,
+                metadata.ToolboxGroupOrder);
+        }
+
+        return IsPluginDescriptor(descriptor)
+            ? new ToolboxProviderInfo("Custom", "Пользовательские плагины", "PL", 200)
+            : new ToolboxProviderInfo("Avalonia", "Стандартные", "AV", 0);
+    }
+
+    private static bool MatchesToolboxSearch(IControlDescriptor descriptor, string? searchText)
+    {
+        var query = searchText?.Trim();
+        if (string.IsNullOrWhiteSpace(query))
             return true;
 
-        return string.Equals(descriptor.TypeKey, "Demo.DevButton", StringComparison.Ordinal)
-            || string.Equals(descriptor.TypeKey, "Demo.TreeList", StringComparison.Ordinal);
+        return descriptor.Title.Contains(query, StringComparison.OrdinalIgnoreCase)
+            || descriptor.TypeKey.Contains(query, StringComparison.OrdinalIgnoreCase)
+            || descriptor.Category.Contains(query, StringComparison.OrdinalIgnoreCase)
+            || descriptor.Description.Contains(query, StringComparison.OrdinalIgnoreCase)
+            || (descriptor is IDesignerControlProviderMetadata metadata
+                && (metadata.ProviderId.Contains(query, StringComparison.OrdinalIgnoreCase)
+                    || metadata.ProviderTitle.Contains(query, StringComparison.OrdinalIgnoreCase)
+                    || metadata.ToolboxGroup.Contains(query, StringComparison.OrdinalIgnoreCase)));
     }
+
+    partial void OnToolboxSearchTextChanged(string value)
+    {
+        RefreshToolboxItemsFromRegistry();
+    }
+
+    private sealed record ToolboxProviderInfo(string ProviderId, string GroupTitle, string Badge, int GroupOrder);
 
     private void RebuildInstalledPluginCatalog()
     {
@@ -6017,7 +6085,8 @@ public partial class MainWindowViewModel : ObservableObject
 
         if (!IncludePluginRuntimeReferences)
         {
-            foreach (var pluginControl in Controls.Where(IsPluginRuntimeControl))
+            foreach (var pluginControl in Controls.Where(control =>
+                         IsPluginRuntimeControl(control) && RequiresPluginRuntimeAssembly(control)))
             {
                 diagnostics.Add(new DocumentDiagnosticModel
                 {
@@ -9685,6 +9754,7 @@ public partial class MainWindowViewModel : ObservableObject
             PropertyGridCategoryBehavior,
             PropertyGridCategoryInteraction,
             PropertyGridCategoryExport,
+            PropertyGridCategoryEremexDataGrid,
             PropertyGridCategoryAdvanced
         };
     }
@@ -10200,6 +10270,21 @@ public partial class MainWindowViewModel : ObservableObject
             foreach (var row in BuildDataGridPropertyRows(control, includeDataAndExport: false))
                 yield return row;
         }
+        else if (SupportsDataBinding(control)
+                 && DescriptorDeclaresProperty(control, nameof(DesignControlModel.BindingSourceId)))
+        {
+            yield return CreateBindingSourceRow(control, "BindingSource used by this data control.");
+            if (DescriptorDeclaresProperty(control, nameof(DesignControlModel.AutoGenerateColumns)))
+            {
+                yield return CreateBoolRow(
+                    PropertyGridCategoryData,
+                    nameof(DesignControlModel.AutoGenerateColumns),
+                    "AutoGenerateColumns",
+                    control.AutoGenerateColumns,
+                    "Generate columns from the selected BindingSource schema.",
+                    value => control.AutoGenerateColumns = value);
+            }
+        }
 
         var interactionCount = Interactions.Count(interaction =>
             string.Equals(interaction.SourceControlName, control.Name, StringComparison.OrdinalIgnoreCase)
@@ -10385,6 +10470,9 @@ public partial class MainWindowViewModel : ObservableObject
 
     private static string GetPropertyGridDescriptorDescription(DesignPropertyDescriptor descriptor)
     {
+        if (!string.IsNullOrWhiteSpace(descriptor.Description))
+            return descriptor.Description;
+
         var editorHint = descriptor.Editor switch
         {
             PropertyEditorKind.Color => "HEX color value from plugin descriptor.",
@@ -10410,6 +10498,7 @@ public partial class MainWindowViewModel : ObservableObject
             "behavior" => PropertyGridCategoryBehavior,
             "interaction" => PropertyGridCategoryInteraction,
             "export" => PropertyGridCategoryExport,
+            "eremex datagrid" => PropertyGridCategoryEremexDataGrid,
             _ => PropertyGridCategoryAdvanced
         };
     }
@@ -10475,9 +10564,9 @@ public partial class MainWindowViewModel : ObservableObject
         return CreateRow(category, key, label, editor, value, description, null, null, actionText: actionText, aliases: aliases);
     }
 
-    private PropertyGridRowViewModel CreateBindingSourceRow(DesignControlModel control)
+    private PropertyGridRowViewModel CreateBindingSourceRow(DesignControlModel control, string description = "BindingSource used by this DataGrid.")
     {
-        var row = CreateRow(PropertyGridCategoryData, nameof(DesignControlModel.BindingSourceId), "BindingSource", PropertyGridEditorKind.BindingSource, control.BindingSourceId, "BindingSource used by this DataGrid.", (_, value) =>
+        var row = CreateRow(PropertyGridCategoryData, nameof(DesignControlModel.BindingSourceId), "BindingSource", PropertyGridEditorKind.BindingSource, control.BindingSourceId, description, (_, value) =>
         {
             control.BindingSourceId = value;
             RaiseBindingEditorProperties();
@@ -10787,7 +10876,7 @@ public partial class MainWindowViewModel : ObservableObject
         ExportProjectNamespace = string.IsNullOrWhiteSpace(cache.ExportProjectNamespace) ? "AvaloniaApplication1" : cache.ExportProjectNamespace;
         DataGridExportMode = NormalizeDataGridExportMode(cache.DataGridExportMode);
         LayoutExportMode = NormalizeLayoutExportMode(cache.LayoutExportMode);
-        XamlVerbosity = AvailableXamlVerbosities.Contains(cache.XamlVerbosity) ? cache.XamlVerbosity : XamlVerbosityCompact;
+        XamlVerbosity = AvailableXamlVerbosities.Contains(cache.XamlVerbosity) ? cache.XamlVerbosity : XamlVerbosityFullStyled;
         IncludeExportComments = cache.IncludeExportComments;
         IncludeSampleData = cache.IncludeSampleData;
         IncludeCrudSkeleton = cache.IncludeCrudSkeleton;
@@ -12673,7 +12762,8 @@ public partial class MainWindowViewModel : ObservableObject
             StringComparer.OrdinalIgnoreCase);
         var bindingSources = BindingMetadataMapper.ToMetadataMap(BindingSources);
         var services = new DesignerServiceProvider()
-            .Add<IBuiltInXamlBridge>(new BuiltInXamlBridge(this));
+            .Add<IBuiltInXamlBridge>(new BuiltInXamlBridge(this))
+            .Add<IRuntimeBindingExportPathProvider>(new RuntimeBindingExportPathProvider(this));
         var exportContext = new XamlExportContext(
             services,
             parentId => GetChildControlsForExport(parentId)
@@ -12959,7 +13049,7 @@ public partial class MainWindowViewModel : ObservableObject
             logAsync,
             packageSources: packageSources,
             includeDefaultNugetSource: IncludeNuGetOrgFallback,
-            generateNuGetConfig: GenerateNuGetConfigInExportedProject);
+            generateNuGetConfig: GenerateNuGetConfigInExportedProject).ConfigureAwait(false);
     }
 
     public async Task ExportCurrentResultAsZipAsync(string zipPath)
@@ -12990,6 +13080,7 @@ public partial class MainWindowViewModel : ObservableObject
         var files = new List<GeneratedFileModel>();
         var packages = new List<RequiredPackageModel>();
         var diagnostics = new List<ExportDiagnosticModel>();
+        IReadOnlyList<DesignerExportContributions> pluginContributions = Array.Empty<DesignerExportContributions>();
 
         if (!wasExportPipelineRunning)
         {
@@ -13005,10 +13096,17 @@ public partial class MainWindowViewModel : ObservableObject
         {
             var profile = BuildExportProfile();
             files = BuildGeneratedFiles().ToList();
-            packages = BuildRequiredPackageModels().ToList();
+            pluginContributions = BuildPluginExportContributions();
+            packages = BuildRequiredPackageModels(pluginContributions).ToList();
             diagnostics = BuildExportDiagnosticModels().ToList();
 
-            CurrentExportResult = _exportPipelineService.CreateResult(profile, files, packages, diagnostics, CurrentExportBuildValidation);
+            CurrentExportResult = _exportPipelineService.CreateResult(
+                profile,
+                files,
+                packages,
+                diagnostics,
+                CurrentExportBuildValidation,
+                pluginContributions.SelectMany(contribution => contribution.ApplicationStyles));
 
             GeneratedFiles.Clear();
             foreach (var file in files)
@@ -13791,6 +13889,7 @@ public partial class MainWindowViewModel : ObservableObject
                     warning: true);
             }
 
+            var runtimePreviewContributions = BuildRuntimePreviewContributions();
             return new ExportedAxamlPreviewModel
             {
                 ExportAxaml = exportAxaml.Axaml,
@@ -13803,7 +13902,8 @@ public partial class MainWindowViewModel : ObservableObject
                 ActiveFormId = form.Id,
                 IncludeDemoData = IncludeSampleData,
                 FallbackToLegacyPreviewOnError = FallbackToLegacyPreviewOnAxamlError,
-                ShowGeneratedAxamlOnError = ShowGeneratedAxamlOnPreviewError
+                ShowGeneratedAxamlOnError = ShowGeneratedAxamlOnPreviewError,
+                RuntimePreviewContributions = runtimePreviewContributions
             };
         }
         finally
@@ -14032,7 +14132,7 @@ public partial class MainWindowViewModel : ObservableObject
         bool isSecondaryForm)
     {
         var sqlGrids = exportViewModel.Controls
-            .Where(control => control.Type == DesignerControlTypes.DataGrid)
+            .Where(exportViewModel.IsDataBindingControl)
             .Select(control => new
             {
                 Control = control,
@@ -14207,10 +14307,13 @@ public partial class MainWindowViewModel : ObservableObject
         return null;
     }
 
-    private IEnumerable<RequiredPackageModel> BuildRequiredPackageModels()
+    private IEnumerable<RequiredPackageModel> BuildRequiredPackageModels(
+        IReadOnlyList<DesignerExportContributions>? pluginContributions = null)
     {
+        var builtInPackageIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var packageId in GetRequiredProjectExportNuGetPackages())
         {
+            builtInPackageIds.Add(packageId);
             yield return new RequiredPackageModel
             {
                 Id = packageId,
@@ -14219,6 +14322,115 @@ public partial class MainWindowViewModel : ObservableObject
                 Severity = ExportChecklistSeverity.Warning
             };
         }
+
+        foreach (var package in (pluginContributions ?? Array.Empty<DesignerExportContributions>())
+                     .SelectMany(contribution => contribution.Packages)
+                     .Where(package => !string.IsNullOrWhiteSpace(package.PackageId))
+                     .GroupBy(package => package.PackageId, StringComparer.OrdinalIgnoreCase)
+                     .Select(group => group.First())
+                     .Where(package => !builtInPackageIds.Contains(package.PackageId))
+                     .OrderBy(package => package.PackageId, StringComparer.OrdinalIgnoreCase))
+        {
+            yield return new RequiredPackageModel
+            {
+                Id = package.PackageId,
+                Version = package.Version,
+                Reason = package.Reason,
+                Severity = ExportChecklistSeverity.Warning
+            };
+        }
+    }
+
+    private IReadOnlyList<DesignerExportContributions> BuildPluginExportContributions(bool logDiagnostics = true)
+    {
+        var usedTypeKeys = GetUsedProjectControlTypeKeys();
+        if (usedTypeKeys.Count == 0)
+            return Array.Empty<DesignerExportContributions>();
+
+        var context = new DesignerExportContributionContext
+        {
+            UsedControlTypeKeys = usedTypeKeys
+        };
+        var contributions = new List<DesignerExportContributions>();
+        foreach (var provider in _registry.GetExportContributionProviders())
+        {
+            try
+            {
+                var contribution = provider.GetExportContributions(context);
+                if (contribution.Packages.Count == 0 && contribution.ApplicationStyles.Count == 0)
+                    continue;
+
+                contributions.Add(contribution);
+                if (logDiagnostics)
+                {
+                    TraceDocumentDebug(
+                        "PLUGIN_EXPORT_CONTRIBUTION_ADDED",
+                        $"provider={provider.ProviderId}; packages={string.Join(",", contribution.Packages.Select(package => package.PackageId))}; styles={contribution.ApplicationStyles.Count}",
+                        toOutput: false);
+                }
+            }
+            catch (Exception ex)
+            {
+                if (logDiagnostics)
+                {
+                    TraceDocumentDebug(
+                        "PLUGIN_EXPORT_CONTRIBUTION_FAILED",
+                        $"provider={provider.ProviderId}; reason={ex.Message}",
+                        toOutput: true,
+                        warning: true);
+                }
+            }
+        }
+
+        return contributions;
+    }
+
+    private IReadOnlyList<DesignerRuntimePreviewContribution> BuildRuntimePreviewContributions()
+    {
+        var usedTypeKeys = GetUsedProjectControlTypeKeys();
+        if (usedTypeKeys.Count == 0)
+            return Array.Empty<DesignerRuntimePreviewContribution>();
+
+        var context = new DesignerRuntimePreviewContributionContext
+        {
+            UsedControlTypeKeys = usedTypeKeys
+        };
+        var contributions = new List<DesignerRuntimePreviewContribution>();
+        foreach (var provider in _registry.GetRuntimePreviewContributionProviders())
+        {
+            try
+            {
+                var contribution = provider.GetRuntimePreviewContribution(context);
+                if (contribution is null)
+                    continue;
+
+                contributions.Add(contribution);
+                TraceDocumentDebug(
+                    "AXAML_PREVIEW_PLUGIN_CONTRIBUTIONS_COLLECTED",
+                    $"provider={provider.ProviderId}; assemblies={string.Join(",", contribution.Assemblies.Select(assembly => assembly.GetName().Name))}; hasInitializer={contribution.Initialize is not null}",
+                    toOutput: false);
+            }
+            catch (Exception ex)
+            {
+                TraceDocumentDebug(
+                    "AXAML_PREVIEW_PLUGIN_CONTRIBUTIONS_FAILED",
+                    $"provider={provider.ProviderId}; reason={ex.GetType().Name}:{ex.Message}",
+                    toOutput: true,
+                    warning: true);
+            }
+        }
+
+        return contributions;
+    }
+
+    private IReadOnlyList<string> GetUsedProjectControlTypeKeys()
+    {
+        return CurrentProject.Forms
+            .SelectMany(form => form.Document?.Controls ?? Enumerable.Empty<DesignerControlFileModel>())
+            .Select(control => control.Type)
+            .Where(typeKey => !string.IsNullOrWhiteSpace(typeKey))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
     }
 
     private IReadOnlyList<string> GetRequiredProjectExportNuGetPackages()
@@ -14231,12 +14443,13 @@ public partial class MainWindowViewModel : ObservableObject
                 continue;
 
             var dataGrids = document.Controls
-                .Where(control => string.Equals(control.Type, DesignerControlTypes.DataGrid, StringComparison.Ordinal))
+                .Select(FromControlFileModel)
+                .Where(IsDataBindingControl)
                 .ToList();
             if (dataGrids.Count == 0)
                 continue;
 
-            if (ShouldExportRealDataGrid)
+            if (ShouldExportRealDataGrid && dataGrids.Any(control => control.Type == DesignerControlTypes.DataGrid))
                 packageIds.Add("Avalonia.Controls.DataGrid");
 
             var boundSourceIds = dataGrids
@@ -14320,7 +14533,7 @@ public partial class MainWindowViewModel : ObservableObject
     {
         return packageId switch
         {
-            "Avalonia.Controls.DataGrid" => "11.1.1",
+            "Avalonia.Controls.DataGrid" => "11.1.5",
             "CommunityToolkit.Mvvm" => "8.2.1",
             "Microsoft.Data.SqlClient" => "5.2.2",
             _ => ""
@@ -14454,7 +14667,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void AppendExportDependencyComments(StringBuilder sb)
     {
-        var packages = GetRequiredExportNuGetPackages().ToList();
+        var packages = GetAllRequiredExportPackages();
         sb.AppendLine("    <!-- Подсказки экспорта:");
         if (packages.Count == 0)
         {
@@ -14464,7 +14677,7 @@ public partial class MainWindowViewModel : ObservableObject
         {
             sb.AppendLine("         В новом Avalonia-проекте установите NuGet-пакеты:");
             foreach (var package in packages)
-                sb.AppendLine($"         - {EscapeXml(package)}");
+                sb.AppendLine($"         - {EscapeXml(package.Id)} {EscapeXml(package.Version)}");
         }
 
         if (ShouldExportPortableDataGrid && Controls.Any(control => control.Type == DesignerControlTypes.DataGrid))
@@ -14473,7 +14686,7 @@ public partial class MainWindowViewModel : ObservableObject
         if (BindingSources.Count > 0 && !ShouldGenerateRuntimeDataBindingCode)
             sb.AppendLine("         BindingSource используется только как схема колонок. Тестовые модели и fake data не генерируются.");
 
-        if (IncludePluginRuntimeReferences && Controls.Any(IsPluginRuntimeControl))
+        if (Controls.Any(RequiresPluginRuntimeAssembly))
             sb.AppendLine("         Также подключите runtime DLL плагинов, которые используются на форме.");
 
         sb.AppendLine("    -->");
@@ -14489,6 +14702,13 @@ public partial class MainWindowViewModel : ObservableObject
 
         if (ShouldGenerateRuntimeDataBindingCode && BuildCrudGenerationContexts().Any(context => ShouldGenerateSqlRuntimeLoader(context.Source)))
             yield return "Microsoft.Data.SqlClient";
+    }
+
+    private IReadOnlyList<RequiredPackageModel> GetAllRequiredExportPackages()
+    {
+        return BuildRequiredPackageModels(BuildPluginExportContributions(logDiagnostics: false))
+            .OrderBy(package => package.Id, StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     private static bool ShouldGenerateSqlRuntimeLoader(BindingSourceModel source)
@@ -14588,16 +14808,14 @@ public partial class MainWindowViewModel : ObservableObject
 
     private string BuildExportSummaryText()
     {
-        var packages = GetRequiredExportNuGetPackages()
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
+        var packages = GetAllRequiredExportPackages();
         var pluginControls = Controls
-            .Where(IsPluginRuntimeControl)
+            .Where(RequiresPluginRuntimeAssembly)
             .Select(control => string.IsNullOrWhiteSpace(control.PluginId) ? control.Type : control.PluginId)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
         var hasGeneratedViewModel = ShouldGenerateRuntimeDataBindingCode;
-        var nugetText = packages.Count == 0 ? "не нужны" : string.Join(", ", packages);
+        var nugetText = packages.Count == 0 ? "не нужны" : string.Join(", ", packages.Select(package => package.Id));
         var pluginText = IncludePluginRuntimeReferences && pluginControls.Count > 0
             ? string.Join(", ", pluginControls)
             : "не нужны";
@@ -14612,11 +14830,9 @@ public partial class MainWindowViewModel : ObservableObject
 
     private string BuildExportCompactSummary()
     {
-        var packages = GetRequiredExportNuGetPackages()
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
+        var packages = GetAllRequiredExportPackages();
         var pluginCount = IncludePluginRuntimeReferences
-            ? Controls.Where(IsPluginRuntimeControl)
+            ? Controls.Where(RequiresPluginRuntimeAssembly)
                 .Select(GetPluginRuntimeRequirementName)
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .Count()
@@ -14775,11 +14991,9 @@ public partial class MainWindowViewModel : ObservableObject
         var namespaceError = HasExportNamespaceError();
         var xamlGenerated = !string.IsNullOrWhiteSpace(GeneratedXaml);
         var csharpGenerated = !string.IsNullOrWhiteSpace(GeneratedCSharp);
-        var packages = GetRequiredExportNuGetPackages()
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
+        var packages = GetAllRequiredExportPackages();
         var pluginControls = Controls
-            .Where(IsPluginRuntimeControl)
+            .Where(RequiresPluginRuntimeAssembly)
             .ToList();
         var pluginNames = pluginControls
             .Select(GetPluginRuntimeRequirementName)
@@ -14858,11 +15072,11 @@ public partial class MainWindowViewModel : ObservableObject
             new()
             {
                 Title = "Required NuGet",
-                Value = packages.Count == 0 ? "none" : string.Join(", ", packages),
+                Value = packages.Count == 0 ? "none" : string.Join(", ", packages.Select(package => package.Id)),
                 Severity = packages.Count == 0 ? ExportChecklistSeverity.Ok : ExportChecklistSeverity.Warning,
                 Details = packages.Count == 0
                     ? "Дополнительные NuGet-пакеты не нужны."
-                    : $"Установите перед сборкой: {string.Join(", ", packages)}."
+                    : $"Установите перед сборкой: {string.Join(", ", packages.Select(package => package.Id))}."
             },
             new()
             {
@@ -14997,6 +15211,29 @@ public partial class MainWindowViewModel : ObservableObject
         return string.IsNullOrWhiteSpace(control.PluginId) ? control.Type : control.PluginId;
     }
 
+    private bool CanExportPluginControl(DesignControlModel control)
+    {
+        return !IsPluginRuntimeControl(control)
+            || IncludePluginRuntimeReferences
+            || !RequiresPluginRuntimeAssembly(control);
+    }
+
+    private bool RequiresPluginRuntimeAssembly(DesignControlModel control)
+    {
+        if (!IsPluginRuntimeControl(control))
+            return false;
+
+        var descriptor = GetDescriptor(control.Type);
+        if (descriptor is not IDesignerControlProviderMetadata metadata
+            || string.IsNullOrWhiteSpace(metadata.ProviderId))
+        {
+            return true;
+        }
+
+        return !_registry.GetExportContributionProviders()
+            .Any(provider => string.Equals(provider.ProviderId, metadata.ProviderId, StringComparison.OrdinalIgnoreCase));
+    }
+
     private string BuildDataGridExportSummary()
     {
         var grids = Controls
@@ -15039,22 +15276,20 @@ public partial class MainWindowViewModel : ObservableObject
 
     private string BuildExportDependenciesSummary()
     {
-        var packages = GetRequiredExportNuGetPackages()
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
+        var packages = GetAllRequiredExportPackages();
 
         var targetText = IsMainWindowExportTarget
             ? "замените содержимое MainWindow.axaml и MainWindow.axaml.cs в новом Avalonia Desktop проекте"
             : $"добавьте отдельное окно {ResolveExportWindowClassName()}.axaml и {ResolveExportWindowClassName()}.axaml.cs";
         var baseText = $"Как перенести код: {targetText}. Namespace сейчас: {ResolveExportNamespace()}.";
-        var pluginNote = IncludePluginRuntimeReferences && Controls.Any(IsPluginRuntimeControl)
+        var pluginNote = IncludePluginRuntimeReferences && Controls.Any(RequiresPluginRuntimeAssembly)
             ? " Также подключите runtime DLL плагинов, которые используются на форме."
             : "";
 
         if (packages.Count == 0)
             return $"{baseText} Дополнительные NuGet-пакеты не нужны. В безопасном режиме DataGrid не требует Avalonia.Controls.DataGrid.{pluginNote}";
 
-        return $"{baseText} Нужно установить NuGet: {string.Join(", ", packages)}.{pluginNote}";
+        return $"{baseText} Нужно установить NuGet: {string.Join(", ", packages.Select(package => package.Id))}.{pluginNote}";
     }
 
     private string BuildGeneratedBindingGuide()
@@ -15312,14 +15547,14 @@ public partial class MainWindowViewModel : ObservableObject
             StringComparer.OrdinalIgnoreCase);
         var runtimeDataGridChecks = new List<RuntimeDataGridSelfCheck>();
         var sqlGridCount = Controls.Count(control =>
-            control.Type == DesignerControlTypes.DataGrid
+            IsDataBindingControl(control)
             && GetBindingSource(control.BindingSourceId) is { } source
             && IsSqlServerSource(source));
         TraceDocumentDebug(
             "EXPORT_FORM_SQL_CONTEXT_START",
             $"form={ActiveDocumentName}:{currentFormId}; grids={sqlGridCount}; viewmodel={viewModelClassName}; isolated={_isGeneratingSecondaryFormExport}",
             toOutput: false);
-        foreach (var control in Controls.Where(control => control.Type == DesignerControlTypes.DataGrid))
+        foreach (var control in Controls.Where(IsDataBindingControl))
         {
             var source = GetBindingSource(control.BindingSourceId);
             if (source is null || !ShouldGenerateRuntimeBindingForSource(source))
@@ -15330,10 +15565,13 @@ public partial class MainWindowViewModel : ObservableObject
             if (context is null || !exportControlNames.TryGetValue(control.Id, out var exportedGridName))
                 continue;
 
-            runtimeDataGridChecks.Add(new RuntimeDataGridSelfCheck(
-                exportedGridName,
-                context.ViewCollectionPropertyName,
-                context.ViewCollectionPropertyName));
+            if (control.Type == DesignerControlTypes.DataGrid)
+            {
+                runtimeDataGridChecks.Add(new RuntimeDataGridSelfCheck(
+                    exportedGridName,
+                    context.ViewCollectionPropertyName,
+                    context.ViewCollectionPropertyName));
+            }
         }
         var autoLoadSqlContexts = false;
         var primaryCrud = crudContexts.FirstOrDefault();
@@ -15341,7 +15579,7 @@ public partial class MainWindowViewModel : ObservableObject
         foreach (var context in crudContexts)
         {
             var gridNames = Controls
-                .Where(control => control.Type == DesignerControlTypes.DataGrid
+                .Where(control => IsDataBindingControl(control)
                     && string.Equals(control.BindingSourceId, context.Source.Id, StringComparison.OrdinalIgnoreCase))
                 .Select(control => control.Name)
                 .Where(name => !string.IsNullOrWhiteSpace(name))
@@ -17207,7 +17445,8 @@ public partial class MainWindowViewModel : ObservableObject
         var controlNodes = Controls.ToDictionary(controlModel => controlModel.Id, controlModel => (IDesignControlNode)new DesignControlNodeAdapter(controlModel), StringComparer.OrdinalIgnoreCase);
         var bindingSources = BindingMetadataMapper.ToMetadataMap(BindingSources);
         var services = new DesignerServiceProvider()
-            .Add<IBuiltInXamlBridge>(new BuiltInXamlBridge(this));
+            .Add<IBuiltInXamlBridge>(new BuiltInXamlBridge(this))
+            .Add<IRuntimeBindingExportPathProvider>(new RuntimeBindingExportPathProvider(this));
         var context = new XamlExportContext(
             services,
             parentId => GetChildControlsForExport(parentId)
@@ -17243,9 +17482,9 @@ public partial class MainWindowViewModel : ObservableObject
 
     private bool TryAppendControlXamlViaDescriptor(IDesignControlNode controlNode, int indentLevel, IXamlWriter writer, IXamlExportContext context)
     {
-        if (!IncludePluginRuntimeReferences
-            && controlNode is DesignControlNodeAdapter adapter
-            && IsPluginRuntimeControl(adapter.Model))
+        if (controlNode is DesignControlNodeAdapter adapter
+            && IsPluginRuntimeControl(adapter.Model)
+            && !CanExportPluginControl(adapter.Model))
         {
             AppendPluginPlaceholderXaml(adapter.Model, indentLevel, writer);
             return true;
@@ -17314,6 +17553,29 @@ public partial class MainWindowViewModel : ObservableObject
                 if (line.Length > 0)
                     writer.WriteLine(0, line);
             }
+        }
+    }
+
+    private sealed class RuntimeBindingExportPathProvider : IRuntimeBindingExportPathProvider
+    {
+        private readonly MainWindowViewModel _owner;
+
+        public RuntimeBindingExportPathProvider(MainWindowViewModel owner)
+        {
+            _owner = owner;
+        }
+
+        public string GetItemsSourcePath(BindingSourceMetadata? bindingSource)
+        {
+            if (bindingSource is null)
+                return string.Empty;
+
+            var source = _owner.GetBindingSource(bindingSource.Id);
+            if (!_owner.ShouldGenerateRuntimeBindingForSource(source))
+                return string.Empty;
+
+            return _owner.GetCrudGenerationContext(source)?.ViewCollectionPropertyName
+                   ?? string.Empty;
         }
     }
 
@@ -17487,6 +17749,16 @@ public partial class MainWindowViewModel : ObservableObject
                 : EscapeXml(currentValue);
     }
 
+    private string ResolveLegacyDefaultBrushValue(string currentValue, string legacyDefaultValue, string resourceKey)
+    {
+        if (IsCompactXamlExport)
+            return EscapeXml(currentValue);
+
+        return DesignerThemeCatalog.AreEquivalent(currentValue, legacyDefaultValue)
+            ? ThemeResourceReference(resourceKey)
+            : EscapeXml(currentValue);
+    }
+
     private string BackgroundAttribute(DesignControlModel control) =>
         BrushAttribute(control, "Background", control.Background, defaults => defaults.Background, defaults => defaults.BackgroundResourceKey);
 
@@ -17504,71 +17776,26 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void AppendThemeResources(StringBuilder sb, FormThemePalette palette)
     {
+        var tokens = GeneratedFormDesignSystem.CreateTokens(palette, SurfaceBackground);
+        TraceDocumentDebug(
+            "EXPORT_FORM_DESIGN_SYSTEM_GENERATED",
+            $"form={FormTitle}; theme={palette.Name}; accent={tokens[ThemeResourceKeys.AccentBrush]}; tokens={tokens.Values.Count}; fullStyled={IsFullStyledXamlExport}",
+            toOutput: false);
         sb.AppendLine("  <Window.Resources>");
-        AppendBrushResource(sb, 2, ThemeResourceKeys.WindowBackgroundBrush, SurfaceBackground);
-        AppendBrushResource(sb, 2, ThemeResourceKeys.TextBrush, palette.TextBrush);
-        AppendBrushResource(sb, 2, ThemeResourceKeys.MutedTextBrush, palette.MutedTextBrush);
-        AppendBrushResource(sb, 2, ThemeResourceKeys.BorderBrush, palette.BorderBrush);
-        AppendBrushResource(sb, 2, ThemeResourceKeys.InputBackgroundBrush, palette.InputBackground);
-        AppendBrushResource(sb, 2, ThemeResourceKeys.ContainerBackgroundBrush, palette.ContainerBackground);
-        AppendBrushResource(sb, 2, ThemeResourceKeys.ButtonBackgroundBrush, palette.ButtonBackground);
-        AppendBrushResource(sb, 2, ThemeResourceKeys.ButtonForegroundBrush, palette.ButtonForeground);
-        AppendBrushResource(sb, 2, ThemeResourceKeys.ButtonBorderBrush, palette.ButtonBorderBrush);
-        AppendBrushResource(sb, 2, ThemeResourceKeys.AccentBrush, palette.AccentBrush);
-        AppendBrushResource(sb, 2, ThemeResourceKeys.AccentStrongBrush, palette.AccentStrongBrush);
-        AppendBrushResource(sb, 2, ThemeResourceKeys.AccentForegroundBrush, palette.AccentForegroundBrush);
-        AppendBrushResource(sb, 2, ThemeResourceKeys.DataGridHeaderBackgroundBrush, palette.DataGridHeaderBackground);
-        AppendBrushResource(sb, 2, ThemeResourceKeys.DataGridHeaderForegroundBrush, palette.DataGridHeaderForeground);
-        AppendBrushResource(sb, 2, ThemeResourceKeys.DataGridRowBackgroundBrush, palette.DataGridRowBackground);
-        AppendBrushResource(sb, 2, ThemeResourceKeys.DataGridAlternateRowBackgroundBrush, palette.DataGridAlternateRowBackground);
+        GeneratedFormDesignSystem.AppendWindowResources(
+            sb,
+            indentLevel: 2,
+            tokens);
         sb.AppendLine("  </Window.Resources>");
-    }
-
-    private static void AppendBrushResource(StringBuilder sb, int indentLevel, string key, string color)
-    {
-        sb.AppendLine($"{Indent(indentLevel)}<SolidColorBrush x:Key=\"{key}\" Color=\"{EscapeXml(color)}\" />");
     }
 
     private void AppendThemeStyles(StringBuilder sb)
     {
         sb.AppendLine("  <Window.Styles>");
-        sb.AppendLine("    <Style Selector=\"TextBlock\">");
-        sb.AppendLine($"      <Setter Property=\"Foreground\" Value=\"{ThemeResourceReference(ThemeResourceKeys.TextBrush)}\" />");
-        sb.AppendLine("    </Style>");
-        sb.AppendLine("    <Style Selector=\"Button\">");
-        sb.AppendLine($"      <Setter Property=\"Background\" Value=\"{ThemeResourceReference(ThemeResourceKeys.ButtonBackgroundBrush)}\" />");
-        sb.AppendLine($"      <Setter Property=\"Foreground\" Value=\"{ThemeResourceReference(ThemeResourceKeys.ButtonForegroundBrush)}\" />");
-        sb.AppendLine($"      <Setter Property=\"BorderBrush\" Value=\"{ThemeResourceReference(ThemeResourceKeys.ButtonBorderBrush)}\" />");
-        sb.AppendLine("      <Setter Property=\"BorderThickness\" Value=\"1\" />");
-        sb.AppendLine("      <Setter Property=\"CornerRadius\" Value=\"8\" />");
-        sb.AppendLine("      <Setter Property=\"Padding\" Value=\"10\" />");
-        sb.AppendLine("    </Style>");
-        sb.AppendLine("    <Style Selector=\"TextBox\">");
-        sb.AppendLine($"      <Setter Property=\"Background\" Value=\"{ThemeResourceReference(ThemeResourceKeys.InputBackgroundBrush)}\" />");
-        sb.AppendLine($"      <Setter Property=\"Foreground\" Value=\"{ThemeResourceReference(ThemeResourceKeys.TextBrush)}\" />");
-        sb.AppendLine($"      <Setter Property=\"BorderBrush\" Value=\"{ThemeResourceReference(ThemeResourceKeys.BorderBrush)}\" />");
-        sb.AppendLine("      <Setter Property=\"BorderThickness\" Value=\"1\" />");
-        sb.AppendLine("      <Setter Property=\"Padding\" Value=\"10\" />");
-        sb.AppendLine("    </Style>");
-        sb.AppendLine("    <Style Selector=\"CheckBox\">");
-        sb.AppendLine($"      <Setter Property=\"Foreground\" Value=\"{ThemeResourceReference(ThemeResourceKeys.TextBrush)}\" />");
-        sb.AppendLine("    </Style>");
-        if (ShouldExportRealDataGrid && Controls.Any(control => control.Type == DesignerControlTypes.DataGrid))
-        {
-            sb.AppendLine("    <Style Selector=\"DataGrid\">");
-            sb.AppendLine($"      <Setter Property=\"Background\" Value=\"{ThemeResourceReference(ThemeResourceKeys.DataGridRowBackgroundBrush)}\" />");
-            sb.AppendLine($"      <Setter Property=\"Foreground\" Value=\"{ThemeResourceReference(ThemeResourceKeys.TextBrush)}\" />");
-            sb.AppendLine($"      <Setter Property=\"BorderBrush\" Value=\"{ThemeResourceReference(ThemeResourceKeys.BorderBrush)}\" />");
-            sb.AppendLine("      <Setter Property=\"BorderThickness\" Value=\"1\" />");
-            sb.AppendLine($"      <Setter Property=\"RowBackground\" Value=\"{ThemeResourceReference(ThemeResourceKeys.DataGridRowBackgroundBrush)}\" />");
-            sb.AppendLine("    </Style>");
-            sb.AppendLine("    <Style Selector=\"DataGridColumnHeader\">");
-            sb.AppendLine($"      <Setter Property=\"Background\" Value=\"{ThemeResourceReference(ThemeResourceKeys.DataGridHeaderBackgroundBrush)}\" />");
-            sb.AppendLine($"      <Setter Property=\"Foreground\" Value=\"{ThemeResourceReference(ThemeResourceKeys.DataGridHeaderForegroundBrush)}\" />");
-            sb.AppendLine($"      <Setter Property=\"BorderBrush\" Value=\"{ThemeResourceReference(ThemeResourceKeys.BorderBrush)}\" />");
-            sb.AppendLine("      <Setter Property=\"BorderThickness\" Value=\"0,0,1,1\" />");
-            sb.AppendLine("    </Style>");
-        }
+        GeneratedFormDesignSystem.AppendWindowStyles(
+            sb,
+            indentLevel: 2,
+            includeDataGridStyles: ShouldExportRealDataGrid && Controls.Any(control => control.Type == DesignerControlTypes.DataGrid));
         sb.AppendLine("  </Window.Styles>");
     }
     private static string NormalizeId(string? value) => string.IsNullOrWhiteSpace(value) ? "" : value;
@@ -17739,7 +17966,7 @@ public partial class MainWindowViewModel : ObservableObject
         var usedItemTypeNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var usedCollectionPropertyNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var boundSources = Controls
-            .Where(control => control.Type == DesignerControlTypes.DataGrid)
+            .Where(IsDataBindingControl)
             .Select(control => GetBindingSource(control.BindingSourceId))
             .Where(source => source is not null)
             .Cast<BindingSourceModel>()
@@ -17873,7 +18100,7 @@ public partial class MainWindowViewModel : ObservableObject
             .ToList();
     }
 
-    private static void AddCrudSourceCandidates(
+    private void AddCrudSourceCandidates(
         ICollection<CrudSourceCandidate> result,
         string formId,
         string formClassName,
@@ -17884,7 +18111,7 @@ public partial class MainWindowViewModel : ObservableObject
             return;
 
         var boundSourceIds = controls
-            .Where(control => control.Type == DesignerControlTypes.DataGrid)
+            .Where(IsDataBindingControl)
             .Select(control => NormalizeId(control.BindingSourceId))
             .Where(id => !string.IsNullOrWhiteSpace(id))
             .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -18164,10 +18391,17 @@ public partial class MainWindowViewModel : ObservableObject
     private bool HasRuntimeGeneratedDataGridBindingCandidate()
     {
         return Controls
-            .Where(control => control.Type == DesignerControlTypes.DataGrid)
+            .Where(IsDataBindingControl)
             .Any(control => GetBindingSource(control.BindingSourceId) is { } source
                 && HasVisibleBindingFields(source)
                 && IsRuntimeGeneratedBindingSource(source));
+    }
+
+    private bool IsDataBindingControl(DesignControlModel control)
+    {
+        return control.Type == DesignerControlTypes.DataGrid
+            || (DescriptorDeclaresProperty(control, nameof(DesignControlModel.AutoGenerateColumns))
+                && DescriptorDeclaresProperty(control, nameof(DesignControlModel.BindingSourceId)));
     }
 
     private static bool HasVisibleBindingFields(BindingSourceModel source)
@@ -19424,7 +19658,6 @@ public partial class MainWindowViewModel : ObservableObject
     {
         var exportName = GetExportControlName(control);
         var source = GetBindingSource(control.BindingSourceId);
-        var themePalette = DesignerThemeCatalog.Get(FormTheme);
         var visibleFields = source is null
             ? new List<BindingFieldModel>()
             : OrderBindingFieldsForDisplay(source.Fields.Where(field => field.IsVisible)).ToList();
@@ -19503,20 +19736,20 @@ public partial class MainWindowViewModel : ObservableObject
                 toOutput: false,
                 warning: true);
         }
-        var rowBackground = ResolveBrushValue(control.DataGridRowBackground, themePalette.DataGridRowBackground, ThemeResourceKeys.DataGridRowBackgroundBrush);
+        var rowBackground = ResolveLegacyDefaultBrushValue(control.DataGridRowBackground, "#FFFFFF", ThemeResourceKeys.DataGridRowBackgroundBrush);
         var alternatingRowBackground = control.DataGridShowAlternatingRows
-            ? ResolveBrushValue(control.DataGridAlternateRowBackground, themePalette.DataGridAlternateRowBackground, ThemeResourceKeys.DataGridAlternateRowBackgroundBrush)
+            ? ResolveLegacyDefaultBrushValue(control.DataGridAlternateRowBackground, "#F8FAFC", ThemeResourceKeys.DataGridAlternateRowBackgroundBrush)
             : rowBackground;
         var dataGridTextAlignment = DesignControlModel.NormalizeDataGridTextAlignment(control.DataGridTextAlignment);
-        var glowBrush = ResolveBrushValue(control.DataGridGlowColor, themePalette.AccentStrongBrush, ThemeResourceKeys.AccentStrongBrush);
+        var glowBrush = ResolveLegacyDefaultBrushValue(control.DataGridGlowColor, "#60A5FA", ThemeResourceKeys.AccentStrongBrush);
         var headerBackground = ResolveBrushValue(control.DataGridHeaderBackground, control.Background, ThemeResourceKeys.DataGridHeaderBackgroundBrush);
         var headerForeground = ResolveBrushValue(control.DataGridHeaderForeground, control.Foreground, ThemeResourceKeys.DataGridHeaderForegroundBrush);
         var rowForeground = ResolveBrushValue(control.DataGridRowForeground, control.Foreground, ThemeResourceKeys.TextBrush);
-        var hoverRowBackground = ResolveBrushValue(control.DataGridHoverRowBackground, "#EFF6FF", ThemeResourceKeys.AccentBrush);
-        var selectedRowBackground = ResolveBrushValue(control.DataGridSelectedRowBackground, "#DBEAFE", ThemeResourceKeys.AccentBrush);
+        var hoverRowBackground = ResolveLegacyDefaultBrushValue(control.DataGridHoverRowBackground, "#EFF6FF", ThemeResourceKeys.DataGridHoverRowBackgroundBrush);
+        var selectedRowBackground = ResolveLegacyDefaultBrushValue(control.DataGridSelectedRowBackground, "#DBEAFE", ThemeResourceKeys.DataGridSelectedRowBackgroundBrush);
         var selectedRowForeground = ResolveBrushValue(control.DataGridSelectedRowForeground, control.Foreground, ThemeResourceKeys.TextBrush);
-        var gridLineBrush = ResolveBrushValue(control.DataGridGridLineBrush, "#D7E2EE", ThemeResourceKeys.BorderBrush);
-        var outerBorderBrush = ResolveBrushValue(control.DataGridOuterBorderBrush, themePalette.AccentStrongBrush, ThemeResourceKeys.AccentStrongBrush);
+        var gridLineBrush = ResolveLegacyDefaultBrushValue(control.DataGridGridLineBrush, "#D7E2EE", ThemeResourceKeys.DataGridGridLineBrush);
+        var outerBorderBrush = ResolveLegacyDefaultBrushValue(control.DataGridOuterBorderBrush, "#60A5FA", ThemeResourceKeys.AccentStrongBrush);
         var rowHeight = Math.Max(18, control.DataGridRowHeight);
         var headerHeight = Math.Max(24, control.DataGridHeaderHeight);
         var cellPadding = Math.Max(0, control.DataGridCellPadding);
@@ -20147,8 +20380,8 @@ public partial class MainWindowViewModel : ObservableObject
             sb.AppendLine($"{Indent(indentLevel + 1)}<WrapPanel>");
             foreach (var field in groupedFields)
             {
-                sb.AppendLine($"{Indent(indentLevel + 2)}<Border Background=\"{DataGridGroupPanelVisualCatalog.ChipBackground}\" BorderBrush=\"{DataGridGroupPanelVisualCatalog.ChipBorder}\" BorderThickness=\"1\" CornerRadius=\"999\" Padding=\"{ToInvariant(DataGridGroupPanelVisualCatalog.ChipPaddingHorizontal)},{ToInvariant(DataGridGroupPanelVisualCatalog.ChipPaddingVertical)}\" Margin=\"0,0,{ToInvariant(DataGridGroupPanelVisualCatalog.ChipMarginRight)},{ToInvariant(DataGridGroupPanelVisualCatalog.ChipMarginBottom)}\">");
-                sb.AppendLine($"{Indent(indentLevel + 3)}<TextBlock Text=\"Группа {field.GroupOrder + 1}: {EscapeXml(field.Header)}\" Foreground=\"{DataGridGroupPanelVisualCatalog.ChipForeground}\" FontWeight=\"SemiBold\" />");
+                sb.AppendLine($"{Indent(indentLevel + 2)}<Border Background=\"{ThemeResourceReference(ThemeResourceKeys.GroupChipBackgroundBrush)}\" BorderBrush=\"{ThemeResourceReference(ThemeResourceKeys.GroupChipBorderBrush)}\" BorderThickness=\"1\" CornerRadius=\"999\" Padding=\"{ToInvariant(DataGridGroupPanelVisualCatalog.ChipPaddingHorizontal)},{ToInvariant(DataGridGroupPanelVisualCatalog.ChipPaddingVertical)}\" Margin=\"0,0,{ToInvariant(DataGridGroupPanelVisualCatalog.ChipMarginRight)},{ToInvariant(DataGridGroupPanelVisualCatalog.ChipMarginBottom)}\">");
+                sb.AppendLine($"{Indent(indentLevel + 3)}<TextBlock Text=\"Группа {field.GroupOrder + 1}: {EscapeXml(field.Header)}\" Foreground=\"{ThemeResourceReference(ThemeResourceKeys.GroupChipForegroundBrush)}\" FontWeight=\"SemiBold\" />");
                 sb.AppendLine($"{Indent(indentLevel + 2)}</Border>");
             }
             sb.AppendLine($"{Indent(indentLevel + 1)}</WrapPanel>");
@@ -23390,7 +23623,7 @@ public partial class MainWindowViewModel : ObservableObject
     {
         if (!AvailableXamlVerbosities.Contains(value))
         {
-            XamlVerbosity = XamlVerbosityCompact;
+            XamlVerbosity = XamlVerbosityFullStyled;
             return;
         }
 

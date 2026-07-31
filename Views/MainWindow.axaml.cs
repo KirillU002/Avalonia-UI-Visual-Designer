@@ -4280,14 +4280,15 @@ public partial class MainWindow : Window
                 .ToList(),
             BindingMetadataMapper.ToMetadataMap(GetActiveBindingSources()));
 
-        try
-        {
-            return descriptor.BuildPreview(new DesignControlNodeAdapter(model), context);
-        }
-        catch
-        {
-            return CreateMissingPreview(model);
-        }
+        return PluginPreviewControlBuilder.TryBuild(
+            "DesignerCanvas",
+            descriptor,
+            new DesignControlNodeAdapter(model),
+            context,
+            out var preview,
+            out var failure)
+            ? preview!
+            : CreateMissingPreview(model, failure);
     }
 
     private Control CreateBuiltInPreviewControl(DesignControlModel model)
@@ -4323,9 +4324,12 @@ public partial class MainWindow : Window
         };
     }
 
-    private Control CreateMissingPreview(DesignControlModel model)
+    private Control CreateMissingPreview(DesignControlModel model, PluginPreviewBuildFailure? failure = null)
     {
-        return new Border
+        var message = failure is null
+            ? $"{model.Type}\nНет доступного preview"
+            : $"Не удалось отобразить {model.Type}\nПричина: {failure.UserMessage}";
+        var preview = new Border
         {
             Width = model.Width,
             Height = model.Height,
@@ -4335,12 +4339,20 @@ public partial class MainWindow : Window
             CornerRadius = new CornerRadius(8),
             Child = new TextBlock
             {
-                Text = $"{model.Type}\nНет доступного preview",
+                Text = message,
                 Margin = new Thickness(12),
                 TextWrapping = TextWrapping.Wrap
             },
             IsHitTestVisible = false
         };
+
+        if (failure is not null)
+        {
+            ToolTip.SetTip(preview, $"{failure.ExceptionType}: {failure.StackTrace}");
+            PluginPreviewControlBuilder.LogPlaceholderReplacement("DesignerCanvas", failure);
+        }
+
+        return preview;
     }
 
     private sealed class MainWindowPreviewBridge : IBuiltInPreviewBridge

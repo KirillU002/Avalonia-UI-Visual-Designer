@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using FormDesigner.PluginContracts;
 
 namespace FormDesigner.Models;
 
@@ -26,5 +27,7 @@ public sealed class ExportedAxamlPreviewModel
     public bool FallbackToLegacyPreviewOnError { get; init; } = true;
 
     public bool ShowGeneratedAxamlOnError { get; init; } = true;
+
+    public IReadOnlyList<DesignerRuntimePreviewContribution> RuntimePreviewContributions { get; init; } = Array.Empty<DesignerRuntimePreviewContribution>();
 
 }

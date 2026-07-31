@@ -3,9 +3,12 @@ using FormDesigner.DesignerSystem.BuiltIn;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.LogicalTree;
+using Avalonia.Threading;
+using Avalonia.VisualTree;
 using FormDesigner.DesignerSystem.Infrastructure;
 using FormDesigner.Localization;
 using FormDesigner.Models;
+using FormDesigner.PluginContracts;
 using FormDesigner.Services;
 using FormDesigner.ViewModels;
 using FormDesigner.Views;
@@ -20,8 +23,8 @@ namespace FormDesigner.ExportSmokeTests;
 
 internal static class Program
 {
-    private const string AvaloniaVersion = "11.1.1";
-    private const string AvaloniaDesktopVersion = "11.1.1";
+    private const string AvaloniaVersion = "11.1.5";
+    private const string AvaloniaDesktopVersion = "11.1.5";
     private const int SmokeRunsToKeep = 5;
     private static readonly Dictionary<string, string> LinqToSqlSmokeDllCache = new(StringComparer.OrdinalIgnoreCase);
     private static bool _avaloniaRuntimeInitialized;
@@ -122,6 +125,8 @@ internal static class Program
             new("ButtonCornerRadiusPreviewExportMatch", ConfigureButtonCornerRadiusPreviewExportMatch, AssertButtonCornerRadiusPreviewExportMatch),
             new("OpacityZeroDesignerOnlyOutline", ConfigureOpacityZeroDesignerOnlyOutline, AssertOpacityZeroDesignerOnlyOutline),
             new("PreviewExportBoundsMatchAfterResize", ConfigurePreviewExportBoundsMatchAfterResize, AssertPreviewExportBoundsMatchAfterResize),
+            new("GeneratedFormDesignSystemAppliesSemanticControlStates", ConfigureModernDesignSystemExport, AssertGeneratedFormDesignSystemAppliesSemanticControlStates),
+            new("GeneratedFormDesignSystemStylesDataGridAndRuntimePreview", ConfigureModernDataGridDesignSystemExport, AssertGeneratedFormDesignSystemStylesDataGridAndRuntimePreview, RequiresRealDataGrid: true),
             new("RealDataGridExport", ConfigureRealDataGridExport, AssertRealDataGridExport, RequiresRealDataGrid: true),
             new("RealDataGridExportUsesValidColumnTags", ConfigureRealDataGridExport, AssertRealDataGridExportUsesValidColumnTags, RequiresRealDataGrid: true),
             new("DataGridExportGeneratesItemsSourceProperty", ConfigureRealDataGridExport, AssertDataGridExportGeneratesItemsSourceProperty, RequiresRealDataGrid: true),
@@ -285,6 +290,9 @@ internal static class Program
             new("SaveLoadMultiFormProject", ConfigureSaveLoadMultiFormProject, AssertSaveLoadMultiFormProject, RequiresRealDataGrid: true),
             new("ExportToProjectBuildValidation", ConfigureExportToProjectBuildValidation, AssertExportToProjectBuildValidation, RequiresRealDataGrid: true),
             new("PluginFallbackExport", ConfigurePluginFallbackExport, AssertPluginFallbackExport),
+            new("EremexThemeDoesNotChangeDesignerChrome", ConfigureEremexTextEditorVerticalSlice, AssertEremexThemeDoesNotChangeDesignerChrome),
+            new("EremexTextEditorVerticalSlice", ConfigureEremexTextEditorVerticalSlice, AssertEremexTextEditorVerticalSlice),
+            new("EremexDataGridControlVerticalSlice", ConfigureEremexDataGridControlVerticalSlice, AssertEremexDataGridControlVerticalSlice),
             new("GridLayoutExport", ConfigureGridLayoutExport, AssertGridLayoutExport),
             new("StackPanelLayoutExport", ConfigureStackPanelLayoutExport, AssertStackPanelLayoutExport),
             new("LayoutContainerExport", ConfigureLayoutContainerExport, AssertLayoutContainerExport),
@@ -319,7 +327,7 @@ internal static class Program
             catch (Exception ex)
             {
                 failed++;
-                Console.WriteLine($"FAIL {scenario.Name}: {ex.Message}");
+                Console.WriteLine($"FAIL {scenario.Name}: {ex}");
             }
         }
 
@@ -393,6 +401,18 @@ internal static class Program
         vm.Controls.Add(Control(DesignerControlTypes.CheckBox, "EnabledCheckBox", 36, 148, 180, 32, text: "Enabled"));
         vm.Controls.Add(Control(DesignerControlTypes.Border, "ContentCard", 340, 86, 260, 110, background: "#F8FAFC", border: "#CBD5E1", radius: 12));
         vm.Controls.Add(Control(DesignerControlTypes.Button, "SaveButton", 36, 220, 150, 42, text: "Save", background: "#2563EB", foreground: "#FFFFFF", border: "#1D4ED8", radius: 10));
+    }
+
+    private static void ConfigureModernDesignSystemExport(MainWindowViewModel vm)
+    {
+        ConfigureSimpleFormExport(vm);
+        vm.XamlVerbosity = MainWindowViewModel.XamlVerbosityFullStyled;
+    }
+
+    private static void ConfigureModernDataGridDesignSystemExport(MainWindowViewModel vm)
+    {
+        ConfigureRealDataGridExport(vm);
+        vm.XamlVerbosity = MainWindowViewModel.XamlVerbosityFullStyled;
     }
 
     private static void AssertLocalizationKeysExistForMainUi(SmokeContext context)
@@ -1609,7 +1629,7 @@ internal static class Program
     private static void AssertAxamlPreviewLoaderUsesAvaloniaXamlLoader(SmokeContext context)
     {
         var source = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "Views", "PreviewWindow.axaml.cs"), Encoding.UTF8);
-        RequireContains(source, "RuntimeAxamlPreviewLoader.Load(preview.Axaml)", "AXAML Preview should load generated AXAML through the in-memory runtime loader.");
+        RequireContains(source, "RuntimeAxamlPreviewLoader.Load(preview.Axaml,", "AXAML Preview should load generated AXAML through the in-memory runtime loader.");
         RequireContains(source, "AXAML_PREVIEW_LOAD_START", "AXAML Preview load diagnostics should be emitted.");
         RequireContains(source, "AXAML_PREVIEW_LOAD_SUCCESS", "AXAML Preview success diagnostics should be emitted.");
         RequireContains(source, "AXAML_PREVIEW_LOAD_FAILED", "AXAML Preview failure diagnostics should be emitted.");
@@ -1963,6 +1983,52 @@ internal static class Program
         vm.BindingSources.Add(source);
         vm.DataGridExportMode = MainWindowViewModel.DataGridExportModeReal;
         vm.Controls.Add(DataGrid("ProductsGrid", source.Id, 32, 42, 720, 360));
+    }
+
+    private static void AssertGeneratedFormDesignSystemAppliesSemanticControlStates(SmokeContext context)
+    {
+        RequireContains(context.Xaml, "ThemeAccentHoverBrush", "Generated forms should expose a semantic accent hover token.");
+        RequireContains(context.Xaml, "ThemeAccentPressedBrush", "Generated forms should expose a semantic accent pressed token.");
+        RequireContains(context.Xaml, "ThemeAccentSubtleBrush", "Generated forms should expose an alpha accent surface token.");
+        RequireContains(context.Xaml, "Color=\"#18", "Light theme subtle accents should use alpha instead of a hard-coded opaque pastel.");
+        RequireContains(context.Xaml, "<Style Selector=\"Button:pointerover\">", "Button hover styling should be generated.");
+        RequireContains(context.Xaml, "<Style Selector=\"Button:pressed\">", "Button pressed styling should be generated.");
+        RequireContains(context.Xaml, "<Style Selector=\"Button:focus\">", "Button focus styling should be generated.");
+        RequireContains(context.Xaml, "<Style Selector=\"Button:disabled\">", "Button disabled styling should be generated.");
+        RequireContains(context.Xaml, "<Style Selector=\"TextBox:focus\">", "TextBox focus styling should be generated.");
+        RequireContains(context.Xaml, "<Style Selector=\"ComboBoxItem:selected\">", "ComboBox selection styling should be generated for future standard controls.");
+        RequireContains(context.Xaml, "<Style Selector=\"RadioButton:pointerover\">", "RadioButton hover styling should be generated for future standard controls.");
+        RequireContains(context.Xaml, "<Style Selector=\"ListBoxItem:selected\">", "ListBox selection styling should be generated for future standard controls.");
+        RequireContains(context.Xaml, "<Style Selector=\"TreeViewItem:selected\">", "TreeView selection styling should be generated for future standard controls.");
+        RequireContains(context.Xaml, "<Style Selector=\"TabItem:selected\">", "Tab selection styling should be generated for future standard controls.");
+        RequireContains(context.Xaml, "<Style Selector=\"MenuItem:selected\">", "Menu selection styling should be generated for future standard controls.");
+        RequireTraceEvent(context, "EXPORT_FORM_DESIGN_SYSTEM_GENERATED");
+
+        var legacyPreviewSource = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "Views", "PreviewWindow.axaml.cs"), Encoding.UTF8);
+        RequireContains(legacyPreviewSource, "GeneratedFormDesignSystem.CreateTokens", "Legacy Preview should resolve default colours through the same design-system token generator.");
+
+        EnsureAvaloniaRuntimeInitialized();
+        var preview = context.ViewModel.GenerateExportedAxamlPreviewSnapshot();
+        if (RuntimeAxamlPreviewLoader.Load(preview.Axaml) is not UserControl)
+            throw new InvalidOperationException("Runtime AXAML Preview should load the shared generated-form style system.");
+    }
+
+    private static void AssertGeneratedFormDesignSystemStylesDataGridAndRuntimePreview(SmokeContext context)
+    {
+        RequireContains(context.Xaml, "ThemeDataGridHoverRowBackgroundBrush", "DataGrid hover colour should come from the shared semantic tokens.");
+        RequireContains(context.Xaml, "ThemeDataGridSelectedRowBackgroundBrush", "DataGrid selection colour should come from the shared semantic tokens.");
+        RequireContains(context.Xaml, "ThemeDataGridGridLineBrush", "DataGrid grid lines should use the shared semantic tokens.");
+        RequireContains(context.Xaml, "<Style Selector=\"DataGridColumnHeader:pointerover\">", "DataGrid header hover styling should be generated.");
+        RequireContains(context.Xaml, "<Style Selector=\"DataGridCell:selected\">", "DataGrid selected-cell styling should be generated.");
+        RequireContains(context.Xaml, "Value=\"{StaticResource ThemeDataGridHoverRowBackgroundBrush}\"", "Per-grid hover styling should inherit the token when the user has not overridden it.");
+        RequireContains(context.Xaml, "Value=\"{StaticResource ThemeDataGridSelectedRowBackgroundBrush}\"", "Per-grid selection styling should inherit the token when the user has not overridden it.");
+
+        EnsureAvaloniaRuntimeInitialized();
+        var preview = context.ViewModel.GenerateExportedAxamlPreviewSnapshot();
+        var root = RuntimeAxamlPreviewLoader.Load(preview.Axaml) as UserControl
+                   ?? throw new InvalidOperationException("Runtime AXAML Preview should load a styled DataGrid as UserControl.");
+        if (root.GetLogicalDescendants().OfType<DataGrid>().SingleOrDefault() is null)
+            throw new InvalidOperationException("Runtime AXAML Preview should retain the styled generated DataGrid.");
     }
 
     private static void ConfigureRealDataGridExportWithDemo(MainWindowViewModel vm)
@@ -3756,7 +3822,7 @@ internal static class Program
 
             var readme = File.ReadAllText(Path.Combine(exportFolder, "README.generated.md"), Encoding.UTF8);
             RequireContains(readme, "dotnet restore", "Generated README should include restore instructions.");
-            RequireContains(readme, "11.1.1", "Generated README should document Avalonia version.");
+        RequireContains(readme, "11.1.5", "Generated README should document Avalonia version.");
         }
         finally
         {
@@ -3768,9 +3834,9 @@ internal static class Program
     private static void AssertGeneratedSolutionHasConsistentAvaloniaVersions(SmokeContext context)
     {
         var projectFile = File.ReadAllText(Path.Combine(context.ProjectPath, $"{context.Scenario.Name}.csproj"), Encoding.UTF8);
-        RequireContains(projectFile, "Avalonia\" Version=\"11.1.1\"", "Generated solution should use Avalonia 11.1.1.");
-        RequireContains(projectFile, "Avalonia.Desktop\" Version=\"11.1.1\"", "Generated solution should use Avalonia.Desktop 11.1.1.");
-        RequireContains(projectFile, "Avalonia.Controls.DataGrid\" Version=\"11.1.1\"", "Generated solution should use DataGrid 11.1.1.");
+        RequireContains(projectFile, "Avalonia\" Version=\"11.1.5\"", "Generated solution should use Avalonia 11.1.5.");
+        RequireContains(projectFile, "Avalonia.Desktop\" Version=\"11.1.5\"", "Generated solution should use Avalonia.Desktop 11.1.5.");
+        RequireContains(projectFile, "Avalonia.Controls.DataGrid\" Version=\"11.1.5\"", "Generated solution should use DataGrid 11.1.5.");
         RequireNotContains(projectFile, "11.3.11", "Generated solution should not mix Avalonia 11.3.11 packages.");
     }
 
@@ -6047,6 +6113,600 @@ internal static class Program
         RequireContains(context.ChecklistText, "Plugins: none", "Checklist should report no runtime plugin DLLs in fallback mode.");
     }
 
+    private static void ConfigureEremexTextEditorVerticalSlice(MainWindowViewModel vm)
+    {
+        LoadBuiltEremexPlugin(vm);
+        vm.IncludePluginRuntimeReferences = false;
+
+        var form = vm.ActiveFormDocument ?? throw new InvalidOperationException("Eremex smoke form is missing.");
+        var editor = vm.TryCreateControlFromToolboxDrop("Eremex.TextEditor", 64, 72, null, false, form.Id)
+            ?? throw new InvalidOperationException("Eremex TextEditor was not created from Toolbox.");
+        editor.Name = "EremexTextEditor1";
+        editor.Width = 280;
+        editor.Height = 40;
+        SetCustomProperty(editor, "EditorValue", "Ada Lovelace");
+        SetCustomProperty(editor, "Watermark", "Введите имя");
+        SetCustomProperty(editor, "ReadOnly", false);
+        vm.SelectSingleControl(editor);
+    }
+
+    private static void AssertEremexThemeDoesNotChangeDesignerChrome(SmokeContext context)
+    {
+        EnsureAvaloniaRuntimeInitialized();
+        var application = Application.Current
+            ?? throw new InvalidOperationException("Avalonia application was not initialized for the Eremex theme scope test.");
+        var globalStyleCount = application.Styles.Count;
+        var editor = context.ViewModel.Controls.Single(control => control.Type == "Eremex.TextEditor");
+        var canvasWindow = new MainWindow { DataContext = context.ViewModel };
+        var preview = InvokePreviewFactory(canvasWindow, "CreatePreviewControl", editor);
+
+        if (application.Styles.Count != globalStyleCount)
+        {
+            throw new InvalidOperationException(
+                "DeltaDesignTheme changed Application.Current.Styles while creating an Eremex Canvas preview.");
+        }
+
+        if (application.Styles.Any(style => style.GetType().FullName?.Contains("Eremex", StringComparison.OrdinalIgnoreCase) == true))
+            throw new InvalidOperationException("Designer chrome must not receive Eremex styles through Application.Current.Styles.");
+        if (!preview.Styles.Any(style => style.GetType().FullName?.Contains("EremexPreviewThemeResource", StringComparison.Ordinal) == true))
+            throw new InvalidOperationException("Eremex Canvas preview must receive DeltaDesignTheme through its local style scope.");
+    }
+
+    private static void ConfigureEremexDataGridControlVerticalSlice(MainWindowViewModel vm)
+    {
+        LoadBuiltEremexPlugin(vm);
+        vm.IncludePluginRuntimeReferences = false;
+        vm.DataGridExportMode = MainWindowViewModel.DataGridExportModeReal;
+
+        var source = ProductsSource();
+        source.UseDemoData = true;
+        vm.BindingSources.Add(source);
+
+        var form = vm.ActiveFormDocument ?? throw new InvalidOperationException("Eremex DataGrid smoke form is missing.");
+        var grid = vm.TryCreateControlFromToolboxDrop("Eremex.DataGridControl", 64, 72, null, false, form.Id)
+            ?? throw new InvalidOperationException("Eremex DataGridControl was not created from Toolbox.");
+        grid.Name = "EremexDataGrid1";
+        grid.Width = 700;
+        grid.Height = 380;
+        grid.BindingSourceId = source.Id;
+        grid.AutoGenerateColumns = true;
+        SetCustomProperty(grid, "ShowGroupPanel", true);
+        SetCustomProperty(grid, "ShowAutoFilterRow", true);
+        SetCustomProperty(grid, "AllowSorting", true);
+        SetCustomProperty(grid, "RowMinHeight", 30d);
+
+        var emptyGrid = vm.TryCreateControlFromToolboxDrop("Eremex.DataGridControl", 64, 486, null, false, form.Id)
+            ?? throw new InvalidOperationException("Empty Eremex DataGridControl was not created from Toolbox.");
+        emptyGrid.Name = "EremexDataGridEmpty";
+        emptyGrid.Width = 700;
+        emptyGrid.Height = 180;
+        emptyGrid.BindingSourceId = "";
+        emptyGrid.AutoGenerateColumns = true;
+        vm.SelectSingleControl(grid);
+    }
+
+    private static void AssertEremexDataGridControlVerticalSlice(SmokeContext context)
+    {
+        var vm = context.ViewModel;
+        if (!vm.Registry.TryGetControl("Eremex.DataGridControl", out var descriptor))
+            throw new InvalidOperationException("Eremex DataGridControl descriptor was not registered by PluginLoader.");
+        if (descriptor is not IDesignerControlProviderMetadata metadata
+            || !string.Equals(metadata.ProviderId, "Eremex", StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(metadata.ToolboxGroup, "Eremex", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Eremex DataGridControl must declare Eremex Toolbox metadata.");
+        }
+
+        var eremexGroup = vm.ToolboxGroups.FirstOrDefault(group =>
+            string.Equals(group.ProviderId, "Eremex", StringComparison.OrdinalIgnoreCase));
+        if (eremexGroup?.Items.Any(item => item.Type == "Eremex.DataGridControl") != true)
+            throw new InvalidOperationException("Eremex DataGridControl must appear in the Eremex Toolbox group.");
+        if (vm.ToolboxGroups.FirstOrDefault(group => string.Equals(group.ProviderId, "Avalonia", StringComparison.OrdinalIgnoreCase))?.Items
+                .Any(item => item.Type == DesignerControlTypes.DataGrid) != true)
+        {
+            throw new InvalidOperationException("Standard Avalonia DataGrid must remain in the Standard Toolbox group.");
+        }
+
+        var grid = vm.Controls.Single(control => control.Type == "Eremex.DataGridControl" && control.Name == "EremexDataGrid1");
+        var emptyGrid = vm.Controls.Single(control => control.Type == "Eremex.DataGridControl" && control.Name == "EremexDataGridEmpty");
+        foreach (var expectedKey in new[] { "ShowGroupPanel", "ShowAutoFilterRow", "AllowSorting", "RowMinHeight", "Eremex.ClrType", "Eremex.PackageId" })
+        {
+            if (!grid.CustomProperties.Any(property => string.Equals(property.Key, expectedKey, StringComparison.OrdinalIgnoreCase)))
+                throw new InvalidOperationException($"Eremex DataGridControl is missing persisted custom property '{expectedKey}'.");
+        }
+
+        foreach (var expectedKey in new[] { "ShowGroupPanel", "ShowAutoFilterRow", "AllowSorting", "RowMinHeight" })
+        {
+            if (!vm.DescriptorCustomPropertyEditors.Any(property => string.Equals(property.Key, expectedKey, StringComparison.OrdinalIgnoreCase)))
+                throw new InvalidOperationException($"Property Inspector is missing Eremex DataGrid property '{expectedKey}'.");
+        }
+        if (!vm.PropertyGridCategories.SelectMany(category => category.Rows).Any(row => row.Key == nameof(DesignControlModel.BindingSourceId))
+            || !vm.PropertyGridCategories.SelectMany(category => category.Rows).Any(row => row.Key == nameof(DesignControlModel.AutoGenerateColumns)))
+        {
+            throw new InvalidOperationException("Eremex DataGrid must expose BindingSource and AutoGenerateColumns in Property Inspector.");
+        }
+
+        EnsureAvaloniaRuntimeInitialized();
+        var canvasWindow = new MainWindow { DataContext = vm };
+        var canvasGrid = InvokePreviewFactory(canvasWindow, "CreatePreviewControl", grid);
+        AssertRealEremexDataGrid(canvasGrid, "Designer Canvas");
+        RequireControlCanApplyTemplateAndLayout(canvasGrid, "Eremex DataGrid Designer Canvas");
+        if (GetItemsSourceCount(canvasGrid) == 0)
+            throw new InvalidOperationException("Eremex DataGrid Canvas preview did not receive explicit demo rows from BindingSource infrastructure.");
+
+        var emptyCanvasGrid = InvokePreviewFactory(canvasWindow, "CreatePreviewControl", emptyGrid);
+        AssertRealEremexDataGrid(emptyCanvasGrid, "Designer Canvas empty grid");
+        RequireControlCanApplyTemplateAndLayout(emptyCanvasGrid, "Eremex DataGrid empty Canvas");
+        if (GetItemsSourceCount(emptyCanvasGrid) != 0)
+            throw new InvalidOperationException("Eremex DataGrid without a source must remain empty and must not generate fake rows.");
+
+        var previewDocument = vm.CreatePreviewDocumentSnapshot();
+        var legacyWindow = new PreviewWindow(previewDocument, vm.Registry);
+        var legacyModel = previewDocument.Controls.Single(control => control.Name == "EremexDataGrid1");
+        var legacyGrid = InvokePreviewFactory(legacyWindow, "CreatePreviewControl", legacyModel);
+        AssertRealEremexDataGrid(legacyGrid, "Legacy Preview Window");
+        RequireControlCanApplyTemplateAndLayout(legacyGrid, "Eremex DataGrid Legacy Preview");
+
+        RequireContains(context.Xaml, "xmlns:mxdg=\"https://schemas.eremexcontrols.net/avalonia/datagrid\"", "Eremex DataGrid XML namespace was not generated.");
+        RequireContains(context.Xaml, "<mxdg:DataGridControl", "Eremex DataGridControl AXAML tag was not generated.");
+        RequireContains(context.Xaml, "AutoGenerateColumns=\"True\"", "Eremex DataGridControl must export AutoGenerateColumns.");
+        RequireContains(context.Xaml, "ItemsSource=\"{Binding ProductsView}\"", "Eremex DataGridControl must use the generated runtime ItemsSource path.");
+        RequireNotContains(context.Xaml.Substring(context.Xaml.IndexOf("EremexDataGridEmpty", StringComparison.Ordinal)), "ItemsSource=\"{Binding ProductsView}\"", "Unbound Eremex DataGrid must not receive a synthetic ItemsSource.");
+        RequireContains(context.CSharp, "SeedProductRow", "Explicit demo data must generate rows through the shared runtime binding pipeline.");
+
+        var packages = vm.RequiredPackages.ToDictionary(package => package.Id, package => package.Version, StringComparer.OrdinalIgnoreCase);
+        if (!packages.TryGetValue("Eremex.Avalonia.Controls", out var controlsVersion) || controlsVersion != "1.0.98"
+            || !packages.TryGetValue("Eremex.Avalonia.Themes.DeltaDesign", out var themeVersion) || themeVersion != "1.0.98")
+        {
+            throw new InvalidOperationException("Eremex DataGrid export must include Controls and DeltaDesign packages 1.0.98.");
+        }
+
+        var savedWorkspace = vm.ExportWorkspaceJson();
+        var reloaded = CreateViewModel("EremexDataGridReloaded");
+        LoadBuiltEremexPlugin(reloaded);
+        reloaded.LoadDocumentJson(savedWorkspace);
+        if (reloaded.Controls.Count(control => control.Type == "Eremex.DataGridControl") != 2)
+            throw new InvalidOperationException("Eremex DataGridControl models were not restored from project JSON.");
+
+        var withoutPlugin = CreateViewModel("EremexDataGridMissingPlugin");
+        withoutPlugin.LoadDocumentJson(savedWorkspace);
+        if (withoutPlugin.Controls.Count(control => control.Type == "Eremex.DataGridControl") != 2
+            || withoutPlugin.Controls.Any(control => control.Type == "Eremex.DataGridControl"
+                                                     && !control.CustomProperties.Any(property => property.Key == "ShowGroupPanel")))
+        {
+            throw new InvalidOperationException("Missing Eremex plugin must preserve DataGridControl models and custom properties.");
+        }
+        withoutPlugin.GenerateXaml();
+        RequireContains(withoutPlugin.GeneratedXaml, "Placeholder плагина: Eremex.DataGridControl", "Missing Eremex DataGrid plugin must export a safe placeholder.");
+
+        using var exportedProject = ExportToTemporaryProject(context);
+        var exportFolder = exportedProject.Path;
+        var appAxaml = File.ReadAllText(Path.Combine(exportFolder, "App.axaml"), Encoding.UTF8);
+        var projectFile = File.ReadAllText(Directory.GetFiles(exportFolder, "*.csproj").Single(), Encoding.UTF8);
+        RequireContains(appAxaml, "<theme:DeltaDesignTheme />", "Generated App.axaml must load DeltaDesignTheme for Eremex DataGridControl.");
+        RequireContains(projectFile, "Eremex.Avalonia.Controls\" Version=\"1.0.98", "Generated Eremex DataGrid project is missing the controls package.");
+
+        var axamlPreview = vm.GenerateExportedAxamlPreviewSnapshot();
+        var axamlRoot = RuntimeAxamlPreviewLoader.Load(
+                            axamlPreview.Axaml,
+                            axamlPreview.RuntimePreviewContributions.SelectMany(contribution => contribution.Assemblies)) as Control
+            ?? throw new InvalidOperationException("Runtime AXAML Preview did not return a Control root for Eremex DataGridControl.");
+        foreach (var contribution in axamlPreview.RuntimePreviewContributions)
+            contribution.ApplyToPreviewRoot?.Invoke(axamlRoot);
+        var axamlGrid = axamlRoot.GetLogicalDescendants()
+            .OfType<Control>()
+            .FirstOrDefault(item => string.Equals(item.GetType().FullName, "Eremex.AvaloniaUI.Controls.DataGrid.DataGridControl", StringComparison.Ordinal));
+        if (axamlGrid is null)
+            throw new InvalidOperationException("Runtime AXAML Preview does not contain the actual Eremex DataGridControl.");
+        AssertRealEremexDataGrid(axamlGrid, "Runtime AXAML Preview");
+        RequireControlCanApplyTemplateAndLayout(axamlRoot, "Eremex DataGrid Runtime AXAML Preview");
+
+        var axamlPreviewWindow = new PreviewWindow(axamlPreview, vm.Registry);
+        InvokeAsyncPreviewLoader(axamlPreviewWindow, "LoadExportedAxamlPreviewAsync", axamlPreview);
+        var previewStatus = axamlPreviewWindow.FindControl<TextBlock>("PreviewRuntimeStatusText")?.Text;
+        if (!string.Equals(previewStatus, "AXAML Preview ready", StringComparison.Ordinal))
+            throw new InvalidOperationException($"AXAML Preview host did not load Eremex DataGridControl: status='{previewStatus ?? "-"}'.");
+        var previewSurface = axamlPreviewWindow.FindControl<Border>("PreviewSurfaceBorder")
+            ?? throw new InvalidOperationException("AXAML Preview surface was not found.");
+        var hostedGrid = previewSurface.GetLogicalDescendants()
+            .OfType<Control>()
+            .FirstOrDefault(item => string.Equals(item.GetType().FullName, "Eremex.AvaloniaUI.Controls.DataGrid.DataGridControl", StringComparison.Ordinal));
+        if (hostedGrid is null)
+            throw new InvalidOperationException("AXAML Preview Window did not host the actual Eremex DataGridControl.");
+        AssertRealEremexDataGrid(hostedGrid, "AXAML Preview Window");
+        if (GetItemsSourceCount(hostedGrid) == 0)
+            throw new InvalidOperationException("AXAML Preview Window did not assign runtime preview rows to Eremex DataGridControl.");
+        RequireControlCanApplyTemplateAndLayout(axamlPreviewWindow, "Eremex DataGrid AXAML Preview Window");
+        RequireGeneratedEremexDataGridApplicationRenders(context, exportFolder);
+    }
+
+    private static void AssertEremexTextEditorVerticalSlice(SmokeContext context)
+    {
+        var vm = context.ViewModel;
+        if (!vm.Registry.TryGetControl("Eremex.TextEditor", out var descriptor))
+            throw new InvalidOperationException("Eremex TextEditor descriptor was not registered by PluginLoader.");
+        if (AssemblyLoadContext.Default.Assemblies.All(assembly =>
+                !string.Equals(assembly.GetName().Name, "Eremex.Avalonia.Controls", StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new InvalidOperationException(
+                "The Eremex runtime manifest did not preload Eremex.Avalonia.Controls into the Default AssemblyLoadContext.");
+        }
+
+        if (descriptor is not IDesignerControlProviderMetadata metadata
+            || !string.Equals(metadata.ProviderId, "Eremex", StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(metadata.ToolboxGroup, "Eremex", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Eremex TextEditor descriptor must declare provider metadata for the Toolbox.");
+        }
+
+        var standardGroup = vm.ToolboxGroups.FirstOrDefault(group =>
+            string.Equals(group.ProviderId, "Avalonia", StringComparison.OrdinalIgnoreCase));
+        var eremexGroup = vm.ToolboxGroups.FirstOrDefault(group =>
+            string.Equals(group.ProviderId, "Eremex", StringComparison.OrdinalIgnoreCase));
+        if (standardGroup?.Items.Any(item => item.Type == DesignerControlTypes.Button) != true)
+            throw new InvalidOperationException("Standard Avalonia controls must stay in the Standard Toolbox group.");
+        if (eremexGroup?.Items.Any(item => item.Type == "Eremex.TextEditor") != true)
+            throw new InvalidOperationException("Eremex TextEditor must appear in the Eremex Toolbox group.");
+        if (vm.ToolboxItems.Count(item => item.Type == "Eremex.TextEditor") != 1)
+            throw new InvalidOperationException("Eremex TextEditor must not be duplicated in Toolbox collections.");
+
+        var editor = vm.Controls.Single(control => control.Type == "Eremex.TextEditor");
+        if (!string.Equals(editor.PluginId, "Eremex.DesignerPlugin", StringComparison.Ordinal)
+            || !string.Equals(editor.PluginVersion, "1.0.98", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("Eremex TextEditor must persist plugin identity and package-line version.");
+        }
+
+        var customKeys = editor.CustomProperties.Select(property => property.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var expectedKey in new[] { "EditorValue", "Watermark", "ReadOnly", "Mask", "Eremex.ClrType", "Eremex.PackageId" })
+        {
+            if (!customKeys.Contains(expectedKey))
+                throw new InvalidOperationException($"Eremex TextEditor is missing persisted custom property '{expectedKey}'.");
+        }
+
+        foreach (var expectedKey in new[] { "EditorValue", "Watermark", "ReadOnly", "Mask" })
+        {
+            if (!vm.DescriptorCustomPropertyEditors.Any(property => string.Equals(property.Key, expectedKey, StringComparison.OrdinalIgnoreCase)))
+                throw new InvalidOperationException($"Property Inspector is missing Eremex property '{expectedKey}'.");
+        }
+
+        var maskTypeEditor = vm.DescriptorCustomPropertyEditors.SingleOrDefault(property =>
+            string.Equals(property.Key, "MaskType", StringComparison.OrdinalIgnoreCase));
+        if (maskTypeEditor is null
+            || !maskTypeEditor.IsEnumEditor
+            || maskTypeEditor.Options.Count == 0)
+        {
+            throw new InvalidOperationException("Eremex enum properties must use the existing inline ComboBox editor.");
+        }
+
+        var editorValueRow = vm.DescriptorCustomPropertyEditors.Single(property =>
+            string.Equals(property.Key, "EditorValue", StringComparison.OrdinalIgnoreCase));
+        RequireContains(editorValueRow.Descriptor.Description, "Текстовое значение", "Eremex descriptor property descriptions must reach the Property Inspector.");
+
+        var savedWorkspace = vm.ExportWorkspaceJson();
+        RequireContains(savedWorkspace, "Eremex.TextEditor", "Eremex control type must be persisted in project JSON.");
+        RequireContains(savedWorkspace, "Eremex.DesignerPlugin", "Eremex plugin id must be persisted in project JSON.");
+
+        var reloaded = CreateViewModel("EremexTextEditorReloaded");
+        LoadBuiltEremexPlugin(reloaded);
+        reloaded.LoadDocumentJson(savedWorkspace);
+        var reloadedEditor = reloaded.Controls.SingleOrDefault(control => control.Type == "Eremex.TextEditor")
+            ?? throw new InvalidOperationException("Eremex TextEditor was lost after project reload.");
+        if (!string.Equals(reloadedEditor.PluginVersion, "1.0.98", StringComparison.Ordinal)
+            || !reloadedEditor.CustomProperties.Any(property => string.Equals(property.Key, "Watermark", StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new InvalidOperationException("Eremex TextEditor custom properties were not restored from project JSON.");
+        }
+
+        var withoutPlugin = CreateViewModel("EremexTextEditorMissingPlugin");
+        withoutPlugin.LoadDocumentJson(savedWorkspace);
+        var missingEditor = withoutPlugin.Controls.SingleOrDefault(control => control.Type == "Eremex.TextEditor")
+            ?? throw new InvalidOperationException("Missing Eremex plugin must not discard the stored control model.");
+        if (!missingEditor.CustomProperties.Any(property => string.Equals(property.Key, "EditorValue", StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidOperationException("Missing Eremex plugin must preserve original custom properties.");
+        withoutPlugin.GenerateXaml();
+        RequireContains(withoutPlugin.GeneratedXaml, "Placeholder плагина: Eremex.TextEditor", "Missing Eremex plugin must export a safe placeholder without losing the model.");
+
+        EnsureAvaloniaRuntimeInitialized();
+        Control preview;
+        try
+        {
+            preview = descriptor.BuildPreview(CreateSmokeControlNode(editor), new SmokePreviewContext());
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException($"Eremex TextEditor legacy preview failed: {ex}", ex);
+        }
+        if (!string.Equals(preview.GetType().FullName, "Eremex.AvaloniaUI.Controls.Editors.TextEditor", StringComparison.Ordinal))
+            throw new InvalidOperationException($"Legacy Preview must create the real Eremex TextEditor, got '{preview.GetType().FullName}'.");
+        RequireControlCanApplyTemplateAndLayout(preview, "Descriptor preview");
+        RequireSingleCoreAvaloniaAssemblyIdentity();
+
+        var canvasWindow = new MainWindow { DataContext = vm };
+        var canvasPreview = InvokePreviewFactory(canvasWindow, "CreatePreviewControl", editor);
+        AssertRealEremexTextEditor(canvasPreview, "Designer Canvas");
+        RequireControlCanApplyTemplateAndLayout(canvasPreview, "Designer Canvas");
+
+        var previewDocument = vm.CreatePreviewDocumentSnapshot();
+        var legacyWindow = new PreviewWindow(previewDocument, vm.Registry);
+        var legacyModel = previewDocument.Controls.Single(control => control.Type == "Eremex.TextEditor");
+        var legacyPreview = InvokePreviewFactory(legacyWindow, "CreatePreviewControl", legacyModel);
+        AssertRealEremexTextEditor(legacyPreview, "Legacy Preview Window");
+        RequireControlCanApplyTemplateAndLayout(legacyPreview, "Legacy Preview Window");
+
+        RequireContains(context.Xaml, "xmlns:mxe=\"https://schemas.eremexcontrols.net/avalonia/editors\"", "Eremex XML namespace was not generated.");
+        RequireContains(context.Xaml, "<mxe:TextEditor", "Eremex TextEditor AXAML tag was not generated.");
+        RequireContains(context.Xaml, "EditorValue=\"Ada Lovelace\"", "Eremex EditorValue was not exported.");
+        RequireContains(context.Xaml, "Watermark=\"Введите имя\"", "Eremex Watermark was not exported.");
+
+        var packages = vm.RequiredPackages.ToDictionary(package => package.Id, package => package.Version, StringComparer.OrdinalIgnoreCase);
+        if (!packages.TryGetValue("Eremex.Avalonia.Controls", out var controlsVersion) || controlsVersion != "1.0.98"
+            || !packages.TryGetValue("Eremex.Avalonia.Themes.DeltaDesign", out var themeVersion) || themeVersion != "1.0.98")
+        {
+            throw new InvalidOperationException("Eremex export contribution must add controls and DeltaDesign packages 1.0.98.");
+        }
+
+        using var exportedProject = ExportToTemporaryProject(context);
+        var exportFolder = exportedProject.Path;
+        var appAxaml = File.ReadAllText(Path.Combine(exportFolder, "App.axaml"), Encoding.UTF8);
+        var projectFile = File.ReadAllText(Directory.GetFiles(exportFolder, "*.csproj").Single(), Encoding.UTF8);
+        var readme = File.ReadAllText(Path.Combine(exportFolder, "README.generated.md"), Encoding.UTF8);
+        RequireContains(appAxaml, "xmlns:theme=\"clr-namespace:Eremex.AvaloniaUI.Themes.DeltaDesign;assembly=Eremex.Avalonia.Themes.DeltaDesign\"", "Generated App.axaml must declare the Eremex theme namespace.");
+        RequireContains(appAxaml, "<theme:DeltaDesignTheme />", "Generated App.axaml must load DeltaDesignTheme.");
+        RequireContains(projectFile, "Eremex.Avalonia.Controls\" Version=\"1.0.98", "Generated project is missing the Eremex controls package.");
+        RequireContains(projectFile, "Eremex.Avalonia.Themes.DeltaDesign\" Version=\"1.0.98", "Generated project is missing the Eremex theme package.");
+        RequireContains(readme, "Bring Your Own Package / Bring Your Own License", "Generated README must explain the Eremex licensing model.");
+
+        var axamlPreview = vm.GenerateExportedAxamlPreviewSnapshot();
+        var axamlRoot = RuntimeAxamlPreviewLoader.Load(
+                            axamlPreview.Axaml,
+                            axamlPreview.RuntimePreviewContributions.SelectMany(contribution => contribution.Assemblies)) as Control
+            ?? throw new InvalidOperationException("Runtime AXAML Preview did not return a Control root.");
+        foreach (var contribution in axamlPreview.RuntimePreviewContributions)
+            contribution.ApplyToPreviewRoot?.Invoke(axamlRoot);
+        var axamlEditor = axamlRoot.GetLogicalDescendants()
+            .FirstOrDefault(item => string.Equals(item.GetType().FullName, "Eremex.AvaloniaUI.Controls.Editors.TextEditor", StringComparison.Ordinal)) as Control;
+        if (axamlEditor is null)
+            throw new InvalidOperationException("Runtime AXAML Preview does not contain the actual Eremex TextEditor.");
+        AssertRealEremexTextEditor(axamlEditor, "Runtime AXAML Preview");
+        RequireControlCanApplyTemplateAndLayout(axamlRoot, "Runtime AXAML Preview");
+
+        var axamlPreviewWindow = new PreviewWindow(axamlPreview, vm.Registry);
+        InvokeAsyncPreviewLoader(axamlPreviewWindow, "LoadExportedAxamlPreviewAsync", axamlPreview);
+        var previewStatus = axamlPreviewWindow.FindControl<TextBlock>("PreviewRuntimeStatusText")?.Text;
+        if (!string.Equals(previewStatus, "AXAML Preview ready", StringComparison.Ordinal))
+            throw new InvalidOperationException($"AXAML Preview host did not load Eremex TextEditor: status='{previewStatus ?? "-"}'.");
+        var previewSurface = axamlPreviewWindow.FindControl<Border>("PreviewSurfaceBorder")
+            ?? throw new InvalidOperationException("AXAML Preview surface was not found.");
+        var hostedEditor = previewSurface.GetLogicalDescendants()
+            .OfType<Control>()
+            .FirstOrDefault(item => string.Equals(item.GetType().FullName, "Eremex.AvaloniaUI.Controls.Editors.TextEditor", StringComparison.Ordinal));
+        if (hostedEditor is null)
+            throw new InvalidOperationException("AXAML Preview Window did not host the actual Eremex TextEditor.");
+        AssertRealEremexTextEditor(hostedEditor, "AXAML Preview Window");
+        RequireControlCanApplyTemplateAndLayout(axamlPreviewWindow, "AXAML Preview Window");
+        RequireGeneratedEremexApplicationRenders(context, exportFolder);
+    }
+
+    private static Control InvokePreviewFactory(object host, string methodName, object model)
+    {
+        var method = host.GetType().GetMethod(methodName, BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException($"Preview factory '{host.GetType().Name}.{methodName}' was not found.");
+        try
+        {
+            return method.Invoke(host, new[] { model }) as Control
+                ?? throw new InvalidOperationException($"Preview factory '{host.GetType().Name}.{methodName}' returned no Control.");
+        }
+        catch (TargetInvocationException ex) when (ex.InnerException is not null)
+        {
+            throw new InvalidOperationException($"Preview factory '{host.GetType().Name}.{methodName}' failed: {ex.InnerException}", ex.InnerException);
+        }
+    }
+
+    private static void AssertRealEremexTextEditor(Control preview, string path)
+    {
+        if (!string.Equals(preview.GetType().FullName, "Eremex.AvaloniaUI.Controls.Editors.TextEditor", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"{path} must render the actual Eremex TextEditor, got '{preview.GetType().FullName}'.");
+        }
+    }
+
+    private static void AssertRealEremexDataGrid(Control preview, string path)
+    {
+        if (!string.Equals(preview.GetType().FullName, "Eremex.AvaloniaUI.Controls.DataGrid.DataGridControl", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"{path} must render the actual Eremex DataGridControl, got '{preview.GetType().FullName}'.");
+        }
+    }
+
+    private static int GetItemsSourceCount(Control control)
+    {
+        var value = control.GetType().GetProperty("ItemsSource", BindingFlags.Instance | BindingFlags.Public)?.GetValue(control);
+        return value is IEnumerable enumerable ? enumerable.Cast<object>().Count() : 0;
+    }
+
+    private static void RequireControlCanApplyTemplateAndLayout(Control control, string path)
+    {
+        var host = control as Window ?? new Window
+        {
+            Width = Math.Max(320, control.Width is > 0 and < double.PositiveInfinity ? control.Width + 80 : 360),
+            Height = Math.Max(160, control.Height is > 0 and < double.PositiveInfinity ? control.Height + 80 : 180)
+        };
+        if (!ReferenceEquals(host, control))
+            host.Content = control;
+
+        try
+        {
+            host.Show();
+            host.Measure(new Size(host.Width, host.Height));
+            host.Arrange(new Rect(0, 0, host.Width, host.Height));
+            host.ApplyTemplate();
+            control.ApplyTemplate();
+            Dispatcher.UIThread.RunJobs();
+
+            if (!control.IsAttachedToVisualTree())
+                throw new InvalidOperationException($"{path} did not attach to the Avalonia visual tree.");
+            if (!control.GetVisualDescendants().Any())
+                throw new InvalidOperationException($"{path} applied no visual template.");
+        }
+        catch (MissingMethodException exception)
+        {
+            throw new InvalidOperationException($"{path} hit an Avalonia ABI mismatch while applying the Eremex template: {exception}", exception);
+        }
+        finally
+        {
+            host.Close();
+        }
+    }
+
+    private static void RequireSingleCoreAvaloniaAssemblyIdentity()
+    {
+        var duplicateCoreAssembly = AppDomain.CurrentDomain.GetAssemblies()
+            .Where(assembly => assembly.GetName().Name is "Avalonia.Base" or "Avalonia.Controls" or "Avalonia.Markup.Xaml")
+            .GroupBy(assembly => assembly.GetName().Name, StringComparer.Ordinal)
+            .FirstOrDefault(group => group.Select(assembly => AssemblyLoadContext.GetLoadContext(assembly)).Distinct().Count() > 1);
+        if (duplicateCoreAssembly is not null)
+        {
+            throw new InvalidOperationException(
+                $"Eremex plugin loaded duplicate core assembly '{duplicateCoreAssembly.Key}' into more than one AssemblyLoadContext.");
+        }
+    }
+
+    private static void RequireGeneratedEremexApplicationRenders(SmokeContext context, string exportFolder)
+    {
+        DotnetBuild(exportFolder);
+
+        var projectFile = Directory.GetFiles(exportFolder, "*.csproj").SingleOrDefault()
+            ?? throw new InvalidOperationException("Generated Eremex project file was not found.");
+        var assemblyName = Path.GetFileNameWithoutExtension(projectFile);
+        var assemblyPath = Path.Combine(
+            exportFolder,
+            "bin",
+            "Debug",
+            "net6.0",
+            $"{assemblyName}.dll");
+        if (!File.Exists(assemblyPath))
+            throw new InvalidOperationException($"Generated Eremex application assembly was not found: {assemblyPath}");
+
+        // LoadFrom mirrors a normal generated application's dependency resolution. In
+        // particular, its compiled AXAML and Eremex dependency graph must share the host's
+        // Avalonia assemblies, not a second collectible Avalonia universe.
+        var assembly = Assembly.LoadFrom(assemblyPath);
+        var mainWindowType = assembly.GetType($"{context.ViewModel.ExportProjectNamespace}.MainWindow")
+            ?? throw new InvalidOperationException("Generated Eremex MainWindow type was not found.");
+        var window = Activator.CreateInstance(mainWindowType) as Window
+            ?? throw new InvalidOperationException("Generated Eremex MainWindow could not be created as an Avalonia Window.");
+        var editor = window.GetLogicalDescendants()
+            .OfType<Control>()
+            .FirstOrDefault(control => string.Equals(
+                control.GetType().FullName,
+                "Eremex.AvaloniaUI.Controls.Editors.TextEditor",
+                StringComparison.Ordinal));
+        if (editor is null)
+            throw new InvalidOperationException("Generated Eremex application MainWindow does not contain the actual TextEditor.");
+
+        AssertRealEremexTextEditor(editor, "Generated Eremex application");
+        RequireControlCanApplyTemplateAndLayout(window, "Generated Eremex application");
+    }
+
+    private static void RequireGeneratedEremexDataGridApplicationRenders(SmokeContext context, string exportFolder)
+    {
+        DotnetBuild(exportFolder);
+
+        var projectFile = Directory.GetFiles(exportFolder, "*.csproj").SingleOrDefault()
+            ?? throw new InvalidOperationException("Generated Eremex DataGrid project file was not found.");
+        var assemblyName = Path.GetFileNameWithoutExtension(projectFile);
+        var assemblyPath = Path.Combine(exportFolder, "bin", "Debug", "net6.0", $"{assemblyName}.dll");
+        if (!File.Exists(assemblyPath))
+            throw new InvalidOperationException($"Generated Eremex DataGrid application assembly was not found: {assemblyPath}");
+
+        var assembly = Assembly.LoadFrom(assemblyPath);
+        var mainWindowType = assembly.GetType($"{context.ViewModel.ExportProjectNamespace}.MainWindow")
+            ?? throw new InvalidOperationException("Generated Eremex DataGrid MainWindow type was not found.");
+        var window = Activator.CreateInstance(mainWindowType) as Window
+            ?? throw new InvalidOperationException("Generated Eremex DataGrid MainWindow could not be created as an Avalonia Window.");
+        var grid = window.GetLogicalDescendants()
+            .OfType<Control>()
+            .FirstOrDefault(control => string.Equals(
+                control.GetType().FullName,
+                "Eremex.AvaloniaUI.Controls.DataGrid.DataGridControl",
+                StringComparison.Ordinal));
+        if (grid is null)
+            throw new InvalidOperationException("Generated Eremex application MainWindow does not contain the actual DataGridControl.");
+
+        AssertRealEremexDataGrid(grid, "Generated Eremex DataGrid application");
+        if (GetItemsSourceCount(grid) == 0)
+            throw new InvalidOperationException("Generated Eremex DataGrid application did not receive explicit demo rows.");
+        RequireControlCanApplyTemplateAndLayout(window, "Generated Eremex DataGrid application");
+    }
+
+    private static void InvokeAsyncPreviewLoader(object host, string methodName, object argument)
+    {
+        var method = host.GetType().GetMethod(methodName, BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException($"Async preview loader '{host.GetType().Name}.{methodName}' was not found.");
+        try
+        {
+            if (method.Invoke(host, new[] { argument }) is not Task task)
+                throw new InvalidOperationException($"Async preview loader '{host.GetType().Name}.{methodName}' did not return Task.");
+
+            task.GetAwaiter().GetResult();
+        }
+        catch (TargetInvocationException ex) when (ex.InnerException is not null)
+        {
+            throw new InvalidOperationException($"Async preview loader '{host.GetType().Name}.{methodName}' failed: {ex.InnerException}", ex.InnerException);
+        }
+    }
+
+    private static void LoadBuiltEremexPlugin(MainWindowViewModel vm)
+    {
+        var pluginsRoot = Path.Combine(FindRepositoryRoot(), "bin", "Debug", "net6.0", "Plugins");
+        if (!Directory.Exists(Path.Combine(pluginsRoot, "EremexDesignerPlugin")))
+            throw new InvalidOperationException($"Built Eremex plugin folder was not found: {pluginsRoot}");
+
+        var registry = vm.Registry as DesignerRegistry
+            ?? throw new InvalidOperationException("Eremex smoke requires DesignerRegistry.");
+        var loader = new PluginLoader(new TraceDesignerLogger());
+        loader.LoadFromFolder(pluginsRoot, registry, replaceDiagnostics: true);
+        vm.RefreshRegistryBackedCollections();
+    }
+
+    private static void SetCustomProperty(DesignControlModel control, string key, object? value)
+    {
+        var property = control.CustomProperties.FirstOrDefault(item => string.Equals(item.Key, key, StringComparison.OrdinalIgnoreCase));
+        if (property is null)
+        {
+            control.CustomProperties.Add(new DesignPropertyValueModel { Key = key, ValueJson = JsonSerializer.Serialize(value) });
+            return;
+        }
+
+        property.ValueJson = JsonSerializer.Serialize(value);
+    }
+
+    private static IDesignControlNode CreateSmokeControlNode(DesignControlModel control)
+    {
+        return new SmokeControlNode(
+            control.Id,
+            control.Type,
+            control.Name,
+            control.ParentId,
+            control.DescriptorId,
+            control.PluginId,
+            control.PluginVersion,
+            new Dictionary<string, object?>
+            {
+                ["Width"] = control.Width,
+                ["Height"] = control.Height,
+                ["X"] = control.X,
+                ["Y"] = control.Y,
+                ["Margin"] = control.Margin,
+                ["Opacity"] = control.Opacity,
+                ["IsVisible"] = control.IsVisible
+            },
+            control.CustomProperties.ToDictionary(property => property.Key, property => property.ValueJson, StringComparer.OrdinalIgnoreCase));
+    }
+
     private static void ConfigureGridLayoutExport(MainWindowViewModel vm)
     {
         vm.SurfaceLayoutMode = DesignerLayoutModes.Grid;
@@ -7032,6 +7692,57 @@ Diagnostics:
         public string Name { get; init; } = "";
     }
 
+    private sealed class SmokePreviewContext : IPreviewContext
+    {
+        public DesignerPreviewMode Mode => DesignerPreviewMode.Designer;
+
+        public IServiceProvider Services { get; } = new EmptyServiceProvider();
+
+        public IReadOnlyList<IDesignControlNode> GetChildren(string parentId) => Array.Empty<IDesignControlNode>();
+
+        public BindingSourceMetadata? GetBindingSource(string bindingSourceId) => null;
+    }
+
+    private sealed class EmptyServiceProvider : IServiceProvider
+    {
+        public object? GetService(Type serviceType) => null;
+    }
+
+    private sealed class SmokeControlNode : IDesignControlNode
+    {
+        public SmokeControlNode(
+            string id,
+            string typeKey,
+            string name,
+            string parentId,
+            string descriptorId,
+            string pluginId,
+            string pluginVersion,
+            IReadOnlyDictionary<string, object?> builtInProperties,
+            IReadOnlyDictionary<string, string> customProperties)
+        {
+            Id = id;
+            TypeKey = typeKey;
+            Name = name;
+            ParentId = parentId;
+            DescriptorId = descriptorId;
+            PluginId = pluginId;
+            PluginVersion = pluginVersion;
+            BuiltInProperties = builtInProperties;
+            CustomProperties = customProperties;
+        }
+
+        public string Id { get; }
+        public string TypeKey { get; }
+        public string Name { get; }
+        public string ParentId { get; }
+        public string DescriptorId { get; }
+        public string PluginId { get; }
+        public string PluginVersion { get; }
+        public IReadOnlyDictionary<string, object?> BuiltInProperties { get; }
+        public IReadOnlyDictionary<string, string> CustomProperties { get; }
+    }
+
     private sealed class TemporaryExportProject : IDisposable
     {
         public TemporaryExportProject(string path)
@@ -7043,8 +7754,28 @@ Diagnostics:
 
         public void Dispose()
         {
-            if (Directory.Exists(Path))
-                Directory.Delete(Path, recursive: true);
+            for (var attempt = 1; attempt <= 5; attempt++)
+            {
+                try
+                {
+                    if (Directory.Exists(Path))
+                        Directory.Delete(Path, recursive: true);
+                    return;
+                }
+                catch (IOException) when (attempt < 5)
+                {
+                    Thread.Sleep(250 * attempt);
+                }
+                catch (UnauthorizedAccessException) when (attempt < 5)
+                {
+                    Thread.Sleep(250 * attempt);
+                }
+                catch (Exception ex) when (attempt == 5)
+                {
+                    Debug.WriteLine($"Temporary export cleanup deferred: {Path}; reason={ex.Message}");
+                    return;
+                }
+            }
         }
     }
 

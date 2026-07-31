@@ -2,6 +2,7 @@ using System;
 using System.Collections.ObjectModel;
 using System.Collections.Generic;
 using System.Linq;
+using FormDesigner.PluginContracts;
 
 namespace FormDesigner.Models;
 
@@ -178,6 +179,8 @@ public sealed class ExportResult
     public IReadOnlyList<GeneratedFileModel> GeneratedFiles { get; init; } = Array.Empty<GeneratedFileModel>();
 
     public IReadOnlyList<RequiredPackageModel> RequiredPackages { get; init; } = Array.Empty<RequiredPackageModel>();
+
+    public IReadOnlyList<DesignerApplicationStyleContribution> ApplicationStyleContributions { get; init; } = Array.Empty<DesignerApplicationStyleContribution>();
 
     public IReadOnlyList<ExportDiagnosticModel> Diagnostics { get; init; } = Array.Empty<ExportDiagnosticModel>();
 

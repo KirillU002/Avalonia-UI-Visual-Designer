@@ -30,7 +30,7 @@ public sealed class DesignerProjectModel
 
     public string TargetFramework { get; set; } = "net6.0";
 
-    public string AvaloniaVersion { get; set; } = "11.1.1";
+    public string AvaloniaVersion { get; set; } = "11.1.5";
 
     public List<DesignerFormDocument> Forms { get; set; } = new();
 

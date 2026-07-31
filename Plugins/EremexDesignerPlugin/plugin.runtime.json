@@ -1,0 +1,6 @@
+{
+  "runtimeAssemblies": [
+    "Eremex.Avalonia.Controls.dll",
+    "Eremex.Avalonia.Themes.DeltaDesign.dll"
+  ]
+}

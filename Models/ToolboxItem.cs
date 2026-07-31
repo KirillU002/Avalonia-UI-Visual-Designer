@@ -9,4 +9,8 @@ public class ToolboxItem
     public string Category { get; set; } = "General";
 
     public string Description { get; set; } = "";
+
+    public string ProviderId { get; set; } = "";
+
+    public string ProviderBadge { get; set; } = "";
 }
