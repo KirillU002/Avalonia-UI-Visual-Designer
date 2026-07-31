@@ -7427,12 +7427,17 @@ public partial class MainWindowViewModel : ObservableObject
             source.Name = GetUniqueBindingSourceName($"{SelectedControl.NameOrFallback()}Source");
             source.Path = source.Name;
             source.ItemTypeName = $"{SelectedControl.NameOrFallback()}Row";
-            source.Description = "Источник создан из DataGrid data setup.";
-            EnsureSampleFields(source);
+            source.Description = "Источник создан из настройки данных выбранного контрола.";
+            // Sample schema belongs only to the built-in DataGrid quick-start path.
+            // Provider controls must remain empty until a real schema or explicit demo data is supplied.
+            if (SelectedControl.Type == DesignerControlTypes.DataGrid)
+                EnsureSampleFields(source);
             SelectedControl.BindingSourceId = source.Id;
             SelectedBindingSource = source;
             RaiseBindingEditorProperties();
-            StatusText = $"BindingSource «{source.Name}» создан и подключен к {SelectedControl.NameOrFallback()}.";
+            StatusText = SelectedControl.Type == DesignerControlTypes.DataGrid
+                ? $"BindingSource «{source.Name}» создан и подключен к {SelectedControl.NameOrFallback()}."
+                : $"Пустой BindingSource «{source.Name}» подключен к {SelectedControl.NameOrFallback()}. Загрузите схему или включите demo data явно.";
         }
         finally
         {
@@ -7454,7 +7459,17 @@ public partial class MainWindowViewModel : ObservableObject
         try
         {
             if (source.Fields.Count == 0)
-                EnsureSampleFields(source);
+            {
+                if (SelectedControl is { Type: DesignerControlTypes.DataGrid })
+                {
+                    EnsureSampleFields(source);
+                }
+                else
+                {
+                    StatusText = "В источнике нет схемы. Загрузите поля из SQL/DLL или добавьте их вручную: для provider DataGrid фейковые колонки не создаются.";
+                    return;
+                }
+            }
 
             var visibleIndex = 0;
             foreach (var field in source.Fields)
@@ -7468,7 +7483,7 @@ public partial class MainWindowViewModel : ObservableObject
                 field.VisibleIndex = visibleIndex++;
             }
 
-            if (SelectedControl is { Type: DesignerControlTypes.DataGrid } grid)
+            if (SelectedControl is { } grid && SupportsDataBinding(grid))
                 grid.AutoGenerateColumns = false;
 
             RaiseBindingEditorProperties();
@@ -10284,6 +10299,15 @@ public partial class MainWindowViewModel : ObservableObject
                     "Generate columns from the selected BindingSource schema.",
                     value => control.AutoGenerateColumns = value);
             }
+            yield return CreateActionRow(
+                PropertyGridCategoryData,
+                "Columns",
+                "Columns",
+                SelectedGridColumnCompactSummary,
+                "Edit the shared schema columns. Provider adapters translate them to the target grid implementation.",
+                "Edit columns...",
+                PropertyGridEditorKind.ColumnCollection,
+                "columns provider datagrid schema");
         }
 
         var interactionCount = Interactions.Count(interaction =>
@@ -10296,7 +10320,9 @@ public partial class MainWindowViewModel : ObservableObject
             yield return CreateDescriptorPropertyRow(descriptor);
 
         var descriptorKeys = descriptorProperties.Select(descriptor => descriptor.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        foreach (var customProperty in control.CustomProperties.Where(property => !descriptorKeys.Contains(property.Key)))
+        foreach (var customProperty in control.CustomProperties.Where(property =>
+                     !descriptorKeys.Contains(property.Key)
+                     && !IsInternalPluginDependencyMetadata(property.Key)))
         {
             yield return CreateTextRow(
                 PropertyGridCategoryAdvanced,
@@ -10311,6 +10337,13 @@ public partial class MainWindowViewModel : ObservableObject
                 },
                 isAdvanced: true);
         }
+    }
+
+    private static bool IsInternalPluginDependencyMetadata(string? propertyKey)
+    {
+        // Dependency identity is persisted so export, compatibility checks and missing-plugin
+        // recovery can work. It is deliberately not a user-editable visual property.
+        return propertyKey is not null && propertyKey.StartsWith("Eremex.", StringComparison.OrdinalIgnoreCase);
     }
 
     private IEnumerable<PropertyGridRowViewModel> BuildMultiSelectionPropertyGridRows()

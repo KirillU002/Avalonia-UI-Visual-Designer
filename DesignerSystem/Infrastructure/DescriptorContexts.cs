@@ -154,7 +154,13 @@ internal static class BindingMetadataMapper
                 IsSortable = field.IsSortable,
                 SortDirection = field.SortDirection,
                 SortOrder = field.SortOrder,
-                GroupOrder = field.GroupOrder
+                GroupOrder = field.GroupOrder,
+                MinWidth = field.MinWidth,
+                MaxWidth = field.MaxWidth,
+                AllowResize = field.AllowResize,
+                AllowSort = field.AllowSort,
+                AllowFilter = field.AllowFilter,
+                VisibleIndex = field.VisibleIndex
             }).ToList()
         }).ToList();
     }
@@ -201,7 +207,13 @@ internal static class BindingMetadataMapper
                 IsSortable = field.IsSortable,
                 SortDirection = field.SortDirection,
                 SortOrder = field.SortOrder,
-                GroupOrder = field.GroupOrder
+                GroupOrder = field.GroupOrder,
+                MinWidth = field.MinWidth,
+                MaxWidth = field.MaxWidth,
+                AllowResize = field.AllowResize,
+                AllowSort = field.AllowSort,
+                AllowFilter = field.AllowFilter,
+                VisibleIndex = field.VisibleIndex
             });
         }
 

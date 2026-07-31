@@ -16,7 +16,17 @@ internal static class BindingPreviewItemsBuilder
                 Header = field.Header,
                 Path = field.Path,
                 SampleValue = field.SampleValue,
-                IsVisible = field.IsVisible
+                Width = field.Width,
+                TypeName = field.TypeName,
+                IsVisible = field.IsVisible,
+                IsSortable = field.IsSortable,
+                CanWrite = field.CanWrite,
+                MinWidth = field.MinWidth,
+                MaxWidth = field.MaxWidth,
+                AllowResize = field.AllowResize,
+                AllowSort = field.AllowSort,
+                AllowFilter = field.AllowFilter,
+                VisibleIndex = field.VisibleIndex
             }),
             rowCount);
     }

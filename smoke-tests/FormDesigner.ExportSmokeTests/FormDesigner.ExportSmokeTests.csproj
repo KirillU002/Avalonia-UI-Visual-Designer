@@ -9,4 +9,11 @@
   <ItemGroup>
     <ProjectReference Include="..\..\FormDesigner.csproj" />
   </ItemGroup>
+
+  <!-- Generated smoke artifacts are test output, never source files for this runner. -->
+  <ItemGroup>
+    <Compile Remove="artifacts\**\*.cs" />
+    <AvaloniaXaml Remove="artifacts\**\*.axaml" />
+    <None Remove="artifacts\**\*" />
+  </ItemGroup>
 </Project>

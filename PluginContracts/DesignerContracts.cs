@@ -211,6 +211,12 @@ public sealed class BindingFieldMetadata
     public string SortDirection { get; init; } = "None";
     public int SortOrder { get; init; } = -1;
     public int GroupOrder { get; init; } = -1;
+    public double MinWidth { get; init; } = 20;
+    public double MaxWidth { get; init; }
+    public bool AllowResize { get; init; } = true;
+    public bool AllowSort { get; init; } = true;
+    public bool AllowFilter { get; init; } = true;
+    public int VisibleIndex { get; init; } = -1;
 }
 
 [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = true)]

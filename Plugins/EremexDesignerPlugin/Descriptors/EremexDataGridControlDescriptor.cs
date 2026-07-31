@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.VisualTree;
 using Eremex.AvaloniaUI.Controls.DataGrid;
 using EremexDesignerPlugin.Services;
 using FormDesigner.PluginContracts;
@@ -10,13 +11,14 @@ using System.Data;
 using System.Globalization;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.Loader;
 using System.Text.Json;
 
 namespace EremexDesignerPlugin.Descriptors;
 
 /// <summary>
-/// First Eremex grid vertical slice. It intentionally uses the documented
-/// AutoGenerateColumns path; explicit column collections are a later adapter scope.
+/// Eremex grid adapter. It supports documented automatic and explicit
+/// <see cref="GridColumn"/> collections without reusing Avalonia DataGrid columns.
 /// </summary>
 public sealed class EremexDataGridControlDescriptor : IControlDescriptor, IDesignerControlProviderMetadata
 {
@@ -35,10 +37,24 @@ public sealed class EremexDataGridControlDescriptor : IControlDescriptor, IDesig
     private const string ShowHorizontalLinesProperty = "ShowHorizontalLines";
     private const string ShowVerticalLinesProperty = "ShowVerticalLines";
     private const string IsSearchPanelVisibleProperty = "IsSearchPanelVisible";
+    private const string ShowSearchPanelCloseButtonProperty = "ShowSearchPanelCloseButton";
+    private const string SearchPanelHighlightResultsProperty = "SearchPanelHighlightResults";
+    private const string ShowItemsSourceErrorsProperty = "ShowItemsSourceErrors";
+    private const string ShowGroupedColumnsProperty = "ShowGroupedColumns";
+    private const string AutoExpandAllGroupsProperty = "AutoExpandAllGroups";
+    private const string AllowImmediateEditorValuePostingProperty = "AllowImmediateEditorValuePosting";
+    private const string AutoScrollToFocusedRowProperty = "AutoScrollToFocusedRow";
+    private const string ValidateCellValuesOnShowAndUpdateProperty = "ValidateCellValuesOnShowAndUpdate";
+    private const string IsColumnChooserVisibleProperty = "IsColumnChooserVisible";
     private const string RowMinHeightProperty = "RowMinHeight";
+    private const string HeaderPanelMinHeightProperty = "HeaderPanelMinHeight";
+    private const string HeaderDropIndicatorWidthProperty = "HeaderDropIndicatorWidth";
+    private const string RowLevelIndentProperty = "RowLevelIndent";
     private const string NavigationModeProperty = "NavigationMode";
     private const string SelectionModeProperty = "SelectionMode";
     private const string SearchPanelDisplayModeProperty = "SearchPanelDisplayMode";
+    private const string EditorShowModeProperty = "EditorShowMode";
+    private const string EditorButtonShowModeProperty = "EditorButtonShowMode";
 
     private static readonly string[] BooleanPropertyNames =
     {
@@ -51,14 +67,33 @@ public sealed class EremexDataGridControlDescriptor : IControlDescriptor, IDesig
         AllowColumnMovingProperty,
         ShowHorizontalLinesProperty,
         ShowVerticalLinesProperty,
-        IsSearchPanelVisibleProperty
+        IsSearchPanelVisibleProperty,
+        ShowSearchPanelCloseButtonProperty,
+        SearchPanelHighlightResultsProperty,
+        ShowItemsSourceErrorsProperty,
+        ShowGroupedColumnsProperty,
+        AutoExpandAllGroupsProperty,
+        AllowImmediateEditorValuePostingProperty,
+        AutoScrollToFocusedRowProperty,
+        ValidateCellValuesOnShowAndUpdateProperty,
+        IsColumnChooserVisibleProperty
+    };
+
+    private static readonly string[] NumberPropertyNames =
+    {
+        RowMinHeightProperty,
+        HeaderPanelMinHeightProperty,
+        HeaderDropIndicatorWidthProperty,
+        RowLevelIndentProperty
     };
 
     private static readonly string[] EnumPropertyNames =
     {
         NavigationModeProperty,
         SelectionModeProperty,
-        SearchPanelDisplayModeProperty
+        SearchPanelDisplayModeProperty,
+        EditorShowModeProperty,
+        EditorButtonShowModeProperty
     };
 
     private readonly string _pluginId;
@@ -114,7 +149,17 @@ public sealed class EremexDataGridControlDescriptor : IControlDescriptor, IDesig
         AddDefaultValue(definition, ShowHorizontalLinesProperty, true);
         AddDefaultValue(definition, ShowVerticalLinesProperty, true);
         AddDefaultValue(definition, IsSearchPanelVisibleProperty, false);
-        definition.CustomProperties[RowMinHeightProperty] = JsonSerializer.Serialize(29d);
+        AddDefaultValue(definition, ShowSearchPanelCloseButtonProperty, true);
+        AddDefaultValue(definition, SearchPanelHighlightResultsProperty, true);
+        AddDefaultValue(definition, ShowItemsSourceErrorsProperty, true);
+        AddDefaultValue(definition, ShowGroupedColumnsProperty, false);
+        AddDefaultValue(definition, AutoExpandAllGroupsProperty, false);
+        AddDefaultValue(definition, AllowImmediateEditorValuePostingProperty, false);
+        AddDefaultValue(definition, AutoScrollToFocusedRowProperty, true);
+        AddDefaultValue(definition, ValidateCellValuesOnShowAndUpdateProperty, false);
+        AddDefaultValue(definition, IsColumnChooserVisibleProperty, false);
+        foreach (var propertyName in NumberPropertyNames)
+            definition.CustomProperties[propertyName] = JsonSerializer.Serialize(GetDefaultNumber(propertyName));
         foreach (var propertyName in EnumPropertyNames)
             AddDefaultEnumValue(definition, propertyName);
 
@@ -144,14 +189,33 @@ public sealed class EremexDataGridControlDescriptor : IControlDescriptor, IDesig
             EremexPreviewTheme.EnsureInstalled(
                 grid,
                 context.Mode == DesignerPreviewMode.Designer ? "DesignerCanvas" : "LegacyPreview");
+            System.Diagnostics.Debug.WriteLine(
+                $"EREMEX_DATAGRID_THEME_READY grid={control.Name}; mode={context.Mode}; localStyles={grid.Styles.Count}; " +
+                $"themeAssembly={typeof(Eremex.AvaloniaUI.Themes.DeltaDesign.DeltaDesignTheme).Assembly.GetName().Version}");
             ApplyCustomProperties(grid, control);
 
             var sourceId = control.GetString(BindingSourceIdProperty, string.Empty);
             var source = context.GetBindingSource(sourceId);
+            var fields = GetVisibleFields(source);
             var itemsProvider = context.Services.GetService(typeof(IPreviewBindingItemsProvider)) as IPreviewBindingItemsProvider;
             var bindingStopwatch = System.Diagnostics.Stopwatch.StartNew();
             System.Diagnostics.Debug.WriteLine($"EREMEX_DATAGRID_BIND_START grid={control.Name}; sourceId={sourceId}");
-            var items = BuildDataView(source, itemsProvider?.GetItems(sourceId));
+            var items = BuildDataView(source, fields, itemsProvider?.GetItems(sourceId));
+            if (fields.Count == 0)
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    $"EREMEX_DATAGRID_FAKE_COLUMN_GENERATION_BLOCKED grid={control.Name}; reason=source has no visible schema fields");
+            }
+            else if (grid.AutoGenerateColumns)
+            {
+                grid.AutoGeneratingColumn += (_, args) => ConfigureColumn(args.Column, fields);
+            }
+            else
+            {
+                foreach (var field in fields)
+                    grid.Columns.Add(CreateColumn(field));
+            }
+
             grid.ItemsSource = items;
             bindingStopwatch.Stop();
             stopwatch.Stop();
@@ -161,9 +225,27 @@ public sealed class EremexDataGridControlDescriptor : IControlDescriptor, IDesig
             System.Diagnostics.Debug.WriteLine(
                 $"EREMEX_DATAGRID_BIND_END grid={control.Name}; elapsedMs={bindingStopwatch.ElapsedMilliseconds}; rows={items.Count}");
             System.Diagnostics.Debug.WriteLine(
-                $"EREMEX_DATAGRID_COLUMNS_GENERATED grid={control.Name}; strategy=AutoGenerateColumns; enabled={grid.AutoGenerateColumns}; explicitColumns={grid.Columns.Count}");
-            grid.AttachedToVisualTree += (_, _) => System.Diagnostics.Debug.WriteLine(
-                $"EREMEX_DATAGRID_RUNTIME_RENDER_SUCCESS grid={control.Name}; mode={context.Mode}; columns={grid.Columns.Count}; actualWidth={grid.Bounds.Width}; actualHeight={grid.Bounds.Height}");
+                "EREMEX_DATAGRID_COLUMN_SOURCE_RESOLVED " +
+                $"grid={control.Name}; sourceId={sourceId}; schemaColumns={fields.Count}; manualColumns={grid.Columns.Count}; autoGeneration={grid.AutoGenerateColumns}");
+            grid.AutoGeneratedColumns += (_, _) => LogGridStructure(grid, control, context, "auto-generated-columns");
+            grid.TemplateApplied += (_, _) =>
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    $"EREMEX_DATAGRID_TEMPLATE_APPLIED grid={control.Name}; mode={context.Mode}; columns={grid.Columns.Count}; " +
+                    $"visualChildren={grid.GetVisualDescendants().Count()}");
+                LogGridStructure(grid, control, context, "template-applied");
+            };
+            grid.AttachedToVisualTree += (_, _) =>
+            {
+                var assembly = grid.GetType().Assembly;
+                System.Diagnostics.Debug.WriteLine(
+                    "EREMEX_DATAGRID_CANVAS_INSTANCE " +
+                    $"descriptorId={TypeKey}; clrType={grid.GetType().FullName}; assembly={assembly.FullName}; " +
+                    $"assemblyVersion={assembly.GetName().Version}; alc={AssemblyLoadContext.GetLoadContext(assembly)?.Name ?? "default"}; " +
+                    $"templateApplied={grid.Template is not null}; visualChildren={grid.GetVisualDescendants().Count()}; " +
+                    $"bounds={grid.Bounds.Width}x{grid.Bounds.Height}");
+                LogGridStructure(grid, control, context, "attached");
+            };
             grid.DetachedFromVisualTree += (_, _) => System.Diagnostics.Debug.WriteLine(
                 $"EREMEX_DATAGRID_DISPOSED grid={control.Name}; lifecycle=detached");
             System.Diagnostics.Debug.WriteLine(
@@ -198,7 +280,8 @@ public sealed class EremexDataGridControlDescriptor : IControlDescriptor, IDesig
         foreach (var propertyName in BooleanPropertyNames)
             attributes.Add($"{propertyName}=\"{ToXamlBoolean(control.GetCustomValue(propertyName, DefaultBoolean(propertyName)))}\"");
 
-        attributes.Add($"{RowMinHeightProperty}=\"{FormatDouble(Math.Max(1d, control.GetCustomValue(RowMinHeightProperty, 29d)))}\"");
+        foreach (var propertyName in NumberPropertyNames)
+            attributes.Add($"{propertyName}=\"{FormatDouble(Math.Max(0d, control.GetCustomValue(propertyName, GetDefaultNumber(propertyName))))}\"");
         foreach (var propertyName in EnumPropertyNames)
             AppendOptionalEnumAttribute(attributes, propertyName, control);
 
@@ -215,9 +298,23 @@ public sealed class EremexDataGridControlDescriptor : IControlDescriptor, IDesig
         if (!control.GetBool("IsVisible", true))
             attributes.Add("IsVisible=\"False\"");
 
-        writer.WriteLine(indentLevel, $"<mxdg:DataGridControl {string.Join(" ", attributes)} />");
+        var fields = GetVisibleFields(source);
+        var useManualColumns = !control.GetBool(AutoGenerateColumnsProperty, true) && fields.Count > 0;
+        if (!useManualColumns)
+        {
+            writer.WriteLine(indentLevel, $"<mxdg:DataGridControl {string.Join(" ", attributes)} />");
+        }
+        else
+        {
+            writer.WriteLine(indentLevel, $"<mxdg:DataGridControl {string.Join(" ", attributes)}>");
+            writer.WriteLine(indentLevel + 1, "<mxdg:DataGridControl.Columns>");
+            foreach (var field in fields)
+                writer.WriteLine(indentLevel + 2, BuildColumnAxaml(field));
+            writer.WriteLine(indentLevel + 1, "</mxdg:DataGridControl.Columns>");
+            writer.WriteLine(indentLevel, "</mxdg:DataGridControl>");
+        }
         System.Diagnostics.Debug.WriteLine(
-            $"EREMEX_DATAGRID_AXAML_EXPORTED grid={control.Name}; itemsSource={itemsSourcePath}; autoGenerateColumns={control.GetBool(AutoGenerateColumnsProperty, true)}");
+            $"EREMEX_DATAGRID_AXAML_EXPORTED grid={control.Name}; itemsSource={itemsSourcePath}; autoGenerateColumns={control.GetBool(AutoGenerateColumnsProperty, true)}; manualColumns={useManualColumns}; columnCount={fields.Count}");
     }
 
     private static IReadOnlyList<DesignPropertyDescriptor> BuildPropertySchema()
@@ -247,9 +344,9 @@ public sealed class EremexDataGridControlDescriptor : IControlDescriptor, IDesig
                 Key = RowMinHeightProperty,
                 Title = "RowMinHeight",
                 Description = "Minimum Eremex grid row height.",
-                Category = "Eremex DataGrid",
+                Category = GetPropertyCategory(RowMinHeightProperty),
                 Editor = PropertyEditorKind.Number,
-                DefaultValueJson = JsonSerializer.Serialize(29d)
+                DefaultValueJson = JsonSerializer.Serialize(GetDefaultNumber(RowMinHeightProperty))
             }
         };
 
@@ -259,10 +356,23 @@ public sealed class EremexDataGridControlDescriptor : IControlDescriptor, IDesig
             {
                 Key = propertyName,
                 Title = propertyName,
-                Description = $"Eremex DataGrid {propertyName} setting.",
-                Category = "Eremex DataGrid",
+                Description = GetPropertyDescription(propertyName),
+                Category = GetPropertyCategory(propertyName),
                 Editor = PropertyEditorKind.Bool,
                 DefaultValueJson = JsonSerializer.Serialize(DefaultBoolean(propertyName))
+            });
+        }
+
+        foreach (var propertyName in NumberPropertyNames.Where(propertyName => !string.Equals(propertyName, RowMinHeightProperty, StringComparison.Ordinal)))
+        {
+            properties.Add(new DesignPropertyDescriptor
+            {
+                Key = propertyName,
+                Title = propertyName,
+                Description = GetPropertyDescription(propertyName),
+                Category = GetPropertyCategory(propertyName),
+                Editor = PropertyEditorKind.Number,
+                DefaultValueJson = JsonSerializer.Serialize(GetDefaultNumber(propertyName))
             });
         }
 
@@ -276,10 +386,10 @@ public sealed class EremexDataGridControlDescriptor : IControlDescriptor, IDesig
             {
                 Key = propertyName,
                 Title = propertyName,
-                Description = $"Eremex DataGrid {propertyName} setting.",
-                Category = "Eremex DataGrid",
+                Description = GetPropertyDescription(propertyName),
+                Category = GetPropertyCategory(propertyName),
                 Editor = PropertyEditorKind.Enum,
-                DefaultValueJson = JsonSerializer.Serialize(options[0].Value),
+                DefaultValueJson = JsonSerializer.Serialize(GetDefaultEnumValue(propertyName)),
                 Options = options
             });
         }
@@ -294,7 +404,7 @@ public sealed class EremexDataGridControlDescriptor : IControlDescriptor, IDesig
 
     private static void AddDefaultEnumValue(DesignerControlDefinition definition, string propertyName)
     {
-        var value = GetEnumOptions(propertyName).FirstOrDefault()?.Value;
+        var value = GetDefaultEnumValue(propertyName);
         if (!string.IsNullOrWhiteSpace(value))
             definition.CustomProperties[propertyName] = JsonSerializer.Serialize(value);
     }
@@ -315,9 +425,10 @@ public sealed class EremexDataGridControlDescriptor : IControlDescriptor, IDesig
         foreach (var propertyName in BooleanPropertyNames)
             ApplyProperty(grid, propertyName, control.GetCustomValue(propertyName, DefaultBoolean(propertyName)));
 
-        ApplyProperty(grid, RowMinHeightProperty, Math.Max(1d, control.GetCustomValue(RowMinHeightProperty, 29d)));
+        foreach (var propertyName in NumberPropertyNames)
+            ApplyProperty(grid, propertyName, Math.Max(0d, control.GetCustomValue(propertyName, GetDefaultNumber(propertyName))));
         foreach (var propertyName in EnumPropertyNames)
-            ApplyProperty(grid, propertyName, control.GetCustomValue(propertyName, string.Empty));
+            ApplyProperty(grid, propertyName, control.GetCustomValue(propertyName, GetDefaultEnumValue(propertyName)));
     }
 
     private static void ApplyProperty(DataGridControl grid, string propertyName, object? value)
@@ -344,6 +455,12 @@ public sealed class EremexDataGridControlDescriptor : IControlDescriptor, IDesig
                 return;
             }
 
+            if (targetType == typeof(int))
+            {
+                property.SetValue(grid, Convert.ToInt32(value, CultureInfo.InvariantCulture));
+                return;
+            }
+
             if (targetType.IsEnum)
             {
                 var text = Convert.ToString(value, CultureInfo.InvariantCulture);
@@ -357,13 +474,34 @@ public sealed class EremexDataGridControlDescriptor : IControlDescriptor, IDesig
         }
     }
 
-    private static DataView BuildDataView(BindingSourceMetadata? source, IEnumerable? sourceItems)
+    private static IReadOnlyList<BindingFieldMetadata> GetVisibleFields(BindingSourceMetadata? source)
+    {
+        if (source is null)
+            return Array.Empty<BindingFieldMetadata>();
+
+        return source.Fields
+            .Select((field, index) => new { Field = field, Index = index })
+            .Where(item => item.Field.IsVisible && !string.IsNullOrWhiteSpace(item.Field.Path))
+            .OrderBy(item => item.Field.VisibleIndex >= 0 ? item.Field.VisibleIndex : 1_000_000 + item.Index)
+            .Select(item => item.Field)
+            .ToList();
+    }
+
+    private static DataView BuildDataView(
+        BindingSourceMetadata? source,
+        IReadOnlyList<BindingFieldMetadata> fields,
+        IEnumerable? sourceItems)
     {
         var table = new DataTable(string.IsNullOrWhiteSpace(source?.Name) ? "EremexGrid" : source.Name);
-        var fields = source?.Fields.Where(field => field.IsVisible && !string.IsNullOrWhiteSpace(field.Path)).ToList()
-                     ?? new List<BindingFieldMetadata>();
         foreach (var field in fields)
-            table.Columns.Add(field.Path, typeof(string));
+        {
+            var column = table.Columns.Add(field.Path, ResolveDataColumnType(field.TypeName));
+            column.Caption = string.IsNullOrWhiteSpace(field.Header) ? field.Path : field.Header;
+            // Preview may contain incomplete SQL/DLL rows while schema is already known.
+            // Keeping the temporary DataTable nullable prevents a missing sample value from
+            // turning a visual preview into a data conversion failure.
+            column.AllowDBNull = true;
+        }
 
         if (sourceItems is null || fields.Count == 0)
             return table.DefaultView;
@@ -372,11 +510,122 @@ public sealed class EremexDataGridControlDescriptor : IControlDescriptor, IDesig
         {
             var row = table.NewRow();
             foreach (var field in fields)
-                row[field.Path] = ReadItemValue(item, field.Path) ?? string.Empty;
+            {
+                var dataColumn = table.Columns[field.Path];
+                row[field.Path] = CoerceDataValue(ReadItemValue(item, field.Path), dataColumn?.DataType ?? typeof(string));
+            }
             table.Rows.Add(row);
         }
 
         return table.DefaultView;
+    }
+
+    private static GridColumn CreateColumn(BindingFieldMetadata field)
+    {
+        var column = new GridColumn { FieldName = field.Path };
+        ConfigureColumn(column, field);
+        return column;
+    }
+
+    private static void ConfigureColumn(GridColumn column, IReadOnlyList<BindingFieldMetadata> fields)
+    {
+        var field = fields.FirstOrDefault(candidate => string.Equals(candidate.Path, column.FieldName, StringComparison.OrdinalIgnoreCase));
+        if (field is not null)
+            ConfigureColumn(column, field);
+    }
+
+    private static void ConfigureColumn(GridColumn column, BindingFieldMetadata field)
+    {
+        column.FieldName = field.Path;
+        column.Header = string.IsNullOrWhiteSpace(field.Header) ? field.Path : field.Header;
+        column.IsVisible = field.IsVisible;
+        column.ReadOnly = !field.CanWrite;
+        column.AllowResizing = field.AllowResize;
+        column.AllowSorting = field.AllowSort && field.IsSortable;
+        column.MinWidth = Math.Max(0d, field.MinWidth);
+        column.Width = ParseGridLength(field.Width);
+        column.VisibleIndex = field.VisibleIndex >= 0 ? field.VisibleIndex : column.VisibleIndex;
+    }
+
+    private static string BuildColumnAxaml(BindingFieldMetadata field)
+    {
+        var attributes = new List<string>
+        {
+            $"FieldName=\"{EscapeXml(field.Path)}\"",
+            $"Header=\"{EscapeXml(string.IsNullOrWhiteSpace(field.Header) ? field.Path : field.Header)}\"",
+            $"IsVisible=\"{ToXamlBoolean(field.IsVisible)}\"",
+            $"ReadOnly=\"{ToXamlBoolean(!field.CanWrite)}\"",
+            $"AllowResizing=\"{ToXamlBoolean(field.AllowResize)}\"",
+            $"AllowSorting=\"{ToXamlBoolean(field.AllowSort && field.IsSortable)}\"",
+            $"MinWidth=\"{FormatDouble(Math.Max(0d, field.MinWidth))}\""
+        };
+
+        if (!string.IsNullOrWhiteSpace(field.Width))
+            attributes.Add($"Width=\"{EscapeXml(field.Width)}\"");
+        if (field.VisibleIndex >= 0)
+            attributes.Add($"VisibleIndex=\"{field.VisibleIndex.ToString(CultureInfo.InvariantCulture)}\"");
+
+        return $"<mxdg:GridColumn {string.Join(" ", attributes)} />";
+    }
+
+    private static GridLength ParseGridLength(string? value)
+    {
+        var normalized = value?.Trim();
+        if (string.IsNullOrWhiteSpace(normalized) || string.Equals(normalized, "Auto", StringComparison.OrdinalIgnoreCase))
+            return GridLength.Auto;
+
+        if (normalized.EndsWith("*", StringComparison.Ordinal))
+        {
+            var factorText = normalized[..^1];
+            var factor = string.IsNullOrWhiteSpace(factorText)
+                ? 1d
+                : double.TryParse(factorText, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed) ? parsed : 1d;
+            return new GridLength(Math.Max(0.1d, factor), GridUnitType.Star);
+        }
+
+        return double.TryParse(normalized, NumberStyles.Float, CultureInfo.InvariantCulture, out var pixels)
+            ? new GridLength(Math.Max(0d, pixels), GridUnitType.Pixel)
+            : GridLength.Auto;
+    }
+
+    private static Type ResolveDataColumnType(string? typeName)
+    {
+        var normalized = (typeName ?? string.Empty).Trim().ToLowerInvariant();
+        if (normalized.Contains("bool", StringComparison.Ordinal))
+            return typeof(bool);
+        if (normalized.Contains("date", StringComparison.Ordinal) || normalized.Contains("time", StringComparison.Ordinal))
+            return typeof(DateTime);
+        if (normalized.Contains("decimal", StringComparison.Ordinal) || normalized.Contains("double", StringComparison.Ordinal) || normalized.Contains("float", StringComparison.Ordinal))
+            return typeof(decimal);
+        if (normalized.Contains("int", StringComparison.Ordinal) || normalized.Contains("long", StringComparison.Ordinal) || normalized.Contains("short", StringComparison.Ordinal))
+            return typeof(long);
+        return typeof(string);
+    }
+
+    private static object CoerceDataValue(object? value, Type targetType)
+    {
+        if (value is null || value is DBNull)
+            return DBNull.Value;
+
+        try
+        {
+            if (targetType == typeof(string))
+                return Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty;
+            if (targetType == typeof(bool))
+                return Convert.ToBoolean(value, CultureInfo.InvariantCulture);
+            if (targetType == typeof(DateTime))
+                return Convert.ToDateTime(value, CultureInfo.InvariantCulture);
+            if (targetType == typeof(decimal))
+                return Convert.ToDecimal(value, CultureInfo.InvariantCulture);
+            if (targetType == typeof(long))
+                return Convert.ToInt64(value, CultureInfo.InvariantCulture);
+        }
+        catch (Exception)
+        {
+            return DBNull.Value;
+        }
+
+        return value;
     }
 
     private static object? ReadItemValue(object? item, string propertyName)
@@ -400,6 +649,151 @@ public sealed class EremexDataGridControlDescriptor : IControlDescriptor, IDesig
             ?.GetValue(item);
     }
 
+    private static double GetDefaultNumber(string propertyName)
+    {
+        var property = typeof(DataGridControl).GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public);
+        if (property is null || !property.CanRead)
+            return 0d;
+
+        try
+        {
+            var value = property.GetValue(new DataGridControl());
+            return value is null ? 0d : Convert.ToDouble(value, CultureInfo.InvariantCulture);
+        }
+        catch (Exception)
+        {
+            return propertyName == RowMinHeightProperty ? 29d : 0d;
+        }
+    }
+
+    private static string GetDefaultEnumValue(string propertyName)
+    {
+        var property = typeof(DataGridControl).GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public);
+        if (property is null || !property.PropertyType.IsEnum)
+            return GetEnumOptions(propertyName).FirstOrDefault()?.Value ?? string.Empty;
+
+        try
+        {
+            return Convert.ToString(property.GetValue(new DataGridControl()), CultureInfo.InvariantCulture)
+                   ?? GetEnumOptions(propertyName).FirstOrDefault()?.Value
+                   ?? string.Empty;
+        }
+        catch (Exception)
+        {
+            return GetEnumOptions(propertyName).FirstOrDefault()?.Value ?? string.Empty;
+        }
+    }
+
+    private static string GetPropertyDescription(string propertyName)
+    {
+        return propertyName switch
+        {
+            ShowColumnHeadersProperty => "Show the Eremex column header panel.",
+            ShowAutoFilterRowProperty => "Show Eremex Auto Filter Row below the column headers.",
+            ShowGroupPanelProperty => "Show the Eremex group panel above the rows.",
+            ShowGroupedColumnsProperty => "Keep grouped columns visible in the header panel.",
+            AutoExpandAllGroupsProperty => "Expand all Eremex groups after grouping is applied.",
+            AllowSortingProperty => "Allow users to sort data through Eremex column headers.",
+            AllowEditingProperty => "Allow editing cells when their column is not read-only.",
+            AllowImmediateEditorValuePostingProperty => "Post editor values to the source immediately.",
+            AllowColumnResizingProperty => "Allow users to resize Eremex columns.",
+            AllowColumnMovingProperty => "Allow users to move Eremex columns.",
+            IsColumnChooserVisibleProperty => "Show the built-in Eremex column chooser.",
+            IsSearchPanelVisibleProperty => "Show the Eremex search panel.",
+            SearchPanelDisplayModeProperty => "Control when the Eremex search panel is displayed.",
+            ShowSearchPanelCloseButtonProperty => "Show the close button in the Eremex search panel.",
+            SearchPanelHighlightResultsProperty => "Highlight matching values in Eremex search results.",
+            ShowItemsSourceErrorsProperty => "Show data-source errors reported by Eremex.",
+            ValidateCellValuesOnShowAndUpdateProperty => "Validate cell values when they are shown or updated.",
+            NavigationModeProperty => "Choose the Eremex keyboard navigation mode.",
+            SelectionModeProperty => "Choose the Eremex selection mode.",
+            EditorShowModeProperty => "Choose when Eremex cell editors are activated.",
+            EditorButtonShowModeProperty => "Choose when editor buttons are visible.",
+            RowMinHeightProperty => "Minimum Eremex data-row height.",
+            HeaderPanelMinHeightProperty => "Minimum height of the Eremex header panel.",
+            HeaderDropIndicatorWidthProperty => "Width of the Eremex header drag-drop indicator.",
+            RowLevelIndentProperty => "Indent applied to hierarchical/grouped Eremex rows.",
+            _ => $"Eremex DataGrid {propertyName} setting."
+        };
+    }
+
+    private static string GetPropertyCategory(string propertyName)
+    {
+        return propertyName switch
+        {
+            ShowColumnHeadersProperty or
+            AllowColumnResizingProperty or
+            AllowColumnMovingProperty or
+            IsColumnChooserVisibleProperty or
+            HeaderPanelMinHeightProperty or
+            HeaderDropIndicatorWidthProperty => "Behavior",
+
+            ShowAutoFilterRowProperty or
+            AllowSortingProperty or
+            ShowGroupPanelProperty or
+            ShowGroupedColumnsProperty or
+            AutoExpandAllGroupsProperty or
+            IsSearchPanelVisibleProperty or
+            SearchPanelDisplayModeProperty or
+            ShowSearchPanelCloseButtonProperty or
+            SearchPanelHighlightResultsProperty or
+            ShowItemsSourceErrorsProperty or
+            AllowEditingProperty or
+            AllowImmediateEditorValuePostingProperty or
+            ValidateCellValuesOnShowAndUpdateProperty or
+            EditorShowModeProperty or
+            EditorButtonShowModeProperty => "Behavior",
+
+            NavigationModeProperty or
+            SelectionModeProperty or
+            AutoScrollToFocusedRowProperty => "Interaction",
+
+            RowMinHeightProperty or
+            RowLevelIndentProperty or
+            ShowHorizontalLinesProperty or
+            ShowVerticalLinesProperty => "Appearance",
+
+            _ => "Eremex DataGrid"
+        };
+    }
+
+    private static void LogGridStructure(
+        DataGridControl grid,
+        IDesignControlNode control,
+        IPreviewContext context,
+        string trigger)
+    {
+        try
+        {
+            var visualChildren = grid.GetVisualDescendants().Count();
+            System.Diagnostics.Debug.WriteLine(
+                "EREMEX_DATAGRID_VISUAL_TREE_CREATED " +
+                $"grid={control.Name}; mode={context.Mode}; trigger={trigger}; templateApplied={grid.Template is not null}; " +
+                $"visualChildren={visualChildren}; columns={grid.Columns.Count}; rows={GetEnumerableCount(grid.ItemsSource)}");
+            System.Diagnostics.Debug.WriteLine(
+                $"EREMEX_DATAGRID_RUNTIME_RENDER_SUCCESS grid={control.Name}; mode={context.Mode}; columns={grid.Columns.Count}; actualWidth={grid.Bounds.Width}; actualHeight={grid.Bounds.Height}");
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine(
+                $"EREMEX_DATAGRID_THEME_OR_TEMPLATE_FAILED grid={control.Name}; mode={context.Mode}; trigger={trigger}; exception={ex.GetType().Name}; reason={ex.Message}; stackTrace={ex}");
+        }
+    }
+
+    private static int GetEnumerableCount(IEnumerable? items)
+    {
+        if (items is ICollection collection)
+            return collection.Count;
+
+        if (items is null)
+            return 0;
+
+        var count = 0;
+        foreach (var _ in items)
+            count++;
+        return count;
+    }
+
     private static bool DefaultBoolean(string propertyName)
     {
         return propertyName switch
@@ -411,6 +805,10 @@ public sealed class EremexDataGridControlDescriptor : IControlDescriptor, IDesig
             AllowColumnMovingProperty => true,
             ShowHorizontalLinesProperty => true,
             ShowVerticalLinesProperty => true,
+            ShowSearchPanelCloseButtonProperty => true,
+            SearchPanelHighlightResultsProperty => true,
+            ShowItemsSourceErrorsProperty => true,
+            AutoScrollToFocusedRowProperty => true,
             _ => false
         };
     }

@@ -14,6 +14,7 @@ using FormDesigner.ViewModels;
 using FormDesigner.Views;
 using System.Collections;
 using System.Diagnostics;
+using System.Globalization;
 using System.Reflection;
 using System.Runtime.Loader;
 using System.Text;
@@ -6182,6 +6183,14 @@ internal static class Program
         emptyGrid.Height = 180;
         emptyGrid.BindingSourceId = "";
         emptyGrid.AutoGenerateColumns = true;
+
+        var manualColumnsGrid = vm.TryCreateControlFromToolboxDrop("Eremex.DataGridControl", 792, 72, null, false, form.Id)
+            ?? throw new InvalidOperationException("Manual-column Eremex DataGridControl was not created from Toolbox.");
+        manualColumnsGrid.Name = "EremexDataGridManualColumns";
+        manualColumnsGrid.Width = 420;
+        manualColumnsGrid.Height = 260;
+        manualColumnsGrid.BindingSourceId = source.Id;
+        manualColumnsGrid.AutoGenerateColumns = false;
         vm.SelectSingleControl(grid);
     }
 
@@ -6209,13 +6218,19 @@ internal static class Program
 
         var grid = vm.Controls.Single(control => control.Type == "Eremex.DataGridControl" && control.Name == "EremexDataGrid1");
         var emptyGrid = vm.Controls.Single(control => control.Type == "Eremex.DataGridControl" && control.Name == "EremexDataGridEmpty");
+        var manualColumnsGrid = vm.Controls.Single(control => control.Type == "Eremex.DataGridControl" && control.Name == "EremexDataGridManualColumns");
         foreach (var expectedKey in new[] { "ShowGroupPanel", "ShowAutoFilterRow", "AllowSorting", "RowMinHeight", "Eremex.ClrType", "Eremex.PackageId" })
         {
             if (!grid.CustomProperties.Any(property => string.Equals(property.Key, expectedKey, StringComparison.OrdinalIgnoreCase)))
                 throw new InvalidOperationException($"Eremex DataGridControl is missing persisted custom property '{expectedKey}'.");
         }
 
-        foreach (var expectedKey in new[] { "ShowGroupPanel", "ShowAutoFilterRow", "AllowSorting", "RowMinHeight" })
+        foreach (var expectedKey in new[]
+                 {
+                     "ShowGroupPanel", "ShowAutoFilterRow", "AllowSorting", "AllowEditing", "AllowColumnResizing",
+                     "AllowColumnMoving", "IsSearchPanelVisible", "ShowSearchPanelCloseButton", "AutoExpandAllGroups",
+                     "RowMinHeight", "HeaderPanelMinHeight", "NavigationMode", "EditorShowMode"
+                 })
         {
             if (!vm.DescriptorCustomPropertyEditors.Any(property => string.Equals(property.Key, expectedKey, StringComparison.OrdinalIgnoreCase)))
                 throw new InvalidOperationException($"Property Inspector is missing Eremex DataGrid property '{expectedKey}'.");
@@ -6225,6 +6240,14 @@ internal static class Program
         {
             throw new InvalidOperationException("Eremex DataGrid must expose BindingSource and AutoGenerateColumns in Property Inspector.");
         }
+        var visiblePropertyKeys = vm.PropertyGridCategories.SelectMany(category => category.Rows)
+            .Select(row => row.Key)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var internalKey in new[] { "Eremex.ClrType", "Eremex.PackageId", "Eremex.PackageVersion", "Eremex.ThemePackageId" })
+        {
+            if (visiblePropertyKeys.Contains(internalKey))
+                throw new InvalidOperationException($"Internal Eremex dependency metadata '{internalKey}' must not be editable in Property Inspector.");
+        }
 
         EnsureAvaloniaRuntimeInitialized();
         var canvasWindow = new MainWindow { DataContext = vm };
@@ -6233,12 +6256,21 @@ internal static class Program
         RequireControlCanApplyTemplateAndLayout(canvasGrid, "Eremex DataGrid Designer Canvas");
         if (GetItemsSourceCount(canvasGrid) == 0)
             throw new InvalidOperationException("Eremex DataGrid Canvas preview did not receive explicit demo rows from BindingSource infrastructure.");
+        RequireEremexDataGridColumns(canvasGrid, new[] { "Title", "Price", "Count" }, "Eremex DataGrid Canvas schema");
+        RequireEremexDataGridVisualParts(canvasGrid, "Eremex DataGrid Designer Canvas");
 
         var emptyCanvasGrid = InvokePreviewFactory(canvasWindow, "CreatePreviewControl", emptyGrid);
         AssertRealEremexDataGrid(emptyCanvasGrid, "Designer Canvas empty grid");
         RequireControlCanApplyTemplateAndLayout(emptyCanvasGrid, "Eremex DataGrid empty Canvas");
         if (GetItemsSourceCount(emptyCanvasGrid) != 0)
             throw new InvalidOperationException("Eremex DataGrid without a source must remain empty and must not generate fake rows.");
+        if (GetEremexDataGridColumnCount(emptyCanvasGrid) != 0)
+            throw new InvalidOperationException("Eremex DataGrid without a source must not generate fake Field1...FieldN columns.");
+
+        var manualCanvasGrid = InvokePreviewFactory(canvasWindow, "CreatePreviewControl", manualColumnsGrid);
+        AssertRealEremexDataGrid(manualCanvasGrid, "Designer Canvas manual columns");
+        RequireControlCanApplyTemplateAndLayout(manualCanvasGrid, "Eremex DataGrid manual columns Canvas");
+        RequireEremexDataGridColumns(manualCanvasGrid, new[] { "Title", "Price", "Count" }, "Eremex DataGrid manual schema");
 
         var previewDocument = vm.CreatePreviewDocumentSnapshot();
         var legacyWindow = new PreviewWindow(previewDocument, vm.Registry);
@@ -6250,8 +6282,14 @@ internal static class Program
         RequireContains(context.Xaml, "xmlns:mxdg=\"https://schemas.eremexcontrols.net/avalonia/datagrid\"", "Eremex DataGrid XML namespace was not generated.");
         RequireContains(context.Xaml, "<mxdg:DataGridControl", "Eremex DataGridControl AXAML tag was not generated.");
         RequireContains(context.Xaml, "AutoGenerateColumns=\"True\"", "Eremex DataGridControl must export AutoGenerateColumns.");
+        RequireContains(context.Xaml, "<mxdg:DataGridControl.Columns>", "Eremex manual columns must use the documented Eremex property-element syntax.");
+        RequireContains(context.Xaml, "<mxdg:GridColumn FieldName=\"Title\" Header=\"Title\"", "Eremex manual column must export its real FieldName and Header.");
         RequireContains(context.Xaml, "ItemsSource=\"{Binding ProductsView}\"", "Eremex DataGridControl must use the generated runtime ItemsSource path.");
-        RequireNotContains(context.Xaml.Substring(context.Xaml.IndexOf("EremexDataGridEmpty", StringComparison.Ordinal)), "ItemsSource=\"{Binding ProductsView}\"", "Unbound Eremex DataGrid must not receive a synthetic ItemsSource.");
+        var emptyGridStart = context.Xaml.IndexOf("x:Name=\"EremexDataGridEmpty\"", StringComparison.Ordinal);
+        var emptyGridEnd = emptyGridStart < 0 ? -1 : context.Xaml.IndexOf("/>", emptyGridStart, StringComparison.Ordinal);
+        if (emptyGridStart < 0 || emptyGridEnd < 0)
+            throw new InvalidOperationException("The unbound Eremex DataGrid AXAML element was not generated as a self-closing element.");
+        RequireNotContains(context.Xaml.Substring(emptyGridStart, emptyGridEnd - emptyGridStart), "ItemsSource=", "Unbound Eremex DataGrid must not receive a synthetic ItemsSource.");
         RequireContains(context.CSharp, "SeedProductRow", "Explicit demo data must generate rows through the shared runtime binding pipeline.");
 
         var packages = vm.RequiredPackages.ToDictionary(package => package.Id, package => package.Version, StringComparer.OrdinalIgnoreCase);
@@ -6265,12 +6303,12 @@ internal static class Program
         var reloaded = CreateViewModel("EremexDataGridReloaded");
         LoadBuiltEremexPlugin(reloaded);
         reloaded.LoadDocumentJson(savedWorkspace);
-        if (reloaded.Controls.Count(control => control.Type == "Eremex.DataGridControl") != 2)
+        if (reloaded.Controls.Count(control => control.Type == "Eremex.DataGridControl") != 3)
             throw new InvalidOperationException("Eremex DataGridControl models were not restored from project JSON.");
 
         var withoutPlugin = CreateViewModel("EremexDataGridMissingPlugin");
         withoutPlugin.LoadDocumentJson(savedWorkspace);
-        if (withoutPlugin.Controls.Count(control => control.Type == "Eremex.DataGridControl") != 2
+        if (withoutPlugin.Controls.Count(control => control.Type == "Eremex.DataGridControl") != 3
             || withoutPlugin.Controls.Any(control => control.Type == "Eremex.DataGridControl"
                                                      && !control.CustomProperties.Any(property => property.Key == "ShowGroupPanel")))
         {
@@ -6527,6 +6565,44 @@ internal static class Program
         return value is IEnumerable enumerable ? enumerable.Cast<object>().Count() : 0;
     }
 
+    private static int GetEremexDataGridColumnCount(Control control)
+    {
+        var columns = control.GetType().GetProperty("Columns", BindingFlags.Instance | BindingFlags.Public)?.GetValue(control) as IEnumerable;
+        return columns?.Cast<object>().Count() ?? 0;
+    }
+
+    private static void RequireEremexDataGridColumns(Control control, IReadOnlyList<string> expectedHeaders, string path)
+    {
+        var columns = control.GetType().GetProperty("Columns", BindingFlags.Instance | BindingFlags.Public)?.GetValue(control) as IEnumerable;
+        var headers = columns?
+            .Cast<object>()
+            .Select(column => Convert.ToString(column.GetType().GetProperty("Header", BindingFlags.Instance | BindingFlags.Public)?.GetValue(column), CultureInfo.InvariantCulture) ?? string.Empty)
+            .ToList()
+            ?? new List<string>();
+
+        foreach (var expectedHeader in expectedHeaders)
+        {
+            if (!headers.Contains(expectedHeader, StringComparer.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    $"{path} must expose the schema header '{expectedHeader}', actual headers: {string.Join(", ", headers)}.");
+            }
+        }
+    }
+
+    private static void RequireEremexDataGridVisualParts(Control control, string path)
+    {
+        var visualTypeNames = control.GetVisualDescendants()
+            .Select(visual => visual.GetType().FullName ?? visual.GetType().Name)
+            .ToList();
+        if (!visualTypeNames.Any(name => name.EndsWith("ColumnHeaderControl", StringComparison.Ordinal))
+            || !visualTypeNames.Any(name => name.EndsWith("DataGridRowControl", StringComparison.Ordinal)))
+        {
+            throw new InvalidOperationException(
+                $"{path} did not create the real Eremex header/row visual tree. Actual visuals: {string.Join(", ", visualTypeNames.Take(20))}.");
+        }
+    }
+
     private static void RequireControlCanApplyTemplateAndLayout(Control control, string path)
     {
         var host = control as Window ?? new Window
@@ -6574,6 +6650,12 @@ internal static class Program
         }
     }
 
+    private static Assembly LoadGeneratedApplicationAssembly(string assemblyPath)
+    {
+        var loadContext = new GeneratedApplicationLoadContext(assemblyPath);
+        return loadContext.LoadFromAssemblyPath(assemblyPath);
+    }
+
     private static void RequireGeneratedEremexApplicationRenders(SmokeContext context, string exportFolder)
     {
         DotnetBuild(exportFolder);
@@ -6593,7 +6675,7 @@ internal static class Program
         // LoadFrom mirrors a normal generated application's dependency resolution. In
         // particular, its compiled AXAML and Eremex dependency graph must share the host's
         // Avalonia assemblies, not a second collectible Avalonia universe.
-        var assembly = Assembly.LoadFrom(assemblyPath);
+        var assembly = LoadGeneratedApplicationAssembly(assemblyPath);
         var mainWindowType = assembly.GetType($"{context.ViewModel.ExportProjectNamespace}.MainWindow")
             ?? throw new InvalidOperationException("Generated Eremex MainWindow type was not found.");
         var window = Activator.CreateInstance(mainWindowType) as Window
@@ -6622,7 +6704,7 @@ internal static class Program
         if (!File.Exists(assemblyPath))
             throw new InvalidOperationException($"Generated Eremex DataGrid application assembly was not found: {assemblyPath}");
 
-        var assembly = Assembly.LoadFrom(assemblyPath);
+        var assembly = LoadGeneratedApplicationAssembly(assemblyPath);
         var mainWindowType = assembly.GetType($"{context.ViewModel.ExportProjectNamespace}.MainWindow")
             ?? throw new InvalidOperationException("Generated Eremex DataGrid MainWindow type was not found.");
         var window = Activator.CreateInstance(mainWindowType) as Window
@@ -7741,6 +7823,50 @@ Diagnostics:
         public string PluginVersion { get; }
         public IReadOnlyDictionary<string, object?> BuiltInProperties { get; }
         public IReadOnlyDictionary<string, string> CustomProperties { get; }
+    }
+
+    private sealed class GeneratedApplicationLoadContext : AssemblyLoadContext
+    {
+        private readonly AssemblyDependencyResolver _resolver;
+
+        public GeneratedApplicationLoadContext(string entryAssemblyPath)
+            : base($"generated-app-{Guid.NewGuid():N}", isCollectible: false)
+        {
+            _resolver = new AssemblyDependencyResolver(entryAssemblyPath);
+        }
+
+        protected override Assembly? Load(AssemblyName assemblyName)
+        {
+            // A generated window must share Avalonia and Eremex assemblies with the
+            // headless Designer runtime. Loading a second copy would invalidate
+            // Control type identity and turns this visual test into a false result.
+            if (IsSharedUiAssembly(assemblyName.Name))
+            {
+                var loaded = AssemblyLoadContext.Default.Assemblies.FirstOrDefault(candidate =>
+                    AssemblyName.ReferenceMatchesDefinition(candidate.GetName(), assemblyName));
+                if (loaded is not null)
+                    return loaded;
+
+                try
+                {
+                    return AssemblyLoadContext.Default.LoadFromAssemblyName(assemblyName);
+                }
+                catch (FileNotFoundException)
+                {
+                    return null;
+                }
+            }
+
+            var resolvedPath = _resolver.ResolveAssemblyToPath(assemblyName);
+            return resolvedPath is null ? null : LoadFromAssemblyPath(resolvedPath);
+        }
+
+        private static bool IsSharedUiAssembly(string? assemblyName)
+        {
+            return !string.IsNullOrWhiteSpace(assemblyName)
+                   && (assemblyName.StartsWith("Avalonia", StringComparison.OrdinalIgnoreCase)
+                       || assemblyName.StartsWith("Eremex.", StringComparison.OrdinalIgnoreCase));
+        }
     }
 
     private sealed class TemporaryExportProject : IDisposable
