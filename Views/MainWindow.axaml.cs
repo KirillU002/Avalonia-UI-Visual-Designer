@@ -182,6 +182,7 @@ public partial class MainWindow : Window
         DesignerSurface.ZoomPresetChanged += ZoomPresetComboBox_SelectionChanged;
         DesignerSurface.DiagnosticReported += DesignerSurface_DiagnosticReported;
         DesignerToolbox.ToolboxItemPointerPressed += ToolboxItem_PointerPressed;
+        DesignerPropertyInspector.FavoriteRequested += PropertyGridFavoriteButton_Click;
         DesignerPropertyInspector.ColorRequested += PropertyGridColorButton_Click;
         DesignerPropertyInspector.ResetRequested += PropertyGridResetButton_Click;
         DesignerPropertyInspector.ActionRequested += PropertyGridActionButton_Click;
@@ -9425,6 +9426,18 @@ public partial class MainWindow : Window
 
         ApplyBoolPropertyToSelection(propertyName, checkBox.IsChecked == true);
         RefreshFromPropertyPanel();
+    }
+
+    private void PropertyGridFavoriteButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { DataContext: PropertyGridRowViewModel row })
+            return;
+
+        VM.LogWorkspace(
+            WorkspaceLogLevel.Info,
+            MainWindowViewModel.OutputCategoryDiagnostics,
+            "PROPERTY_FAVORITE_CLICK",
+            $"property={row.Key}; control={row.ContextControlName}; document={row.ContextDocumentId}");
     }
 
     private async void PropertyGridColorButton_Click(object? sender, RoutedEventArgs e)

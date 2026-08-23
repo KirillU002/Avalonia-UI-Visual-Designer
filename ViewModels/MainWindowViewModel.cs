@@ -9850,15 +9850,27 @@ public partial class MainWindowViewModel : ObservableObject
             ? GetPropertyGridFavoriteSet(typeKey, create: true)
             : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        if (favorites.Contains(row.Key))
+        var wasFavorite = favorites.Contains(row.Key);
+        if (wasFavorite)
             favorites.Remove(row.Key);
         else
             favorites.Add(row.Key);
 
+        var isFavorite = favorites.Contains(row.Key);
         _propertyGridUserSettings.FavoritePropertiesByTypeKey[typeKey] = favorites;
         _propertyGridUserSettings.UserCustomizedTypeKeys.Add(typeKey);
+        LogWorkspace(
+            WorkspaceLogLevel.Info,
+            OutputCategoryDiagnostics,
+            "PROPERTY_FAVORITE_TOGGLE",
+            $"property={row.Key}; old={wasFavorite}; new={isFavorite}; type={typeKey}");
         RaisePropertyGridSettingsChanged();
         RebuildPropertyGrid();
+        LogWorkspace(
+            WorkspaceLogLevel.Info,
+            OutputCategoryDiagnostics,
+            "PROPERTY_FAVORITE_REFRESH",
+            $"property={row.Key}; isFavorite={isFavorite}; type={typeKey}");
     }
 
     [RelayCommand]

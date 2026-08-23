@@ -23,8 +23,9 @@
                   <Grid ColumnDefinitions="18,112,*,Auto,Auto" MinHeight="28">
                     <Button Classes="property-star"
                             Content="{Binding FavoriteGlyph}"
-                            Command="{Binding #RootInspector.DataContext.Context.TogglePropertyGridFavoriteCommand}"
+                            Command="{Binding #RootInspector.ToggleFavoriteCommand}"
                             CommandParameter="{Binding}"
+                            Click="PropertyGridFavoriteButton_Click"
                             ToolTip.Tip="Добавить или убрать из избранного"/>
                     <TextBlock Grid.Column="1" FontSize="12" Foreground="#334155" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Description}">
                       <TextBlock.Text>

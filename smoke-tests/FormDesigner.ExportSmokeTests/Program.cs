@@ -2,6 +2,7 @@
 using FormDesigner.DesignerSystem.BuiltIn;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Interactivity;
 using Avalonia.LogicalTree;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
@@ -267,6 +268,7 @@ internal static class Program
             new("DesignerSurfaceSelectionUpdatesSession", ConfigureDesignerSurfaceStandardControl, AssertDesignerSurfaceSelectionUpdatesSession),
             new("SessionSelectionUpdatesDesignerSurface", ConfigureDesignerSurfaceStandardControl, AssertSessionSelectionUpdatesDesignerSurface),
             new("DesignerSurfaceInspectorUsesSessionSelection", ConfigureDesignerSurfaceStandardControl, AssertDesignerSurfaceInspectorUsesSessionSelection),
+            new("DesignerPropertyInspectorFavoritesRoundTrip", ConfigureDesignerSurfaceStandardControl, AssertDesignerPropertyInspectorFavoritesRoundTrip),
             new("MainWindowSwitchFormRebindsSameDesignerSurface", ConfigureDesignerSurfaceStandardControl, AssertMainWindowSwitchFormRebindsSameDesignerSurface),
             new("DesignerSurfaceDoesNotRequireMainWindowConcreteType", ConfigureSimpleFormExport, AssertDesignerSurfaceDoesNotRequireMainWindowConcreteType),
             new("DesignerSurfaceRendersEremexTextEditor", ConfigureEremexTextEditorVerticalSlice, AssertDesignerSurfaceRendersEremexTextEditor),
@@ -4544,6 +4546,102 @@ internal static class Program
             || !vm.PropertyGridCategories.SelectMany(category => category.Rows).Any(row => row.ContextControlId == button.Id))
         {
             throw new InvalidOperationException("DesignerPropertyInspector is not using the selected control from the active document session.");
+        }
+    }
+
+    private static void AssertDesignerPropertyInspectorFavoritesRoundTrip(SmokeContext context)
+    {
+        EnsureAvaloniaRuntimeInitialized();
+        var vm = context.ViewModel;
+        var form1 = vm.ActiveFormDocument ?? throw new InvalidOperationException("Form1 missing.");
+        var button = vm.Controls.Single(control => control.Name == "SurfaceButton");
+        vm.SelectSingleControl(button);
+
+        var window = new MainWindow { DataContext = vm };
+        var inspector = window.FindControl<DesignerPropertyInspector>("DesignerPropertyInspector")
+            ?? throw new InvalidOperationException("MainWindow did not host the extracted DesignerPropertyInspector.");
+        var command = inspector.ToggleFavoriteCommand
+            ?? throw new InvalidOperationException("DesignerPropertyInspector did not receive the favorite command from its host.");
+
+        if (!ReferenceEquals(command, vm.TogglePropertyGridFavoriteCommand))
+            throw new InvalidOperationException("DesignerPropertyInspector favorite command is not bound to the active host command.");
+
+        var inspectorSource = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "Views", "DesignerPropertyInspector.axaml"), Encoding.UTF8)
+            + File.ReadAllText(Path.Combine(FindRepositoryRoot(), "Views", "DesignerPropertyInspector.axaml.cs"), Encoding.UTF8);
+        RequireContains(inspectorSource, "#RootInspector.ToggleFavoriteCommand", "Favorite button must bind through the inspector contract.");
+        RequireNotContains(inspectorSource, "RootInspector.DataContext.Context.TogglePropertyGridFavoriteCommand", "Favorite button must not depend on the inherited host DataContext path.");
+        RequireNotContains(inspectorSource, "MainWindow", "DesignerPropertyInspector must not depend on MainWindow.");
+
+        inspector.Measure(new Size(420, 800));
+        inspector.Arrange(new Rect(0, 0, 420, 800));
+        var backgroundRow = GetPropertyGridRow(vm, nameof(DesignControlModel.Background));
+        var backgroundStar = inspector.GetVisualDescendants()
+            .OfType<Button>()
+            .SingleOrDefault(candidate => candidate.Classes.Contains("property-star")
+                && ReferenceEquals(candidate.DataContext, backgroundRow));
+        if (backgroundStar is null
+            || !ReferenceEquals(backgroundStar.Command, command)
+            || !ReferenceEquals(backgroundStar.CommandParameter, backgroundRow))
+        {
+            throw new InvalidOperationException("The Background favorite button did not resolve its host-neutral command and row parameter.");
+        }
+
+        backgroundStar.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        if (!vm.OutputEntries.Any(entry => entry.Message == "PROPERTY_FAVORITE_CLICK"))
+            throw new InvalidOperationException("Favorite button click diagnostics were not written to the workspace log.");
+
+        backgroundStar.Command.Execute(backgroundStar.CommandParameter);
+        if (!GetPropertyGridRow(vm, nameof(DesignControlModel.Background)).IsFavorite)
+            throw new InvalidOperationException("Background was not added to favorites through its rendered star button.");
+
+        void ToggleAndRequire(string key, bool expected)
+        {
+            var row = GetPropertyGridRow(vm, key);
+            command.Execute(row);
+            var refreshed = GetPropertyGridRow(vm, key);
+            if (refreshed.IsFavorite != expected)
+                throw new InvalidOperationException($"Favorite state for '{key}' should be {expected}, got {refreshed.IsFavorite}.");
+        }
+
+        ToggleAndRequire(nameof(DesignControlModel.Background), false);
+        ToggleAndRequire(nameof(DesignControlModel.Background), true);
+        ToggleAndRequire(nameof(DesignControlModel.Foreground), true);
+        ToggleAndRequire(nameof(DesignControlModel.Opacity), true);
+
+        var textBox = vm.TryCreateControlFromToolboxDrop(DesignerControlTypes.TextBox, 260, 56, null, false, form1.Id)
+            ?? throw new InvalidOperationException("TextBox was not created for the favorite persistence test.");
+        vm.SelectSingleControl(textBox);
+        vm.SelectSingleControl(button);
+        foreach (var key in new[] { nameof(DesignControlModel.Background), nameof(DesignControlModel.Foreground), nameof(DesignControlModel.Opacity) })
+        {
+            if (!GetPropertyGridRow(vm, key).IsFavorite)
+                throw new InvalidOperationException($"Favorite '{key}' was lost after switching the selected control.");
+        }
+
+        var form2 = vm.CreateNewForm();
+        var form2Button = vm.TryCreateControlFromToolboxDrop(DesignerControlTypes.Button, 48, 56, null, false, form2.Id)
+            ?? throw new InvalidOperationException("Form2 Button was not created for the favorite persistence test.");
+        vm.SelectSingleControl(form2Button);
+        ToggleAndRequire(nameof(DesignControlModel.Margin), true);
+
+        SwitchToForm(vm, form1.Id);
+        var restoredButton = vm.Controls.Single(control => control.Id == button.Id);
+        vm.ClearSelection();
+        vm.SelectSingleControl(restoredButton);
+        foreach (var key in new[] { nameof(DesignControlModel.Background), nameof(DesignControlModel.Foreground), nameof(DesignControlModel.Opacity), nameof(DesignControlModel.Margin) })
+        {
+            if (!GetPropertyGridRow(vm, key).IsFavorite)
+                throw new InvalidOperationException($"Favorite '{key}' was lost after form switch or Property Inspector rebuild.");
+        }
+
+        SetPropertyGridValue(vm, nameof(DesignControlModel.Width), "211");
+        if (Math.Abs(restoredButton.Width - 211) > 0.001)
+            throw new InvalidOperationException("An ordinary Property Inspector edit regressed while testing favorites.");
+
+        if (!vm.OutputEntries.Any(entry => entry.Message == "PROPERTY_FAVORITE_TOGGLE")
+            || !vm.OutputEntries.Any(entry => entry.Message == "PROPERTY_FAVORITE_REFRESH"))
+        {
+            throw new InvalidOperationException("Favorite toggle diagnostics were not written to the workspace log.");
         }
     }
 

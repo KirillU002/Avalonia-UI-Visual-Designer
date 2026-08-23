@@ -3332,7 +3332,8 @@
                     </ItemsControl.ItemTemplate>
                     </ItemsControl>
                     <views:DesignerPropertyInspector x:Name="DesignerPropertyInspector"
-                                                     Context="{Binding}"/>
+                                                     Context="{Binding}"
+                                                     ToggleFavoriteCommand="{Binding TogglePropertyGridFavoriteCommand}"/>
                     </Grid>
                   </Border>
                 </StackPanel>
