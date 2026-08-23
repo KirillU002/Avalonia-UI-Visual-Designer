@@ -5,6 +5,7 @@ using FormDesigner.DesignerSystem;
 using FormDesigner.DesignerSystem.Binding;
 using FormDesigner.DesignerSystem.BuiltIn;
 using FormDesigner.DesignerSystem.Infrastructure;
+using FormDesigner.DesignerSystem.Hosting;
 using FormDesigner.EditorCommands;
 using FormDesigner.Localization;
 using FormDesigner.Models;
@@ -163,8 +164,10 @@ public partial class MainWindowViewModel : ObservableObject
         set => _activeSession.LastHistoryMutationUtc = value;
     }
     private readonly IDesignerRegistry _registry;
+    private readonly IDesignerHostServices _hostServices;
+    private readonly IDesignerScheduler _scheduler;
     private readonly DocumentDiagnosticsService _diagnosticsService;
-    private readonly ReusableTemplateStorageService _templateStorageService = new();
+    private readonly ReusableTemplateStorageService _templateStorageService;
     private readonly List<DocumentDiagnosticModel> _previewRuntimeDiagnostics = new();
     private IXamlWriter? _activeXamlWriter;
     private XamlExportContext? _activeXamlExportContext;
@@ -1570,7 +1573,7 @@ public partial class MainWindowViewModel : ObservableObject
         : HasImportedDllCatalog
             ? $"Найдено DLL: {FilteredImportedDllCatalog.Count}"
             : "По текущему запросу DLL не найдены.";
-    public string PluginInstallFolderPath => Path.Combine(AppContext.BaseDirectory, "Plugins");
+    public string PluginInstallFolderPath => _hostServices.Paths.PluginDirectory;
     public string InstalledPluginsSummary => !HasInstalledPlugins
         ? "Пока не установлено ни одного plugin-пакета. Нажмите «Установить plugin...», выберите DLL плагина и конструктор добавит его контролы в этот раздел."
         : $"Установлено plugin-пакетов: {InstalledPlugins.Count}. Перетаскивайте карточки ниже прямо на форму.";
@@ -2469,9 +2472,12 @@ public partial class MainWindowViewModel : ObservableObject
     /// <summary>
     /// Инициализирует коллекции документа и создает первый пустой проект конструктора.
     /// </summary>
-    public MainWindowViewModel(IDesignerRegistry registry)
+    public MainWindowViewModel(IDesignerRegistry registry, IDesignerHostServices? hostServices = null)
     {
         _registry = registry ?? throw new ArgumentNullException(nameof(registry));
+        _hostServices = hostServices ?? new StandaloneDesignerHostServices();
+        _scheduler = _hostServices.Scheduler;
+        _templateStorageService = new ReusableTemplateStorageService(Path.Combine(_hostServices.Paths.UserDataDirectory, "Templates"));
         _diagnosticsService = new DocumentDiagnosticsService(_registry);
         _activeSession = _bootstrapSession;
         AttachActiveSessionHandlers(_activeSession);
@@ -2835,9 +2841,9 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void WorkspaceLogService_EntryAdded(object? sender, WorkspaceLogEntryModel entry)
     {
-        if (!Dispatcher.UIThread.CheckAccess())
+        if (!_scheduler.CheckAccess())
         {
-            Dispatcher.UIThread.Post(() => WorkspaceLogService_EntryAdded(sender, entry));
+            _scheduler.Post(() => WorkspaceLogService_EntryAdded(sender, entry));
             return;
         }
 
@@ -2877,9 +2883,9 @@ public partial class MainWindowViewModel : ObservableObject
 
     public void AddInteractionTrace(string eventName, string details = "", string focusedElement = "", string viewFlags = "")
     {
-        if (!Dispatcher.UIThread.CheckAccess())
+        if (!_scheduler.CheckAccess())
         {
-            Dispatcher.UIThread.Post(() => AddInteractionTrace(eventName, details, focusedElement, viewFlags));
+            _scheduler.Post(() => AddInteractionTrace(eventName, details, focusedElement, viewFlags));
             return;
         }
 
@@ -2947,7 +2953,7 @@ public partial class MainWindowViewModel : ObservableObject
         try
         {
             var folder = string.IsNullOrWhiteSpace(LogsFolderPath)
-                ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AvaloniaUiVisualDesigner", "logs")
+                ? _hostServices.Paths.LogsDirectory
                 : LogsFolderPath;
             Directory.CreateDirectory(folder);
 
@@ -7064,7 +7070,7 @@ public partial class MainWindowViewModel : ObservableObject
             return;
 
         _isPendingInspectorRebuildScheduled = true;
-        Dispatcher.UIThread.Post(
+        _scheduler.Post(
             () =>
             {
                 _isPendingInspectorRebuildScheduled = false;
@@ -7090,7 +7096,7 @@ public partial class MainWindowViewModel : ObservableObject
                 _pendingInspectorRebuildReason = "";
                 RebuildPropertyGrid(pendingReason);
             },
-            DispatcherPriority.Background);
+            DesignerSchedulerPriority.Background);
     }
 
     private bool DeferInspectorRebuildIfNeeded(string operation, string reason)
@@ -9515,10 +9521,7 @@ public partial class MainWindowViewModel : ObservableObject
         LogLevel = NormalizeLogLevel(settings?.LogLevel);
         MaxLogFilesCount = Math.Clamp(settings?.MaxLogFilesCount ?? 10, 1, 100);
         MaxLogFileSizeMb = Math.Clamp(settings?.MaxLogFileSizeMb ?? 20, 1, 1024);
-        LogsFolderPath = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "AvaloniaUiVisualDesigner",
-            "logs");
+        LogsFolderPath = _hostServices.Paths.LogsDirectory;
     }
 
     public BuildAndLogsSettingsModel CaptureBuildAndLogsSettings()
@@ -11456,10 +11459,10 @@ public partial class MainWindowViewModel : ObservableObject
                         toOutput: false);
                 }
 
-                if (Dispatcher.UIThread.CheckAccess())
+                if (_scheduler.CheckAccess())
                     Raise();
                 else
-                    Dispatcher.UIThread.Post(Raise);
+                    _scheduler.Post(Raise);
             }
             catch (OperationCanceledException)
             {

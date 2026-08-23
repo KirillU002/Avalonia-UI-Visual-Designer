@@ -20,12 +20,14 @@ public sealed class ReusableTemplateStorageService
 
     public string CustomTemplatesFilePath => Path.Combine(TemplatesDirectoryPath, CustomTemplatesFileName);
 
-    public ReusableTemplateStorageService()
+    public ReusableTemplateStorageService(string? templatesDirectoryPath = null)
     {
-        TemplatesDirectoryPath = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "FormDesigner",
-            "Templates");
+        TemplatesDirectoryPath = string.IsNullOrWhiteSpace(templatesDirectoryPath)
+            ? Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "FormDesigner",
+                "Templates")
+            : templatesDirectoryPath;
     }
 
     public IReadOnlyList<ReusableTemplateModel> LoadCustomTemplates()

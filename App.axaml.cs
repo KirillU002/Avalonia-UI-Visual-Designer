@@ -7,6 +7,8 @@ using Avalonia.Markup.Xaml;
 using FormDesigner.DesignerSystem.Binding;
 using FormDesigner.DesignerSystem.BuiltIn;
 using FormDesigner.DesignerSystem.Infrastructure;
+using FormDesigner.DesignerSystem.Hosting;
+using FormDesigner.Services;
 using FormDesigner.ViewModels;
 using FormDesigner.Views;
 using System;
@@ -30,10 +32,11 @@ public partial class App : Application
             // Avoid duplicate validations from both Avalonia and the CommunityToolkit. 
             // More info: https://docs.avaloniaui.net/docs/guides/development-guides/data-validation#manage-validationplugins
             DisableAvaloniaDataAnnotationValidation();
-            ConfigureDesignerSystem();
-            desktop.MainWindow = new MainWindow
+            IDesignerHostServices hostServices = new StandaloneDesignerHostServices();
+            ConfigureDesignerSystem(hostServices);
+            desktop.MainWindow = new MainWindow(hostServices)
             {
-                DataContext = new MainWindowViewModel(_registry),
+                DataContext = new MainWindowViewModel(_registry, hostServices),
             };
         }
 
@@ -53,14 +56,13 @@ public partial class App : Application
         }
     }
 
-    private void ConfigureDesignerSystem()
+    private void ConfigureDesignerSystem(IDesignerHostServices hostServices)
     {
         BuiltInControlRegistrar.Register(_registry);
-        _registry.RegisterBindingProvider(new ReflectionBindingMetadataProvider());
+        _registry.RegisterBindingProvider(new ReflectionBindingMetadataProvider(hostServices.Paths.ApplicationBaseDirectory));
 
         var logger = new TraceDesignerLogger();
         var loader = new PluginLoader(logger);
-        var pluginFolder = Path.Combine(AppContext.BaseDirectory, "Plugins");
-        loader.LoadFromFolder(pluginFolder, _registry, replaceDiagnostics: true);
+        loader.LoadFromFolder(hostServices.Paths.PluginDirectory, _registry, replaceDiagnostics: true);
     }
 }

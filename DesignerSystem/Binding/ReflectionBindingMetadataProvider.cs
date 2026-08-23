@@ -14,12 +14,21 @@ namespace FormDesigner.DesignerSystem.Binding;
 
 public sealed class ReflectionBindingMetadataProvider : IBindingMetadataProvider
 {
+    private readonly string _applicationBaseDirectory;
+
     public string Id => "Reflection";
 
     private const string TableAttributeFullName = "System.Data.Linq.Mapping.TableAttribute";
     private const string ColumnAttributeFullName = "System.Data.Linq.Mapping.ColumnAttribute";
     private const string AssociationAttributeFullName = "System.Data.Linq.Mapping.AssociationAttribute";
     private const string TargetFrameworkAttributeFullName = "System.Runtime.Versioning.TargetFrameworkAttribute";
+
+    public ReflectionBindingMetadataProvider(string? applicationBaseDirectory = null)
+    {
+        _applicationBaseDirectory = string.IsNullOrWhiteSpace(applicationBaseDirectory)
+            ? Directory.GetCurrentDirectory()
+            : Path.GetFullPath(applicationBaseDirectory);
+    }
 
     public bool CanHandle(BindingImportRequest request)
     {
@@ -273,7 +282,7 @@ public sealed class ReflectionBindingMetadataProvider : IBindingMetadataProvider
         };
     }
 
-    private static IEnumerable<string> BuildMetadataResolverPaths(string assemblyPath)
+    private IEnumerable<string> BuildMetadataResolverPaths(string assemblyPath)
     {
         var paths = new List<string>();
         AddMetadataResolverPath(paths, assemblyPath);
@@ -285,7 +294,7 @@ public sealed class ReflectionBindingMetadataProvider : IBindingMetadataProvider
                 AddMetadataResolverPath(paths, path);
         }
 
-        foreach (var path in EnumerateSafeAssemblyFiles(AppContext.BaseDirectory, SearchOption.TopDirectoryOnly))
+        foreach (var path in EnumerateSafeAssemblyFiles(_applicationBaseDirectory, SearchOption.TopDirectoryOnly))
             AddMetadataResolverPath(paths, path);
 
         foreach (var assembly in AssemblyLoadContext.Default.Assemblies)

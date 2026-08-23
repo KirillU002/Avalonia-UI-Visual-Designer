@@ -19,12 +19,14 @@ public sealed class AutosaveRecoveryService
 
     public string RecoveryFilePath => Path.Combine(RecoveryDirectoryPath, RecoveryFileName);
 
-    public AutosaveRecoveryService()
+    public AutosaveRecoveryService(string? recoveryDirectoryPath = null)
     {
-        RecoveryDirectoryPath = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "FormDesigner",
-            "Recovery");
+        RecoveryDirectoryPath = string.IsNullOrWhiteSpace(recoveryDirectoryPath)
+            ? Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "FormDesigner",
+                "Recovery")
+            : recoveryDirectoryPath;
     }
 
     public async Task SaveDraftAsync(RecoveryDraftFileModel draft)

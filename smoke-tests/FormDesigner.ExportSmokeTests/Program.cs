@@ -7,6 +7,7 @@ using Avalonia.LogicalTree;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using FormDesigner.DesignerSystem.Infrastructure;
+using FormDesigner.DesignerSystem.Hosting;
 using FormDesigner.Localization;
 using FormDesigner.Models;
 using FormDesigner.PluginContracts;
@@ -269,6 +270,9 @@ internal static class Program
             new("SessionSelectionUpdatesDesignerSurface", ConfigureDesignerSurfaceStandardControl, AssertSessionSelectionUpdatesDesignerSurface),
             new("DesignerSurfaceInspectorUsesSessionSelection", ConfigureDesignerSurfaceStandardControl, AssertDesignerSurfaceInspectorUsesSessionSelection),
             new("DesignerPropertyInspectorFavoritesRoundTrip", ConfigureDesignerSurfaceStandardControl, AssertDesignerPropertyInspectorFavoritesRoundTrip),
+            new("DesignerSurfaceWorksWithFakeHostServices", ConfigureDesignerSurfaceStandardControl, AssertDesignerSurfaceWorksWithFakeHostServices),
+            new("DesignerHostServicesRouteClipboardFilePickerDialogAndNotification", ConfigureSimpleFormExport, AssertDesignerHostServicesRouteClipboardFilePickerDialogAndNotification),
+            new("DesignerHostArchitectureGuard", ConfigureSimpleFormExport, AssertDesignerHostArchitectureGuard),
             new("MainWindowSwitchFormRebindsSameDesignerSurface", ConfigureDesignerSurfaceStandardControl, AssertMainWindowSwitchFormRebindsSameDesignerSurface),
             new("DesignerSurfaceDoesNotRequireMainWindowConcreteType", ConfigureSimpleFormExport, AssertDesignerSurfaceDoesNotRequireMainWindowConcreteType),
             new("DesignerSurfaceRendersEremexTextEditor", ConfigureEremexTextEditorVerticalSlice, AssertDesignerSurfaceRendersEremexTextEditor),
@@ -4645,6 +4649,78 @@ internal static class Program
         }
     }
 
+    private static void AssertDesignerSurfaceWorksWithFakeHostServices(SmokeContext context)
+    {
+        EnsureAvaloniaRuntimeInitialized();
+        var host = new TestDesignerHostServices();
+        var surface = new DesignerSurface
+        {
+            Context = context.ViewModel,
+            Session = context.ViewModel.ActiveSession,
+            HostServices = host
+        };
+
+        if (!ReferenceEquals(surface.HostServices, host)
+            || !ReferenceEquals(surface.ViewModel.HostServices, host)
+            || surface.Session is null)
+        {
+            throw new InvalidOperationException("DesignerSurface did not receive the explicit fake host services contract.");
+        }
+    }
+
+    private static void AssertDesignerHostServicesRouteClipboardFilePickerDialogAndNotification(SmokeContext context)
+    {
+        EnsureAvaloniaRuntimeInitialized();
+        var registry = new DesignerRegistry();
+        BuiltInControlRegistrar.Register(registry);
+        registry.RegisterBindingProvider(new ReflectionBindingMetadataProvider());
+        var host = new TestDesignerHostServices();
+        var vm = new MainWindowViewModel(registry, host);
+        var window = new MainWindow(host) { DataContext = vm };
+
+        host.FilePicker.OpenFiles.Enqueue(new TestDesignerHostFile("logo.png", @"C:\host-test\logo.png"));
+        var pickedImage = InvokePrivateTask<string?>(window, "PickImagePathAsync");
+        if (!string.Equals(pickedImage, @"C:\host-test\logo.png", StringComparison.Ordinal)
+            || host.FilePicker.OpenRequests.Count != 1)
+        {
+            throw new InvalidOperationException("Designer image selection did not use IDesignerFilePickerService.");
+        }
+
+        InvokePrivateTask(window, "CopyTextToClipboardAsync", "host clipboard text", "Copied");
+        if (!string.Equals(host.Clipboard.LastText, "host clipboard text", StringComparison.Ordinal)
+            || host.Notifications.Published.Count != 1)
+        {
+            throw new InvalidOperationException("Designer clipboard copy did not use IDesignerClipboard and IDesignerNotificationService.");
+        }
+
+        vm.Controls.Add(Control(DesignerControlTypes.Button, "HostDialogButton", 20, 20, 120, 36, text: "Host"));
+        host.Dialogs.NextResult = DesignerDialogResult.Discard;
+        var canDiscard = InvokePrivateTask<bool>(window, "EnsureUnsavedChangesHandledAsync");
+        if (!canDiscard || host.Dialogs.Requests.SingleOrDefault()?.Kind != DesignerDialogKind.UnsavedChanges)
+            throw new InvalidOperationException("Unsaved-changes confirmation did not use IDesignerDialogService.");
+
+        if (!string.Equals(vm.PluginInstallFolderPath, host.Paths.PluginDirectory, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Designer ViewModel did not use IDesignerPathService for the plugin directory.");
+    }
+
+    private static void AssertDesignerHostArchitectureGuard(SmokeContext context)
+    {
+        var root = FindRepositoryRoot();
+        var sharedDesignerSource = string.Join(Environment.NewLine, new[]
+        {
+            File.ReadAllText(Path.Combine(root, "Views", "DesignerSurface.axaml"), Encoding.UTF8),
+            File.ReadAllText(Path.Combine(root, "Views", "DesignerSurface.axaml.cs"), Encoding.UTF8),
+            File.ReadAllText(Path.Combine(root, "ViewModels", "DesignerSurfaceViewModel.cs"), Encoding.UTF8),
+            File.ReadAllText(Path.Combine(root, "DesignerSystem", "DesignerDocumentSession.cs"), Encoding.UTF8)
+        });
+
+        foreach (var forbidden in new[] { "MainWindow", "StorageProvider", "TopLevel.GetTopLevel", "AppContext.BaseDirectory", "Process.Start" })
+            RequireNotContains(sharedDesignerSource, forbidden, $"Shared Designer layer must not depend directly on '{forbidden}'.");
+
+        RequireContains(File.ReadAllText(Path.Combine(root, "DesignerSystem", "Hosting", "DesignerHostServices.cs"), Encoding.UTF8), "interface IDesignerHostServices", "Host service contract is missing.");
+        RequireContains(File.ReadAllText(Path.Combine(root, "Services", "StandaloneDesignerHostServices.cs"), Encoding.UTF8), "StandaloneDesignerHostServices", "Standalone host adapter is missing.");
+    }
+
     private static void AssertMainWindowSwitchFormRebindsSameDesignerSurface(SmokeContext context)
     {
         var vm = context.ViewModel;
@@ -8290,6 +8366,164 @@ Diagnostics:
         string DiagnosticsText);
 
     private sealed record ProcessResult(int ExitCode, string Output);
+
+    private static T InvokePrivateTask<T>(object target, string methodName, params object?[] arguments)
+    {
+        var method = target.GetType().GetMethod(methodName, BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException($"Private task method '{methodName}' was not found.");
+        var task = method.Invoke(target, arguments) as Task<T>
+            ?? throw new InvalidOperationException($"Private method '{methodName}' did not return Task<{typeof(T).Name}>.");
+        return task.GetAwaiter().GetResult();
+    }
+
+    private static void InvokePrivateTask(object target, string methodName, params object?[] arguments)
+    {
+        var method = target.GetType().GetMethod(methodName, BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException($"Private task method '{methodName}' was not found.");
+        var task = method.Invoke(target, arguments) as Task
+            ?? throw new InvalidOperationException($"Private method '{methodName}' did not return Task.");
+        task.GetAwaiter().GetResult();
+    }
+
+    private sealed class TestDesignerHostServices : IDesignerHostServices
+    {
+        public TestDesignerHostServices()
+        {
+            Clipboard = new TestDesignerClipboard();
+            Dialogs = new TestDesignerDialogService();
+            FilePicker = new TestDesignerFilePickerService();
+            Notifications = new TestDesignerNotificationService();
+            Paths = new TestDesignerPathService();
+            FileSystem = new PhysicalDesignerFileSystem();
+            Scheduler = new TestDesignerScheduler();
+            ExternalLauncher = new TestDesignerExternalLauncher();
+            Commands = new TestDesignerHostCommandService();
+        }
+
+        public TestDesignerClipboard Clipboard { get; }
+        IDesignerClipboard IDesignerHostServices.Clipboard => Clipboard;
+        public TestDesignerDialogService Dialogs { get; }
+        IDesignerDialogService IDesignerHostServices.Dialogs => Dialogs;
+        public TestDesignerFilePickerService FilePicker { get; }
+        IDesignerFilePickerService IDesignerHostServices.FilePicker => FilePicker;
+        public TestDesignerNotificationService Notifications { get; }
+        IDesignerNotificationService IDesignerHostServices.Notifications => Notifications;
+        public TestDesignerPathService Paths { get; }
+        IDesignerPathService IDesignerHostServices.Paths => Paths;
+        public IDesignerFileSystem FileSystem { get; }
+        public IDesignerScheduler Scheduler { get; }
+        public IDesignerExternalLauncher ExternalLauncher { get; }
+        public IDesignerHostCommandService Commands { get; }
+    }
+
+    private sealed class TestDesignerClipboard : IDesignerClipboard
+    {
+        public string? LastText { get; private set; }
+        public Task<string?> GetTextAsync(CancellationToken cancellationToken = default) => Task.FromResult(LastText);
+        public Task SetTextAsync(string text, CancellationToken cancellationToken = default)
+        {
+            LastText = text;
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class TestDesignerDialogService : IDesignerDialogService
+    {
+        public List<DesignerDialogRequest> Requests { get; } = new();
+        public DesignerDialogResult NextResult { get; set; } = DesignerDialogResult.Cancelled;
+        public Task<DesignerDialogResult> ShowAsync(DesignerDialogRequest request, CancellationToken cancellationToken = default)
+        {
+            Requests.Add(request);
+            return Task.FromResult(NextResult);
+        }
+    }
+
+    private sealed class TestDesignerFilePickerService : IDesignerFilePickerService
+    {
+        public Queue<IDesignerHostFile> OpenFiles { get; } = new();
+        public List<DesignerOpenFilePickerOptions> OpenRequests { get; } = new();
+        public List<DesignerSaveFilePickerOptions> SaveRequests { get; } = new();
+        public string? NextFolder { get; set; }
+
+        public Task<IReadOnlyList<IDesignerHostFile>> OpenFilesAsync(DesignerOpenFilePickerOptions options, CancellationToken cancellationToken = default)
+        {
+            OpenRequests.Add(options);
+            return Task.FromResult<IReadOnlyList<IDesignerHostFile>>(OpenFiles.Count == 0
+                ? Array.Empty<IDesignerHostFile>()
+                : new[] { OpenFiles.Dequeue() });
+        }
+
+        public Task<IDesignerHostFile?> SaveFileAsync(DesignerSaveFilePickerOptions options, CancellationToken cancellationToken = default)
+        {
+            SaveRequests.Add(options);
+            return Task.FromResult<IDesignerHostFile?>(null);
+        }
+
+        public Task<string?> SelectFolderAsync(string title, string? initialDirectory = null, CancellationToken cancellationToken = default) => Task.FromResult(NextFolder);
+    }
+
+    private sealed class TestDesignerHostFile : IDesignerHostFile
+    {
+        public TestDesignerHostFile(string name, string? localPath, string contents = "")
+        {
+            Name = name;
+            LocalPath = localPath;
+            _contents = Encoding.UTF8.GetBytes(contents);
+        }
+
+        private readonly byte[] _contents;
+        public string Name { get; }
+        public string? LocalPath { get; }
+        public Task<Stream> OpenReadAsync(CancellationToken cancellationToken = default) => Task.FromResult<Stream>(new MemoryStream(_contents, writable: false));
+        public Task<Stream> OpenWriteAsync(CancellationToken cancellationToken = default) => Task.FromResult<Stream>(new MemoryStream());
+    }
+
+    private sealed class TestDesignerNotificationService : IDesignerNotificationService
+    {
+        public List<DesignerNotification> Published { get; } = new();
+        public void Publish(DesignerNotification notification) => Published.Add(notification);
+    }
+
+    private sealed class TestDesignerPathService : IDesignerPathService
+    {
+        private readonly string _root = Path.Combine(Path.GetTempPath(), "FormDesignerHostSmoke", Guid.NewGuid().ToString("N"));
+        public string ApplicationBaseDirectory => _root;
+        public string UserDataDirectory => Path.Combine(_root, "user-data");
+        public string LogsDirectory => Path.Combine(UserDataDirectory, "logs");
+        public string TempDirectory => Path.Combine(_root, "temp");
+        public string PluginDirectory => Path.Combine(_root, "plugins");
+        public string RecoveryDirectory => Path.Combine(UserDataDirectory, "recovery");
+        public string ArtifactsDirectory => Path.Combine(_root, "artifacts");
+    }
+
+    private sealed class TestDesignerScheduler : IDesignerScheduler
+    {
+        public bool CheckAccess() => true;
+        public void Post(Action action, DesignerSchedulerPriority priority = DesignerSchedulerPriority.Normal) => action();
+        public Task InvokeAsync(Action action, CancellationToken cancellationToken = default)
+        {
+            action();
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class TestDesignerExternalLauncher : IDesignerExternalLauncher
+    {
+        public List<string> OpenedTargets { get; } = new();
+        public Task OpenFileAsync(string path, CancellationToken cancellationToken = default) { OpenedTargets.Add(path); return Task.CompletedTask; }
+        public Task OpenFolderAsync(string path, CancellationToken cancellationToken = default) { OpenedTargets.Add(path); return Task.CompletedTask; }
+        public Task OpenUriAsync(Uri uri, CancellationToken cancellationToken = default) { OpenedTargets.Add(uri.AbsoluteUri); return Task.CompletedTask; }
+    }
+
+    private sealed class TestDesignerHostCommandService : IDesignerHostCommandService
+    {
+        public List<DesignerHostCommand> Requested { get; } = new();
+        public Task ExecuteAsync(DesignerHostCommand command, CancellationToken cancellationToken = default)
+        {
+            Requested.Add(command);
+            return Task.CompletedTask;
+        }
+    }
 
     private sealed class RuntimePreviewSmokeRow
     {

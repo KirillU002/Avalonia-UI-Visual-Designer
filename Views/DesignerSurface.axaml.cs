@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using FormDesigner.DesignerSystem;
+using FormDesigner.DesignerSystem.Hosting;
 using FormDesigner.ViewModels;
 using System;
 
@@ -19,6 +20,9 @@ public partial class DesignerSurface : UserControl
 
     public static readonly StyledProperty<DesignerDocumentSession?> SessionProperty =
         AvaloniaProperty.Register<DesignerSurface, DesignerDocumentSession?>(nameof(Session));
+
+    public static readonly StyledProperty<IDesignerHostServices?> HostServicesProperty =
+        AvaloniaProperty.Register<DesignerSurface, IDesignerHostServices?>(nameof(HostServices));
 
     private readonly DesignerSurfaceViewModel _viewModel = new();
     private DesignerDocumentSession? _attachedSession;
@@ -61,6 +65,13 @@ public partial class DesignerSurface : UserControl
     {
         get => GetValue(SessionProperty);
         set => SetValue(SessionProperty, value);
+    }
+
+    /// <summary>Host-neutral platform services supplied explicitly by the embedding host.</summary>
+    public IDesignerHostServices? HostServices
+    {
+        get => GetValue(HostServicesProperty);
+        set => SetValue(HostServicesProperty, value);
     }
 
     public DesignerSurfaceViewModel ViewModel => _viewModel;
@@ -111,6 +122,11 @@ public partial class DesignerSurface : UserControl
         {
             _viewModel.Context = Context;
             ReportDiagnostic("DESIGNER_SURFACE_CONTEXT_ATTACHED", Context?.GetType().FullName ?? "null");
+        }
+        else if (change.Property == HostServicesProperty)
+        {
+            _viewModel.HostServices = HostServices;
+            ReportDiagnostic("DESIGNER_SURFACE_HOST_SERVICES_ATTACHED", HostServices?.GetType().FullName ?? "null");
         }
         else if (change.Property == SessionProperty)
         {

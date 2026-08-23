@@ -9,12 +9,12 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
-using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using FormDesigner.DesignerSystem.Binding;
 using FormDesigner.DesignerSystem.BuiltIn;
 using FormDesigner.DesignerSystem.Infrastructure;
+using FormDesigner.DesignerSystem.Hosting;
 using FormDesigner.EditorCommands;
 using FormDesigner.Models;
 using FormDesigner.PluginContracts;
@@ -44,18 +44,10 @@ public partial class MainWindow : Window
     // Avalonia validates application-format identifiers and rejects values with '/'.
     private const string ControlTypeDataFormat = "formdesigner-control-type";
     private const string ControlSourceDocumentDataFormat = "formdesigner-source-document";
-    private static readonly FilePickerFileType DesignerDocumentFileType = new("Документы конструктора форм")
-    {
-        Patterns = new[] { "*.formdesigner.json", "*.json" }
-    };
-    private static readonly FilePickerFileType ImageFileType = new("Изображения")
-    {
-        Patterns = new[] { "*.png", "*.jpg", "*.jpeg", "*.bmp", "*.gif", "*.webp", "*.ico" }
-    };
-    private static readonly FilePickerFileType AssemblyFileType = new(".NET сборки")
-    {
-        Patterns = new[] { "*.dll" }
-    };
+    private static readonly DesignerFileTypeFilter DesignerDocumentFileType = DesignerFileTypeFilter.Create("Документы конструктора форм", "*.formdesigner.json", "*.json");
+    private static readonly DesignerFileTypeFilter ImageFileType = DesignerFileTypeFilter.Create("Изображения", "*.png", "*.jpg", "*.jpeg", "*.bmp", "*.gif", "*.webp", "*.ico");
+    private static readonly DesignerFileTypeFilter AssemblyFileType = DesignerFileTypeFilter.Create(".NET сборки", "*.dll");
+    private static readonly DesignerFileTypeFilter ZipFileType = DesignerFileTypeFilter.Create("ZIP archive", "*.zip");
 
     // Кэши и служебные словари нужны, чтобы не пересоздавать тяжелые объекты и
     // быстро находить visual-обертку по модели контрола во время drag/resize.
@@ -130,9 +122,9 @@ public partial class MainWindow : Window
     private string? _inlineCanvasEditingProperty;
     private bool _isClosingInlineCanvasEditor;
     private string _pendingContextMenuControlId = string.Empty;
-    private readonly AutosaveRecoveryService _autosaveRecoveryService = new();
-    private readonly AppSettingsService _appSettingsService = new();
-    private readonly DocumentBackupService _documentBackupService = new();
+    private readonly AutosaveRecoveryService _autosaveRecoveryService;
+    private readonly AppSettingsService _appSettingsService;
+    private readonly DocumentBackupService _documentBackupService;
     private readonly DispatcherTimer _settingsSaveTimer = new();
     private AppSettingsModel _appSettings = new();
     private readonly DispatcherTimer _autosaveTimer = new();
@@ -149,6 +141,7 @@ public partial class MainWindow : Window
     private bool _suppressRecoverySessionChangeHandling;
     private string _lastObservedDocumentSessionId = string.Empty;
     private int _responsiveShellBreakpoint = -1;
+    private readonly IDesignerHostServices _hostServices;
 
     private sealed record SimpleInspectorEditContext(string ControlId, string PropertyName, string InitialText);
 
@@ -156,8 +149,22 @@ public partial class MainWindow : Window
     /// Подключает обработчики окна и запускает первичную синхронизацию предпросмотра.
     /// </summary>
     public MainWindow()
+        : this(null)
     {
+    }
+
+    public MainWindow(IDesignerHostServices? hostServices)
+    {
+        _hostServices = hostServices ?? new StandaloneDesignerHostServices();
+        if (_hostServices is StandaloneDesignerHostServices standaloneHostServices)
+            standaloneHostServices.AttachTopLevel(this);
+
+        _autosaveRecoveryService = new AutosaveRecoveryService(_hostServices.Paths.RecoveryDirectory);
+        _appSettingsService = new AppSettingsService(_hostServices.Paths.UserDataDirectory);
+        _documentBackupService = new DocumentBackupService(_hostServices.Paths.UserDataDirectory);
+
         InitializeComponent();
+        DesignerSurface.HostServices = _hostServices;
         DataContextChanged += MainWindow_DataContextChanged;
         KeyDown += MainWindow_KeyDown;
         KeyUp += MainWindow_KeyUp;
@@ -587,11 +594,11 @@ public partial class MainWindow : Window
 
     private async Task RunSmokeTestsAsync()
     {
-        var scriptPath = System.IO.Path.Combine(AppContext.BaseDirectory, "smoke-tests", "run-smoke-tests.ps1");
-        if (!File.Exists(scriptPath))
+        var scriptPath = System.IO.Path.Combine(_hostServices.Paths.ApplicationBaseDirectory, "smoke-tests", "run-smoke-tests.ps1");
+        if (!_hostServices.FileSystem.FileExists(scriptPath))
             scriptPath = System.IO.Path.Combine(Directory.GetCurrentDirectory(), "smoke-tests", "run-smoke-tests.ps1");
 
-        if (!File.Exists(scriptPath))
+        if (!_hostServices.FileSystem.FileExists(scriptPath))
         {
             const string message = "Smoke test script was not found.";
             VM.StatusText = message;
@@ -762,18 +769,19 @@ public partial class MainWindow : Window
 
     private async Task ExportToProjectAsync()
     {
-        if (StorageProvider is null || !StorageProvider.CanPickFolder)
+        string? targetPath;
+        try
         {
-            VM.StatusText = "Folder picker is unavailable in this environment.";
+            VM.LogWorkspace(WorkspaceLogLevel.Info, MainWindowViewModel.OutputCategoryDiagnostics, "HOST_FILE_PICKER_REQUEST", "operation=ExportProjectFolder");
+            targetPath = await _hostServices.FilePicker.SelectFolderAsync("Export generated files to Avalonia project");
+            VM.LogWorkspace(WorkspaceLogLevel.Info, MainWindowViewModel.OutputCategoryDiagnostics, "HOST_FILE_PICKER_RESULT", $"operation=ExportProjectFolder; selected={!string.IsNullOrWhiteSpace(targetPath)}");
+        }
+        catch (Exception ex)
+        {
+            VM.StatusText = $"Folder picker is unavailable in this environment: {ex.Message}";
             return;
         }
 
-        var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
-        {
-            Title = "Export generated files to Avalonia project",
-            AllowMultiple = false
-        });
-        var targetPath = folders.FirstOrDefault()?.TryGetLocalPath();
         if (string.IsNullOrWhiteSpace(targetPath))
             return;
 
@@ -811,20 +819,24 @@ public partial class MainWindow : Window
 
     private async Task ExportAsZipAsync()
     {
-        if (StorageProvider is null || !StorageProvider.CanSave)
+        string? zipPath;
+        try
         {
-            VM.StatusText = "ZIP export is unavailable in this environment.";
+            VM.LogWorkspace(WorkspaceLogLevel.Info, MainWindowViewModel.OutputCategoryDiagnostics, "HOST_FILE_PICKER_REQUEST", "operation=ExportZip");
+            var file = await _hostServices.FilePicker.SaveFileAsync(new DesignerSaveFilePickerOptions(
+                "Export generated files as ZIP",
+                "avalonia-generated-export.zip",
+                "zip",
+                new[] { ZipFileType }));
+            zipPath = file?.LocalPath;
+            VM.LogWorkspace(WorkspaceLogLevel.Info, MainWindowViewModel.OutputCategoryDiagnostics, "HOST_FILE_PICKER_RESULT", $"operation=ExportZip; selected={!string.IsNullOrWhiteSpace(zipPath)}");
+        }
+        catch (Exception ex)
+        {
+            VM.StatusText = $"ZIP export is unavailable in this environment: {ex.Message}";
             return;
         }
 
-        var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
-        {
-            Title = "Export generated files as ZIP",
-            SuggestedFileName = "avalonia-generated-export.zip",
-            DefaultExtension = "zip",
-            ShowOverwritePrompt = true
-        });
-        var zipPath = file?.TryGetLocalPath();
         if (string.IsNullOrWhiteSpace(zipPath))
             return;
 
@@ -846,10 +858,10 @@ public partial class MainWindow : Window
         }
     }
 
-    private void OpenValidationFolder()
+    private async void OpenValidationFolder()
     {
         var folder = VM.CurrentExportBuildValidation.ProjectPath;
-        if (string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder))
+        if (string.IsNullOrWhiteSpace(folder) || !_hostServices.FileSystem.DirectoryExists(folder))
         {
             VM.StatusText = "Run Validate build first.";
             VM.ShowWorkspaceToast(WorkspaceToastLevel.Warning, "Validation folder is unavailable", VM.StatusText);
@@ -858,12 +870,8 @@ public partial class MainWindow : Window
 
         try
         {
-            Process.Start(new ProcessStartInfo
-            {
-                FileName = "explorer.exe",
-                Arguments = $"\"{folder}\"",
-                UseShellExecute = true
-            });
+            VM.LogWorkspace(WorkspaceLogLevel.Info, MainWindowViewModel.OutputCategoryDiagnostics, "HOST_SERVICE_CALL", "service=ExternalLauncher; operation=OpenFolder");
+            await _hostServices.ExternalLauncher.OpenFolderAsync(folder);
             VM.LogWorkspace(WorkspaceLogLevel.Info, MainWindowViewModel.OutputCategoryExport, "Opened validation folder.", folder);
         }
         catch (Exception ex)
@@ -887,14 +895,14 @@ public partial class MainWindow : Window
         VM.LogWorkspace(WorkspaceLogLevel.Success, MainWindowViewModel.OutputCategoryExport, "Build logs copied.");
     }
 
-    private void OpenBuildLogsFolderButton_Click(object? sender, RoutedEventArgs e)
+    private async void OpenBuildLogsFolderButton_Click(object? sender, RoutedEventArgs e)
     {
         var path = VM.CurrentExportBuildValidation.DetailedLogPath;
-        var folder = File.Exists(path)
+        var folder = _hostServices.FileSystem.FileExists(path)
             ? System.IO.Path.GetDirectoryName(path)
             : VM.CurrentExportBuildValidation.ProjectPath;
 
-        if (string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder))
+        if (string.IsNullOrWhiteSpace(folder) || !_hostServices.FileSystem.DirectoryExists(folder))
         {
             VM.StatusText = "Run Validate Build first.";
             VM.ShowWorkspaceToast(WorkspaceToastLevel.Warning, "Build logs folder is unavailable", VM.StatusText);
@@ -903,12 +911,8 @@ public partial class MainWindow : Window
 
         try
         {
-            Process.Start(new ProcessStartInfo
-            {
-                FileName = "explorer.exe",
-                Arguments = $"\"{folder}\"",
-                UseShellExecute = true
-            });
+            VM.LogWorkspace(WorkspaceLogLevel.Info, MainWindowViewModel.OutputCategoryDiagnostics, "HOST_SERVICE_CALL", "service=ExternalLauncher; operation=OpenFolder");
+            await _hostServices.ExternalLauncher.OpenFolderAsync(folder);
             VM.LogWorkspace(WorkspaceLogLevel.Info, MainWindowViewModel.OutputCategoryExport, "Opened build logs folder.", folder);
         }
         catch (Exception ex)
@@ -921,8 +925,8 @@ public partial class MainWindow : Window
     private async Task<string> ReadCurrentBuildLogTextAsync()
     {
         var path = VM.CurrentExportBuildValidation.DetailedLogPath;
-        if (!string.IsNullOrWhiteSpace(path) && File.Exists(path))
-            return await File.ReadAllTextAsync(path);
+        if (!string.IsNullOrWhiteSpace(path) && _hostServices.FileSystem.FileExists(path))
+            return await _hostServices.FileSystem.ReadAllTextAsync(path);
 
         return VM.CurrentExportBuildValidation.Output;
     }
@@ -950,20 +954,16 @@ public partial class MainWindow : Window
         VM.LogWorkspace(WorkspaceLogLevel.Success, MainWindowViewModel.OutputCategoryGeneral, "Output logs copied.");
     }
 
-    private void OpenLogsFolderButton_Click(object? sender, RoutedEventArgs e)
+    private async void OpenLogsFolderButton_Click(object? sender, RoutedEventArgs e)
     {
         try
         {
             var folder = string.IsNullOrWhiteSpace(VM.LogsFolderPath)
-                ? System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AvaloniaUiVisualDesigner", "logs")
+                ? _hostServices.Paths.LogsDirectory
                 : VM.LogsFolderPath;
-            Directory.CreateDirectory(folder);
-            Process.Start(new ProcessStartInfo
-            {
-                FileName = "explorer.exe",
-                Arguments = $"\"{folder}\"",
-                UseShellExecute = true
-            });
+            _hostServices.FileSystem.CreateDirectory(folder);
+            VM.LogWorkspace(WorkspaceLogLevel.Info, MainWindowViewModel.OutputCategoryDiagnostics, "HOST_PATH_RESOLVED", "path=LogsDirectory");
+            await _hostServices.ExternalLauncher.OpenFolderAsync(folder);
             VM.LogWorkspace(WorkspaceLogLevel.Info, MainWindowViewModel.OutputCategoryGeneral, "Opened logs folder.", folder);
         }
         catch (Exception ex)
@@ -7319,26 +7319,15 @@ public partial class MainWindow : Window
 
     private async Task<string?> PickImagePathAsync()
     {
-        if (StorageProvider is null || !StorageProvider.CanOpen)
-        {
-            VM.StatusText = "Выбор изображения недоступен в этом окружении";
-            return null;
-        }
-
         try
         {
-            var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
-            {
-                Title = "Выберите изображение",
-                AllowMultiple = false,
-                FileTypeFilter = new[] { ImageFileType }
-            });
-
-            var file = files.FirstOrDefault();
-            if (file is null)
-                return null;
-
-            return file.TryGetLocalPath() ?? file.Path.AbsolutePath;
+            VM.LogWorkspace(WorkspaceLogLevel.Info, MainWindowViewModel.OutputCategoryDiagnostics, "HOST_FILE_PICKER_REQUEST", "operation=PickImage");
+            var files = await _hostServices.FilePicker.OpenFilesAsync(new DesignerOpenFilePickerOptions(
+                "Выберите изображение",
+                new[] { ImageFileType }));
+            var path = files.FirstOrDefault()?.LocalPath;
+            VM.LogWorkspace(WorkspaceLogLevel.Info, MainWindowViewModel.OutputCategoryDiagnostics, "HOST_FILE_PICKER_RESULT", $"operation=PickImage; selected={!string.IsNullOrWhiteSpace(path)}");
+            return path;
         }
         catch (Exception ex)
         {
@@ -9571,25 +9560,17 @@ public partial class MainWindow : Window
 
     private async void ImportBindingSourcesFromAssemblyButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        if (StorageProvider is null || !StorageProvider.CanOpen)
-        {
-            VM.StatusText = "Выбор сборки недоступен в этом окружении";
-            return;
-        }
-
         try
         {
-            var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
-            {
-                Title = "Импортировать BindingSource из сборки",
-                AllowMultiple = false,
-                FileTypeFilter = new[] { AssemblyFileType }
-            });
-
-            var file = files.FirstOrDefault();
-            var localPath = file?.TryGetLocalPath();
+            VM.LogWorkspace(WorkspaceLogLevel.Info, MainWindowViewModel.OutputCategoryDiagnostics, "HOST_FILE_PICKER_REQUEST", "operation=ImportBindingSourceAssembly");
+            var files = await _hostServices.FilePicker.OpenFilesAsync(new DesignerOpenFilePickerOptions(
+                "Импортировать BindingSource из сборки",
+                new[] { AssemblyFileType }));
+            var localPath = files.FirstOrDefault()?.LocalPath;
             if (string.IsNullOrWhiteSpace(localPath))
                 return;
+
+            VM.LogWorkspace(WorkspaceLogLevel.Info, MainWindowViewModel.OutputCategoryDiagnostics, "HOST_FILE_PICKER_RESULT", "operation=ImportBindingSourceAssembly; selected=true");
 
             VM.BeginBusy("Импортируем BindingSource", "Читаем типы из выбранной сборки и подготавливаем источники данных.");
             await Task.Delay(120);
@@ -9641,25 +9622,17 @@ public partial class MainWindow : Window
 
     private async void InstallPluginButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        if (StorageProvider is null || !StorageProvider.CanOpen)
-        {
-            VM.StatusText = "Выбор plugin DLL недоступен в этом окружении";
-            return;
-        }
-
         try
         {
-            var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
-            {
-                Title = "Установить plugin DLL",
-                AllowMultiple = false,
-                FileTypeFilter = new[] { AssemblyFileType }
-            });
-
-            var file = files.FirstOrDefault();
-            var localPath = file?.TryGetLocalPath();
+            VM.LogWorkspace(WorkspaceLogLevel.Info, MainWindowViewModel.OutputCategoryDiagnostics, "HOST_FILE_PICKER_REQUEST", "operation=InstallPlugin");
+            var files = await _hostServices.FilePicker.OpenFilesAsync(new DesignerOpenFilePickerOptions(
+                "Установить plugin DLL",
+                new[] { AssemblyFileType }));
+            var localPath = files.FirstOrDefault()?.LocalPath;
             if (string.IsNullOrWhiteSpace(localPath))
                 return;
+
+            VM.LogWorkspace(WorkspaceLogLevel.Info, MainWindowViewModel.OutputCategoryDiagnostics, "HOST_FILE_PICKER_RESULT", "operation=InstallPlugin; selected=true");
 
             VM.BeginBusy("Устанавливаем plugin", "Копируем DLL в папку Plugins и подключаем новые контролы к конструктору.");
             await Task.Delay(120);
@@ -9679,14 +9652,15 @@ public partial class MainWindow : Window
         }
     }
 
-    private static string InstallPluginPackage(string pluginAssemblyPath)
+    private string InstallPluginPackage(string pluginAssemblyPath)
     {
         var sourceAssemblyPath = System.IO.Path.GetFullPath(pluginAssemblyPath);
         var sourceFolder = System.IO.Path.GetDirectoryName(sourceAssemblyPath)
             ?? throw new InvalidOperationException("Не удалось определить папку выбранной DLL.");
 
-        var pluginsRoot = System.IO.Path.Combine(AppContext.BaseDirectory, "Plugins");
-        Directory.CreateDirectory(pluginsRoot);
+        var pluginsRoot = _hostServices.Paths.PluginDirectory;
+        _hostServices.FileSystem.CreateDirectory(pluginsRoot);
+        VM.LogWorkspace(WorkspaceLogLevel.Info, MainWindowViewModel.OutputCategoryDiagnostics, "HOST_PATH_RESOLVED", "path=PluginDirectory");
 
         var sourceFolderFull = System.IO.Path.GetFullPath(sourceFolder).TrimEnd(System.IO.Path.DirectorySeparatorChar, System.IO.Path.AltDirectorySeparatorChar);
         var pluginsRootFull = System.IO.Path.GetFullPath(pluginsRoot).TrimEnd(System.IO.Path.DirectorySeparatorChar, System.IO.Path.AltDirectorySeparatorChar);
@@ -9706,12 +9680,12 @@ public partial class MainWindow : Window
         return targetFolder;
     }
 
-    private static IEnumerable<string> GetPluginPackageFiles(string sourceFolder, string selectedAssemblyPath)
+    private IEnumerable<string> GetPluginPackageFiles(string sourceFolder, string selectedAssemblyPath)
     {
         var selectedAssemblyName = System.IO.Path.GetFileNameWithoutExtension(selectedAssemblyPath);
         var isHostOutputFolder = string.Equals(
             sourceFolder.TrimEnd(System.IO.Path.DirectorySeparatorChar, System.IO.Path.AltDirectorySeparatorChar),
-            System.IO.Path.GetFullPath(AppContext.BaseDirectory).TrimEnd(System.IO.Path.DirectorySeparatorChar, System.IO.Path.AltDirectorySeparatorChar),
+            System.IO.Path.GetFullPath(_hostServices.Paths.ApplicationBaseDirectory).TrimEnd(System.IO.Path.DirectorySeparatorChar, System.IO.Path.AltDirectorySeparatorChar),
             StringComparison.OrdinalIgnoreCase);
 
         var files = Directory.GetFiles(sourceFolder)
@@ -9840,20 +9814,12 @@ public partial class MainWindow : Window
         if (!await EnsureUnsavedChangesHandledAsync())
             return;
 
-        if (StorageProvider is null || !StorageProvider.CanOpen)
-        {
-            VM.StatusText = "Открытие файла недоступно в этом окружении";
-            return;
-        }
-
         try
         {
-            var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
-            {
-                Title = "Открыть документ конструктора",
-                AllowMultiple = false,
-                FileTypeFilter = new[] { DesignerDocumentFileType }
-            });
+            VM.LogWorkspace(WorkspaceLogLevel.Info, MainWindowViewModel.OutputCategoryDiagnostics, "HOST_FILE_PICKER_REQUEST", "operation=OpenDocument");
+            var files = await _hostServices.FilePicker.OpenFilesAsync(new DesignerOpenFilePickerOptions(
+                "Открыть документ конструктора",
+                new[] { DesignerDocumentFileType }));
 
             var file = files.FirstOrDefault();
             if (file is null)
@@ -9862,7 +9828,7 @@ public partial class MainWindow : Window
             await using var stream = await file.OpenReadAsync();
             using var reader = new StreamReader(stream);
             var json = await reader.ReadToEndAsync();
-            var localPath = file.TryGetLocalPath() ?? file.Name;
+            var localPath = file.LocalPath ?? file.Name;
             VM.LoadDocumentJson(json, localPath);
             VM.AddOrUpdateRecentFile(localPath);
             _autosaveRecoveryService.TryDeleteDraft();
@@ -9870,6 +9836,7 @@ public partial class MainWindow : Window
             VM.StatusText = $"Открыт документ: {file.Name}";
             VM.LogWorkspace(WorkspaceLogLevel.Success, MainWindowViewModel.OutputCategoryGeneral, "File opened.", localPath);
             VM.ShowWorkspaceToast(WorkspaceToastLevel.Success, "File opened", file.Name);
+            VM.LogWorkspace(WorkspaceLogLevel.Info, MainWindowViewModel.OutputCategoryDiagnostics, "HOST_FILE_PICKER_RESULT", "operation=OpenDocument; selected=true");
             await SaveAppSettingsNowAsync();
         }
         catch (Exception ex)
@@ -9888,7 +9855,7 @@ public partial class MainWindow : Window
         if (!await EnsureUnsavedChangesHandledAsync())
             return;
 
-        if (!File.Exists(recentFile.FilePath))
+        if (!_hostServices.FileSystem.FileExists(recentFile.FilePath))
         {
             var unavailableWindow = new RecentFileUnavailableWindow(recentFile.FilePath);
             var decision = await unavailableWindow.ShowDialog<RecentFileUnavailableDialogResult>(this);
@@ -9904,7 +9871,7 @@ public partial class MainWindow : Window
 
         try
         {
-            var json = await File.ReadAllTextAsync(recentFile.FilePath);
+            var json = await _hostServices.FileSystem.ReadAllTextAsync(recentFile.FilePath);
             VM.LoadDocumentJson(json, recentFile.FilePath);
             VM.AddOrUpdateRecentFile(recentFile.FilePath);
             _autosaveRecoveryService.TryDeleteDraft();
@@ -10036,15 +10003,26 @@ public partial class MainWindow : Window
 
     private async Task CopyTextToClipboardAsync(string text, string successStatus)
     {
-        var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
-        if (clipboard is null)
+        try
+        {
+            VM.LogWorkspace(WorkspaceLogLevel.Info, MainWindowViewModel.OutputCategoryDiagnostics, "HOST_CLIPBOARD_WRITE", "operation=SetText");
+            await _hostServices.Clipboard.SetTextAsync(text);
+            VM.StatusText = successStatus;
+            _hostServices.Notifications.Publish(new DesignerNotification(
+                DesignerNotificationSeverity.Success,
+                "Clipboard updated",
+                successStatus));
+        }
+        catch (Exception ex)
         {
             VM.StatusText = "Буфер обмена недоступен в этом окружении.";
-            return;
+            VM.LogWorkspace(WorkspaceLogLevel.Warning, MainWindowViewModel.OutputCategoryDiagnostics, "HOST_CLIPBOARD_WRITE_FAILED", ex.Message);
+            _hostServices.Notifications.Publish(new DesignerNotification(
+                DesignerNotificationSeverity.Warning,
+                "Clipboard unavailable",
+                VM.StatusText,
+                ex.Message));
         }
-
-        await clipboard.SetTextAsync(text);
-        VM.StatusText = successStatus;
     }
 
     private async void CopyInteractionTraceButton_Click(object? sender, RoutedEventArgs e)
@@ -10059,12 +10037,16 @@ public partial class MainWindow : Window
         if (DataContext is not MainWindowViewModel || !VM.HasUnsavedChanges)
             return true;
 
-        var dialog = new UnsavedChangesWindow(VM.CurrentDocumentDisplayName);
-        var decision = await dialog.ShowDialog<UnsavedChangesDialogResult>(this);
+        VM.LogWorkspace(WorkspaceLogLevel.Info, MainWindowViewModel.OutputCategoryDiagnostics, "HOST_DIALOG_REQUEST", "kind=UnsavedChanges");
+        var decision = await _hostServices.Dialogs.ShowAsync(new DesignerDialogRequest(
+            DesignerDialogKind.UnsavedChanges,
+            "Несохраненные изменения",
+            VM.CurrentDocumentDisplayName));
+        VM.LogWorkspace(WorkspaceLogLevel.Info, MainWindowViewModel.OutputCategoryDiagnostics, "HOST_DIALOG_RESULT", $"kind=UnsavedChanges; result={decision}");
         return decision switch
         {
-            UnsavedChangesDialogResult.Save => await SaveCurrentDocumentAsync(),
-            UnsavedChangesDialogResult.Discard => true,
+            DesignerDialogResult.Save => await SaveCurrentDocumentAsync(),
+            DesignerDialogResult.Discard => true,
             _ => false
         };
     }
@@ -10089,29 +10071,22 @@ public partial class MainWindow : Window
 
     private async Task<bool> SaveDocumentAsAsync()
     {
-        if (StorageProvider is null || !StorageProvider.CanSave)
-        {
-            VM.StatusText = "Сохранение недоступно в этом окружении";
-            return false;
-        }
-
         try
         {
-            var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
-            {
-                Title = "Сохранить документ конструктора",
-                SuggestedFileName = string.IsNullOrWhiteSpace(VM.CurrentDocumentPath)
+            VM.LogWorkspace(WorkspaceLogLevel.Info, MainWindowViewModel.OutputCategoryDiagnostics, "HOST_FILE_PICKER_REQUEST", "operation=SaveDocument");
+            var file = await _hostServices.FilePicker.SaveFileAsync(new DesignerSaveFilePickerOptions(
+                "Сохранить документ конструктора",
+                string.IsNullOrWhiteSpace(VM.CurrentDocumentPath)
                     ? "form-designer.formdesigner.json"
                     : System.IO.Path.GetFileName(VM.CurrentDocumentPath),
-                DefaultExtension = "json",
-                ShowOverwritePrompt = true,
-                FileTypeChoices = new[] { DesignerDocumentFileType }
-            });
+                "json",
+                new[] { DesignerDocumentFileType }));
 
             if (file is null)
                 return false;
 
-            return await SaveDocumentToStorageFileAsync(file);
+            VM.LogWorkspace(WorkspaceLogLevel.Info, MainWindowViewModel.OutputCategoryDiagnostics, "HOST_FILE_PICKER_RESULT", "operation=SaveDocument; selected=true");
+            return await SaveDocumentToHostFileAsync(file);
         }
         catch (Exception ex)
         {
@@ -10126,7 +10101,7 @@ public partial class MainWindow : Window
         {
             var json = VM.ExportDocumentJson();
             var backup = await _documentBackupService.TryCreateBackupAsync(path);
-            await SaveTextAtomicallyAsync(path, json);
+            await _hostServices.FileSystem.WriteAllTextAtomicallyAsync(path, json);
             VM.MarkDocumentSaved(path);
             VM.AddOrUpdateRecentFile(path);
             _autosaveRecoveryService.TryDeleteDraft();
@@ -10147,11 +10122,11 @@ public partial class MainWindow : Window
         }
     }
 
-    private async Task<bool> SaveDocumentToStorageFileAsync(IStorageFile file)
+    private async Task<bool> SaveDocumentToHostFileAsync(IDesignerHostFile file)
     {
         try
         {
-            var localPath = file.TryGetLocalPath();
+            var localPath = file.LocalPath;
             if (!string.IsNullOrWhiteSpace(localPath))
                 return await SaveDocumentToPathAsync(localPath);
 
@@ -10183,17 +10158,6 @@ public partial class MainWindow : Window
             VM.ShowWorkspaceToast(WorkspaceToastLevel.Error, "Save failed", ex.Message, isPersistent: true);
             return false;
         }
-    }
-
-    private static async Task SaveTextAtomicallyAsync(string path, string text)
-    {
-        var directory = System.IO.Path.GetDirectoryName(path);
-        if (!string.IsNullOrWhiteSpace(directory))
-            Directory.CreateDirectory(directory);
-
-        var tempPath = $"{path}.{Guid.NewGuid():N}.tmp";
-        await File.WriteAllTextAsync(tempPath, text);
-        File.Move(tempPath, path, overwrite: true);
     }
 
     private async void BrowseImageButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)

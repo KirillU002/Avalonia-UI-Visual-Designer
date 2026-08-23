@@ -11,6 +11,14 @@ public sealed class DocumentBackupService
 {
     private const int MaxBackupsPerDocument = 5;
     private const string BackupFolderName = ".formdesigner-backups";
+    private readonly string _fallbackDirectory;
+
+    public DocumentBackupService(string? fallbackDirectory = null)
+    {
+        _fallbackDirectory = string.IsNullOrWhiteSpace(fallbackDirectory)
+            ? Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData)
+            : fallbackDirectory;
+    }
 
     public async Task<BackupFileModel?> TryCreateBackupAsync(string documentPath)
     {
@@ -68,11 +76,11 @@ public sealed class DocumentBackupService
         }
     }
 
-    private static string GetBackupDirectory(string documentPath)
+    private string GetBackupDirectory(string documentPath)
     {
         var directory = Path.GetDirectoryName(documentPath);
         if (string.IsNullOrWhiteSpace(directory))
-            directory = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            directory = _fallbackDirectory;
 
         return Path.Combine(directory, BackupFolderName);
     }
