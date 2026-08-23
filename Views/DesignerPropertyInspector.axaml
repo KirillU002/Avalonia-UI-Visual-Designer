@@ -1,0 +1,72 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:FormDesigner.ViewModels"
+             xmlns:controls="using:FormDesigner.Controls"
+             x:Class="FormDesigner.Views.DesignerPropertyInspector"
+             x:Name="RootInspector">
+  <ItemsControl x:Name="PropertyGridCategoriesItemsControl"
+                DataContext="{Binding Context, ElementName=RootInspector}"
+                ItemsSource="{Binding PropertyGridCategories}">
+    <ItemsControl.ItemTemplate>
+      <DataTemplate x:DataType="vm:PropertyGridCategoryViewModel">
+        <StackPanel>
+          <ToggleButton Classes="property-category-header" IsChecked="{Binding IsExpanded, Mode=TwoWay}">
+            <Grid ColumnDefinitions="14,*">
+              <TextBlock Text="{Binding ExpandGlyph}" FontSize="10" HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False"/>
+              <TextBlock Grid.Column="1" Text="{Binding HeaderText}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" IsHitTestVisible="False"/>
+            </Grid>
+          </ToggleButton>
+          <ItemsControl ItemsSource="{Binding Rows}" IsVisible="{Binding IsExpanded}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:PropertyGridRowViewModel">
+                <Border Classes="property-row" ToolTip.Tip="{Binding Description}">
+                  <Grid ColumnDefinitions="18,112,*,Auto,Auto" MinHeight="28">
+                    <Button Classes="property-star"
+                            Content="{Binding FavoriteGlyph}"
+                            Command="{Binding #RootInspector.DataContext.Context.TogglePropertyGridFavoriteCommand}"
+                            CommandParameter="{Binding}"
+                            ToolTip.Tip="Добавить или убрать из избранного"/>
+                    <TextBlock Grid.Column="1" FontSize="12" Foreground="#334155" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Description}">
+                      <TextBlock.Text>
+                        <MultiBinding StringFormat="{}{0}{1}">
+                          <Binding Path="ModifiedGlyph"/>
+                          <Binding Path="Label"/>
+                        </MultiBinding>
+                      </TextBlock.Text>
+                    </TextBlock>
+                    <Border Grid.Column="2" BorderBrush="#E5E7EB" BorderThickness="1,0,0,0" Padding="6,1,0,1">
+                      <Grid MinWidth="116">
+                        <controls:PropertyGridTextEditor Classes="property-editor" Row="{Binding}" MinWidth="80" HorizontalAlignment="Stretch" VerticalAlignment="Center" IsVisible="{Binding IsTextEditor}"/>
+                        <controls:PropertyGridTextEditor Classes="property-editor" Row="{Binding}" MinWidth="80" HorizontalAlignment="Stretch" VerticalAlignment="Center" IsVisible="{Binding IsNumberEditor}"/>
+                        <CheckBox IsVisible="{Binding IsBoolEditor}" IsChecked="{Binding BoolValue, Mode=TwoWay}" HorizontalAlignment="Left" VerticalAlignment="Center"/>
+                        <ComboBox IsVisible="{Binding IsEnumEditor}" ItemsSource="{Binding Options}" SelectedItem="{Binding SelectedOption, Mode=TwoWay}" MinWidth="80" MaxDropDownHeight="320" HorizontalAlignment="Stretch" VerticalAlignment="Center" ToolTip.Tip="{Binding Description}">
+                          <ComboBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:PropertyGridOptionViewModel"><TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis"/></DataTemplate>
+                          </ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <ComboBox IsVisible="{Binding IsBindingSourceEditor}" ItemsSource="{Binding Options}" SelectedItem="{Binding SelectedOption, Mode=TwoWay}" MinWidth="80" MaxDropDownHeight="320" HorizontalAlignment="Stretch" VerticalAlignment="Center" ToolTip.Tip="{Binding Description}">
+                          <ComboBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:PropertyGridOptionViewModel"><TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis"/></DataTemplate>
+                          </ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <Grid IsVisible="{Binding IsColorEditor}" ColumnDefinitions="Auto,*,Auto">
+                          <Border Width="14" Height="14" Margin="0,0,6,0" Background="{Binding Value}" BorderBrush="#94A3B8" BorderThickness="1" CornerRadius="3" VerticalAlignment="Center" IsHitTestVisible="False"/>
+                          <TextBlock Grid.Column="1" Text="{Binding Value}" Foreground="#334155" FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" IsHitTestVisible="False"/>
+                          <Button Grid.Column="2" Classes="property-action" Content="..." Click="PropertyGridColorButton_Click" ToolTip.Tip="Выбрать цвет"/>
+                        </Grid>
+                        <Button Classes="property-action" Content="{Binding ActionText}" IsVisible="{Binding IsActionEditor}" HorizontalAlignment="Stretch" Click="PropertyGridActionButton_Click"/>
+                        <TextBlock Text="{Binding Value}" IsVisible="{Binding IsReadOnlyEditor}" Foreground="#475569" FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" IsHitTestVisible="False"/>
+                      </Grid>
+                    </Border>
+                    <Button Grid.Column="3" Classes="property-action" Content="↺" IsVisible="{Binding CanResetToDefault}" Click="PropertyGridResetButton_Click" ToolTip.Tip="{Binding DefaultTooltip}"/>
+                    <TextBlock Grid.Column="4" Text="!" FontWeight="Bold" Foreground="#DC2626" IsVisible="{Binding HasValidationError}" ToolTip.Tip="{Binding ValidationMessage}" VerticalAlignment="Center" IsHitTestVisible="False"/>
+                  </Grid>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+      </DataTemplate>
+    </ItemsControl.ItemTemplate>
+  </ItemsControl>
+</UserControl>

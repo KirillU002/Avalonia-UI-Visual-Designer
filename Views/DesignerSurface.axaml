@@ -1,0 +1,244 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:FormDesigner.ViewModels"
+             xmlns:models="using:FormDesigner.Models"
+             x:Class="FormDesigner.Views.DesignerSurface"
+             x:Name="RootSurface"
+             x:DataType="vm:DesignerSurfaceViewModel">
+  <!--
+    Context намеренно является переходным binding facade. Surface не зависит от
+    concrete host type: standalone передаёт текущую host model, пока Toolbox и
+    Property Inspector мигрируют поэтапно.
+  -->
+  <Grid DataContext="{Binding ViewModel, ElementName=RootSurface}"
+        RowDefinitions="Auto,Auto,*">
+    <Border Background="#FFFFFF"
+            BorderBrush="#D7E2EE"
+            BorderThickness="1"
+            CornerRadius="6"
+            Padding="3">
+      <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                    VerticalScrollBarVisibility="Disabled">
+        <ItemsControl ItemsSource="{Binding Context.DocumentTabs}">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <StackPanel Orientation="Horizontal"/>
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="models:DesignerDocumentTabModel">
+              <Border Margin="0,0,6,0"
+                      Padding="6,3"
+                      MinWidth="104"
+                      Background="{Binding Background}"
+                      BorderBrush="{Binding BorderBrush}"
+                      BorderThickness="1"
+                      CornerRadius="6">
+                <Grid ColumnDefinitions="*,Auto">
+                  <Button Content="{Binding Title}"
+                          Command="{Binding #RootSurface.DataContext.Context.SwitchDocumentCommand}"
+                          CommandParameter="{Binding}"
+                          Classes="ghost-button"
+                          HorizontalAlignment="Stretch"
+                          HorizontalContentAlignment="Left"
+                          Padding="0"
+                          MinHeight="24"/>
+                  <Button Grid.Column="1"
+                          Content="×"
+                          Command="{Binding #RootSurface.DataContext.Context.CloseDocumentTabCommand}"
+                          CommandParameter="{Binding}"
+                          Classes="ghost-button"
+                          Padding="6,0"
+                          MinHeight="24"
+                          ToolTip.Tip="Close document tab"/>
+                </Grid>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </ScrollViewer>
+    </Border>
+
+    <Border Grid.Row="1"
+            Margin="0,5,0,0"
+            Background="#EFF6FF"
+            BorderBrush="#D7E2EE"
+            BorderThickness="1"
+            CornerRadius="8"
+            Padding="6">
+      <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto">
+        <StackPanel Spacing="1">
+          <TextBlock Text="Поверхность формы"
+                     FontSize="13"
+                     FontWeight="Bold"
+                     MaxLines="1"
+                     TextTrimming="CharacterEllipsis"/>
+          <TextBlock Text="{Binding Context.SelectedControlSummary}"
+                     Foreground="#475569"
+                     FontSize="11"
+                     MaxLines="1"
+                     TextTrimming="CharacterEllipsis"/>
+        </StackPanel>
+        <Border Grid.Column="1"
+                Background="White"
+                BorderBrush="#D7E2EE"
+                BorderThickness="1"
+                CornerRadius="6"
+                Padding="8,4">
+          <StackPanel Orientation="Horizontal" Spacing="7">
+            <TextBlock Text="{Binding Context.FormTitle}" FontSize="11" Foreground="#64748B" VerticalAlignment="Center"/>
+            <TextBlock Text="{Binding Context.FormWindowState}" FontSize="11" Foreground="#1D4ED8" FontWeight="SemiBold" VerticalAlignment="Center"/>
+            <TextBlock Text="{Binding Context.PreviewFormWidth, StringFormat='{}{0:0} px'}" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center"/>
+            <TextBlock Text="×" Foreground="#64748B" FontSize="11" VerticalAlignment="Center"/>
+            <TextBlock Text="{Binding Context.PreviewFormHeight, StringFormat='{}{0:0} px'}" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center"/>
+          </StackPanel>
+        </Border>
+        <WrapPanel Grid.Row="1" Grid.ColumnSpan="2" ItemHeight="30" VerticalAlignment="Center">
+          <Button Content="−" Width="32" Margin="0,0,5,0" Classes="toolbar-button" Click="ZoomOutButton_Click" ToolTip.Tip="Уменьшить масштаб поверхности"/>
+          <Button Content="100%" MinWidth="58" Margin="0,0,5,0" Classes="toolbar-button" Click="ResetZoomButton_Click" ToolTip.Tip="Сбросить масштаб к 100%"/>
+          <Button Content="+" Width="32" Margin="0,0,5,0" Classes="toolbar-button" Click="ZoomInButton_Click" ToolTip.Tip="Увеличить масштаб поверхности"/>
+          <ComboBox x:Name="ZoomPresetComboBox" Width="92" SelectionChanged="ZoomPresetComboBox_SelectionChanged" ToolTip.Tip="Выбрать масштаб поверхности">
+            <ComboBoxItem Content="25%"/>
+            <ComboBoxItem Content="50%"/>
+            <ComboBoxItem Content="75%"/>
+            <ComboBoxItem Content="100%"/>
+            <ComboBoxItem Content="150%"/>
+            <ComboBoxItem Content="200%"/>
+          </ComboBox>
+          <Button Content="{Binding Context.UserPreviewModeButtonText}"
+                  Classes="toolbar-button"
+                  Command="{Binding Context.ToggleDesignFramesEditorCommand}"
+                  ToolTip.Tip="{Binding Context.ToggleDesignFramesEditorCommand.Hint}"
+                  VerticalAlignment="Center"
+                  Margin="8,0,5,0"
+                  Padding="8,4"/>
+          <Button Content="{Binding Context.ImmersiveModeButtonText}"
+                  Classes="toolbar-button"
+                  Command="{Binding Context.ToggleImmersiveDesignerModeCommand}"
+                  VerticalAlignment="Center"
+                  Padding="8,4"/>
+        </WrapPanel>
+      </Grid>
+    </Border>
+
+    <Border Grid.Row="2"
+            Margin="0,6,0,0"
+            Background="#E4EDF7"
+            BorderBrush="#CBD8E8"
+            BorderThickness="1"
+            CornerRadius="8"
+            Padding="8">
+      <Grid>
+        <ScrollViewer x:Name="DesignerViewportScrollViewer"
+                      HorizontalScrollBarVisibility="Auto"
+                      VerticalScrollBarVisibility="Auto">
+          <Canvas x:Name="DesignViewportRoot" Background="Transparent">
+            <Canvas x:Name="DesignSurfaceHost" Background="Transparent" RenderTransformOrigin="0,0">
+              <Border x:Name="DesignSurfaceTitleBar"
+                      Width="{Binding Context.PreviewFormWidth}"
+                      Height="36"
+                      Background="#E2E8F0"
+                      BorderBrush="#0F172A"
+                      BorderThickness="1,1,1,0"
+                      CornerRadius="10,10,0,0">
+                <Grid ColumnDefinitions="*,Auto,Auto" Margin="12,0">
+                  <TextBlock Text="{Binding Context.FormTitle}" VerticalAlignment="Center" FontWeight="SemiBold" Foreground="#0F172A"/>
+                  <Border Grid.Column="1" Background="#DBEAFE" CornerRadius="999" Padding="10,4" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding Context.FormWindowState}" Foreground="#1D4ED8" FontSize="12" FontWeight="SemiBold"/>
+                  </Border>
+                  <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                    <Border Width="10" Height="10" Background="#F87171" CornerRadius="999"/>
+                    <Border Width="10" Height="10" Background="#FBBF24" CornerRadius="999"/>
+                    <Border Width="10" Height="10" Background="#34D399" CornerRadius="999"/>
+                  </StackPanel>
+                </Grid>
+              </Border>
+              <Border x:Name="DesignSurfaceBorder"
+                      Width="{Binding Context.PreviewFormWidth}"
+                      Height="{Binding Context.PreviewFormHeight}"
+                      Background="{Binding Context.SurfaceBackground}"
+                      BorderBrush="#0F172A"
+                      BorderThickness="1"
+                      CornerRadius="0,0,10,10"
+                      Canvas.Top="36"/>
+              <Canvas x:Name="GridOverlayCanvas"
+                      Width="{Binding Context.PreviewFormWidth}"
+                      Height="{Binding Context.PreviewFormHeight}"
+                      Canvas.Top="36"
+                      IsHitTestVisible="False"/>
+              <Canvas x:Name="GuideOverlayCanvas"
+                      Width="{Binding Context.PreviewFormWidth}"
+                      Height="{Binding Context.PreviewFormHeight}"
+                      Canvas.Top="36"
+                      IsHitTestVisible="False"/>
+              <Canvas x:Name="DesignerCanvas"
+                      Width="{Binding Context.PreviewFormWidth}"
+                      Height="{Binding Context.PreviewFormHeight}"
+                      Background="Transparent"
+                      Canvas.Top="36"
+                      DragDrop.AllowDrop="True"/>
+              <Canvas x:Name="SelectionOverlayCanvas"
+                      Width="{Binding Context.PreviewFormWidth}"
+                      Height="{Binding Context.PreviewFormHeight}"
+                      Canvas.Top="36"
+                      IsHitTestVisible="True"/>
+              <Border x:Name="DesignResizeHandle"
+                      Width="20"
+                      Height="20"
+                      Background="#1D4ED8"
+                      BorderBrush="White"
+                      BorderThickness="2"
+                      CornerRadius="6"
+                      IsVisible="{Binding Context.CanResizeDesignSurface}"/>
+            </Canvas>
+          </Canvas>
+        </ScrollViewer>
+
+        <Border Background="#F8FBFFEE"
+                BorderBrush="#93C5FD"
+                BorderThickness="1"
+                CornerRadius="10"
+                Padding="8,6"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Top"
+                Margin="0,12,0,0"
+                IsVisible="{Binding Context.IsLayoutOverlayVisible}">
+          <StackPanel Orientation="Horizontal" Spacing="6">
+            <StackPanel Spacing="0" MinWidth="150">
+              <TextBlock Text="{Binding Context.ActiveLayoutOverlayTitle}" FontSize="12" FontWeight="Bold" Foreground="#0F172A" MaxLines="1" TextTrimming="CharacterEllipsis"/>
+              <TextBlock Text="{Binding Context.ActiveLayoutOverlaySummary}" FontSize="10" Foreground="#475569" MaxLines="1" TextTrimming="CharacterEllipsis"/>
+            </StackPanel>
+            <Button Content="+ Row" Classes="data-action-button" Command="{Binding Context.AddGridRowDefinitionCommand}" IsVisible="{Binding Context.IsActiveLayoutGrid}" Padding="8,4"/>
+            <Button Content="+ Column" Classes="data-action-button" Command="{Binding Context.AddGridColumnDefinitionCommand}" IsVisible="{Binding Context.IsActiveLayoutGrid}" Padding="8,4"/>
+            <Button Content="Edit rows/columns" Classes="data-action-button" Command="{Binding Context.SetActiveLayoutToGridCommand}" IsVisible="{Binding Context.IsActiveLayoutGrid}" Padding="8,4" ToolTip.Tip="Open the Layout inspector tab to edit Grid definitions"/>
+            <Button Content="Grid overlay" Classes="data-action-button" Command="{Binding Context.ToggleActiveGridOverlayCommand}" IsVisible="{Binding Context.IsActiveLayoutGrid}" Padding="8,4"/>
+            <ComboBox ItemsSource="{Binding Context.AvailableLayoutOrientations}" SelectedItem="{Binding Context.ActiveStackOrientation, Mode=TwoWay}" IsVisible="{Binding Context.IsActiveLayoutStack}" Width="104"/>
+            <TextBox Classes="property-editor" Text="{Binding Context.ActiveStackSpacing, Mode=TwoWay}" IsVisible="{Binding Context.IsActiveLayoutStack}" Width="52" ToolTip.Tip="StackPanel spacing"/>
+            <Button Content="Reverse" Classes="data-action-button" Command="{Binding Context.MoveSelectedStackChildDownCommand}" IsVisible="{Binding Context.IsActiveLayoutStack}" Padding="8,4" ToolTip.Tip="Move selected child down in StackPanel order"/>
+            <Button Content="Canvas" Classes="data-action-button" Command="{Binding Context.SetActiveLayoutToCanvasCommand}" Padding="8,4"/>
+            <Button Content="Stack" Classes="data-action-button" Command="{Binding Context.SetActiveLayoutToStackCommand}" Padding="8,4"/>
+            <Button Content="Grid" Classes="data-action-button" Command="{Binding Context.SetActiveLayoutToGridCommand}" Padding="8,4"/>
+          </StackPanel>
+        </Border>
+
+        <Border x:Name="MiniMapHost"
+                Width="250"
+                Padding="12"
+                Background="#F8FBFFEE"
+                BorderBrush="#93A9C8"
+                BorderThickness="1"
+                CornerRadius="16"
+                HorizontalAlignment="Right"
+                VerticalAlignment="Bottom"
+                Margin="0,0,12,12"
+                IsVisible="False">
+          <Grid RowDefinitions="Auto,Auto,*">
+            <TextBlock Text="Навигация" FontWeight="Bold" FontSize="14" Foreground="#0F172A"/>
+            <TextBlock x:Name="MiniMapStatusTextBlock" Grid.Row="1" Foreground="#475569" Text="100%"/>
+            <Canvas x:Name="MiniMapCanvas" Grid.Row="2" Width="220" Height="140" Background="Transparent"/>
+          </Grid>
+        </Border>
+      </Grid>
+    </Border>
+  </Grid>
+</UserControl>

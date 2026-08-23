@@ -5,6 +5,7 @@
         xmlns:vm="using:FormDesigner.ViewModels"
         xmlns:models="using:FormDesigner.Models"
         xmlns:controls="using:FormDesigner.Controls"
+        xmlns:views="using:FormDesigner.Views"
         xmlns:commands="using:FormDesigner.EditorCommands"
         xmlns:contracts="clr-namespace:FormDesigner.PluginContracts;assembly=FormDesigner.PluginContracts"
         x:Class="FormDesigner.Views.MainWindow"
@@ -963,7 +964,9 @@
           </TabItem>
           <TabItem Header="Компоненты"
                    IsVisible="{Binding IsDesignMode}">
+            <Grid>
             <ScrollViewer Margin="0,6,0,0"
+                          IsVisible="False"
                           VerticalScrollBarVisibility="Auto">
               <StackPanel Spacing="6">
                 <TextBlock Text="Доступные элементы"
@@ -1061,6 +1064,9 @@
                 </ItemsControl>
               </StackPanel>
             </ScrollViewer>
+            <views:DesignerToolbox x:Name="DesignerToolbox"
+                                  Context="{Binding}"/>
+            </Grid>
           </TabItem>
 
           <TabItem Header="Шаблоны"
@@ -1710,7 +1716,7 @@
                   BorderThickness="1"
                   CornerRadius="6"
                   Padding="3"
-                  IsVisible="{Binding IsDesignerCanvasWorkspaceVisible}">
+                  IsVisible="False">
             <ScrollViewer HorizontalScrollBarVisibility="Auto"
                           VerticalScrollBarVisibility="Disabled">
               <ItemsControl ItemsSource="{Binding DocumentTabs}">
@@ -1761,7 +1767,7 @@
                   BorderThickness="1"
                   CornerRadius="8"
                   Padding="6"
-                  IsVisible="{Binding IsDesignerCanvasWorkspaceVisible}">
+                  IsVisible="False">
             <Grid RowDefinitions="Auto,Auto"
                   ColumnDefinitions="*,Auto">
               <StackPanel Spacing="1">
@@ -1834,7 +1840,7 @@
                         Click="ZoomInButton_Click"
                         ToolTip.Tip="Увеличить масштаб поверхности"/>
 
-                <ComboBox x:Name="ZoomPresetComboBox"
+                <ComboBox x:Name="LegacyZoomPresetComboBox"
                           Width="92"
                           Margin="0,0,0,0"
                           SelectionChanged="ZoomPresetComboBox_SelectionChanged"
@@ -1873,21 +1879,21 @@
                   BorderThickness="1"
                   CornerRadius="8"
                   Padding="8"
-                  IsVisible="{Binding IsDesignerCanvasWorkspaceVisible}">
+                  IsVisible="False">
             <Grid>
-              <ScrollViewer x:Name="DesignerViewportScrollViewer"
+              <ScrollViewer x:Name="LegacyDesignerViewportScrollViewer"
                             HorizontalScrollBarVisibility="Auto"
                             VerticalScrollBarVisibility="Auto">
                 <!-- Внутри DesignSurfaceHost лежат все визуальные слои конструктора.
                      Они разнесены по отдельным Canvas, чтобы независимо рисовать:
                      рамку окна, сетку, направляющие, редактируемые контролы и ручку ресайза формы. -->
-                <Canvas x:Name="DesignViewportRoot"
+                <Canvas x:Name="LegacyDesignViewportRoot"
                         Background="Transparent">
-                  <Canvas x:Name="DesignSurfaceHost"
+                  <Canvas x:Name="LegacyDesignSurfaceHost"
                           Background="Transparent"
                           RenderTransformOrigin="0,0">
                     <!-- Декоративная имитация системной шапки окна. -->
-                    <Border x:Name="DesignSurfaceTitleBar"
+                    <Border x:Name="LegacyDesignSurfaceTitleBar"
                             Width="{Binding PreviewFormWidth}"
                             Height="36"
                             Background="#E2E8F0"
@@ -1922,7 +1928,7 @@
                     </Border>
 
                     <!-- Видимая рабочая область формы. -->
-                    <Border x:Name="DesignSurfaceBorder"
+                    <Border x:Name="LegacyDesignSurfaceBorder"
                             Width="{Binding PreviewFormWidth}"
                             Height="{Binding PreviewFormHeight}"
                             Background="{Binding SurfaceBackground}"
@@ -1932,14 +1938,14 @@
                             Canvas.Top="36"/>
 
                     <!-- Слой сетки для визуальной привязки элементов. -->
-                    <Canvas x:Name="GridOverlayCanvas"
+                    <Canvas x:Name="LegacyGridOverlayCanvas"
                             Width="{Binding PreviewFormWidth}"
                             Height="{Binding PreviewFormHeight}"
                             Canvas.Top="36"
                             IsHitTestVisible="False"/>
 
                     <!-- Слой направляющих, marquee-выделения и подсветки контейнеров. -->
-                    <Canvas x:Name="GuideOverlayCanvas"
+                    <Canvas x:Name="LegacyGuideOverlayCanvas"
                             Width="{Binding PreviewFormWidth}"
                             Height="{Binding PreviewFormHeight}"
                             Canvas.Top="36"
@@ -1947,7 +1953,7 @@
 
                     <!-- Основной слой с контролами формы.
                          Именно сюда попадают drag-and-drop, клики, перемещение и ресайз. -->
-                    <Canvas x:Name="DesignerCanvas"
+                    <Canvas x:Name="LegacyDesignerCanvas"
                             Width="{Binding PreviewFormWidth}"
                             Height="{Binding PreviewFormHeight}"
                             Background="Transparent"
@@ -1957,14 +1963,14 @@
                             PointerReleased="DesignerCanvas_PointerReleased"
                             DragDrop.AllowDrop="True"/>
 
-                    <Canvas x:Name="SelectionOverlayCanvas"
+                    <Canvas x:Name="LegacySelectionOverlayCanvas"
                             Width="{Binding PreviewFormWidth}"
                             Height="{Binding PreviewFormHeight}"
                             Canvas.Top="36"
                             IsHitTestVisible="True"/>
 
                     <!-- Ручка изменения размера самой формы в режиме обычного окна. -->
-                    <Border x:Name="DesignResizeHandle"
+                    <Border x:Name="LegacyDesignResizeHandle"
                             Width="20"
                             Height="20"
                             Background="#1D4ED8"
@@ -2132,7 +2138,7 @@
                 </StackPanel>
               </Border>
 
-              <Border x:Name="MiniMapHost"
+              <Border x:Name="LegacyMiniMapHost"
                       Width="250"
                       Padding="12"
                       Background="#F8FBFFEE"
@@ -2148,11 +2154,11 @@
                              FontWeight="Bold"
                              FontSize="14"
                              Foreground="#0F172A"/>
-                  <TextBlock x:Name="MiniMapStatusTextBlock"
+                  <TextBlock x:Name="LegacyMiniMapStatusTextBlock"
                              Grid.Row="1"
                              Foreground="#475569"
                              Text="100%"/>
-                  <Canvas x:Name="MiniMapCanvas"
+                  <Canvas x:Name="LegacyMiniMapCanvas"
                           Grid.Row="2"
                           Width="220"
                           Height="140"
@@ -2164,6 +2170,12 @@
               </Border>
             </Grid>
           </Border>
+
+          <views:DesignerSurface x:Name="DesignerSurface"
+                                 Grid.RowSpan="3"
+                                 Context="{Binding}"
+                                 Session="{Binding ActiveSession}"
+                                 IsVisible="{Binding IsDesignerCanvasWorkspaceVisible}"/>
 
           <Grid Grid.RowSpan="3"
                 RowDefinitions="Auto,*"
@@ -3147,7 +3159,9 @@
                   <Border x:Name="PropertyGridTableHost"
                           Classes="property-grid-table"
                           IsVisible="{Binding HasPropertyGridRows}">
-                    <ItemsControl x:Name="PropertyGridCategoriesItemsControl"
+                    <Grid>
+                    <ItemsControl x:Name="LegacyPropertyGridCategoriesItemsControl"
+                                  IsVisible="False"
                                   ItemsSource="{Binding PropertyGridCategories}">
                     <ItemsControl.ItemTemplate>
                       <DataTemplate x:DataType="vm:PropertyGridCategoryViewModel">
@@ -3317,6 +3331,9 @@
                       </DataTemplate>
                     </ItemsControl.ItemTemplate>
                     </ItemsControl>
+                    <views:DesignerPropertyInspector x:Name="DesignerPropertyInspector"
+                                                     Context="{Binding}"/>
+                    </Grid>
                   </Border>
                 </StackPanel>
               </ScrollViewer>

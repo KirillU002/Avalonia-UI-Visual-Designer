@@ -259,6 +259,18 @@ internal static class Program
             new("PropertyInspectorFollowsActiveSessionSelection", ConfigurePropertyInspectorFollowsActiveSessionSelection, AssertPropertyInspectorFollowsActiveSessionSelection),
             new("UndoRedoIsIsolatedPerDocumentSession", ConfigureUndoRedoIsIsolatedPerDocumentSession, AssertUndoRedoIsIsolatedPerDocumentSession),
             new("ApplyDocumentPreservesSelectionThroughSession", ConfigureApplyDocumentPreservesSelectionThroughSession, AssertApplyDocumentPreservesSelectionThroughSession),
+            new("DesignerSurfaceCanBeCreatedWithoutMainWindow", ConfigureSimpleFormExport, AssertDesignerSurfaceCanBeCreatedWithoutMainWindow),
+            new("DesignerSurfaceCanAttachDocumentSession", ConfigureSimpleFormExport, AssertDesignerSurfaceCanAttachDocumentSession),
+            new("DesignerSurfaceCanSwitchDocumentSessions", ConfigureSimpleFormExport, AssertDesignerSurfaceCanSwitchDocumentSessions),
+            new("DesignerSurfaceRendersStandardControl", ConfigureDesignerSurfaceStandardControl, AssertDesignerSurfaceRendersStandardControl),
+            new("DesignerSurfaceToolboxUsesSharedRegistry", ConfigureEremexTextEditorVerticalSlice, AssertDesignerSurfaceToolboxUsesSharedRegistry),
+            new("DesignerSurfaceSelectionUpdatesSession", ConfigureDesignerSurfaceStandardControl, AssertDesignerSurfaceSelectionUpdatesSession),
+            new("SessionSelectionUpdatesDesignerSurface", ConfigureDesignerSurfaceStandardControl, AssertSessionSelectionUpdatesDesignerSurface),
+            new("DesignerSurfaceInspectorUsesSessionSelection", ConfigureDesignerSurfaceStandardControl, AssertDesignerSurfaceInspectorUsesSessionSelection),
+            new("MainWindowSwitchFormRebindsSameDesignerSurface", ConfigureDesignerSurfaceStandardControl, AssertMainWindowSwitchFormRebindsSameDesignerSurface),
+            new("DesignerSurfaceDoesNotRequireMainWindowConcreteType", ConfigureSimpleFormExport, AssertDesignerSurfaceDoesNotRequireMainWindowConcreteType),
+            new("DesignerSurfaceRendersEremexTextEditor", ConfigureEremexTextEditorVerticalSlice, AssertDesignerSurfaceRendersEremexTextEditor),
+            new("DesignerSurfaceRendersEremexDataGrid", ConfigureEremexDataGridControlVerticalSlice, AssertDesignerSurfaceRendersEremexDataGrid),
             new("MultiFormToolboxDropPropertyEdit", ConfigureMultiFormToolboxDropPropertyEdit, AssertMultiFormToolboxDropPropertyEdit, RequiresRealDataGrid: true),
             new("MultiFormSameControlNamesPropertyGridEdit", ConfigureMultiFormSameControlNamesPropertyGridEdit, AssertMultiFormSameControlNamesPropertyGridEdit, RequiresRealDataGrid: true),
             new("AddFormSimpleIsolation", ConfigureAddFormSimpleIsolation, AssertAddFormSimpleIsolation),
@@ -4418,6 +4430,171 @@ internal static class Program
     private static void AssertApplyDocumentPreservesSelectionThroughSession(SmokeContext context)
     {
         RequireContains(context.Xaml, "After add Form", "Property Inspector edit after session activation should be exported.");
+    }
+
+    private static void ConfigureDesignerSurfaceStandardControl(MainWindowViewModel vm)
+    {
+        var button = Control(DesignerControlTypes.Button, "SurfaceButton", 48, 56, 180, 42, text: "Surface button");
+        vm.Controls.Add(button);
+        vm.SelectSingleControl(button);
+    }
+
+    private static void AssertDesignerSurfaceCanBeCreatedWithoutMainWindow(SmokeContext context)
+    {
+        EnsureAvaloniaRuntimeInitialized();
+        var surface = new DesignerSurface();
+        if (surface.Session is not null || surface.ViewModel.Session is not null)
+            throw new InvalidOperationException("A new DesignerSurface must not require a document or MainWindow during construction.");
+        if (surface.Canvas is null || surface.ViewportScrollViewer is null || surface.ZoomPreset is null)
+            throw new InvalidOperationException("DesignerSurface did not create its Canvas visual hierarchy.");
+    }
+
+    private static void AssertDesignerSurfaceCanAttachDocumentSession(SmokeContext context)
+    {
+        EnsureAvaloniaRuntimeInitialized();
+        var surface = new DesignerSurface
+        {
+            Context = context.ViewModel,
+            Session = context.ViewModel.ActiveSession
+        };
+
+        if (!ReferenceEquals(surface.Session, context.ViewModel.ActiveSession)
+            || !ReferenceEquals(surface.ViewModel.Session, context.ViewModel.ActiveSession)
+            || !ReferenceEquals(surface.ViewModel.Context, context.ViewModel))
+        {
+            throw new InvalidOperationException("DesignerSurface did not attach the active DesignerDocumentSession through its host-neutral contract.");
+        }
+    }
+
+    private static void AssertDesignerSurfaceCanSwitchDocumentSessions(SmokeContext context)
+    {
+        EnsureAvaloniaRuntimeInitialized();
+        var vm = context.ViewModel;
+        var firstSession = vm.ActiveSession;
+        var surface = new DesignerSurface { Context = vm, Session = firstSession };
+        var form2 = vm.CreateNewForm();
+
+        surface.Session = vm.ActiveSession;
+        if (ReferenceEquals(firstSession, surface.Session)
+            || !ReferenceEquals(surface.Session, vm.DocumentSessions[form2.Id]))
+        {
+            throw new InvalidOperationException("DesignerSurface retained the previous session after the active document changed.");
+        }
+    }
+
+    private static void AssertDesignerSurfaceRendersStandardControl(SmokeContext context)
+    {
+        var surface = CreateMainWindowDesignerSurface(context);
+        if (!surface.Canvas.GetVisualDescendants().OfType<TextBlock>().Any(text => text.Text == "Surface button"))
+            throw new InvalidOperationException("MainWindow did not render the standard control through DesignerSurface.Canvas.");
+    }
+
+    private static void AssertDesignerSurfaceToolboxUsesSharedRegistry(SmokeContext context)
+    {
+        EnsureAvaloniaRuntimeInitialized();
+        var window = new MainWindow { DataContext = context.ViewModel };
+        var toolbox = window.FindControl<DesignerToolbox>("DesignerToolbox")
+            ?? throw new InvalidOperationException("MainWindow did not host the extracted DesignerToolbox.");
+        if (!ReferenceEquals(toolbox.Context, context.ViewModel))
+            throw new InvalidOperationException("DesignerToolbox did not receive the shared registry context.");
+        if (context.ViewModel.ToolboxGroups.FirstOrDefault(group => string.Equals(group.ProviderId, "Avalonia", StringComparison.OrdinalIgnoreCase))?.Items.Any() != true
+            || context.ViewModel.ToolboxGroups.FirstOrDefault(group => string.Equals(group.ProviderId, "Eremex", StringComparison.OrdinalIgnoreCase))?.Items.Any(item => item.Type == "Eremex.TextEditor") != true)
+        {
+            throw new InvalidOperationException("DesignerSurface Toolbox must expose the shared Standard and Eremex registry groups.");
+        }
+    }
+
+    private static void AssertDesignerSurfaceSelectionUpdatesSession(SmokeContext context)
+    {
+        var vm = context.ViewModel;
+        var surface = new DesignerSurface { Context = vm, Session = vm.ActiveSession };
+        var button = vm.Controls.Single(control => control.Name == "SurfaceButton");
+        vm.SelectSingleControl(button);
+
+        if (!ReferenceEquals(surface.Session?.SelectedControl, button)
+            || !ReferenceEquals(vm.SelectedControl, button))
+        {
+            throw new InvalidOperationException("Canvas selection and DesignerDocumentSession selection diverged.");
+        }
+    }
+
+    private static void AssertSessionSelectionUpdatesDesignerSurface(SmokeContext context)
+    {
+        var vm = context.ViewModel;
+        var surface = new DesignerSurface { Context = vm, Session = vm.ActiveSession };
+        var button = vm.Controls.Single(control => control.Name == "SurfaceButton");
+        vm.ActiveSession.SetSelectedControl(button);
+
+        if (!ReferenceEquals(surface.ViewModel.Session?.SelectedControl, button))
+            throw new InvalidOperationException("DesignerSurface did not observe the selection stored in its active session.");
+    }
+
+    private static void AssertDesignerSurfaceInspectorUsesSessionSelection(SmokeContext context)
+    {
+        EnsureAvaloniaRuntimeInitialized();
+        var vm = context.ViewModel;
+        var button = vm.Controls.Single(control => control.Name == "SurfaceButton");
+        vm.SelectSingleControl(button);
+        var window = new MainWindow { DataContext = vm };
+        var inspector = window.FindControl<DesignerPropertyInspector>("DesignerPropertyInspector")
+            ?? throw new InvalidOperationException("MainWindow did not host the extracted DesignerPropertyInspector.");
+
+        if (!ReferenceEquals(inspector.Context, vm)
+            || !ReferenceEquals(vm.ActiveSession.SelectedControl, button)
+            || !vm.PropertyGridCategories.SelectMany(category => category.Rows).Any(row => row.ContextControlId == button.Id))
+        {
+            throw new InvalidOperationException("DesignerPropertyInspector is not using the selected control from the active document session.");
+        }
+    }
+
+    private static void AssertMainWindowSwitchFormRebindsSameDesignerSurface(SmokeContext context)
+    {
+        var vm = context.ViewModel;
+        var surface = CreateMainWindowDesignerSurface(context);
+        var firstSurface = surface;
+        var form2 = vm.CreateNewForm();
+
+        if (!ReferenceEquals(firstSurface, surface)
+            || !ReferenceEquals(surface.Session, vm.DocumentSessions[form2.Id]))
+        {
+            throw new InvalidOperationException("MainWindow did not rebind its existing DesignerSurface to the newly active document session.");
+        }
+    }
+
+    private static void AssertDesignerSurfaceDoesNotRequireMainWindowConcreteType(SmokeContext context)
+    {
+        var root = FindRepositoryRoot();
+        var source = File.ReadAllText(Path.Combine(root, "Views", "DesignerSurface.axaml.cs"), Encoding.UTF8)
+            + File.ReadAllText(Path.Combine(root, "Views", "DesignerSurface.axaml"), Encoding.UTF8);
+        RequireNotContains(source, "MainWindowViewModel", "DesignerSurface must not require MainWindowViewModel as a concrete dependency.");
+        _ = new DesignerSurface { Context = context.ViewModel, Session = context.ViewModel.ActiveSession };
+    }
+
+    private static void AssertDesignerSurfaceRendersEremexTextEditor(SmokeContext context)
+    {
+        var surface = CreateMainWindowDesignerSurface(context);
+        var editor = surface.Canvas.GetVisualDescendants()
+            .FirstOrDefault(control => string.Equals(control.GetType().FullName, "Eremex.AvaloniaUI.Controls.Editors.TextEditor", StringComparison.Ordinal));
+        AssertRealEremexTextEditor(editor as Control ?? throw new InvalidOperationException("DesignerSurface Canvas did not create Eremex TextEditor."), "DesignerSurface Canvas");
+    }
+
+    private static void AssertDesignerSurfaceRendersEremexDataGrid(SmokeContext context)
+    {
+        var surface = CreateMainWindowDesignerSurface(context);
+        var grid = surface.Canvas.GetVisualDescendants()
+            .FirstOrDefault(control => string.Equals(control.GetType().FullName, "Eremex.AvaloniaUI.Controls.DataGrid.DataGridControl", StringComparison.Ordinal));
+        AssertRealEremexDataGrid(grid as Control ?? throw new InvalidOperationException("DesignerSurface Canvas did not create Eremex DataGridControl."), "DesignerSurface Canvas");
+    }
+
+    private static DesignerSurface CreateMainWindowDesignerSurface(SmokeContext context)
+    {
+        EnsureAvaloniaRuntimeInitialized();
+        var window = new MainWindow { DataContext = context.ViewModel };
+        var surface = window.FindControl<DesignerSurface>("DesignerSurface")
+            ?? throw new InvalidOperationException("MainWindow did not host a DesignerSurface named 'DesignerSurface'.");
+        surface.Context = context.ViewModel;
+        surface.Session = context.ViewModel.ActiveSession;
+        return surface;
     }
 
     private static void ConfigureMultiFormToolboxDropPropertyEdit(MainWindowViewModel vm)

@@ -161,14 +161,32 @@ public partial class MainWindow : Window
         DataContextChanged += MainWindow_DataContextChanged;
         KeyDown += MainWindow_KeyDown;
         KeyUp += MainWindow_KeyUp;
-        DesignerViewportScrollViewer.AddHandler(InputElement.PointerWheelChangedEvent, DesignerViewport_PointerWheelChanged, RoutingStrategies.Tunnel, true);
-        DesignerViewportScrollViewer.AddHandler(InputElement.PointerPressedEvent, DesignerViewport_PointerPressed, RoutingStrategies.Tunnel, true);
-        DesignerViewportScrollViewer.AddHandler(InputElement.PointerMovedEvent, DesignerViewport_PointerMoved, RoutingStrategies.Tunnel, true);
-        DesignerViewportScrollViewer.AddHandler(InputElement.PointerReleasedEvent, DesignerViewport_PointerReleased, RoutingStrategies.Tunnel, true);
+        DesignerSurface.ViewportPointerWheelChanged += DesignerViewport_PointerWheelChanged;
+        DesignerSurface.ViewportPointerPressed += DesignerViewport_PointerPressed;
+        DesignerSurface.ViewportPointerMoved += DesignerViewport_PointerMoved;
+        DesignerSurface.ViewportPointerReleased += DesignerViewport_PointerReleased;
+        DesignerSurface.CanvasPointerPressed += DesignerCanvas_PointerPressed;
+        DesignerSurface.CanvasPointerMoved += DesignerCanvas_PointerMoved;
+        DesignerSurface.CanvasPointerReleased += DesignerCanvas_PointerReleased;
+        DesignerSurface.CanvasDragOver += DesignerCanvas_DragOver;
+        DesignerSurface.CanvasDrop += DesignerCanvas_Drop;
+        DesignerSurface.DesignResizeHandlePointerPressed += DesignResizeHandle_PointerPressed;
+        DesignerSurface.DesignResizeHandlePointerMoved += DesignResizeHandle_PointerMoved;
+        DesignerSurface.DesignResizeHandlePointerReleased += DesignResizeHandle_PointerReleased;
+        DesignerSurface.MiniMapPointerPressed += MiniMapCanvas_PointerPressed;
+        DesignerSurface.MiniMapPointerMoved += MiniMapCanvas_PointerMoved;
+        DesignerSurface.MiniMapPointerReleased += MiniMapCanvas_PointerReleased;
+        DesignerSurface.ZoomOutRequested += ZoomOutButton_Click;
+        DesignerSurface.ResetZoomRequested += ResetZoomButton_Click;
+        DesignerSurface.ZoomInRequested += ZoomInButton_Click;
+        DesignerSurface.ZoomPresetChanged += ZoomPresetComboBox_SelectionChanged;
+        DesignerSurface.DiagnosticReported += DesignerSurface_DiagnosticReported;
+        DesignerToolbox.ToolboxItemPointerPressed += ToolboxItem_PointerPressed;
+        DesignerPropertyInspector.ColorRequested += PropertyGridColorButton_Click;
+        DesignerPropertyInspector.ResetRequested += PropertyGridResetButton_Click;
+        DesignerPropertyInspector.ActionRequested += PropertyGridActionButton_Click;
         RightDockPanel.AddHandler(InputElement.PointerPressedEvent, RightInspector_PointerPressed, RoutingStrategies.Bubble, true);
         RightDockPanel.AddHandler(InputElement.PointerReleasedEvent, RightInspector_PointerReleased, RoutingStrategies.Bubble, true);
-        DesignerCanvas.AddHandler(DragDrop.DragOverEvent, DesignerCanvas_DragOver);
-        DesignerCanvas.AddHandler(DragDrop.DropEvent, DesignerCanvas_Drop);
         DesignerViewportScrollViewer.SizeChanged += (_, _) => RenderMiniMap();
         DesignerViewportScrollViewer.PropertyChanged += DesignerViewportScrollViewer_PropertyChanged;
         DesignViewportRoot.SizeChanged += (_, _) => RenderMiniMap();
@@ -207,6 +225,33 @@ public partial class MainWindow : Window
     }
 
     private MainWindowViewModel VM => (MainWindowViewModel)DataContext!;
+
+    // DesignerSurface owns the visual tree. These compatibility accessors keep
+    // the existing, extensively tested interaction implementation intact while
+    // it is moved out of MainWindow in small verified slices.
+    private ScrollViewer DesignerViewportScrollViewer => DesignerSurface.ViewportScrollViewer;
+    private Canvas DesignViewportRoot => DesignerSurface.ViewportRoot;
+    private Canvas DesignSurfaceHost => DesignerSurface.SurfaceHost;
+    private Border DesignSurfaceTitleBar => DesignerSurface.SurfaceTitleBar;
+    private Border DesignSurfaceBorder => DesignerSurface.SurfaceBorder;
+    private Canvas GridOverlayCanvas => DesignerSurface.GridOverlay;
+    private Canvas GuideOverlayCanvas => DesignerSurface.GuideOverlay;
+    private Canvas DesignerCanvas => DesignerSurface.Canvas;
+    private Canvas SelectionOverlayCanvas => DesignerSurface.SelectionOverlay;
+    private Border DesignResizeHandle => DesignerSurface.ResizeHandle;
+    private Border MiniMapHost => DesignerSurface.MiniMap;
+    private Canvas MiniMapCanvas => DesignerSurface.MiniMapCanvasControl;
+    private TextBlock MiniMapStatusTextBlock => DesignerSurface.MiniMapStatus;
+    private ComboBox ZoomPresetComboBox => DesignerSurface.ZoomPreset;
+    private ItemsControl PropertyGridCategoriesItemsControl => DesignerPropertyInspector.CategoriesItemsControl;
+
+    private void DesignerSurface_DiagnosticReported(object? sender, DesignerSurfaceDiagnosticEventArgs e)
+    {
+        if (DataContext is not MainWindowViewModel viewModel)
+            return;
+
+        viewModel.LogWorkspace(WorkspaceLogLevel.Info, MainWindowViewModel.OutputCategoryGeneral, e.EventName, e.Details);
+    }
 
     private void ApplyResponsiveShellPreset(double width)
     {
@@ -2686,6 +2731,8 @@ public partial class MainWindow : Window
         if (_attachedViewModel is null)
             return;
 
+        var renderStopwatch = Stopwatch.StartNew();
+        DesignerSurface.ReportHostDiagnostic("DESIGNER_SURFACE_RENDER_START", $"document={VM.ActiveDocumentId}; controls={VM.Controls.Count}");
         RefreshPreviewMetrics();
         _isApplyingTextChanges = true;
 
@@ -2750,6 +2797,10 @@ public partial class MainWindow : Window
         finally
         {
             _isApplyingTextChanges = false;
+            renderStopwatch.Stop();
+            DesignerSurface.ReportHostDiagnostic(
+                "DESIGNER_SURFACE_RENDER_END",
+                $"document={VM.ActiveDocumentId}; controls={VM.Controls.Count}; elapsedMs={renderStopwatch.Elapsed.TotalMilliseconds:0.0}");
         }
     }
 
