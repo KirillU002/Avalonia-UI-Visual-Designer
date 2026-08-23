@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -138,6 +139,7 @@ public interface IDesignerFileSystem
     Task<string> ReadAllTextAsync(string path, CancellationToken cancellationToken = default);
     Task WriteAllTextAsync(string path, string contents, CancellationToken cancellationToken = default);
     Task WriteAllTextAtomicallyAsync(string path, string contents, CancellationToken cancellationToken = default);
+    Task WriteAllTextAtomicallyAsync(string path, string contents, Encoding encoding, CancellationToken cancellationToken = default);
     void DeleteFile(string path);
 }
 

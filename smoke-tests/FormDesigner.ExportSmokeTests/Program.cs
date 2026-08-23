@@ -8,6 +8,7 @@ using Avalonia.Threading;
 using Avalonia.VisualTree;
 using FormDesigner.DesignerSystem.Infrastructure;
 using FormDesigner.DesignerSystem.Hosting;
+using FormDesigner.DesignerSystem.AxamlRoundTrip;
 using FormDesigner.Localization;
 using FormDesigner.Models;
 using FormDesigner.PluginContracts;
@@ -277,6 +278,16 @@ internal static class Program
             new("DesignerSurfaceDoesNotRequireMainWindowConcreteType", ConfigureSimpleFormExport, AssertDesignerSurfaceDoesNotRequireMainWindowConcreteType),
             new("DesignerSurfaceRendersEremexTextEditor", ConfigureEremexTextEditorVerticalSlice, AssertDesignerSurfaceRendersEremexTextEditor),
             new("DesignerSurfaceRendersEremexDataGrid", ConfigureEremexDataGridControlVerticalSlice, AssertDesignerSurfaceRendersEremexDataGrid),
+            new("AxamlImportCanvasButtonTextBox", ConfigureSimpleFormExport, AssertAxamlImportCanvasButtonTextBox),
+            new("AxamlRoundTripUpdatesButtonProperties", ConfigureSimpleFormExport, AssertAxamlRoundTripUpdatesButtonProperties),
+            new("AxamlRoundTripPreservesComment", ConfigureSimpleFormExport, AssertAxamlRoundTripPreservesComment),
+            new("AxamlRoundTripPreservesUnknownAttribute", ConfigureSimpleFormExport, AssertAxamlRoundTripPreservesUnknownAttribute),
+            new("AxamlRoundTripPreservesUnknownControl", ConfigureSimpleFormExport, AssertAxamlRoundTripPreservesUnknownControl),
+            new("AxamlRoundTripPreservesRawContent", ConfigureSimpleFormExport, AssertAxamlRoundTripPreservesRawContent),
+            new("AxamlRoundTripCanInsertNewButtonIntoCanvas", ConfigureSimpleFormExport, AssertAxamlRoundTripCanInsertNewButtonIntoCanvas),
+            new("AxamlRoundTripDeletesOnlyOwnedElement", ConfigureSimpleFormExport, AssertAxamlRoundTripDeletesOnlyOwnedElement),
+            new("AxamlRoundTripDoesNotReformatWholeDocument", ConfigureSimpleFormExport, AssertAxamlRoundTripDoesNotReformatWholeDocument),
+            new("AxamlRoundTripDetectsExternalChange", ConfigureSimpleFormExport, AssertAxamlRoundTripDetectsExternalChange),
             new("MultiFormToolboxDropPropertyEdit", ConfigureMultiFormToolboxDropPropertyEdit, AssertMultiFormToolboxDropPropertyEdit, RequiresRealDataGrid: true),
             new("MultiFormSameControlNamesPropertyGridEdit", ConfigureMultiFormSameControlNamesPropertyGridEdit, AssertMultiFormSameControlNamesPropertyGridEdit, RequiresRealDataGrid: true),
             new("AddFormSimpleIsolation", ConfigureAddFormSimpleIsolation, AssertAddFormSimpleIsolation),
@@ -4769,6 +4780,157 @@ internal static class Program
         surface.Context = context.ViewModel;
         surface.Session = context.ViewModel.ActiveSession;
         return surface;
+    }
+
+    private static void AssertAxamlImportCanvasButtonTextBox(SmokeContext context)
+    {
+        var result = ImportRoundTripFixture();
+        var button = result.Document.Controls.Single(control => control.Name == "Button1");
+        var textBox = result.Document.Controls.Single(control => control.Name == "TextBox1");
+        if (result.Document.Controls.Count != 2
+            || button.Type != DesignerControlTypes.Button
+            || textBox.Type != DesignerControlTypes.TextBox
+            || button.Text != "Кнопка"
+            || Math.Abs(button.X - 100) > 0.001
+            || Math.Abs(textBox.Y - 260) > 0.001
+            || result.Document.Controls[0].Name != "TextBox1")
+        {
+            throw new InvalidOperationException("AXAML import did not project the supported Canvas/Button/TextBox subset or Canvas.ZIndex order.");
+        }
+
+        var vm = CreateViewModel("AxamlImportCanvasButtonTextBox");
+        vm.LoadAxamlImportedDocument(result, "MainWindow.axaml");
+        var surface = CreateMainWindowDesignerSurface(new SmokeContext(context.Scenario, vm, context.ProjectPath, context.Xaml, context.CSharp, context.GeneratedFiles, context.ChecklistText, context.DiagnosticsText));
+        if (!surface.Canvas.GetVisualDescendants().OfType<TextBlock>().Any(text => text.Text == "Кнопка")
+            || !vm.IsAxamlRoundTripDocument)
+        {
+            throw new InvalidOperationException("Imported AXAML controls were not rendered through the existing DesignerSurface.");
+        }
+
+        vm.Controls.Single(control => control.Name == "Button1").Text = "Сохранить из Designer";
+        var viewModelPatch = vm.CreateActiveAxamlPatch(result.RoundTripDocument.OriginalText);
+        RequireContains(viewModelPatch.PatchedText, "Content=\"Сохранить из Designer\"", "ViewModel did not route imported AXAML save through AxamlPatchWriter.");
+        vm.MarkAxamlRoundTripSaved("MainWindow.axaml", viewModelPatch.PatchedText);
+        var repeatPatch = vm.CreateActiveAxamlPatch(viewModelPatch.PatchedText);
+        if (!repeatPatch.CanApply || repeatPatch.HasChanges)
+            throw new InvalidOperationException("AXAML source map was not refreshed after an applied patch.");
+    }
+
+    private static void AssertAxamlRoundTripUpdatesButtonProperties(SmokeContext context)
+    {
+        var result = ImportRoundTripFixture();
+        var button = result.Document.Controls.Single(control => control.Name == "Button1");
+        button.Text = "Сохранить";
+        button.Width = 220;
+        button.X = 180;
+        button.Y = 230;
+        result.Document.Controls.Single(control => control.Name == "TextBox1").Text = "World";
+
+        var patch = new AxamlPatchWriter().CreatePatch(result.RoundTripDocument, result.Document, result.RoundTripDocument.OriginalText);
+        if (!patch.CanApply || patch.Edits.Count != 5)
+            throw new InvalidOperationException("AXAML patch writer did not create the expected minimal attribute edits.");
+        RequireContains(patch.PatchedText, "Content=\"Сохранить\"", "Button Content was not patched.");
+        RequireContains(patch.PatchedText, "Width=\"220\"", "Button Width was not patched.");
+        RequireContains(patch.PatchedText, "Canvas.Left=\"180\"", "Button Canvas.Left was not patched.");
+        RequireContains(patch.PatchedText, "Canvas.Top=\"230\"", "Button Canvas.Top was not patched.");
+        RequireContains(patch.PatchedText, "Text=\"World\"", "TextBox.Text was not patched.");
+    }
+
+    private static void AssertAxamlRoundTripPreservesComment(SmokeContext context)
+    {
+        var result = ImportRoundTripFixture();
+        result.Document.Controls.Single(control => control.Name == "Button1").Width = 200;
+        var patch = new AxamlPatchWriter().CreatePatch(result.RoundTripDocument, result.Document, result.RoundTripDocument.OriginalText);
+        RequireContains(patch.PatchedText, "<!-- пользовательский комментарий: не удалять -->", "Round-trip removed a user comment.");
+    }
+
+    private static void AssertAxamlRoundTripPreservesUnknownAttribute(SmokeContext context)
+    {
+        var result = ImportRoundTripFixture();
+        result.Document.Controls.Single(control => control.Name == "Button1").Width = 200;
+        var patch = new AxamlPatchWriter().CreatePatch(result.RoundTripDocument, result.Document, result.RoundTripDocument.OriginalText);
+        RequireContains(patch.PatchedText, "Custom.Unknown=\"keep-me\"", "Round-trip removed an unknown attribute.");
+        if (!result.Diagnostics.Any(diagnostic => diagnostic.Code == "AXAML_IMPORT_UNKNOWN_ATTRIBUTE_PRESERVED"))
+            throw new InvalidOperationException("Unknown attribute preservation was not diagnosed.");
+    }
+
+    private static void AssertAxamlRoundTripPreservesUnknownControl(SmokeContext context)
+    {
+        var result = ImportRoundTripFixture();
+        result.Document.Controls.Single(control => control.Name == "Button1").Width = 200;
+        var patch = new AxamlPatchWriter().CreatePatch(result.RoundTripDocument, result.Document, result.RoundTripDocument.OriginalText);
+        RequireContains(patch.PatchedText, "<custom:HandWrittenControl Custom.Property=\"keep-me-too\" />", "Round-trip removed an unsupported control.");
+        if (result.CapabilityReport.Level != AxamlCapabilityLevel.PartiallyEditable)
+            throw new InvalidOperationException("Unsupported control must put the document into partial designer mode.");
+    }
+
+    private static void AssertAxamlRoundTripPreservesRawContent(SmokeContext context)
+    {
+        const string source = "<Window xmlns=\"https://github.com/avaloniaui\" xmlns:x=\"http://schemas.microsoft.com/winfx/2006/xaml\"><Canvas><Button x:Name=\"ManualButton\">Ручной контент</Button><Button x:Name=\"Button1\" Content=\"Кнопка\" Width=\"160\" Height=\"40\" Canvas.Left=\"100\" Canvas.Top=\"200\" /></Canvas></Window>";
+        var result = new AxamlImportService().Import(source, "RawContent.axaml");
+        if (result.Document.Controls.Count != 1 || result.Document.Controls.Single().Name != "Button1")
+            throw new InvalidOperationException("Raw content control must remain outside the Phase 1 editable projection.");
+
+        result.Document.Controls.Single().Width = 200;
+        var patch = new AxamlPatchWriter().CreatePatch(result.RoundTripDocument, result.Document, source);
+        RequireContains(patch.PatchedText, "<Button x:Name=\"ManualButton\">Ручной контент</Button>", "Round-trip changed raw inner content syntax.");
+    }
+
+    private static void AssertAxamlRoundTripCanInsertNewButtonIntoCanvas(SmokeContext context)
+    {
+        var result = ImportRoundTripFixture();
+        result.Document.Controls.Add(new DesignerControlFileModel
+        {
+            Id = "button2",
+            Type = DesignerControlTypes.Button,
+            Name = "Button2",
+            Text = "Новая кнопка",
+            Width = 160,
+            Height = 40,
+            X = 300,
+            Y = 200
+        });
+
+        var patch = new AxamlPatchWriter().CreatePatch(result.RoundTripDocument, result.Document, result.RoundTripDocument.OriginalText);
+        RequireContains(patch.PatchedText, "x:Name=\"Button2\"", "New Button fragment was not inserted into Canvas.");
+        if (patch.PatchedText.IndexOf("x:Name=\"Button2\"", StringComparison.Ordinal) > patch.PatchedText.IndexOf("</Canvas>", StringComparison.Ordinal))
+            throw new InvalidOperationException("New Button was inserted outside Canvas.");
+    }
+
+    private static void AssertAxamlRoundTripDeletesOnlyOwnedElement(SmokeContext context)
+    {
+        var result = ImportRoundTripFixture();
+        result.Document.Controls.RemoveAll(control => control.Name == "Button1");
+        var patch = new AxamlPatchWriter().CreatePatch(result.RoundTripDocument, result.Document, result.RoundTripDocument.OriginalText);
+        RequireNotContains(patch.PatchedText, "x:Name=\"Button1\"", "Imported Button was not deleted.");
+        RequireContains(patch.PatchedText, "<!-- пользовательский комментарий: не удалять -->", "Delete removed an adjacent user comment.");
+        RequireContains(patch.PatchedText, "x:Name=\"TextBox1\"", "Delete changed an unrelated imported control.");
+    }
+
+    private static void AssertAxamlRoundTripDoesNotReformatWholeDocument(SmokeContext context)
+    {
+        var result = ImportRoundTripFixture();
+        result.Document.Controls.Single(control => control.Name == "Button1").Width = 200;
+        var patch = new AxamlPatchWriter().CreatePatch(result.RoundTripDocument, result.Document, result.RoundTripDocument.OriginalText);
+        if (patch.Edits.Count != 1 || patch.Edits.Single().Length != "160".Length || patch.Edits.Single().NewText != "200")
+            throw new InvalidOperationException("Changing one property must produce one value-only text edit.");
+        RequireContains(patch.PatchedText, "        <TextBox" + result.RoundTripDocument.Syntax.NewLine, "Unchanged TextBox formatting was modified.");
+    }
+
+    private static void AssertAxamlRoundTripDetectsExternalChange(SmokeContext context)
+    {
+        var result = ImportRoundTripFixture();
+        result.Document.Controls.Single(control => control.Name == "Button1").Width = 200;
+        var patch = new AxamlPatchWriter().CreatePatch(result.RoundTripDocument, result.Document, result.RoundTripDocument.OriginalText + "\n<!-- external -->");
+        if (patch.CanApply || !patch.ExternalChangeDetected || !patch.Diagnostics.Any(diagnostic => diagnostic.Code == "AXAML_EXTERNAL_CHANGE_DETECTED"))
+            throw new InvalidOperationException("External AXAML modification was not detected before save.");
+    }
+
+    private static AxamlImportResult ImportRoundTripFixture()
+    {
+        var fixturePath = Path.Combine(FindRepositoryRoot(), "Samples", "RoundTrip", "SimpleCanvas", "MainWindow.axaml");
+        var source = File.ReadAllText(fixturePath, Encoding.UTF8);
+        return new AxamlImportService().Import(source, fixturePath);
     }
 
     private static void ConfigureMultiFormToolboxDropPropertyEdit(MainWindowViewModel vm)

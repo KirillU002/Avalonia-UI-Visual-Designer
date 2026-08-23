@@ -1,0 +1,31 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:custom="clr-namespace:Sample.Custom"
+        x:Class="SimpleCanvas.MainWindow"
+        Title="Simple canvas"
+        Width="600"
+        Height="420">
+    <Canvas>
+        <!-- пользовательский комментарий: не удалять -->
+        <Button
+            x:Name="Button1"
+            Content="Кнопка"
+            Width="160"
+            Height="40"
+            Canvas.Left="100"
+            Canvas.Top="200"
+            Canvas.ZIndex="5"
+            Custom.Unknown="keep-me" />
+
+        <TextBox
+            x:Name="TextBox1"
+            Text="Hello"
+            Width="220"
+            Height="40"
+            Canvas.Left="100"
+            Canvas.Top="260"
+            Canvas.ZIndex="1" />
+
+        <custom:HandWrittenControl Custom.Property="keep-me-too" />
+    </Canvas>
+</Window>

@@ -15,6 +15,7 @@ using FormDesigner.DesignerSystem.Binding;
 using FormDesigner.DesignerSystem.BuiltIn;
 using FormDesigner.DesignerSystem.Infrastructure;
 using FormDesigner.DesignerSystem.Hosting;
+using FormDesigner.DesignerSystem.AxamlRoundTrip;
 using FormDesigner.EditorCommands;
 using FormDesigner.Models;
 using FormDesigner.PluginContracts;
@@ -27,6 +28,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Threading.Tasks;
 
 namespace FormDesigner.Views;
@@ -45,6 +47,7 @@ public partial class MainWindow : Window
     private const string ControlTypeDataFormat = "formdesigner-control-type";
     private const string ControlSourceDocumentDataFormat = "formdesigner-source-document";
     private static readonly DesignerFileTypeFilter DesignerDocumentFileType = DesignerFileTypeFilter.Create("Документы конструктора форм", "*.formdesigner.json", "*.json");
+    private static readonly DesignerFileTypeFilter AxamlDocumentFileType = DesignerFileTypeFilter.Create("Avalonia AXAML (Experimental)", "*.axaml", "*.xaml");
     private static readonly DesignerFileTypeFilter ImageFileType = DesignerFileTypeFilter.Create("Изображения", "*.png", "*.jpg", "*.jpeg", "*.bmp", "*.gif", "*.webp", "*.ico");
     private static readonly DesignerFileTypeFilter AssemblyFileType = DesignerFileTypeFilter.Create(".NET сборки", "*.dll");
     private static readonly DesignerFileTypeFilter ZipFileType = DesignerFileTypeFilter.Create("ZIP archive", "*.zip");
@@ -9847,6 +9850,39 @@ public partial class MainWindow : Window
         }
     }
 
+    private async void OpenAxamlDocumentButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (!await EnsureUnsavedChangesHandledAsync())
+            return;
+
+        try
+        {
+            VM.LogWorkspace(WorkspaceLogLevel.Info, MainWindowViewModel.OutputCategoryDiagnostics, "HOST_FILE_PICKER_REQUEST", "operation=OpenAxamlDocument");
+            var files = await _hostServices.FilePicker.OpenFilesAsync(new DesignerOpenFilePickerOptions(
+                "Открыть AXAML (Experimental)",
+                new[] { AxamlDocumentFileType }));
+            var file = files.FirstOrDefault();
+            if (file is null)
+                return;
+
+            var source = await ReadAxamlSourceAsync(file);
+            var localPath = file.LocalPath ?? file.Name;
+            var result = new AxamlImportService().Import(source.Text, localPath);
+            result.RoundTripDocument.SetTextEncoding(source.Encoding);
+            VM.LoadAxamlImportedDocument(result, localPath);
+            _autosaveRecoveryService.TryDeleteDraft();
+            VM.AutosaveStatusText = "Черновик очищен после открытия AXAML.";
+            VM.ShowWorkspaceToast(WorkspaceToastLevel.Info, "AXAML Import — Experimental", file.Name);
+            VM.LogWorkspace(WorkspaceLogLevel.Info, MainWindowViewModel.OutputCategoryDiagnostics, "HOST_FILE_PICKER_RESULT", "operation=OpenAxamlDocument; selected=true");
+        }
+        catch (Exception ex)
+        {
+            VM.StatusText = $"Ошибка AXAML Import: {ex.Message}";
+            VM.LogWorkspace(WorkspaceLogLevel.Error, MainWindowViewModel.OutputCategoryDiagnostics, "AXAML_IMPORT_FAILED", ex.ToString());
+            VM.ShowWorkspaceToast(WorkspaceToastLevel.Error, "AXAML Import failed", ex.Message, isPersistent: true);
+        }
+    }
+
     private async void OpenRecentFileButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (sender is not Button { Tag: RecentFileModel recentFile })
@@ -10058,11 +10094,22 @@ public partial class MainWindow : Window
 
     private async void SaveDocumentAsButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        await SaveDocumentAsAsync();
+        if (VM.IsAxamlRoundTripDocument)
+            await SaveAxamlDocumentAsAsync();
+        else
+            await SaveDocumentAsAsync();
     }
 
     private async Task<bool> SaveCurrentDocumentAsync()
     {
+        if (VM.IsAxamlRoundTripDocument)
+        {
+            if (string.IsNullOrWhiteSpace(VM.CurrentDocumentPath))
+                return await SaveAxamlDocumentAsAsync();
+
+            return await SaveAxamlDocumentToPathAsync(VM.CurrentDocumentPath);
+        }
+
         if (string.IsNullOrWhiteSpace(VM.CurrentDocumentPath))
             return await SaveDocumentAsAsync();
 
@@ -10093,6 +10140,107 @@ public partial class MainWindow : Window
             VM.StatusText = $"Ошибка сохранения: {ex.Message}";
             return false;
         }
+    }
+
+    private async Task<bool> SaveAxamlDocumentAsAsync()
+    {
+        try
+        {
+            VM.LogWorkspace(WorkspaceLogLevel.Info, MainWindowViewModel.OutputCategoryDiagnostics, "HOST_FILE_PICKER_REQUEST", "operation=SaveAxamlDocument");
+            var file = await _hostServices.FilePicker.SaveFileAsync(new DesignerSaveFilePickerOptions(
+                "Сохранить AXAML (Experimental)",
+                string.IsNullOrWhiteSpace(VM.CurrentDocumentPath) ? "MainWindow.axaml" : System.IO.Path.GetFileName(VM.CurrentDocumentPath),
+                "axaml",
+                new[] { AxamlDocumentFileType }));
+            if (file is null)
+                return false;
+
+            VM.LogWorkspace(WorkspaceLogLevel.Info, MainWindowViewModel.OutputCategoryDiagnostics, "HOST_FILE_PICKER_RESULT", "operation=SaveAxamlDocument; selected=true");
+            return await SaveAxamlDocumentToHostFileAsync(file);
+        }
+        catch (Exception ex)
+        {
+            VM.StatusText = $"Ошибка сохранения AXAML: {ex.Message}";
+            return false;
+        }
+    }
+
+    private async Task<bool> SaveAxamlDocumentToPathAsync(string path)
+    {
+        try
+        {
+            var currentText = _hostServices.FileSystem.FileExists(path)
+                ? await _hostServices.FileSystem.ReadAllTextAsync(path)
+                : null;
+            var patch = VM.CreateActiveAxamlPatch(currentText);
+            if (patch.ExternalChangeDetected)
+            {
+                VM.StatusText = "AXAML был изменён вне Designer. Сохранение отменено: перезагрузите файл или сравните изменения.";
+                VM.LogWorkspace(WorkspaceLogLevel.Warning, MainWindowViewModel.OutputCategoryDiagnostics, "AXAML_EXTERNAL_CHANGE_DETECTED", path);
+                VM.ShowWorkspaceToast(WorkspaceToastLevel.Warning, "AXAML changed externally", "Сохранение отменено. Откройте файл повторно и сравните изменения.", isPersistent: true);
+                return false;
+            }
+            if (!patch.CanApply)
+                throw new InvalidOperationException("Designer не может безопасно применить AXAML patch.");
+
+            var backup = await _documentBackupService.TryCreateBackupAsync(path);
+            await _hostServices.FileSystem.WriteAllTextAtomicallyAsync(path, patch.PatchedText, VM.GetActiveAxamlTextEncoding());
+            VM.MarkAxamlRoundTripSaved(path, patch.PatchedText);
+            _autosaveRecoveryService.TryDeleteDraft();
+            VM.AutosaveStatusText = backup is null ? "Черновик очищен после AXAML save." : $"Черновик очищен. Backup: {backup.DisplayName}";
+            VM.LogWorkspace(WorkspaceLogLevel.Success, MainWindowViewModel.OutputCategoryDiagnostics, "AXAML_PATCH_APPLIED", $"path={path}; edits={patch.Edits.Count}");
+            VM.ShowWorkspaceToast(WorkspaceToastLevel.Success, "AXAML saved", System.IO.Path.GetFileName(path));
+            await SaveAppSettingsNowAsync();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            VM.StatusText = $"Ошибка сохранения AXAML: {ex.Message}";
+            VM.LogWorkspace(WorkspaceLogLevel.Error, MainWindowViewModel.OutputCategoryDiagnostics, "AXAML_SAVE_FAILED", ex.ToString());
+            VM.ShowWorkspaceToast(WorkspaceToastLevel.Error, "AXAML save failed", ex.Message, isPersistent: true);
+            return false;
+        }
+    }
+
+    private async Task<bool> SaveAxamlDocumentToHostFileAsync(IDesignerHostFile file)
+    {
+        if (!string.IsNullOrWhiteSpace(file.LocalPath))
+            return await SaveAxamlDocumentToPathAsync(file.LocalPath);
+
+        try
+        {
+            var patch = VM.CreateActiveAxamlPatch();
+            if (!patch.CanApply)
+                throw new InvalidOperationException("Designer не может безопасно применить AXAML patch.");
+
+            await using var stream = await file.OpenWriteAsync();
+            if (stream.CanSeek)
+            {
+                stream.SetLength(0);
+                stream.Seek(0, SeekOrigin.Begin);
+            }
+
+            await using var writer = new StreamWriter(stream, VM.GetActiveAxamlTextEncoding(), leaveOpen: false);
+            await writer.WriteAsync(patch.PatchedText);
+            await writer.FlushAsync();
+            VM.MarkAxamlRoundTripSaved(file.Name, patch.PatchedText);
+            VM.ShowWorkspaceToast(WorkspaceToastLevel.Success, "AXAML saved", file.Name);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            VM.StatusText = $"Ошибка сохранения AXAML: {ex.Message}";
+            VM.LogWorkspace(WorkspaceLogLevel.Error, MainWindowViewModel.OutputCategoryDiagnostics, "AXAML_SAVE_FAILED", ex.ToString());
+            return false;
+        }
+    }
+
+    private static async Task<(string Text, Encoding Encoding)> ReadAxamlSourceAsync(IDesignerHostFile file)
+    {
+        await using var stream = await file.OpenReadAsync();
+        using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+        var text = await reader.ReadToEndAsync();
+        return (text, reader.CurrentEncoding);
     }
 
     private async Task<bool> SaveDocumentToPathAsync(string path)

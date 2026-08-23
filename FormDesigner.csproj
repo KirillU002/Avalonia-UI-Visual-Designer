@@ -19,10 +19,12 @@
     <AvaloniaXaml Remove="artifacts\**\*.axaml" />
     <AvaloniaXaml Remove="smoke-tests\**\*.axaml" />
     <AvaloniaXaml Remove="templates\**\*.axaml" />
+    <AvaloniaXaml Remove="Samples\RoundTrip\**\*.axaml" />
     <AvaloniaXaml Remove="Plugins\**\*.axaml" />
     <AvaloniaResource Remove="artifacts\**\*.axaml" />
     <AvaloniaResource Remove="smoke-tests\**\*.axaml" />
     <AvaloniaResource Remove="templates\**\*.axaml" />
+    <AvaloniaResource Remove="Samples\RoundTrip\**\*.axaml" />
     <AvaloniaResource Remove="tempobj\**\*.axaml" />
     <Compile Remove="PluginContracts\**\*.cs" />
     <Compile Remove="Plugins\**\*.cs" />

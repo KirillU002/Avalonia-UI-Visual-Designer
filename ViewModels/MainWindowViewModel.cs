@@ -6,6 +6,7 @@ using FormDesigner.DesignerSystem.Binding;
 using FormDesigner.DesignerSystem.BuiltIn;
 using FormDesigner.DesignerSystem.Infrastructure;
 using FormDesigner.DesignerSystem.Hosting;
+using FormDesigner.DesignerSystem.AxamlRoundTrip;
 using FormDesigner.EditorCommands;
 using FormDesigner.Localization;
 using FormDesigner.Models;
@@ -165,6 +166,9 @@ public partial class MainWindowViewModel : ObservableObject
     }
     private readonly IDesignerRegistry _registry;
     private readonly IDesignerHostServices _hostServices;
+    private readonly AxamlImportService _axamlImportService = new();
+    private readonly AxamlPatchWriter _axamlPatchWriter = new();
+    private AxamlRoundTripDocument? _activeAxamlRoundTripDocument;
     private readonly IDesignerScheduler _scheduler;
     private readonly DocumentDiagnosticsService _diagnosticsService;
     private readonly ReusableTemplateStorageService _templateStorageService;
@@ -8589,6 +8593,7 @@ public partial class MainWindowViewModel : ObservableObject
         IReadOnlyCollection<string> oldControlIds,
         string reason)
     {
+        ClearAxamlRoundTripContext();
         TraceDocumentDebug(
             "NEW_PROJECT_RESET_STATE_START",
             $"reason={reason}; forms={CurrentProject.Forms.Count}; active={ActiveDocumentName}:{ActiveDocumentId}; selected={SelectedControl?.Name ?? "-"}:{SelectedControl?.Id ?? "-"}",
@@ -9283,6 +9288,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     public void LoadDocumentJson(string json, string? sourcePath = null, bool markAsSaved = true)
     {
+        ClearAxamlRoundTripContext();
         if (_projectWorkspaceService.TryDeserializeWorkspace(json, out var workspace))
         {
             ApplyWorkspace(workspace, sourcePath, markAsSaved);
@@ -9293,6 +9299,88 @@ public partial class MainWindowViewModel : ObservableObject
             ?? throw new InvalidOperationException("Не удалось прочитать документ конструктора.");
 
         ApplyWorkspace(_projectWorkspaceService.WrapSingleDocument(document, sourcePath), sourcePath, markAsSaved);
+    }
+
+    /// <summary>
+    /// Activates an AXAML-backed Designer document. The source map remains in memory
+    /// only and is used exclusively by AxamlPatchWriter on explicit AXAML save.
+    /// </summary>
+    public void LoadAxamlImportedDocument(AxamlImportResult result, string? sourcePath = null)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        if (!result.CapabilityReport.CanSafelyPatch)
+            throw new InvalidOperationException("Этот AXAML нельзя безопасно редактировать в экспериментальном режиме.");
+
+        _activeAxamlRoundTripDocument = result.RoundTripDocument;
+        foreach (var diagnostic in result.Diagnostics)
+        {
+            var level = diagnostic.Severity switch
+            {
+                AxamlDiagnosticSeverity.Error => WorkspaceLogLevel.Error,
+                AxamlDiagnosticSeverity.Warning => WorkspaceLogLevel.Warning,
+                _ => WorkspaceLogLevel.Info
+            };
+            LogWorkspace(level, OutputCategoryDiagnostics, diagnostic.Code, diagnostic.Details);
+        }
+
+        ApplyWorkspace(
+            _projectWorkspaceService.WrapSingleDocument(result.Document, sourcePath),
+            sourcePath,
+            markAsSaved: true);
+        OnPropertyChanged(nameof(IsAxamlRoundTripDocument));
+        OnPropertyChanged(nameof(ActiveAxamlCapabilityReport));
+        StatusText = $"AXAML открыт в experimental round-trip режиме: {Path.GetFileName(sourcePath ?? result.RoundTripDocument.SourcePath)}";
+    }
+
+    public bool IsAxamlRoundTripDocument => _activeAxamlRoundTripDocument is not null;
+
+    public AxamlCapabilityReport? ActiveAxamlCapabilityReport => _activeAxamlRoundTripDocument?.CapabilityReport;
+
+    public AxamlPatchResult CreateActiveAxamlPatch(string? currentSourceText = null)
+    {
+        if (_activeAxamlRoundTripDocument is null)
+            throw new InvalidOperationException("Активный документ не был открыт через AXAML Import.");
+
+        PersistActiveFormDocumentState(refreshProjectViews: false);
+        return _axamlPatchWriter.CreatePatch(
+            _activeAxamlRoundTripDocument,
+            CreateDocumentFileModel(),
+            currentSourceText);
+    }
+
+    public void MarkAxamlRoundTripSaved(string path, string patchedText)
+    {
+        if (_activeAxamlRoundTripDocument is null)
+            throw new InvalidOperationException("AXAML round-trip context is unavailable.");
+
+        var idsByName = Controls
+            .Where(control => !string.IsNullOrWhiteSpace(control.Name))
+            .GroupBy(control => control.Name, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.First().Id, StringComparer.Ordinal);
+        var refreshed = _axamlImportService.Import(patchedText, path, idsByName);
+        refreshed.RoundTripDocument.SetTextEncoding(_activeAxamlRoundTripDocument.TextEncoding);
+        _activeAxamlRoundTripDocument = refreshed.RoundTripDocument;
+        MarkDocumentSaved(path);
+        LogWorkspace(WorkspaceLogLevel.Success, OutputCategoryDiagnostics, "AXAML_PATCH_APPLIED", $"path={path}; controls={Controls.Count}");
+        OnPropertyChanged(nameof(ActiveAxamlCapabilityReport));
+    }
+
+    public System.Text.Encoding GetActiveAxamlTextEncoding() =>
+        _activeAxamlRoundTripDocument?.TextEncoding ?? new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+
+    public void SetActiveAxamlTextEncoding(System.Text.Encoding encoding)
+    {
+        _activeAxamlRoundTripDocument?.SetTextEncoding(encoding);
+    }
+
+    private void ClearAxamlRoundTripContext()
+    {
+        if (_activeAxamlRoundTripDocument is null)
+            return;
+
+        _activeAxamlRoundTripDocument = null;
+        OnPropertyChanged(nameof(IsAxamlRoundTripDocument));
+        OnPropertyChanged(nameof(ActiveAxamlCapabilityReport));
     }
 
     public void MarkDocumentSaved(string path)
@@ -21057,6 +21145,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void CreateNewDocumentCore(bool markAsSaved, bool resetDocumentSession = true)
     {
+        ClearAxamlRoundTripContext();
         ApplyDocument(CreateDefaultDocumentFileModel("Form1"), "", markAsSaved, resetDocumentSession);
     }
 

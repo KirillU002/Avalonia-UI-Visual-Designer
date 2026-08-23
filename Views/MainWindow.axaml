@@ -658,6 +658,11 @@
               <Border Padding="10"
                       MaxWidth="440">
                 <StackPanel Spacing="8">
+                  <Button Content="Открыть AXAML (Experimental)"
+                          Classes="data-action-button"
+                          Click="OpenAxamlDocumentButton_Click"
+                          HorizontalAlignment="Stretch"
+                          ToolTip.Tip="Открыть Window/UserControl с Canvas без полной регенерации AXAML."/>
                   <Button Content="{Binding SaveAsEditorCommand.Title}"
                           Classes="data-action-button"
                           Command="{Binding SaveAsEditorCommand}"

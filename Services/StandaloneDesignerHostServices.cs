@@ -9,6 +9,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -222,12 +223,17 @@ public sealed class PhysicalDesignerFileSystem : IDesignerFileSystem
 
     public async Task WriteAllTextAtomicallyAsync(string path, string contents, CancellationToken cancellationToken = default)
     {
+        await WriteAllTextAtomicallyAsync(path, contents, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false), cancellationToken);
+    }
+
+    public async Task WriteAllTextAtomicallyAsync(string path, string contents, Encoding encoding, CancellationToken cancellationToken = default)
+    {
         var directory = Path.GetDirectoryName(path);
         if (!string.IsNullOrWhiteSpace(directory))
             Directory.CreateDirectory(directory);
 
         var temporaryPath = $"{path}.{Guid.NewGuid():N}.tmp";
-        await File.WriteAllTextAsync(temporaryPath, contents, cancellationToken);
+        await File.WriteAllTextAsync(temporaryPath, contents, encoding ?? new UTF8Encoding(encoderShouldEmitUTF8Identifier: false), cancellationToken);
         File.Move(temporaryPath, path, overwrite: true);
     }
 
