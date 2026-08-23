@@ -250,6 +250,15 @@ internal static class Program
             new("InteractionsExport", ConfigureInteractionsExport, AssertInteractionsExport, RequiresRealDataGrid: true),
             new("MultiFormOpenFormExport", ConfigureMultiFormOpenFormExport, AssertMultiFormOpenFormExport),
             new("MultiFormDocumentStateIsolation", ConfigureMultiFormDocumentStateIsolation, AssertMultiFormDocumentStateIsolation),
+            new("DesignerDocumentSessionCreatedForOpenedForm", ConfigureDesignerDocumentSessionCreatedForOpenedForm, AssertDesignerDocumentSessionCreatedForOpenedForm),
+            new("SelectionLivesInActiveDocumentSession", ConfigureSelectionLivesInActiveDocumentSession, AssertSelectionLivesInActiveDocumentSession),
+            new("SwitchingFormsSwitchesDocumentSession", ConfigureSwitchingFormsSwitchesDocumentSession, AssertSwitchingFormsSwitchesDocumentSession),
+            new("AddFormDoesNotMutateExistingSession", ConfigureAddFormDoesNotMutateExistingSession, AssertAddFormDoesNotMutateExistingSession),
+            new("DeletingFormDisposesItsSession", ConfigureDeletingFormDisposesItsSession, AssertDeletingFormDisposesItsSession),
+            new("NewProjectDisposesAllOldDocumentSessions", ConfigureNewProjectDisposesAllOldDocumentSessions, AssertNewProjectDisposesAllOldDocumentSessions),
+            new("PropertyInspectorFollowsActiveSessionSelection", ConfigurePropertyInspectorFollowsActiveSessionSelection, AssertPropertyInspectorFollowsActiveSessionSelection),
+            new("UndoRedoIsIsolatedPerDocumentSession", ConfigureUndoRedoIsIsolatedPerDocumentSession, AssertUndoRedoIsIsolatedPerDocumentSession),
+            new("ApplyDocumentPreservesSelectionThroughSession", ConfigureApplyDocumentPreservesSelectionThroughSession, AssertApplyDocumentPreservesSelectionThroughSession),
             new("MultiFormToolboxDropPropertyEdit", ConfigureMultiFormToolboxDropPropertyEdit, AssertMultiFormToolboxDropPropertyEdit, RequiresRealDataGrid: true),
             new("MultiFormSameControlNamesPropertyGridEdit", ConfigureMultiFormSameControlNamesPropertyGridEdit, AssertMultiFormSameControlNamesPropertyGridEdit, RequiresRealDataGrid: true),
             new("AddFormSimpleIsolation", ConfigureAddFormSimpleIsolation, AssertAddFormSimpleIsolation),
@@ -4171,6 +4180,244 @@ internal static class Program
         RequireContains(form2File.Content, "Form2 edited", "Form2 exported state should include edited placeholder.");
         RequireNotContains(form2File.Content, "Form1 edited", "Form2 export should not contain Form1 control state.");
         RequireNotContains(context.DiagnosticsText, "Document isolation", "Valid multi-form switching should not produce isolation diagnostics.");
+    }
+
+    private static void ConfigureDesignerDocumentSessionCreatedForOpenedForm(MainWindowViewModel vm)
+    {
+        var form1 = vm.ActiveFormDocument ?? throw new InvalidOperationException("Form1 missing.");
+        if (!string.Equals(vm.ActiveSession.DocumentId, form1.Id, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Active session was not created for Form1.");
+        if (!vm.DocumentSessions.TryGetValue(form1.Id, out var form1Session)
+            || !ReferenceEquals(form1Session, vm.ActiveSession))
+        {
+            throw new InvalidOperationException("Form1 session is not registered as the active session.");
+        }
+
+        var form2 = vm.CreateNewForm();
+        if (!vm.DocumentSessions.TryGetValue(form2.Id, out var form2Session)
+            || !ReferenceEquals(form2Session, vm.ActiveSession)
+            || ReferenceEquals(form1Session, form2Session))
+        {
+            throw new InvalidOperationException("Opening Form2 did not create a distinct active document session.");
+        }
+
+        SwitchToForm(vm, form1.Id);
+        if (!ReferenceEquals(vm.ActiveSession, form1Session))
+            throw new InvalidOperationException("Returning to Form1 did not reactivate its existing session.");
+    }
+
+    private static void AssertDesignerDocumentSessionCreatedForOpenedForm(SmokeContext context)
+    {
+        RequireGeneratedFile(context, "MainWindow.axaml");
+    }
+
+    private static void ConfigureSelectionLivesInActiveDocumentSession(MainWindowViewModel vm)
+    {
+        var button = Control(DesignerControlTypes.Button, "SessionButton", 28, 34, 160, 38, text: "Session");
+        vm.Controls.Add(button);
+        vm.SelectSingleControl(button);
+
+        if (!ReferenceEquals(vm.ActiveSession.SelectedControl, button)
+            || !ReferenceEquals(vm.SelectedControl, button)
+            || vm.ActiveSession.SelectedControlIds.Count != 1
+            || !string.Equals(vm.ActiveSession.SelectedControlIds[0], button.Id, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Selection is not owned by the active document session.");
+        }
+
+        vm.SelectedControl = null;
+        if (vm.ActiveSession.SelectedControl is not null || vm.ActiveSession.SelectedControlIds.Count != 0)
+            throw new InvalidOperationException("SelectedControl facade did not clear active session selection.");
+    }
+
+    private static void AssertSelectionLivesInActiveDocumentSession(SmokeContext context)
+    {
+        RequireGeneratedFile(context, "MainWindow.axaml");
+    }
+
+    private static void ConfigureSwitchingFormsSwitchesDocumentSession(MainWindowViewModel vm)
+    {
+        var form1 = vm.ActiveFormDocument ?? throw new InvalidOperationException("Form1 missing.");
+        var form1Session = vm.ActiveSession;
+        vm.Controls.Add(Control(DesignerControlTypes.Button, "Form1SessionButton", 28, 34, 160, 38, text: "Form1"));
+
+        var form2 = vm.CreateNewForm();
+        var form2Session = vm.ActiveSession;
+        vm.Controls.Add(Control(DesignerControlTypes.TextBox, "Form2SessionText", 28, 34, 220, 38, placeholder: "Form2"));
+
+        if (ReferenceEquals(form1Session, form2Session))
+            throw new InvalidOperationException("Different forms share one DesignerDocumentSession.");
+
+        SwitchToForm(vm, form1.Id);
+        if (!ReferenceEquals(vm.ActiveSession, form1Session) || vm.Controls.Any(control => control.Name == "Form2SessionText"))
+            throw new InvalidOperationException("Form switch did not restore Form1 session state.");
+
+        SwitchToForm(vm, form2.Id);
+        if (!ReferenceEquals(vm.ActiveSession, form2Session) || vm.Controls.Any(control => control.Name == "Form1SessionButton"))
+            throw new InvalidOperationException("Form switch did not restore Form2 session state.");
+    }
+
+    private static void AssertSwitchingFormsSwitchesDocumentSession(SmokeContext context)
+    {
+        RequireGeneratedFile(context, "MainWindow.axaml");
+    }
+
+    private static void ConfigureAddFormDoesNotMutateExistingSession(MainWindowViewModel vm)
+    {
+        var form1 = vm.ActiveFormDocument ?? throw new InvalidOperationException("Form1 missing.");
+        var form1Session = vm.ActiveSession;
+        var button = Control(DesignerControlTypes.Button, "Form1SessionStable", 28, 34, 160, 38, text: "Stable");
+        vm.Controls.Add(button);
+
+        var form2 = vm.CreateNewForm();
+        if (form1Session.IsDisposed || vm.DocumentSessions[form1.Id] != form1Session)
+            throw new InvalidOperationException("Add Form disposed or replaced the existing Form1 session.");
+        if (!form1Session.Document.Controls.Any(control => string.Equals(control.Id, button.Id, StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidOperationException("Add Form mutated Form1 persisted document state.");
+
+        SwitchToForm(vm, form1.Id);
+        if (!vm.Controls.Any(control => string.Equals(control.Id, button.Id, StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidOperationException("Form1 controls were lost after creating Form2.");
+
+        SwitchToForm(vm, form2.Id);
+    }
+
+    private static void AssertAddFormDoesNotMutateExistingSession(SmokeContext context)
+    {
+        RequireGeneratedFile(context, "MainWindow.axaml");
+    }
+
+    private static void ConfigureDeletingFormDisposesItsSession(MainWindowViewModel vm)
+    {
+        var form1 = vm.ActiveFormDocument ?? throw new InvalidOperationException("Form1 missing.");
+        var form2 = vm.CreateNewForm();
+        var form2Session = vm.ActiveSession;
+        var form2ExplorerItem = FlattenExplorerItems(vm.ProjectExplorerItems)
+            .FirstOrDefault(item => item.Source is DesignerFormDocument form
+                && string.Equals(form.Id, form2.Id, StringComparison.OrdinalIgnoreCase));
+        if (form2ExplorerItem is null)
+            throw new InvalidOperationException("Form2 is missing from Project Explorer.");
+
+        vm.SelectedProjectExplorerItem = form2ExplorerItem;
+        vm.DeleteFormEditorCommand?.Execute(null);
+
+        if (!form2Session.IsDisposed || vm.DocumentSessions.ContainsKey(form2.Id))
+            throw new InvalidOperationException("Deleting Form2 did not dispose and unregister its session.");
+        if (!string.Equals(vm.ActiveDocumentId, form1.Id, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Deleting active Form2 did not activate Form1.");
+    }
+
+    private static void AssertDeletingFormDisposesItsSession(SmokeContext context)
+    {
+        RequireGeneratedFile(context, "MainWindow.axaml");
+    }
+
+    private static void ConfigureNewProjectDisposesAllOldDocumentSessions(MainWindowViewModel vm)
+    {
+        var form1 = vm.ActiveFormDocument ?? throw new InvalidOperationException("Form1 missing.");
+        var form1Session = vm.ActiveSession;
+        var form2 = vm.CreateNewForm();
+        var form2Session = vm.ActiveSession;
+
+        vm.NewDocumentCommand.Execute(null);
+
+        if (!form1Session.IsDisposed || !form2Session.IsDisposed)
+            throw new InvalidOperationException("New Project did not dispose old document sessions.");
+        if (vm.DocumentSessions.ContainsKey(form1.Id) || vm.DocumentSessions.ContainsKey(form2.Id))
+            throw new InvalidOperationException("New Project retained old document sessions.");
+        if (!string.Equals(vm.ActiveSession.DocumentId, vm.ActiveDocumentId, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("New Project active session does not match the new Form1.");
+    }
+
+    private static void AssertNewProjectDisposesAllOldDocumentSessions(SmokeContext context)
+    {
+        RequireGeneratedFile(context, "MainWindow.axaml");
+    }
+
+    private static void ConfigurePropertyInspectorFollowsActiveSessionSelection(MainWindowViewModel vm)
+    {
+        var form1 = vm.ActiveFormDocument ?? throw new InvalidOperationException("Form1 missing.");
+        var button = Control(DesignerControlTypes.Button, "InspectorSessionButton", 28, 34, 160, 38, text: "Form1");
+        vm.Controls.Add(button);
+        vm.SelectSingleControl(button);
+        RequirePropertyGridContext(vm, form1.Id, button.Id);
+        if (!ReferenceEquals(vm.ActiveSession.SelectedControl, button))
+            throw new InvalidOperationException("Property Inspector target does not come from the active session selection.");
+
+        var form2 = vm.CreateNewForm();
+        var textBox = Control(DesignerControlTypes.TextBox, "InspectorSessionText", 28, 34, 220, 38, placeholder: "Form2");
+        vm.Controls.Add(textBox);
+        vm.SelectSingleControl(textBox);
+        RequirePropertyGridContext(vm, form2.Id, textBox.Id);
+
+        SwitchToForm(vm, form1.Id);
+        var restoredButton = vm.Controls.Single(control => control.Name == "InspectorSessionButton");
+        vm.SelectSingleControl(restoredButton);
+        RequirePropertyGridContext(vm, form1.Id, restoredButton.Id);
+    }
+
+    private static void AssertPropertyInspectorFollowsActiveSessionSelection(SmokeContext context)
+    {
+        RequireGeneratedFile(context, "MainWindow.axaml");
+    }
+
+    private static void ConfigureUndoRedoIsIsolatedPerDocumentSession(MainWindowViewModel vm)
+    {
+        var form1 = vm.ActiveFormDocument ?? throw new InvalidOperationException("Form1 missing.");
+        var form1Button = Control(DesignerControlTypes.Button, "UndoForm1Button", 28, 34, 160, 38, text: "Form1 original");
+        vm.Controls.Add(form1Button);
+        form1Button.Text = "Form1 changed";
+        var form1Session = vm.ActiveSession;
+        if (!form1Session.CanUndo)
+            throw new InvalidOperationException("Form1 edit did not create document-scoped history.");
+
+        var form2 = vm.CreateNewForm();
+        var form2Button = Control(DesignerControlTypes.Button, "UndoForm2Button", 28, 34, 160, 38, text: "Form2 original");
+        vm.Controls.Add(form2Button);
+        form2Button.Text = "Form2 changed";
+        var form2Session = vm.ActiveSession;
+        if (!form2Session.CanUndo)
+            throw new InvalidOperationException("Form2 edit did not create document-scoped history.");
+
+        vm.UndoCommand.Execute(null);
+        if (!ReferenceEquals(vm.ActiveSession, form2Session))
+            throw new InvalidOperationException("Undo switched the active document session.");
+
+        SwitchToForm(vm, form1.Id);
+        var restoredForm1Button = vm.Controls.Single(control => control.Name == "UndoForm1Button");
+        if (!string.Equals(restoredForm1Button.Text, "Form1 changed", StringComparison.Ordinal))
+            throw new InvalidOperationException("Undo in Form2 changed Form1 state.");
+
+        SwitchToForm(vm, form2.Id);
+    }
+
+    private static void AssertUndoRedoIsIsolatedPerDocumentSession(SmokeContext context)
+    {
+        RequireGeneratedFile(context, "MainWindow.axaml");
+    }
+
+    private static void ConfigureApplyDocumentPreservesSelectionThroughSession(MainWindowViewModel vm)
+    {
+        var form1 = vm.ActiveFormDocument ?? throw new InvalidOperationException("Form1 missing.");
+        var button = Control(DesignerControlTypes.Button, "ApplySessionButton", 28, 34, 160, 38, text: "Before add Form");
+        vm.Controls.Add(button);
+        vm.SelectSingleControl(button);
+
+        vm.CreateNewForm();
+        SwitchToForm(vm, form1.Id);
+        var restoredButton = vm.Controls.Single(control => control.Name == "ApplySessionButton");
+        vm.SelectSingleControl(restoredButton);
+        if (!ReferenceEquals(vm.ActiveSession.SelectedControl, restoredButton))
+            throw new InvalidOperationException("Selection was not restored into the active session after ApplyDocument.");
+
+        SetPropertyGridValue(vm, nameof(DesignControlModel.Text), "After add Form");
+        if (!string.Equals(restoredButton.Text, "After add Form", StringComparison.Ordinal))
+            throw new InvalidOperationException("Property Inspector edit was lost after ApplyDocument/session activation.");
+    }
+
+    private static void AssertApplyDocumentPreservesSelectionThroughSession(SmokeContext context)
+    {
+        RequireContains(context.Xaml, "After add Form", "Property Inspector edit after session activation should be exported.");
     }
 
     private static void ConfigureMultiFormToolboxDropPropertyEdit(MainWindowViewModel vm)

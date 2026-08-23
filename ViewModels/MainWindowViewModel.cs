@@ -1,6 +1,7 @@
 ﻿using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Avalonia.Threading;
+using FormDesigner.DesignerSystem;
 using FormDesigner.DesignerSystem.Binding;
 using FormDesigner.DesignerSystem.BuiltIn;
 using FormDesigner.DesignerSystem.Infrastructure;
@@ -136,8 +137,31 @@ public partial class MainWindowViewModel : ObservableObject
         "UniformGrid", "UserControl", "Window", "WrapPanel"
     };
 
-    private readonly Stack<string> _undoStack = new();
-    private readonly Stack<string> _redoStack = new();
+    private readonly Dictionary<string, DesignerDocumentSession> _documentSessions = new(StringComparer.OrdinalIgnoreCase);
+    private readonly DesignerDocumentSession _bootstrapSession = new(
+        formDocument: null,
+        document: new DesignerDocumentFileModel { FormTitle = "Form1" },
+        isTransient: true);
+    private DesignerDocumentSession _activeSession = null!;
+    private Stack<string> _undoStack => _activeSession.UndoSnapshots;
+    private Stack<string> _redoStack => _activeSession.RedoSnapshots;
+    private string _currentSnapshot
+    {
+        get => _activeSession.CurrentSnapshot;
+        set => _activeSession.SetCurrentSnapshot(value);
+    }
+
+    private string _savedSnapshot
+    {
+        get => _activeSession.SavedSnapshot;
+        set => _activeSession.SetSavedSnapshot(value);
+    }
+
+    private DateTime _lastHistoryMutationUtc
+    {
+        get => _activeSession.LastHistoryMutationUtc;
+        set => _activeSession.LastHistoryMutationUtc = value;
+    }
     private readonly IDesignerRegistry _registry;
     private readonly DocumentDiagnosticsService _diagnosticsService;
     private readonly ReusableTemplateStorageService _templateStorageService = new();
@@ -158,15 +182,11 @@ public partial class MainWindowViewModel : ObservableObject
     private bool _isHistorySuspended;
     private int _undoBatchDepth;
     private bool _undoBatchTrackHistory;
-    private bool _isUpdatingSelectionState;
     private bool _suppressNextSelectedControlChangedForSameSelection;
     private string _suppressNextSelectedControlChangedReason = "";
-    private string _currentSnapshot = "";
-    private string _savedSnapshot = "";
     private string _exportCacheDocumentSnapshotHash = "";
     private string _exportCacheSettingsSignature = "";
     private DateTime _exportCacheGeneratedUtc;
-    private DateTime _lastHistoryMutationUtc = DateTime.UtcNow;
     private DesignerDocumentFileModel? _clipboardDocument;
     private ControlStyleSnapshot? _styleClipboard;
     private string _activeFormTheme = DesignerThemeCatalog.Light;
@@ -303,6 +323,8 @@ public partial class MainWindowViewModel : ObservableObject
     public WorkspaceModel Workspace { get; private set; } = new();
 
     public DesignerProjectModel CurrentProject => Workspace.Project;
+    public DesignerDocumentSession ActiveSession => _activeSession;
+    public IReadOnlyDictionary<string, DesignerDocumentSession> DocumentSessions => _documentSessions;
     public string ActiveDocumentId => ActiveFormDocument?.Id ?? "";
     public string ActiveDocumentName => ActiveFormDocument?.DisplayName ?? FormTitle;
     public bool IsPropertyEditorFocused => _isEditingPropertyGrid;
@@ -316,8 +338,9 @@ public partial class MainWindowViewModel : ObservableObject
         private set => SetProperty(ref _propertiesTabRefreshVersion, value);
     }
 
-    // Плоский список всех контролов документа. Иерархия восстанавливается через ParentId.
-    public ObservableCollection<DesignControlModel> Controls { get; } = new();
+    // Compatibility facade: XAML и существующие команды продолжают работать с
+    // текущей коллекцией, но owner теперь только ActiveSession.
+    public ObservableCollection<DesignControlModel> Controls => ActiveSession.Controls;
 
     // Источники данных для DataGrid и генерации CRUD-логики.
     public ObservableCollection<BindingSourceModel> BindingSources { get; } = new();
@@ -325,8 +348,8 @@ public partial class MainWindowViewModel : ObservableObject
     // Interaction layer: simple form logic without hand-written code.
     public ObservableCollection<InteractionModel> Interactions { get; } = new();
 
-    // Отдельно храним Id выделения, чтобы оно переживало сериализацию и undo/redo.
-    public ObservableCollection<string> SelectedControlIds { get; } = new();
+    // Compatibility facade для selection текущего документа.
+    public ObservableCollection<string> SelectedControlIds => ActiveSession.SelectedControlIds;
 
     public ObservableCollection<string> AvailableFontFamilies { get; } = new()
     {
@@ -594,8 +617,11 @@ public partial class MainWindowViewModel : ObservableObject
         ProblemsFilterHints
     };
 
-    [ObservableProperty]
-    private DesignControlModel? selectedControl;
+    public DesignControlModel? SelectedControl
+    {
+        get => ActiveSession.SelectedControl;
+        set => ActiveSession.SetSelectedControl(value);
+    }
 
     public ObservableCollection<LayoutDefinitionEditorItem> LayoutGridRows { get; } = new();
     public ObservableCollection<LayoutDefinitionEditorItem> LayoutGridColumns { get; } = new();
@@ -2447,6 +2473,8 @@ public partial class MainWindowViewModel : ObservableObject
     {
         _registry = registry ?? throw new ArgumentNullException(nameof(registry));
         _diagnosticsService = new DocumentDiagnosticsService(_registry);
+        _activeSession = _bootstrapSession;
+        AttachActiveSessionHandlers(_activeSession);
         _propertyGridLiveRefreshTimer = new DispatcherTimer
         {
             Interval = PropertyGridLiveRefreshInterval
@@ -2472,12 +2500,10 @@ public partial class MainWindowViewModel : ObservableObject
             Interval = EditorCommandRefreshDelay
         };
         _editorCommandRefreshTimer.Tick += EditorCommandRefreshTimer_Tick;
-        Controls.CollectionChanged += Controls_CollectionChanged;
         BindingSources.CollectionChanged += BindingSources_CollectionChanged;
         Interactions.CollectionChanged += Interactions_CollectionChanged;
         Diagnostics.CollectionChanged += Diagnostics_CollectionChanged;
         PropertyGridRowViewModel.ValueTrace += PropertyGridRow_ValueTrace;
-        SelectedControlIds.CollectionChanged += SelectedControlIds_CollectionChanged;
         RecentFiles.CollectionChanged += RecentFiles_CollectionChanged;
         OutputEntries.CollectionChanged += OutputEntries_CollectionChanged;
         InteractionTraceEntries.CollectionChanged += InteractionTraceEntries_CollectionChanged;
@@ -2498,6 +2524,161 @@ public partial class MainWindowViewModel : ObservableObject
         RefreshEditorCommands();
         RaiseEditorCommandProperties();
         LogWorkspace(WorkspaceLogLevel.Info, OutputCategoryGeneral, "Workspace initialized.");
+    }
+
+    private DesignerDocumentSession GetOrCreateDocumentSession(DesignerFormDocument form)
+    {
+        if (_documentSessions.TryGetValue(form.Id, out var existing) && !existing.IsDisposed)
+            return existing;
+
+        var document = form.Document ?? new DesignerDocumentFileModel { FormTitle = form.DisplayName };
+        form.Document = document;
+        var session = new DesignerDocumentSession(form, document);
+        session.SetHistoryState(
+            form.UndoSnapshots,
+            form.RedoSnapshots,
+            form.CurrentSnapshot,
+            form.SavedSnapshot);
+        _documentSessions[form.Id] = session;
+        TraceDocumentDebug(
+            "DOCUMENT_SESSION_CREATED",
+            $"documentId={form.Id}; form={form.DisplayName}; controls={document.Controls.Count}; transient=False",
+            toOutput: false);
+        return session;
+    }
+
+    private void AttachActiveSessionHandlers(DesignerDocumentSession session)
+    {
+        session.Controls.CollectionChanged += Controls_CollectionChanged;
+        session.SelectedControlIds.CollectionChanged += SelectedControlIds_CollectionChanged;
+        session.SelectionChanged += ActiveSession_SelectionChanged;
+    }
+
+    private void DetachActiveSessionHandlers(DesignerDocumentSession session)
+    {
+        session.Controls.CollectionChanged -= Controls_CollectionChanged;
+        session.SelectedControlIds.CollectionChanged -= SelectedControlIds_CollectionChanged;
+        session.SelectionChanged -= ActiveSession_SelectionChanged;
+    }
+
+    private DesignerDocumentSession ActivateDocumentSession(DesignerFormDocument form, string reason)
+    {
+        var target = GetOrCreateDocumentSession(form);
+        if (ReferenceEquals(_activeSession, target))
+            return target;
+
+        var previous = _activeSession;
+        var previousDocumentId = previous.IsTransient ? "" : previous.DocumentId;
+        var previousHistorySuspended = _isHistorySuspended;
+        var previousApplyingDocument = _isApplyingDocument;
+
+        try
+        {
+            // Runtime controls are rebuilt from the persisted document on activation. Keeping
+            // only document state in inactive sessions avoids stale subscriptions and visuals.
+            _isHistorySuspended = true;
+            _isApplyingDocument = true;
+            previous.ClearRuntimeState();
+        }
+        finally
+        {
+            _isApplyingDocument = previousApplyingDocument;
+            _isHistorySuspended = previousHistorySuspended;
+        }
+
+        DetachActiveSessionHandlers(previous);
+        _activeSession = target;
+        AttachActiveSessionHandlers(target);
+        OnPropertyChanged(nameof(ActiveSession));
+        OnPropertyChanged(nameof(Controls));
+        OnPropertyChanged(nameof(SelectedControlIds));
+        OnPropertyChanged(nameof(SelectedControl));
+        TraceDocumentDebug(
+            "DOCUMENT_SESSION_DEACTIVATED",
+            $"documentId={previousDocumentId}; reason={reason}",
+            toOutput: false);
+        TraceDocumentDebug(
+            "DOCUMENT_SESSION_ACTIVATED",
+            $"documentId={target.DocumentId}; previousDocumentId={previousDocumentId}; reason={reason}",
+            toOutput: false);
+        return target;
+    }
+
+    private void DisposeDocumentSession(string documentId, string reason)
+    {
+        if (string.IsNullOrWhiteSpace(documentId)
+            || !_documentSessions.Remove(documentId, out var session))
+        {
+            return;
+        }
+
+        if (ReferenceEquals(_activeSession, session))
+        {
+            DetachActiveSessionHandlers(session);
+            _activeSession = _bootstrapSession;
+            AttachActiveSessionHandlers(_bootstrapSession);
+            OnPropertyChanged(nameof(ActiveSession));
+            OnPropertyChanged(nameof(Controls));
+            OnPropertyChanged(nameof(SelectedControlIds));
+            OnPropertyChanged(nameof(SelectedControl));
+        }
+
+        foreach (var control in session.Controls)
+            control.PropertyChanged -= Control_PropertyChanged;
+
+        session.Dispose();
+        TraceDocumentDebug(
+            "DOCUMENT_SESSION_DISPOSED",
+            $"documentId={documentId}; reason={reason}",
+            toOutput: false);
+    }
+
+    private void DisposeAllDocumentSessions(string reason)
+    {
+        var sessions = _documentSessions.Values.ToList();
+        DetachActiveSessionHandlers(_activeSession);
+        foreach (var session in sessions)
+        {
+            foreach (var control in session.Controls)
+                control.PropertyChanged -= Control_PropertyChanged;
+
+            session.Dispose();
+            TraceDocumentDebug(
+                "DOCUMENT_SESSION_DISPOSED",
+                $"documentId={session.DocumentId}; reason={reason}",
+                toOutput: false);
+        }
+
+        _documentSessions.Clear();
+        _activeSession = _bootstrapSession;
+        AttachActiveSessionHandlers(_bootstrapSession);
+        _bootstrapSession.ClearRuntimeState();
+        _bootstrapSession.SetHistoryState(Array.Empty<string>(), Array.Empty<string>(), "", "");
+        OnPropertyChanged(nameof(ActiveSession));
+        OnPropertyChanged(nameof(Controls));
+        OnPropertyChanged(nameof(SelectedControlIds));
+        OnPropertyChanged(nameof(SelectedControl));
+    }
+
+    private void ActiveSession_SelectionChanged(object? sender, DesignerDocumentSessionSelectionChangedEventArgs e)
+    {
+        if (!ReferenceEquals(sender, _activeSession))
+        {
+            TraceDocumentDebug(
+                "DOCUMENT_SESSION_STATE_MISMATCH",
+                $"eventDocumentId={(sender as DesignerDocumentSession)?.DocumentId ?? "-"}; activeDocumentId={ActiveSession.DocumentId}; property=Selection",
+                toOutput: true,
+                warning: true);
+            return;
+        }
+
+        HandleSelectedControlChanging(e.OldSelectedControl, e.SelectedControl);
+        OnPropertyChanged(nameof(SelectedControl));
+        HandleSelectedControlChanged(e.SelectedControl);
+        TraceDocumentDebug(
+            "DOCUMENT_SESSION_SELECTION_CHANGED",
+            $"documentId={ActiveSession.DocumentId}; oldControlId={e.OldSelectedControl?.Id ?? ""}; newControlId={e.SelectedControl?.Id ?? ""}; selectedCount={e.SelectedControlIds.Count}",
+            toOutput: false);
     }
 
     public void RefreshRegistryBackedCollections()
@@ -6766,7 +6947,7 @@ public partial class MainWindowViewModel : ObservableObject
             $"propertyRows={PropertyGridCategories.Sum(category => category.Rows.Count)}; " +
             $"inspectorContext={PropertyGridContextDocumentId}/{PropertyGridContextControlId}; " +
             $"rowContexts=[{string.Join(", ", rowContexts)}]; " +
-            $"flags=applyingDocument:{_isApplyingDocument}, selection:{_isUpdatingSelectionState}, structure:{_isUpdatingStructureSelection}, " +
+            $"flags=applyingDocument:{_isApplyingDocument}, selectionCount:{SelectedControlIds.Count}, structure:{_isUpdatingStructureSelection}, " +
             $"projectExplorer:{_isUpdatingProjectExplorerSelection}, rebuildingGrid:{_isRebuildingPropertyGrid}, liveGrid:{_isPropertyGridLiveGesture}, " +
             $"historySuspended:{_isHistorySuspended}, undoBatch:{_undoBatchDepth}; " +
             $"forms=[{string.Join(", ", forms)}]; subscriptions={_controlPropertySubscriptions.Count}";
@@ -6800,7 +6981,7 @@ public partial class MainWindowViewModel : ObservableObject
             $"inspectorInteraction:{_isInspectorInteractionActive}:{_inspectorInteractionKind}:depth={_inspectorInteractionDepth}, pendingInspectorRebuild:{_pendingInspectorRebuild}:{_pendingInspectorRebuildReason}, " +
             $"rebuildingGrid:{_isRebuildingPropertyGrid}, liveGrid:{_isPropertyGridLiveGesture}, pendingLiveGrid:{_hasPendingPropertyGridLiveRefresh}, " +
             $"deferredGrid:{_hasDeferredPropertyGridRebuild}:{_deferredPropertyGridRebuildReason}, " +
-            $"selectionUpdate:{_isUpdatingSelectionState}, structureUpdate:{_isUpdatingStructureSelection}, projectExplorerUpdate:{_isUpdatingProjectExplorerSelection}, " +
+            $"selectionCount:{SelectedControlIds.Count}, structureUpdate:{_isUpdatingStructureSelection}, projectExplorerUpdate:{_isUpdatingProjectExplorerSelection}, " +
             $"structureSuspended:{_isStructureTreeRefreshSuspended}, diagnosticsScheduled:{_isDiagnosticsRefreshScheduled}, exportScheduled:{_isExportChecklistRefreshScheduled}, " +
             $"undoBatch:{_undoBatchDepth}, historySuspended:{_isHistorySuspended}; " +
             $"editingRow={_editingPropertyGridDocumentId}/{_editingPropertyGridControlId}/{_editingPropertyGridKey}; selectedInteraction={SelectedInteraction?.SourceControlName ?? "-"}:{SelectedInteraction?.ActionType ?? "-"}; " +
@@ -6971,7 +7152,6 @@ public partial class MainWindowViewModel : ObservableObject
         _pendingInspectorRebuildReason = "";
         _inspectorInteractionKind = "";
 
-        _isUpdatingSelectionState = false;
         _isUpdatingStructureSelection = false;
         _isUpdatingProjectExplorerSelection = false;
         _isStructureTreeRefreshSuspended = false;
@@ -7803,19 +7983,17 @@ public partial class MainWindowViewModel : ObservableObject
         form.IsDirty = !markAsSaved;
 
         Workspace = workspace;
-        ActiveFormDocument = form;
         CurrentProjectPath = "";
         CurrentProject.DefaultNamespace = ResolveExportNamespace();
         CurrentProject.Settings.ReopenDocumentsOnStartup = ReopenLastWorkspaceOnStartup;
         CurrentProject.ExportProfiles[0].Namespace = ResolveExportNamespace();
-        RefreshDocumentTabs();
-        RebuildProjectExplorer();
-        RaiseProjectWorkspaceProperties();
+        SetActiveForm(form.Id, "InitializeWorkspace", persistCurrent: false);
     }
 
     private void ApplyWorkspace(WorkspaceModel workspace, string? sourcePath, bool markAsSaved)
     {
         PersistActiveFormDocumentState(refreshProjectViews: false);
+        DisposeAllDocumentSessions("ApplyWorkspace");
         _projectWorkspaceService.EnsureWorkspaceDefaults(workspace);
 
         foreach (var form in workspace.Project.Forms)
@@ -8006,6 +8184,7 @@ public partial class MainWindowViewModel : ObservableObject
         try
         {
             ClearActiveDocumentTransientState($"BeforeLoadActiveForm:{reason}");
+            var session = ActivateDocumentSession(form, reason);
             ActiveFormDocument = form;
             Workspace.Session.ActiveDocumentId = form.Id;
             if (!Workspace.Session.OpenDocumentIds.Contains(form.Id))
@@ -8042,21 +8221,13 @@ public partial class MainWindowViewModel : ObservableObject
                 resetHistory: false,
                 refreshEditorSurfaces: false);
 
-            _undoStack.Clear();
-            foreach (var snapshot in form.UndoSnapshots)
-                _undoStack.Push(snapshot);
-
-            _redoStack.Clear();
-            foreach (var snapshot in form.RedoSnapshots)
-                _redoStack.Push(snapshot);
-
-            _currentSnapshot = string.IsNullOrWhiteSpace(form.CurrentSnapshot)
+            var currentSnapshot = string.IsNullOrWhiteSpace(form.CurrentSnapshot)
                 ? JsonSerializer.Serialize(CreateDocumentFileModel(), JsonOptions)
                 : form.CurrentSnapshot;
-            _savedSnapshot = string.IsNullOrWhiteSpace(form.SavedSnapshot) && !form.IsDirty
-                ? _currentSnapshot
+            var savedSnapshot = string.IsNullOrWhiteSpace(form.SavedSnapshot) && !form.IsDirty
+                ? currentSnapshot
                 : form.SavedSnapshot;
-            _lastHistoryMutationUtc = DateTime.UtcNow;
+            session.SetHistoryState(form.UndoSnapshots, form.RedoSnapshots, currentSnapshot, savedSnapshot);
 
             ClearActiveDocumentTransientState($"AfterLoadActiveForm:{reason}");
             RefreshFormsCollection();
@@ -8107,14 +8278,15 @@ public partial class MainWindowViewModel : ObservableObject
 
         var form = ActiveFormDocument;
         form.Document = CreateDocumentFileModel();
+        ActiveSession.UpdateDocument(form.Document, form);
         form.Name = string.IsNullOrWhiteSpace(form.Document.FormTitle) ? form.DisplayName : form.Document.FormTitle;
         var freshSnapshot = JsonSerializer.Serialize(form.Document, JsonOptions);
         _currentSnapshot = freshSnapshot;
         form.CurrentSnapshot = freshSnapshot;
         form.SavedSnapshot = _savedSnapshot;
-        form.IsDirty = !string.Equals(form.CurrentSnapshot, form.SavedSnapshot, StringComparison.Ordinal);
-        form.UndoSnapshots = _undoStack.Reverse().ToList();
-        form.RedoSnapshots = _redoStack.Reverse().ToList();
+        form.IsDirty = ActiveSession.IsDirty;
+        form.UndoSnapshots = ActiveSession.GetUndoSnapshotsForPersistence().ToList();
+        form.RedoSnapshots = ActiveSession.GetRedoSnapshotsForPersistence().ToList();
         form.Zoom = EditorZoom;
         form.SelectedControlId = "";
         form.UpdatedUtc = DateTime.UtcNow;
@@ -8429,6 +8601,7 @@ public partial class MainWindowViewModel : ObservableObject
         try
         {
             UnsubscribeDocumentEventHandlersForNewProject();
+            DisposeAllDocumentSessions(reason);
             ResetDocumentScopedRefreshState();
             StopDocumentRefreshTimersForNewProject();
             TraceDocumentDebug("NEW_PROJECT_CLEAR_STATE_START", $"reason={reason}", toOutput: true);
@@ -8971,6 +9144,8 @@ public partial class MainWindowViewModel : ObservableObject
                 Workspace.Session.OpenDocumentIds.Add(next.Id);
             SetActiveForm(next.Id, "DeleteForm", persistCurrent: false);
         }
+
+        DisposeDocumentSession(form.Id, "DeleteForm");
 
         MarkWorkspaceStructureChanged();
         StatusText = $"Form deleted: {form.DisplayName}";
@@ -12703,24 +12878,32 @@ public partial class MainWindowViewModel : ObservableObject
     [RelayCommand]
     private void Undo()
     {
-        if (_undoStack.Count == 0)
+        var targetSnapshot = ActiveSession.TakeUndoSnapshot();
+        if (targetSnapshot is null)
             return;
 
-        var targetSnapshot = _undoStack.Pop();
-        _redoStack.Push(_currentSnapshot);
+        ActiveSession.PushRedoSnapshot(_currentSnapshot);
         RestoreFromSnapshot(targetSnapshot);
+        TraceDocumentDebug(
+            "DOCUMENT_SESSION_UNDO",
+            $"documentId={ActiveSession.DocumentId}; undoCount={ActiveSession.UndoSnapshots.Count}; redoCount={ActiveSession.RedoSnapshots.Count}",
+            toOutput: false);
         StatusText = "Отменено последнее действие";
     }
 
     [RelayCommand]
     private void Redo()
     {
-        if (_redoStack.Count == 0)
+        var targetSnapshot = ActiveSession.TakeRedoSnapshot();
+        if (targetSnapshot is null)
             return;
 
-        var targetSnapshot = _redoStack.Pop();
-        _undoStack.Push(_currentSnapshot);
+        ActiveSession.PushUndoSnapshot(_currentSnapshot);
         RestoreFromSnapshot(targetSnapshot);
+        TraceDocumentDebug(
+            "DOCUMENT_SESSION_REDO",
+            $"documentId={ActiveSession.DocumentId}; undoCount={ActiveSession.UndoSnapshots.Count}; redoCount={ActiveSession.RedoSnapshots.Count}",
+            toOutput: false);
         StatusText = "Повторено последнее действие";
     }
 
@@ -13994,6 +14177,7 @@ public partial class MainWindowViewModel : ObservableObject
     {
         var stopwatch = Stopwatch.StartNew();
         var memoryBefore = GC.GetTotalMemory(forceFullCollection: false);
+        ActivateDocumentSession(form, "LoadDocumentSnapshotForExportGeneration");
         ActiveFormDocument = form;
         Workspace.Session.ActiveDocumentId = form.Id;
         CurrentDocumentPath = sourcePath ?? "";
@@ -14103,8 +14287,11 @@ public partial class MainWindowViewModel : ObservableObject
             ClampAllControlsToSurface();
             SelectedBindingSource = BindingSources.FirstOrDefault();
             DocumentSessionId = Guid.NewGuid().ToString("N");
-            _currentSnapshot = JsonSerializer.Serialize(document, JsonOptions);
-            _savedSnapshot = _currentSnapshot;
+            ActiveSession.SetHistoryState(
+                Array.Empty<string>(),
+                Array.Empty<string>(),
+                JsonSerializer.Serialize(document, JsonOptions),
+                JsonSerializer.Serialize(document, JsonOptions));
         }
         finally
         {
@@ -14242,6 +14429,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void DisposeExportOnlyViewModel()
     {
+        DisposeAllDocumentSessions("ExportOnlyViewModel");
         _propertyGridLiveRefreshTimer.Stop();
         _diagnosticsRefreshTimer.Stop();
         _exportChecklistRefreshTimer.Stop();
@@ -20967,6 +21155,7 @@ public partial class MainWindowViewModel : ObservableObject
 
         try
         {
+            ActiveSession.UpdateDocument(document, ActiveFormDocument);
             SelectedInteraction = null;
             SelectedBindingSource = null;
             Controls.Clear();
@@ -21294,13 +21483,10 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void ResetHistory(bool markAsSaved)
     {
-        _undoStack.Clear();
-        _redoStack.Clear();
-        _currentSnapshot = JsonSerializer.Serialize(CreateDocumentFileModel(), JsonOptions);
-        _savedSnapshot = markAsSaved ? _currentSnapshot : _savedSnapshot;
+        var snapshot = JsonSerializer.Serialize(CreateDocumentFileModel(), JsonOptions);
+        ActiveSession.ResetHistory(snapshot, markAsSaved);
         if (!markAsSaved && string.IsNullOrWhiteSpace(_savedSnapshot))
             _savedSnapshot = "";
-        _lastHistoryMutationUtc = DateTime.UtcNow;
         RaiseDocumentStateProperties();
     }
 
@@ -21636,30 +21822,11 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void SetSelection(IEnumerable<DesignControlModel> controls, DesignControlModel? primaryControl)
     {
-        _isUpdatingSelectionState = true;
-        try
-        {
-            SelectedControlIds.Clear();
-
-            foreach (var control in controls.DistinctBy(control => control.Id))
-                SelectedControlIds.Add(control.Id);
-
-            SelectedControl = primaryControl;
-        }
-        finally
-        {
-            _isUpdatingSelectionState = false;
-        }
-
-        RaiseSelectionProperties();
-        RefreshStructureSelection();
+        ActiveSession.SetSelection(controls, primaryControl);
     }
 
     private void SelectedControlIds_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
-        if (_isUpdatingSelectionState)
-            return;
-
         RaiseSelectionProperties();
         RefreshStructureSelection();
     }
@@ -21694,12 +21861,16 @@ public partial class MainWindowViewModel : ObservableObject
         var shouldCreateUndoEntry = _undoStack.Count == 0 || now - _lastHistoryMutationUtc > HistoryGroupingWindow || _redoStack.Count > 0;
 
         if (shouldCreateUndoEntry && !string.IsNullOrWhiteSpace(_currentSnapshot))
-            _undoStack.Push(_currentSnapshot);
+            ActiveSession.PushUndoSnapshot(_currentSnapshot);
 
         _redoStack.Clear();
-        _currentSnapshot = snapshot;
+        ActiveSession.SetCurrentSnapshot(snapshot);
         _lastHistoryMutationUtc = now;
         PersistActiveFormDocumentState(refreshProjectViews: false);
+        TraceDocumentDebug(
+            "DOCUMENT_SESSION_HISTORY_PUSHED",
+            $"documentId={ActiveSession.DocumentId}; undoCount={ActiveSession.UndoSnapshots.Count}; redoCount={ActiveSession.RedoSnapshots.Count}; grouped={!shouldCreateUndoEntry}",
+            toOutput: false);
         RaiseDocumentStateProperties();
     }
 
@@ -22578,7 +22749,7 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(LogicTemplateDraftStatus));
     }
 
-    partial void OnSelectedControlChanging(DesignControlModel? oldValue, DesignControlModel? newValue)
+    private void HandleSelectedControlChanging(DesignControlModel? oldValue, DesignControlModel? newValue)
     {
         var oldDocumentId = GetTrackedControlDocumentId(oldValue);
         var newDocumentId = GetTrackedControlDocumentId(newValue);
@@ -22611,7 +22782,7 @@ public partial class MainWindowViewModel : ObservableObject
             toOutput: false);
     }
 
-    partial void OnSelectedControlChanged(DesignControlModel? value)
+    private void HandleSelectedControlChanged(DesignControlModel? value)
     {
         if (_suppressNextSelectedControlChangedForSameSelection)
         {
@@ -22638,21 +22809,6 @@ public partial class MainWindowViewModel : ObservableObject
                 warning: true);
             ClearSelection();
             return;
-        }
-
-        if (!_isUpdatingSelectionState)
-        {
-            _isUpdatingSelectionState = true;
-            try
-            {
-                SelectedControlIds.Clear();
-                if (value is not null)
-                    SelectedControlIds.Add(value.Id);
-            }
-            finally
-            {
-                _isUpdatingSelectionState = false;
-            }
         }
 
         if (_isSwitchingActiveForm)
