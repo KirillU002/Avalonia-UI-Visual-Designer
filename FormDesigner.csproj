@@ -20,20 +20,30 @@
     <AvaloniaXaml Remove="smoke-tests\**\*.axaml" />
     <AvaloniaXaml Remove="templates\**\*.axaml" />
     <AvaloniaXaml Remove="Samples\RoundTrip\**\*.axaml" />
+    <AvaloniaXaml Remove="Samples\VisualStudioPoC\**\*.axaml" />
     <AvaloniaXaml Remove="Plugins\**\*.axaml" />
     <AvaloniaResource Remove="artifacts\**\*.axaml" />
     <AvaloniaResource Remove="smoke-tests\**\*.axaml" />
     <AvaloniaResource Remove="templates\**\*.axaml" />
     <AvaloniaResource Remove="Samples\RoundTrip\**\*.axaml" />
+    <AvaloniaResource Remove="Samples\VisualStudioPoC\**\*.axaml" />
     <AvaloniaResource Remove="tempobj\**\*.axaml" />
     <Compile Remove="PluginContracts\**\*.cs" />
     <Compile Remove="Plugins\**\*.cs" />
+    <Compile Remove="AvaloniaDesigner.Host.Protocol\**\*.cs" />
+    <Compile Remove="AvaloniaDesigner.VsHost\**\*.cs" />
+    <Compile Remove="AvaloniaDesigner.VSIX\**\*.cs" />
+    <Compile Remove="Samples\VisualStudioPoC\**\*.cs" />
+    <AvaloniaXaml Remove="AvaloniaDesigner.VsHost\**\*.axaml" />
     <EmbeddedResource Remove="artifacts\**" />
     <EmbeddedResource Remove="smoke-tests\**" />
     <EmbeddedResource Remove="templates\**" />
     <EmbeddedResource Remove="tempobj\**" />
     <EmbeddedResource Remove="PluginContracts\**" />
     <EmbeddedResource Remove="Plugins\**" />
+    <EmbeddedResource Remove="AvaloniaDesigner.Host.Protocol\**" />
+    <EmbeddedResource Remove="AvaloniaDesigner.VsHost\**" />
+    <EmbeddedResource Remove="AvaloniaDesigner.VSIX\**" />
     <Content Remove="artifacts\**" />
     <Content Remove="smoke-tests\**" />
     <Content Remove="templates\**" />
@@ -43,6 +53,10 @@
     <None Remove="tempobj\**" />
     <None Remove="PluginContracts\**" />
     <None Remove="Plugins\**" />
+    <None Remove="AvaloniaDesigner.Host.Protocol\**" />
+    <None Remove="AvaloniaDesigner.VsHost\**" />
+    <None Remove="AvaloniaDesigner.VSIX\**" />
+    <None Remove="Samples\VisualStudioPoC\**" />
   </ItemGroup>
 
   <ItemGroup>

@@ -438,6 +438,16 @@ public partial class MainWindow : Window
         _settingsSaveTimer.Stop();
     }
 
+    /// <summary>
+    /// Allows an external process host to close this window without invoking the standalone
+    /// unsaved-changes workflow. The external host never owns or writes the user document.
+    /// </summary>
+    public void CloseForExternalHost()
+    {
+        _isCloseConfirmed = true;
+        Close();
+    }
+
     private void ViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (sender is not MainWindowViewModel viewModel)

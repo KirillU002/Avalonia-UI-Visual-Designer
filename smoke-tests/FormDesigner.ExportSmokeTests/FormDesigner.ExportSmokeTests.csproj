@@ -8,6 +8,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\FormDesigner.csproj" />
+    <ProjectReference Include="..\..\AvaloniaDesigner.Host.Protocol\AvaloniaDesigner.Host.Protocol.csproj" />
+    <ProjectReference Include="..\..\AvaloniaDesigner.VsHost\AvaloniaDesigner.VsHost.csproj" />
   </ItemGroup>
 
   <!-- Generated smoke artifacts are test output, never source files for this runner. -->

@@ -1,0 +1,27 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:custom="using:SimpleAvaloniaApp"
+        x:Class="SimpleAvaloniaApp.MainWindow"
+        Title="Visual Studio PoC"
+        Width="640"
+        Height="420">
+    <Canvas>
+        <!-- keep me -->
+        <Button
+            x:Name="Button1"
+            Content="Old"
+            Width="160"
+            Height="40"
+            Canvas.Left="100"
+            Canvas.Top="100" />
+
+        <TextBox
+            x:Name="TextBox1"
+            Text="Hello"
+            Width="220"
+            Height="40"
+            Canvas.Left="100"
+            Canvas.Top="160"
+            custom:Custom.Unknown="keep-me" />
+    </Canvas>
+</Window>

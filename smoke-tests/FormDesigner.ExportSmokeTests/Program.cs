@@ -9,6 +9,8 @@ using Avalonia.VisualTree;
 using FormDesigner.DesignerSystem.Infrastructure;
 using FormDesigner.DesignerSystem.Hosting;
 using FormDesigner.DesignerSystem.AxamlRoundTrip;
+using AvaloniaDesigner.Host.Protocol;
+using AvaloniaDesigner.VsHost;
 using FormDesigner.Localization;
 using FormDesigner.Models;
 using FormDesigner.PluginContracts;
@@ -17,6 +19,8 @@ using FormDesigner.ViewModels;
 using FormDesigner.Views;
 using System.Collections;
 using System.Diagnostics;
+using System.IO.Compression;
+using System.IO.Pipes;
 using System.Globalization;
 using System.Reflection;
 using System.Runtime.Loader;
@@ -288,6 +292,15 @@ internal static class Program
             new("AxamlRoundTripDeletesOnlyOwnedElement", ConfigureSimpleFormExport, AssertAxamlRoundTripDeletesOnlyOwnedElement),
             new("AxamlRoundTripDoesNotReformatWholeDocument", ConfigureSimpleFormExport, AssertAxamlRoundTripDoesNotReformatWholeDocument),
             new("AxamlRoundTripDetectsExternalChange", ConfigureSimpleFormExport, AssertAxamlRoundTripDetectsExternalChange),
+            new("VsHostProtocolHandshakeWorks", ConfigureSimpleFormExport, AssertVsHostProtocolHandshakeWorks),
+            new("VsHostCanStartAndAcceptConnection", ConfigureSimpleFormExport, AssertVsHostCanStartAndAcceptConnection),
+            new("VsHostUsesSharedDesignerSurface", ConfigureSimpleFormExport, AssertVsHostUsesSharedDesignerSurface),
+            new("VsixBridgeDoesNotReferenceAvaloniaVisualAssemblies", ConfigureSimpleFormExport, AssertVsixBridgeDoesNotReferenceAvaloniaVisualAssemblies),
+            new("VsHostReturnsMinimalAxamlPatch", ConfigureSimpleFormExport, AssertVsHostReturnsMinimalAxamlPatch),
+            new("VsHostRoundTripPreservesComment", ConfigureSimpleFormExport, AssertVsHostRoundTripPreservesComment),
+            new("VsHostRoundTripPreservesUnknownAttribute", ConfigureSimpleFormExport, AssertVsHostRoundTripPreservesUnknownAttribute),
+            new("VsHostRejectsPatchForStaleDocumentVersion", ConfigureSimpleFormExport, AssertVsHostRejectsPatchForStaleDocumentVersion),
+            new("BridgeSurvivesVsHostDisconnect", ConfigureSimpleFormExport, AssertBridgeSurvivesVsHostDisconnect),
             new("MultiFormToolboxDropPropertyEdit", ConfigureMultiFormToolboxDropPropertyEdit, AssertMultiFormToolboxDropPropertyEdit, RequiresRealDataGrid: true),
             new("MultiFormSameControlNamesPropertyGridEdit", ConfigureMultiFormSameControlNamesPropertyGridEdit, AssertMultiFormSameControlNamesPropertyGridEdit, RequiresRealDataGrid: true),
             new("AddFormSimpleIsolation", ConfigureAddFormSimpleIsolation, AssertAddFormSimpleIsolation),
@@ -4932,6 +4945,221 @@ internal static class Program
         var source = File.ReadAllText(fixturePath, Encoding.UTF8);
         return new AxamlImportService().Import(source, fixturePath);
     }
+
+    private static void AssertVsHostProtocolHandshakeWorks(SmokeContext context)
+    {
+        var pipeName = $"{DesignerHostProtocol.PipePrefix}.smoke.{Guid.NewGuid():N}";
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var serverTask = Task.Run(async () =>
+        {
+            using var server = NamedPipeProtocolConnection.CreateServer(pipeName);
+            await server.WaitForConnectionAsync(cancellation.Token);
+            using var connection = new NamedPipeProtocolConnection(server);
+            var hello = await connection.ReceiveAsync(cancellation.Token)
+                ?? throw new InvalidOperationException("Protocol client closed before Hello.");
+            if (hello.MessageType != DesignerHostMessageTypes.Hello)
+                throw new InvalidOperationException("Protocol client did not send Hello.");
+
+            await connection.SendAsync(DesignerHostMessageTypes.HelloAck, hello.RequestId, hello.DocumentId, new HelloAckPayload
+            {
+                HostName = "SmokeHost",
+                HostVersion = "0.1",
+                ProtocolVersion = DesignerHostProtocol.CurrentVersion
+            }, cancellation.Token);
+        }, cancellation.Token);
+
+        using var client = NamedPipeProtocolConnection.CreateClient(pipeName);
+        client.ConnectAsync(cancellation.Token).GetAwaiter().GetResult();
+        using var connection = new NamedPipeProtocolConnection(client);
+        connection.SendAsync(DesignerHostMessageTypes.Hello, "handshake", string.Empty, new HelloPayload
+        {
+            ClientName = "SmokeClient",
+            ClientVersion = "0.1"
+        }, cancellation.Token).GetAwaiter().GetResult();
+        var acknowledgement = connection.ReceiveAsync(cancellation.Token).GetAwaiter().GetResult()
+            ?? throw new InvalidOperationException("Protocol server did not return HelloAck.");
+        if (acknowledgement.MessageType != DesignerHostMessageTypes.HelloAck
+            || connection.GetPayload<HelloAckPayload>(acknowledgement)?.ProtocolVersion != DesignerHostProtocol.CurrentVersion)
+        {
+            throw new InvalidOperationException("Protocol handshake acknowledgement is invalid.");
+        }
+
+        serverTask.GetAwaiter().GetResult();
+    }
+
+    private static void AssertVsHostCanStartAndAcceptConnection(SmokeContext context)
+    {
+        var executable = Path.Combine(FindRepositoryRoot(), "AvaloniaDesigner.VsHost", "bin", "Debug", "net6.0", "AvaloniaDesigner.VsHost.exe");
+        RequireFileExists(executable, "VsHost executable was not built before the smoke test.");
+
+        var pipeName = $"{DesignerHostProtocol.PipePrefix}.smoke.{Guid.NewGuid():N}";
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(25));
+        using var process = Process.Start(new ProcessStartInfo
+        {
+            FileName = executable,
+            Arguments = $"--pipe \"{pipeName}\"",
+            WorkingDirectory = Path.GetDirectoryName(executable)!,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        }) ?? throw new InvalidOperationException("VsHost process did not start.");
+
+        try
+        {
+            using var client = NamedPipeProtocolConnection.CreateClient(pipeName);
+            client.ConnectAsync(cancellation.Token).GetAwaiter().GetResult();
+            using var connection = new NamedPipeProtocolConnection(client);
+
+            connection.SendAsync(DesignerHostMessageTypes.Hello, "hello", string.Empty, new HelloPayload
+            {
+                ClientName = "FormDesigner.ExportSmokeTests",
+                ClientVersion = "0.1"
+            }, cancellation.Token).GetAwaiter().GetResult();
+            var hello = connection.ReceiveAsync(cancellation.Token).GetAwaiter().GetResult()
+                ?? throw new InvalidOperationException("VsHost did not answer Hello.");
+            if (hello.MessageType != DesignerHostMessageTypes.HelloAck)
+                throw new InvalidOperationException($"VsHost returned '{hello.MessageType}' instead of HelloAck.");
+
+            var source = ImportRoundTripFixture().RoundTripDocument.OriginalText;
+            var open = CreateVsHostOpenDocumentPayload(source, version: 1);
+            connection.SendAsync(DesignerHostMessageTypes.OpenDocument, "open", "smoke-document", open, cancellation.Token).GetAwaiter().GetResult();
+            var opened = connection.ReceiveAsync(cancellation.Token).GetAwaiter().GetResult()
+                ?? throw new InvalidOperationException("VsHost did not return DocumentOpened.");
+            var openedPayload = connection.GetPayload<DocumentOpenedPayload>(opened);
+            if (opened.MessageType != DesignerHostMessageTypes.DocumentOpened || openedPayload is null || !openedPayload.CanEdit)
+                throw new InvalidOperationException("VsHost did not import the supported AXAML snapshot into the shared Designer surface.");
+
+            connection.SendAsync(DesignerHostMessageTypes.HostShutdown, "shutdown", "smoke-document", new EmptyPayload(), cancellation.Token).GetAwaiter().GetResult();
+            if (!process.WaitForExit(10_000))
+                throw new InvalidOperationException("VsHost did not stop after HostShutdown.");
+        }
+        finally
+        {
+            if (!process.HasExited)
+                process.Kill(entireProcessTree: true);
+        }
+    }
+
+    private static void AssertVsHostUsesSharedDesignerSurface(SmokeContext context)
+    {
+        if (!typeof(MainWindow).IsAssignableFrom(typeof(VsHostWindow))
+            || typeof(MainWindow).Assembly != typeof(DesignerSurface).Assembly)
+        {
+            throw new InvalidOperationException("VsHost must host the existing MainWindow/DesignerSurface assembly rather than a copied Designer UI.");
+        }
+
+        var hostSource = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "AvaloniaDesigner.VsHost", "VsHostWindow.cs"), Encoding.UTF8);
+        RequireNotContains(hostSource, "VsDesignerSurface", "VsHost must not define a second DesignerSurface.");
+        RequireContains(hostSource, "class VsHostWindow : MainWindow", "VsHost must reuse the existing Designer interaction host for this PoC.");
+    }
+
+    private static void AssertVsixBridgeDoesNotReferenceAvaloniaVisualAssemblies(SmokeContext context)
+    {
+        var root = FindRepositoryRoot();
+        var project = File.ReadAllText(Path.Combine(root, "AvaloniaDesigner.VSIX", "AvaloniaDesigner.VSIX.csproj"), Encoding.UTF8);
+        RequireContains(project, "AvaloniaDesigner.Host.Protocol", "VSIX bridge must reference the host-neutral Protocol project.");
+        RequireNotContains(project, "<ProjectReference Include=\"..\\FormDesigner.csproj\"", "VSIX bridge must not reference FormDesigner.");
+        RequireNotContains(project, "<ProjectReference Include=\"..\\AvaloniaDesigner.VsHost", "VSIX bridge must package VsHost as content, not reference it.");
+        RequireNotContains(project, "<PackageReference Include=\"Eremex", "VSIX bridge must not reference Eremex.");
+        RequireNotContains(project, "<ProjectReference Include=\"..\\Plugins\\Eremex", "VSIX bridge must not reference Eremex.");
+
+        var source = string.Join(Environment.NewLine, Directory.GetFiles(Path.Combine(root, "AvaloniaDesigner.VSIX"), "*.cs", SearchOption.AllDirectories)
+            .Select(path => File.ReadAllText(path, Encoding.UTF8)));
+        RequireNotContains(source, "using Avalonia;", "VSIX bridge source must not load Avalonia visual APIs.");
+        RequireNotContains(source, "using Eremex", "VSIX bridge source must not load Eremex APIs.");
+        RequireNotContains(source, "using FormDesigner", "VSIX bridge source must not load FormDesigner APIs.");
+
+        var archivePath = Path.Combine(root, "AvaloniaDesigner.VSIX", "bin", "Debug", "net472", "AvaloniaDesigner.VSIX.vsix");
+        RequireFileExists(archivePath, "VSIX package must be built before its dependency boundary is verified.");
+        using var archive = ZipFile.OpenRead(archivePath);
+        var forbiddenRootPayload = archive.Entries.Any(entry =>
+            !entry.FullName.StartsWith("VsHost/", StringComparison.OrdinalIgnoreCase)
+            && (entry.FullName.StartsWith("Avalonia.", StringComparison.OrdinalIgnoreCase)
+                || entry.FullName.StartsWith("Eremex.", StringComparison.OrdinalIgnoreCase)
+                || entry.FullName.StartsWith("FormDesigner.", StringComparison.OrdinalIgnoreCase)));
+        if (forbiddenRootPayload)
+            throw new InvalidOperationException("VSIX root contains a visual Designer assembly instead of only bridge/protocol assets.");
+    }
+
+    private static void AssertVsHostReturnsMinimalAxamlPatch(SmokeContext context)
+    {
+        var result = ImportRoundTripFixture();
+        var viewModel = CreateViewModel("VsHostReturnsMinimalAxamlPatch");
+        viewModel.LoadAxamlImportedDocument(result, "MainWindow.axaml");
+        var button = viewModel.Controls.Single(control => control.Name == "Button1");
+        button.Text = "New";
+        button.Width = 220;
+        button.X = 180;
+
+        var patch = viewModel.CreateActiveAxamlPatch(result.RoundTripDocument.OriginalText);
+        if (!patch.CanApply || patch.Edits.Count != 3)
+            throw new InvalidOperationException("VsHost must return exactly the three changed attribute values as a minimal patch.");
+        if (patch.Edits.Any(edit => edit.Length > "Content".Length + "Button1".Length))
+            throw new InvalidOperationException("VsHost patch replaced more source text than an attribute value.");
+
+        RequireContains(patch.PatchedText, "Content=\"New\"", "VsHost patch did not update Button.Content.");
+        RequireContains(patch.PatchedText, "Width=\"220\"", "VsHost patch did not update Button.Width.");
+        RequireContains(patch.PatchedText, "Canvas.Left=\"180\"", "VsHost patch did not update Button Canvas.Left.");
+    }
+
+    private static void AssertVsHostRoundTripPreservesComment(SmokeContext context)
+    {
+        var result = ImportRoundTripFixture();
+        result.Document.Controls.Single(control => control.Name == "Button1").Text = "New";
+        var patch = new AxamlPatchWriter().CreatePatch(result.RoundTripDocument, result.Document, result.RoundTripDocument.OriginalText);
+        RequireContains(patch.PatchedText, "<!-- пользовательский комментарий: не удалять -->", "VsHost round-trip removed a comment.");
+    }
+
+    private static void AssertVsHostRoundTripPreservesUnknownAttribute(SmokeContext context)
+    {
+        var result = ImportRoundTripFixture();
+        result.Document.Controls.Single(control => control.Name == "TextBox1").Text = "World";
+        var patch = new AxamlPatchWriter().CreatePatch(result.RoundTripDocument, result.Document, result.RoundTripDocument.OriginalText);
+        RequireContains(patch.PatchedText, "Custom.Unknown=\"keep-me\"", "VsHost round-trip removed an unknown attribute.");
+    }
+
+    private static void AssertVsHostRejectsPatchForStaleDocumentVersion(SmokeContext context)
+    {
+        const string source = "<Window><Canvas /></Window>";
+        var opened = CreateVsHostOpenDocumentPayload(source, version: 7);
+        var stalePatch = new ApplyDesignerPatchPayload
+        {
+            ExpectedVersion = 6,
+            ExpectedChecksum = DesignerHostProtocol.ComputeChecksum("different"),
+            Edits = new List<TextEditPayload>()
+        };
+        if (DesignerHostPatchGuard.Matches(opened, stalePatch))
+            throw new InvalidOperationException("VS bridge accepted a patch created for a stale AXAML snapshot.");
+    }
+
+    private static void AssertBridgeSurvivesVsHostDisconnect(SmokeContext context)
+    {
+        var pipeName = $"{DesignerHostProtocol.PipePrefix}.disconnect.{Guid.NewGuid():N}";
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        using var server = NamedPipeProtocolConnection.CreateServer(pipeName);
+        var connectTask = server.WaitForConnectionAsync(cancellation.Token);
+        using (var client = NamedPipeProtocolConnection.CreateClient(pipeName))
+        {
+            client.ConnectAsync(cancellation.Token).GetAwaiter().GetResult();
+            connectTask.GetAwaiter().GetResult();
+        }
+
+        using var bridgeConnection = new NamedPipeProtocolConnection(server);
+        var disconnected = bridgeConnection.ReceiveAsync(cancellation.Token).GetAwaiter().GetResult();
+        if (disconnected is not null)
+            throw new InvalidOperationException("Bridge did not observe a clean VsHost disconnect.");
+    }
+
+    private static OpenDocumentPayload CreateVsHostOpenDocumentPayload(string source, long version) => new()
+    {
+        FilePath = "MainWindow.axaml",
+        Text = source,
+        Version = version,
+        Checksum = DesignerHostProtocol.ComputeChecksum(source),
+        ProjectPath = "SimpleAvaloniaApp.csproj",
+        ProjectName = "SimpleAvaloniaApp",
+        TargetFramework = "net6.0",
+        AvaloniaVersion = AvaloniaVersion
+    };
 
     private static void ConfigureMultiFormToolboxDropPropertyEdit(MainWindowViewModel vm)
     {

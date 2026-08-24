@@ -1,0 +1,51 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <GeneratePkgDefFile>true</GeneratePkgDefFile>
+    <IncludeAssemblyInVSIXContainer>true</IncludeAssemblyInVSIXContainer>
+    <IncludeDebugSymbolsInVSIXContainer>true</IncludeDebugSymbolsInVSIXContainer>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <UseWPF>true</UseWPF>
+    <DeployExtension>false</DeployExtension>
+    <CustomAfterMicrosoftCommonTargets>$(MSBuildProjectDirectory)\VsixBuild.targets</CustomAfterMicrosoftCommonTargets>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.VisualStudio.SDK" Version="17.9.37000" ExcludeAssets="runtime" />
+    <PackageReference Include="Microsoft.VSSDK.BuildTools" Version="17.10.2178" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="System.Design" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\AvaloniaDesigner.Host.Protocol\AvaloniaDesigner.Host.Protocol.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <VSCTCompile Include="AvaloniaDesigner.vsct">
+      <ResourceName>Menus.ctmenu</ResourceName>
+    </VSCTCompile>
+    <Content Include="source.extension.vsixmanifest">
+      <IncludeInVSIXContainer>true</IncludeInVSIXContainer>
+    </Content>
+    <!-- The bridge packages the external process as content. The VSIX assembly itself has no
+         Avalonia/Eremex/FormDesigner assembly reference, so devenv.exe never loads them. -->
+    <Content Include="..\AvaloniaDesigner.VsHost\bin\$(Configuration)\net6.0\**\*">
+      <Link>VsHost\%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <IncludeInVSIX>true</IncludeInVSIX>
+    </Content>
+  </ItemGroup>
+
+  <!-- A net472 VSSDK bridge cannot have a ProjectReference to a net6.0 executable, even when
+       ReferenceOutputAssembly is false. Build the external process as package content instead. -->
+  <Target Name="BuildExternalVsHost" BeforeTargets="Build">
+    <MSBuild Projects="..\AvaloniaDesigner.VsHost\AvaloniaDesigner.VsHost.csproj"
+             Targets="Build"
+             Properties="Configuration=$(Configuration)" />
+  </Target>
+
+</Project>
