@@ -14857,7 +14857,7 @@ public partial class MainWindowViewModel : ObservableObject
     {
         return packageId switch
         {
-            "Avalonia.Controls.DataGrid" => "11.1.5",
+            "Avalonia.Controls.DataGrid" => "11.1.1",
             "CommunityToolkit.Mvvm" => "8.2.1",
             "Microsoft.Data.SqlClient" => "5.2.2",
             _ => ""

@@ -49,7 +49,7 @@ VSIX намеренно является bridge, а не вторым Canvas и�
 
 ### 3.1. Структура solution и runtime topology
 
-Корневое приложение — `FormDesigner.csproj`, desktop-приложение Avalonia 11.1.5 с target framework `net6.0`. `App.axaml.cs` создаёт `DesignerRegistry`, регистрирует built-ins, загружает plugins из `AppContext.BaseDirectory/Plugins`, затем создаёт `MainWindow` и `MainWindowViewModel`. `PluginContracts` — отдельный проект `net6.0`, но он намеренно ссылается на Avalonia, поскольку `IControlDescriptor.BuildPreview` возвращает `Avalonia.Controls.Control`.
+Корневое приложение — `FormDesigner.csproj`, desktop-приложение Avalonia 11.1.1 с target framework `net6.0`. `App.axaml.cs` создаёт `DesignerRegistry`, регистрирует built-ins, загружает plugins из `AppContext.BaseDirectory/Plugins`, затем создаёт `MainWindow` и `MainWindowViewModel`. `PluginContracts` — отдельный проект `net6.0`, но он намеренно ссылается на Avalonia, поскольку `IControlDescriptor.BuildPreview` возвращает `Avalonia.Controls.Control`.
 
 Solution содержит корневое приложение, contracts и demo/minimal plugins. Eremex plugin подключён приложением как build dependency и копируется в plugin output folder. Его controls являются реальными Avalonia controls и зависят от identity Avalonia assemblies host-процесса.
 
@@ -105,7 +105,7 @@ Solution содержит корневое приложение, contracts и de
 
 ### Вариант A: in-process Avalonia control в VS document/tool window
 
-**Реализуемость:** не подтверждена и высокорискова для текущего codebase. Visual Studio tool windows host-ятся в WPF. Текущие Eremex controls требуют единой identity Avalonia 11.1.5, DeltaDesign resources и работающий Avalonia dispatcher. Текущая plugin model также загружает сторонние assemblies через `AssemblyLoadContext`.
+**Реализуемость:** не подтверждена и высокорискова для текущего codebase. Visual Studio tool windows host-ятся в WPF. Текущие Eremex controls требуют единой identity Avalonia 11.1.1, DeltaDesign resources и работающий Avalonia dispatcher. Текущая plugin model также загружает сторонние assemblies через `AssemblyLoadContext`.
 
 **Преимущества:** наиболее близкий вид к нативной document tab `[AXAML] [Designer] [Split]`; возможны прямые keyboard и document commands.
 

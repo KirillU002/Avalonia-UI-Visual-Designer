@@ -34,7 +34,7 @@
 | Сложный GridControl | 15–25% | Нужны typed collection editors и Eremex-specific adapter |
 | Полная поддержка Eremex family | 20–30% | Реалистична как отдельная подсистема/плагин, не как набор `if` в ядре |
 
-Проценты отражают покрытие текущей архитектурой, а не объём Eremex API. Для текущего `.NET 6 / Avalonia 11.1.5` host visual render подтверждён для `1.0.98`; `1.0.43` блокируется compatibility gate, а `1.4.34` требует `.NET 8 / Avalonia 12.0.2+`.
+Проценты отражают покрытие текущей архитектурой, а не объём Eremex API. Для текущего `.NET 6 / Avalonia 11.1.1` host visual render подтверждён для `1.0.98`; `1.0.43` блокируется compatibility gate, а `1.4.34` требует `.NET 8 / Avalonia 12.0.2+`.
 
 ## 2. Граница исследования
 
@@ -65,7 +65,7 @@
 - `Eremex.Avalonia.Controls 1.4.34` и `Eremex.Avalonia.Themes.DeltaDesign 1.4.34` для `.NET 8 / Avalonia 12.0.2`;
 - `Eremex.Avalonia.Controls 1.0.98` и `Eremex.Avalonia.Themes.DeltaDesign 1.0.98` для `.NET 6 / Avalonia 11.1`.
 
-Текущий Designer использует `.NET 6 / Avalonia 11.1.5`. Для него подтверждена версия Eremex `1.0.98`: restore/build, `TextEditor`, DeltaDesign theme, attach to visual tree, `ApplyTemplate`, layout, PluginLoader и AXAML Preview прошли в одном процессе. Последняя версия `1.4.34` требует обновления host до Avalonia 12.
+Текущий Designer использует `.NET 6 / Avalonia 11.1.1`. Для него подтверждена версия Eremex `1.0.98`: restore/build, `TextEditor`, DeltaDesign theme, attach to visual tree, `ApplyTemplate`, layout, PluginLoader и AXAML Preview прошли в одном процессе. Последняя версия `1.4.34` требует обновления host до Avalonia 12.
 
 Полные результаты и ограничения: [EremexAvaloniaPackageResearch.md](EremexAvaloniaPackageResearch.md).
 
@@ -136,7 +136,7 @@
 - assemblies из default context переиспользуются по простому имени, что создаёт риск version conflict;
 - manifest с entry assembly, dependency list и compatibility constraints отсутствует.
 
-Host, PluginContracts и sample plugins используют Avalonia `11.1.5`. Eremex-плагины должны проходить compatibility gate до регистрации controls: они не могут приносить отдельную несовместимую копию core Avalonia assemblies.
+Host, PluginContracts и sample plugins используют Avalonia `11.1.1`. Eremex-плагины должны проходить compatibility gate до регистрации controls: они не могут приносить отдельную несовместимую копию core Avalonia assemblies.
 
 Eremex DLL сама по себе не появится в Toolbox. Нужна adapter assembly, реализующая `IFormDesignerPlugin`.
 

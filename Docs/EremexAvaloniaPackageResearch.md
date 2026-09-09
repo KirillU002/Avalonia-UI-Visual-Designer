@@ -8,8 +8,8 @@
 
 - Текущая проверенная версия пакета: **`1.4.34`**.
 - Она собрана для **`.NET 8`** и требует **Avalonia `12.0.2`**.
-- Текущий Avalonia UI Visual Designer собран для **`.NET 6` / Avalonia `11.1.5`**, поэтому `1.4.34` нельзя загружать в него как обычный plugin dependency без обновления host application до Avalonia 12.
-- Для текущего Designer подтверждена версия **`1.0.98`**: `.NET 6`, assembly references Avalonia `11.1.1`, а реальный visual render с host Avalonia `11.1.5` проходит после загрузки Eremex runtime assemblies в Default context.
+- Текущий Avalonia UI Visual Designer собран для **`.NET 6` / Avalonia `11.1.1`**, поэтому `1.4.34` нельзя загружать в него как обычный plugin dependency без обновления host application до Avalonia 12.
+- Для текущего Designer подтверждена версия **`1.0.98`**: `.NET 6`, assembly references Avalonia `11.1.1`, а реальный visual render с host Avalonia `11.1.1` проходит после загрузки Eremex runtime assemblies в Default context.
 - `1.0.43` не следует использовать: она ссылается на Avalonia `11.0.10` и не проходит compatibility gate текущего host.
 - Полноценный self-contained Export пока блокирует не Eremex API, а текущий plugin contract: он не умеет объявлять NuGet dependencies, App styles/resources и startup/build requirements.
 
@@ -60,8 +60,8 @@
 `Eremex.Avalonia.Controls 1.0.98` содержит `net6.0` assemblies и ссылается на Avalonia `11.1.1`. Версия проверена реальным `ApplyTemplate`/layout-прогоном со следующими ссылками:
 
 ```xml
-<PackageReference Include="Avalonia" Version="11.1.5" />
-<PackageReference Include="Avalonia.Desktop" Version="11.1.5" />
+<PackageReference Include="Avalonia" Version="11.1.1" />
+<PackageReference Include="Avalonia.Desktop" Version="11.1.1" />
 <PackageReference Include="Eremex.Avalonia.Controls" Version="1.0.98" />
 <PackageReference Include="Eremex.Avalonia.Themes.DeltaDesign" Version="1.0.98" />
 ```
@@ -72,9 +72,9 @@
 
 | Eremex | TFM | Минимальная Avalonia из `.nuspec` | Совместимость с Designer сейчас |
 |---:|---|---:|---|
-| `1.4.34` | `net8.0` | `12.0.2` | Нет: Designer использует `net6.0` / Avalonia `11.1.5` |
-| `1.0.43` | `net6.0` | `11.0.10` | Нет: несовместимая minor line для host `11.1.5`; registration blocked by compatibility gate |
-| `1.0.98` | `net6.0` | `11.1.1` | Да: real visual render проверен с Avalonia `11.1.5` |
+| `1.4.34` | `net8.0` | `12.0.2` | Нет: Designer использует `net6.0` / Avalonia `11.1.1` |
+| `1.0.43` | `net6.0` | `11.0.10` | Нет: несовместимая minor line для host `11.1.1`; registration blocked by compatibility gate |
+| `1.0.98` | `net6.0` | `11.1.1` | Да: real visual render проверен с Avalonia `11.1.1` |
 
 В `PluginLoadContext` host assemblies переиспользуются по простому assembly name. Поэтому plugin, собранный с Avalonia 12, нельзя считать изолированным от Avalonia 11 host: это не поддерживаемый side-by-side сценарий.
 
@@ -327,7 +327,7 @@ DeltaDesignTheme(IServiceProvider)
 
 ### Runtime activation probe
 
-В инициализированном Avalonia `11.1.5` process выполнено:
+В инициализированном Avalonia `11.1.1` process выполнено:
 
 ```text
 Activator.CreateInstance(Eremex.AvaloniaUI.Controls.Editors.TextEditor)
@@ -426,7 +426,7 @@ PREVIEW_CONTROL|Eremex.AvaloniaUI.Controls.Editors.TextEditor|width=240|height=3
 
 - inspection `.nuspec`, package files и MSBuild `.targets`;
 - reflection public metadata;
-- отдельный restore/build и visual render для `.NET 6 / Avalonia 11.1.5 / Eremex 1.0.98`;
+- отдельный restore/build и visual render для `.NET 6 / Avalonia 11.1.1 / Eremex 1.0.98`;
 - отдельный metadata probe для `.NET 8 / Avalonia 12.0.2 / Eremex 1.4.34`;
 - process-level `Activator` test;
 - compile test против реального `FormDesigner.PluginContracts` API;

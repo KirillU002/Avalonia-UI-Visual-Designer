@@ -15,8 +15,8 @@ namespace FormDesigner.Services;
 public sealed class ExportPipelineService
 {
     public const string DefaultNuGetSourceUrl = "https://api.nuget.org/v3/index.json";
-    private const string AvaloniaVersion = "11.1.5";
-    private const string AvaloniaDesktopVersion = "11.1.5";
+    private const string AvaloniaVersion = "11.1.1";
+    private const string AvaloniaDesktopVersion = "11.1.1";
     private const int ValidationRunsToKeep = 5;
 
     public ExportResult CreateResult(
@@ -702,7 +702,7 @@ Layout: {result.Profile.LayoutExportMode}
 2. Run `dotnet restore`.
 3. Run `dotnet build`.
 
-The generated project targets `net6.0` and uses Avalonia `11.1.5`.
+The generated project targets `net6.0` and uses Avalonia `11.1.1`.
 
 ## Restore/build
 From this folder run:
@@ -718,7 +718,7 @@ NuGet sources:
 {string.Join(Environment.NewLine, sourceLines)}
 
 ## NuGet notes
-- Real DataGrid export requires `Avalonia.Controls.DataGrid 11.1.5`.
+- Real DataGrid export requires `Avalonia.Controls.DataGrid 11.1.1`.
 - Generated bindings are runtime bindings unless a real exported ViewModel type exists.
 - If your NuGet source is HTTP/intranet-only, the generated `NuGet.config` must mark that source with `allowInsecureConnections=""true""`.
 - This export clears `packageSourceMapping` in the local `NuGet.config` so user/global source mapping does not block restore for the generated project.

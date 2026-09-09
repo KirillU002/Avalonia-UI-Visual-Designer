@@ -7,11 +7,11 @@ Keep the current in-process stack for the first DataGridControl slice:
 | Component | Version |
 | --- | --- |
 | Target framework | net6.0 |
-| Designer / PluginContracts Avalonia | 11.1.5 |
+| Designer / PluginContracts Avalonia | 11.1.1 |
 | Eremex.Avalonia.Controls | 1.0.98 |
 | Eremex.Avalonia.Themes.DeltaDesign | 1.0.98 |
 
-No Avalonia 12 migration is required for this phase. The installed Eremex 1.0.98 package targets net6.0 and declares the Avalonia 11.1.x dependency line. The existing TextEditor visual-template probe and the DataGridControl vertical smoke both create the real controls, apply the DeltaDesign template, measure, arrange, and run dispatcher jobs against the host Avalonia 11.1.5 assemblies.
+No Avalonia 12 migration is required for this phase. The installed Eremex 1.0.98 package targets net6.0 and declares the Avalonia 11.1.x dependency line. The existing TextEditor visual-template probe and the DataGridControl vertical smoke both create the real controls, apply the DeltaDesign template, measure, arrange, and run dispatcher jobs against the host Avalonia 11.1.1 assemblies.
 
 Eremex 1.4.x is intentionally not used here. It belongs to the separate net8/Avalonia 12 migration path and must not be loaded into the Avalonia 11 host process.
 

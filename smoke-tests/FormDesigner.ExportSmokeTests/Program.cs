@@ -31,8 +31,8 @@ namespace FormDesigner.ExportSmokeTests;
 
 internal static class Program
 {
-    private const string AvaloniaVersion = "11.1.5";
-    private const string AvaloniaDesktopVersion = "11.1.5";
+    private const string AvaloniaVersion = "11.1.1";
+    private const string AvaloniaDesktopVersion = "11.1.1";
     private const int SmokeRunsToKeep = 5;
     private static readonly Dictionary<string, string> LinqToSqlSmokeDllCache = new(StringComparer.OrdinalIgnoreCase);
     private static bool _avaloniaRuntimeInitialized;
@@ -3876,7 +3876,7 @@ internal static class Program
 
             var readme = File.ReadAllText(Path.Combine(exportFolder, "README.generated.md"), Encoding.UTF8);
             RequireContains(readme, "dotnet restore", "Generated README should include restore instructions.");
-        RequireContains(readme, "11.1.5", "Generated README should document Avalonia version.");
+        RequireContains(readme, "11.1.1", "Generated README should document Avalonia version.");
         }
         finally
         {
@@ -3888,9 +3888,9 @@ internal static class Program
     private static void AssertGeneratedSolutionHasConsistentAvaloniaVersions(SmokeContext context)
     {
         var projectFile = File.ReadAllText(Path.Combine(context.ProjectPath, $"{context.Scenario.Name}.csproj"), Encoding.UTF8);
-        RequireContains(projectFile, "Avalonia\" Version=\"11.1.5\"", "Generated solution should use Avalonia 11.1.5.");
-        RequireContains(projectFile, "Avalonia.Desktop\" Version=\"11.1.5\"", "Generated solution should use Avalonia.Desktop 11.1.5.");
-        RequireContains(projectFile, "Avalonia.Controls.DataGrid\" Version=\"11.1.5\"", "Generated solution should use DataGrid 11.1.5.");
+        RequireContains(projectFile, "Avalonia\" Version=\"11.1.1\"", "Generated solution should use Avalonia 11.1.1.");
+        RequireContains(projectFile, "Avalonia.Desktop\" Version=\"11.1.1\"", "Generated solution should use Avalonia.Desktop 11.1.1.");
+        RequireContains(projectFile, "Avalonia.Controls.DataGrid\" Version=\"11.1.1\"", "Generated solution should use DataGrid 11.1.1.");
         RequireNotContains(projectFile, "11.3.11", "Generated solution should not mix Avalonia 11.3.11 packages.");
     }
 
