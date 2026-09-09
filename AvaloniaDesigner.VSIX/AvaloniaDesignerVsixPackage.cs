@@ -1,5 +1,6 @@
 using Microsoft.VisualStudio;
 using Microsoft.VisualStudio.Shell;
+using Microsoft.VisualStudio.Shell.Interop;
 using System;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -8,51 +9,48 @@ using System.Threading.Tasks;
 namespace AvaloniaDesigner.VSIX;
 
 [PackageRegistration(UseManagedResourcesOnly = true, AllowsBackgroundLoading = true)]
-[InstalledProductRegistration("Avalonia UI Visual Designer", "External AXAML Designer host bridge", "0.1.6")]
-[ProvideMenuResource("Menus.ctmenu", 2)]
-[ProvideBindingPath]
-[ProvideAutoLoad(VSConstants.UICONTEXT.NoSolution_string, PackageAutoLoadFlags.BackgroundLoad)]
-[ProvideAutoLoad(VSConstants.UICONTEXT.SolutionExistsAndFullyLoaded_string, PackageAutoLoadFlags.BackgroundLoad)]
+[InstalledProductRegistration("Avalonia UI Visual Designer", "External AXAML Designer host bridge", "0.1.8")]
+[ProvideMenuResource("Menus.ctmenu", 4)]
+[ProvideAutoLoad(UIContextGuids80.SolutionExists, PackageAutoLoadFlags.BackgroundLoad)]
 [Guid(Guids.PackageString)]
 public sealed class AvaloniaDesignerVsixPackage : AsyncPackage
 {
     private const string ActivityLogSource = "Avalonia UI Visual Designer";
 
-    internal VsHostBridgeClient? BridgeClient { get; private set; }
+    static AvaloniaDesignerVsixPackage()
+    {
+        VsixPackageLoadProbe.Write("AVALONIA_DESIGNER_VSIX_PACKAGE_STATIC_CONSTRUCTOR");
+    }
 
     public AvaloniaDesignerVsixPackage()
     {
-        VsixPackageLoadProbe.Write("AVALONIA_DESIGNER_VSIX_PACKAGE_CONSTRUCTOR");
-        ActivityLog.LogInformation(ActivityLogSource, "AVALONIA_DESIGNER_VSIX_PACKAGE_CONSTRUCTOR");
+        WriteDiagnostic("AVALONIA_DESIGNER_VSIX_PACKAGE_CONSTRUCTOR");
     }
 
     protected override async Task InitializeAsync(CancellationToken cancellationToken, IProgress<ServiceProgressData> progress)
     {
-        VsixPackageLoadProbe.Write("AVALONIA_DESIGNER_VSIX_INITIALIZE_START");
-        ActivityLog.LogInformation(ActivityLogSource, "AVALONIA_DESIGNER_VSIX_INITIALIZE_START");
+        WriteDiagnostic("AVALONIA_DESIGNER_VSIX_INITIALIZE_START");
         try
         {
             await JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
-            BridgeClient = new VsHostBridgeClient(this);
-            await OpenInAvaloniaDesignerCommand.InitializeAsync(this, BridgeClient, WriteActivityLog);
-            VsixPackageLoadProbe.Write("AVALONIA_DESIGNER_VSIX_INITIALIZE_SUCCESS");
-            ActivityLog.LogInformation(ActivityLogSource, "AVALONIA_DESIGNER_VSIX_INITIALIZE_SUCCESS");
+            WriteDiagnostic($"AVALONIA_DESIGNER_VSIX_COMMAND_REGISTRATION_UI_THREAD onUiThread={ThreadHelper.CheckAccess()}");
+            await AvaloniaDesignerDiagnosticCommand.InitializeAsync(this, WriteDiagnostic);
+            WriteDiagnostic("AVALONIA_DESIGNER_VSIX_INITIALIZE_SUCCESS");
         }
         catch (Exception ex)
         {
-            VsixPackageLoadProbe.Write("AVALONIA_DESIGNER_VSIX_INITIALIZE_FAILED", ex);
-            ActivityLog.LogError(ActivityLogSource, $"AVALONIA_DESIGNER_VSIX_INITIALIZE_FAILED{Environment.NewLine}{ex}");
+            WriteDiagnostic("AVALONIA_DESIGNER_VSIX_INITIALIZE_FAILED", ex);
             throw;
         }
     }
 
-    private static void WriteActivityLog(string message) =>
-        ActivityLog.LogInformation(ActivityLogSource, message);
-
-    protected override void Dispose(bool disposing)
+    private static void WriteDiagnostic(string message, Exception? exception = null)
     {
-        if (disposing)
-            BridgeClient?.Dispose();
-        base.Dispose(disposing);
+        VsixPackageLoadProbe.Write(message, exception);
+        if (exception is null)
+            ActivityLog.LogInformation(ActivityLogSource, message);
+        else
+            ActivityLog.LogError(ActivityLogSource, $"{message}{Environment.NewLine}{exception}");
     }
+
 }

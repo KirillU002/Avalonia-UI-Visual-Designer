@@ -5086,20 +5086,19 @@ internal static class Program
     {
         var root = FindRepositoryRoot();
         var vsct = File.ReadAllText(Path.Combine(root, "AvaloniaDesigner.VSIX", "AvaloniaDesigner.vsct"), Encoding.UTF8);
-        RequireContains(vsct, "id=\"DesignerMenu\"", "VSIX command table must declare the Avalonia Designer Tools submenu.");
-        RequireContains(vsct, "id=\"IDG_VS_MM_TOOLSADDINS\"", "VSIX command table must place the submenu in the standard Tools/Add-ins group.");
-        RequireContains(vsct, "<CommandFlag>AlwaysCreate</CommandFlag>", "VSIX submenu must be created before its package is loaded.");
-        RequireContains(vsct, "<ButtonText>Avalonia UI Visual Designer</ButtonText>", "VSIX Tools submenu text is missing.");
-        RequireContains(vsct, "<ButtonText>Open Designer</ButtonText>", "VSIX Open Designer command text is missing.");
+        RequireContains(vsct, "id=\"IDM_VS_MENU_TOOLS\"", "VSIX diagnostic command must be placed directly in the Tools menu.");
+        RequireContains(vsct, "id=\"DiagnosticLoadProbeCommand\"", "VSIX command table must declare the package-load diagnostic command.");
+        RequireContains(vsct, "<ButtonText>Avalonia Designer Test</ButtonText>", "VSIX diagnostic command text is missing.");
 
         var packageSource = File.ReadAllText(Path.Combine(root, "AvaloniaDesigner.VSIX", "AvaloniaDesignerVsixPackage.cs"), Encoding.UTF8);
-        RequireContains(packageSource, "ProvideMenuResource(\"Menus.ctmenu\", 2)", "VSIX package must register the current command table resource.");
-        RequireContains(packageSource, "ProvideAutoLoad(VSConstants.UICONTEXT.NoSolution_string", "VSIX package must request a deterministic no-solution background load.");
-        RequireContains(packageSource, "ProvideAutoLoad(VSConstants.UICONTEXT.SolutionExistsAndFullyLoaded_string", "VSIX package must request a deterministic completed-solution load.");
+        RequireContains(packageSource, "ProvideMenuResource(\"Menus.ctmenu\", 4)", "VSIX package must register the diagnostic command table resource revision.");
+        RequireContains(packageSource, "ProvideAutoLoad(UIContextGuids80.SolutionExists", "VSIX package must request a background load whenever a solution exists.");
+        RequireContains(packageSource, "AVALONIA_DESIGNER_VSIX_PACKAGE_STATIC_CONSTRUCTOR", "VSIX package must record a static-constructor load probe.");
 
-        var commandSource = File.ReadAllText(Path.Combine(root, "AvaloniaDesigner.VSIX", "OpenInAvaloniaDesignerCommand.cs"), Encoding.UTF8);
-        RequireContains(commandSource, "command.Visible = true;", "VSIX command must remain visible as a discoverable Tools entry point.");
-        RequireContains(commandSource, "command.Enabled = true;", "VSIX command must defer AXAML validation to execution instead of disappearing from Tools.");
+        var commandSource = File.ReadAllText(Path.Combine(root, "AvaloniaDesigner.VSIX", "AvaloniaDesignerDiagnosticCommand.cs"), Encoding.UTF8);
+        RequireContains(commandSource, "AVALONIA_DESIGNER_VSIX_COMMAND_LOOKUP_AFTER_ADD", "VSIX diagnostic command must verify OleMenuCommandService registration.");
+        RequireContains(commandSource, "Avalonia Designer VSPackage loaded.", "VSIX diagnostic command must provide a positive load confirmation.");
+        RequireNotContains(commandSource, "AvaloniaDesigner.Host.Protocol", "VSIX diagnostic command must not load Host.Protocol.");
 
         var archivePath = Path.Combine(root, "AvaloniaDesigner.VSIX", "bin", "Debug", "net472", "AvaloniaDesigner.VSIX.vsix");
         RequireFileExists(archivePath, "VSIX package must be built before its command registration is verified.");
@@ -5109,7 +5108,8 @@ internal static class Program
         using var reader = new StreamReader(pkgdef.Open(), Encoding.UTF8);
         var pkgdefText = reader.ReadToEnd();
         RequireContains(pkgdefText, "[$RootKey$\\Menus]", "VSIX PkgDef is missing the Visual Studio Menus registration.");
-        RequireContains(pkgdefText, "Menus.ctmenu, 2", "VSIX PkgDef does not point Visual Studio at the current compiled command table.");
+        RequireContains(pkgdefText, "Menus.ctmenu, 4", "VSIX PkgDef does not point Visual Studio at the current compiled command table.");
+        RequireContains(pkgdefText, "[$RootKey$\\Packages\\{97151b7e-03cd-468b-80f6-32601757621a}]", "VSIX PkgDef is missing the expected VSPackage registration.");
     }
 
     private static void AssertVsixPackageRuntimeDependencyClosureIsValid(SmokeContext context)
@@ -5118,18 +5118,12 @@ internal static class Program
         var project = File.ReadAllText(Path.Combine(root, "AvaloniaDesigner.VSIX", "AvaloniaDesigner.VSIX.csproj"), Encoding.UTF8);
         RequireContains(project, "<TargetFramework>net472</TargetFramework>", "VSIX bridge must remain compatible with the Visual Studio .NET Framework process.");
         RequireContains(project, "<UseCodebase>true</UseCodebase>", "VSIX package assembly must receive a $PackageFolder$ CodeBase registration.");
+        RequireContains(project, "<VsixDiagnosticMode>true</VsixDiagnosticMode>", "The package-load probe must build in isolated diagnostic mode.");
 
         var packageSource = File.ReadAllText(Path.Combine(root, "AvaloniaDesigner.VSIX", "AvaloniaDesignerVsixPackage.cs"), Encoding.UTF8);
-        RequireContains(packageSource, "[ProvideBindingPath]", "VSIX package must expose its private bridge dependency folder to the Visual Studio loader.");
         RequireContains(packageSource, "AVALONIA_DESIGNER_VSIX_INITIALIZE_FAILED", "VSIX package must log package initialization failures to ActivityLog.");
+        RequireContains(packageSource, "WriteDiagnostic", "VSIX package must write each registration stage to both diagnostics channels.");
         RequireContains(packageSource, "VsixPackageLoadProbe.Write", "VSIX package must write a service-independent load probe for PoC diagnostics.");
-
-        var commandSource = File.ReadAllText(Path.Combine(root, "AvaloniaDesigner.VSIX", "OpenInAvaloniaDesignerCommand.cs"), Encoding.UTF8);
-        var initializationStart = commandSource.IndexOf("public static async Task InitializeAsync", StringComparison.Ordinal);
-        var executeStart = commandSource.IndexOf("private async Task ExecuteAsync", StringComparison.Ordinal);
-        var dteLookup = commandSource.IndexOf("GetServiceAsync(typeof(DTE))", StringComparison.Ordinal);
-        if (initializationStart < 0 || executeStart < 0 || dteLookup < executeStart)
-            throw new InvalidOperationException("VSIX must defer DTE lookup until command execution so package initialization can always register the menu command.");
 
         var archivePath = Path.Combine(root, "AvaloniaDesigner.VSIX", "bin", "Debug", "net472", "AvaloniaDesigner.VSIX.vsix");
         RequireFileExists(archivePath, "VSIX package must be built before validating its runtime dependency closure.");
@@ -5141,8 +5135,8 @@ internal static class Program
 
         if (!rootEntries.Contains("AvaloniaDesigner.VSIX.dll", StringComparer.OrdinalIgnoreCase))
             throw new InvalidOperationException("VSIX package assembly is missing from the VSIX root.");
-        if (!rootEntries.Contains("AvaloniaDesigner.Host.Protocol.dll", StringComparer.OrdinalIgnoreCase))
-            throw new InvalidOperationException("VSIX bridge dependency AvaloniaDesigner.Host.Protocol.dll is missing from the VSIX root.");
+        if (rootEntries.Contains("AvaloniaDesigner.Host.Protocol.dll", StringComparer.OrdinalIgnoreCase))
+            throw new InvalidOperationException("The diagnostic VSIX package must not load Host.Protocol into devenv.exe.");
         if (rootEntries.Any(entry => entry.StartsWith("Avalonia.", StringComparison.OrdinalIgnoreCase)
             || entry.StartsWith("Eremex.", StringComparison.OrdinalIgnoreCase)
             || string.Equals(entry, "FormDesigner.dll", StringComparison.OrdinalIgnoreCase)))
@@ -5155,7 +5149,6 @@ internal static class Program
         using var reader = new StreamReader(pkgdef.Open(), Encoding.UTF8);
         var pkgdefText = reader.ReadToEnd();
         RequireContains(pkgdefText, "\"CodeBase\"=\"$PackageFolder$\\AvaloniaDesigner.VSIX.dll\"", "VSIX PkgDef cannot locate its own package assembly after installation.");
-        RequireContains(pkgdefText, "[$RootKey$\\BindingPaths\\", "VSIX PkgDef must register the extension folder for AvaloniaDesigner.Host.Protocol.dll.");
         RequireContains(pkgdefText, "=dword:00000002", "VSIX PkgDef must request background package loading.");
     }
 
