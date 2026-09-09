@@ -9,13 +9,14 @@ using System.Threading.Tasks;
 namespace AvaloniaDesigner.VSIX;
 
 [PackageRegistration(UseManagedResourcesOnly = true, AllowsBackgroundLoading = true)]
-[InstalledProductRegistration("Avalonia UI Visual Designer", "External AXAML Designer host bridge", "0.1.8")]
-[ProvideMenuResource("Menus.ctmenu", 4)]
+[InstalledProductRegistration("Avalonia UI Visual Designer", "External AXAML Designer host bridge", "0.1.10")]
+[ProvideMenuResource("Menus.ctmenu", 5)]
 [ProvideAutoLoad(UIContextGuids80.SolutionExists, PackageAutoLoadFlags.BackgroundLoad)]
 [Guid(Guids.PackageString)]
 public sealed class AvaloniaDesignerVsixPackage : AsyncPackage
 {
     private const string ActivityLogSource = "Avalonia UI Visual Designer";
+    private VsHostBridgeClient? _bridge;
 
     static AvaloniaDesignerVsixPackage()
     {
@@ -34,7 +35,8 @@ public sealed class AvaloniaDesignerVsixPackage : AsyncPackage
         {
             await JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
             WriteDiagnostic($"AVALONIA_DESIGNER_VSIX_COMMAND_REGISTRATION_UI_THREAD onUiThread={ThreadHelper.CheckAccess()}");
-            await AvaloniaDesignerDiagnosticCommand.InitializeAsync(this, WriteDiagnostic);
+            _bridge = new VsHostBridgeClient(this);
+            await OpenInAvaloniaDesignerCommand.InitializeAsync(this, _bridge, WriteDiagnostic);
             WriteDiagnostic("AVALONIA_DESIGNER_VSIX_INITIALIZE_SUCCESS");
         }
         catch (Exception ex)

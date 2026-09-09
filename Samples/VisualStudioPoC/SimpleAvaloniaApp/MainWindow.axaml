@@ -9,19 +9,20 @@
         <!-- keep me -->
         <Button
             x:Name="Button1"
-            Content="Old"
+            Content="Привет"
             Width="160"
             Height="40"
-            Canvas.Left="100"
-            Canvas.Top="100" />
+            Canvas.Left="280"
+            Canvas.Top="30" />
 
         <TextBox
             x:Name="TextBox1"
             Text="Hello"
             Width="220"
             Height="40"
-            Canvas.Left="100"
-            Canvas.Top="160"
+            Canvas.Left="30"
+            Canvas.Top="30"
             custom:Custom.Unknown="keep-me" />
+
     </Canvas>
 </Window>

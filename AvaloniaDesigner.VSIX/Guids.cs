@@ -12,5 +12,4 @@ internal static class Guids
 internal static class CommandIds
 {
     public const int OpenInDesigner = 0x0100;
-    public const int DiagnosticLoadProbe = 0x0101;
 }

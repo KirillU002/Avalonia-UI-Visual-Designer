@@ -10,9 +10,6 @@
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
     <UseWPF>true</UseWPF>
     <DeployExtension>false</DeployExtension>
-    <!-- Temporary load-isolation build. It proves VSPackage registration and the command
-         table before the IPC bridge is allowed back into the package initialization path. -->
-    <VsixDiagnosticMode>true</VsixDiagnosticMode>
     <CustomAfterMicrosoftCommonTargets>$(MSBuildProjectDirectory)\VsixBuild.targets</CustomAfterMicrosoftCommonTargets>
   </PropertyGroup>
 
@@ -25,14 +22,8 @@
     <Reference Include="System.Design" />
   </ItemGroup>
 
-  <ItemGroup Condition="'$(VsixDiagnosticMode)' != 'true'">
+  <ItemGroup>
     <ProjectReference Include="..\AvaloniaDesigner.Host.Protocol\AvaloniaDesigner.Host.Protocol.csproj" />
-  </ItemGroup>
-
-  <ItemGroup Condition="'$(VsixDiagnosticMode)' == 'true'">
-    <Compile Remove="OpenInAvaloniaDesignerCommand.cs" />
-    <Compile Remove="VsDocumentBuffer.cs" />
-    <Compile Remove="VsHostBridgeClient.cs" />
   </ItemGroup>
 
   <ItemGroup>

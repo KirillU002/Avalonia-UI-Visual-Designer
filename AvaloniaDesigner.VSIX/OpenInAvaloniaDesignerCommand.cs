@@ -14,50 +14,76 @@ internal sealed class OpenInAvaloniaDesignerCommand
     private readonly AsyncPackage _package;
     private readonly VsHostBridgeClient _bridge;
     private readonly VsOutputWindowLogger _output;
+    private readonly Action<string, Exception?> _diagnosticLog;
     private VsDocumentBuffer? _buffer;
     private VsDocumentSnapshot? _snapshot;
 
-    private OpenInAvaloniaDesignerCommand(AsyncPackage package, VsHostBridgeClient bridge, VsOutputWindowLogger output)
+    private OpenInAvaloniaDesignerCommand(
+        AsyncPackage package,
+        VsHostBridgeClient bridge,
+        VsOutputWindowLogger output,
+        Action<string, Exception?> diagnosticLog)
     {
         _package = package;
         _bridge = bridge;
         _output = output;
+        _diagnosticLog = diagnosticLog;
         _bridge.PatchReceived += ApplyPatchAsync;
         _bridge.ReloadRequested += ReloadFromVisualStudioAsync;
         _bridge.Disconnected += () => Log("VSIX_HOST_DISCONNECTED");
         _bridge.Log += Log;
     }
 
-    public static async Task InitializeAsync(AsyncPackage package, VsHostBridgeClient bridge, Action<string>? packageLoadLog = null)
+    public static async Task InitializeAsync(
+        AsyncPackage package,
+        VsHostBridgeClient bridge,
+        Action<string, Exception?> diagnosticLog)
     {
-        await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(package.DisposalToken);
-        var command = new OpenInAvaloniaDesignerCommand(package, bridge, new VsOutputWindowLogger(package));
-        var menu = await package.GetServiceAsync(typeof(IMenuCommandService)) as OleMenuCommandService
-            ?? throw new InvalidOperationException("Visual Studio menu command service is unavailable.");
-        packageLoadLog?.Invoke("AVALONIA_DESIGNER_VSIX_COMMAND_SERVICE_RESOLVED");
+        const string serviceType = "IMenuCommandService";
+        try
+        {
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(package.DisposalToken);
+            diagnosticLog("AVALONIA_DESIGNER_VSIX_COMMAND_SERVICE_REQUEST_START serviceType=" + serviceType, null);
+            var menu = await package.GetServiceAsync(typeof(IMenuCommandService)) as OleMenuCommandService;
+            diagnosticLog(
+                "AVALONIA_DESIGNER_VSIX_COMMAND_SERVICE_REQUEST_RESULT serviceNull=" + (menu is null) +
+                " serviceType=" + (menu?.GetType().FullName ?? "<null>"),
+                null);
+            if (menu is null)
+                throw new InvalidOperationException("Visual Studio menu command service is unavailable.");
+
+            var commandId = new CommandID(Guids.CommandSet, CommandIds.OpenInDesigner);
+            diagnosticLog($"AVALONIA_DESIGNER_VSIX_COMMAND_CREATE_START commandSet={Guids.CommandSet:D} commandId=0x{CommandIds.OpenInDesigner:X4}", null);
+            var command = new OpenInAvaloniaDesignerCommand(package, bridge, new VsOutputWindowLogger(package), diagnosticLog);
 #pragma warning disable VSSDK007 // OleMenuCommand callbacks cannot return a task; ExecuteAsync reports operational errors itself.
-        var menuCommand = new OleMenuCommand((_, _) => ThreadHelper.JoinableTaskFactory.RunAsync(command.ExecuteAsync).FileAndForget("AvaloniaDesigner/Open"), new CommandID(Guids.CommandSet, CommandIds.OpenInDesigner));
+            var menuCommand = new OleMenuCommand(
+                (_, _) => ThreadHelper.JoinableTaskFactory.RunAsync(command.ExecuteAsync).FileAndForget("AvaloniaDesigner/Open"),
+                commandId);
 #pragma warning restore VSSDK007
-        menuCommand.BeforeQueryStatus += command.BeforeQueryStatus;
-        menu.AddCommand(menuCommand);
-        packageLoadLog?.Invoke("AVALONIA_DESIGNER_VSIX_COMMAND_REGISTERED");
-    }
+            diagnosticLog("AVALONIA_DESIGNER_VSIX_COMMAND_CREATE_SUCCESS", null);
 
-    private void BeforeQueryStatus(object sender, EventArgs e)
-    {
-        ThreadHelper.ThrowIfNotOnUIThread();
-        if (sender is not OleMenuCommand command)
-            return;
+            diagnosticLog("AVALONIA_DESIGNER_VSIX_COMMAND_ADD_START", null);
+            menu.AddCommand(menuCommand);
+            diagnosticLog("AVALONIA_DESIGNER_VSIX_COMMAND_ADD_SUCCESS", null);
 
-        // This top-level Tools command is the discoverable entry point for the PoC. The handler
-        // validates the active document and reports a targeted message when it is not AXAML.
-        command.Visible = true;
-        command.Enabled = true;
+            var registered = menu.FindCommand(commandId);
+            diagnosticLog("AVALONIA_DESIGNER_VSIX_COMMAND_LOOKUP_AFTER_ADD found=" + (registered is not null), null);
+            if (registered is null)
+                throw new InvalidOperationException("OleMenuCommandService did not retain the Open Designer command.");
+
+            diagnosticLog("AVALONIA_DESIGNER_VSIX_OPEN_DESIGNER_COMMAND_REGISTERED", null);
+        }
+        catch (Exception ex)
+        {
+            diagnosticLog("AVALONIA_DESIGNER_VSIX_OPEN_DESIGNER_COMMAND_REGISTRATION_FAILED", ex);
+            throw;
+        }
     }
 
     private async Task ExecuteAsync()
     {
         await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(_package.DisposalToken);
+        Log("OPEN_DESIGNER_COMMAND_EXECUTED");
         var bufferResult = await GetDocumentBufferAsync();
         var captureError = string.Empty;
         if (bufferResult.Buffer is null
@@ -69,16 +95,38 @@ internal sealed class OpenInAvaloniaDesignerCommand
         }
 
         _snapshot = snapshot;
+        Log($"ACTIVE_DOCUMENT_RESOLVED path={snapshot.FilePath}; version={snapshot.Version}");
         try
         {
-            Log($"VSIX_DESIGNER_COMMAND document={snapshot.FilePath}; version={snapshot.Version}");
             var opened = await _bridge.OpenDocumentAsync(snapshot);
             if (!opened.CanEdit)
                 VsShellUtilities.ShowMessageBox(_package, opened.Status, "Avalonia UI Visual Designer", OLEMSGICON.OLEMSGICON_WARNING, OLEMSGBUTTON.OLEMSGBUTTON_OK, OLEMSGDEFBUTTON.OLEMSGDEFBUTTON_FIRST);
         }
+        catch (System.IO.FileNotFoundException ex)
+        {
+            Log("VSIX_VSHOST_START_FAILED", ex);
+            VsShellUtilities.ShowMessageBox(
+                _package,
+                "Avalonia Designer host не найден.\r\nПереустановите расширение.",
+                "Avalonia UI Visual Designer",
+                OLEMSGICON.OLEMSGICON_CRITICAL,
+                OLEMSGBUTTON.OLEMSGBUTTON_OK,
+                OLEMSGDEFBUTTON.OLEMSGDEFBUTTON_FIRST);
+        }
+        catch (OperationCanceledException ex)
+        {
+            Log("VSIX_IPC_CONNECT_FAILED", ex);
+            VsShellUtilities.ShowMessageBox(
+                _package,
+                "Не удалось подключиться к Avalonia Designer host.",
+                "Avalonia UI Visual Designer",
+                OLEMSGICON.OLEMSGICON_WARNING,
+                OLEMSGBUTTON.OLEMSGBUTTON_OK,
+                OLEMSGDEFBUTTON.OLEMSGDEFBUTTON_FIRST);
+        }
         catch (Exception ex)
         {
-            Log($"VSIX_OPEN_FAILED {ex}");
+            Log("VSIX_OPEN_FAILED", ex);
             VsShellUtilities.ShowMessageBox(_package, ex.Message, "Avalonia UI Visual Designer", OLEMSGICON.OLEMSGICON_CRITICAL, OLEMSGBUTTON.OLEMSGBUTTON_OK, OLEMSGDEFBUTTON.OLEMSGDEFBUTTON_FIRST);
         }
     }
@@ -141,5 +189,15 @@ internal sealed class OpenInAvaloniaDesignerCommand
         return (_buffer, string.Empty);
     }
 
-    private void Log(string message) => _output.Write(message);
+    private void Log(string message)
+    {
+        _output.Write(message);
+        _diagnosticLog(message, null);
+    }
+
+    private void Log(string message, Exception exception)
+    {
+        _output.Write($"{message}{Environment.NewLine}{exception}");
+        _diagnosticLog(message, exception);
+    }
 }

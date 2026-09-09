@@ -4,6 +4,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -33,18 +34,24 @@ internal sealed class VsHostBridgeClient : IDisposable
     public async Task EnsureConnectedAsync()
     {
         if (_connection is not null)
+        {
+            Log?.Invoke("VSIX_VSHOST_REUSE");
             return;
+        }
 
         var restarting = _process is not null;
         _pipeName = $"{DesignerHostProtocol.PipePrefix}.{Process.GetCurrentProcess().Id}.{Guid.NewGuid():N}";
+        Log?.Invoke("VSIX_VSHOST_LOOKUP");
         var executable = ResolveVsHostExecutable();
-        Log?.Invoke($"{(restarting ? "VSIX_HOST_RESTART" : "VSIX_HOST_START")} path={executable}");
+        Log?.Invoke($"{(restarting ? "VSIX_VSHOST_RESTART" : "VSIX_VSHOST_START")} path={executable}");
         _process = Process.Start(new ProcessStartInfo
         {
-            FileName = executable,
-            Arguments = $"--pipe \"{_pipeName}\"",
-            UseShellExecute = false,
-            CreateNoWindow = true
+                FileName = executable,
+                Arguments = $"--pipe \"{_pipeName}\"",
+                WorkingDirectory = Path.GetDirectoryName(executable)
+                    ?? throw new InvalidOperationException("Avalonia Designer host directory is unavailable."),
+                UseShellExecute = false,
+                CreateNoWindow = false
         }) ?? throw new InvalidOperationException("Не удалось запустить AvaloniaDesigner.VsHost.exe.");
         _process.EnableRaisingEvents = true;
         _process.Exited += (_, _) => OnDisconnected("VSIX_HOST_DISCONNECTED process exited");
@@ -52,6 +59,7 @@ internal sealed class VsHostBridgeClient : IDisposable
         var client = NamedPipeProtocolConnection.CreateClient(_pipeName);
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(_cancellation.Token);
         timeout.CancelAfter(TimeSpan.FromSeconds(12));
+        Log?.Invoke("VSIX_IPC_CONNECT_START");
         await client.ConnectAsync(timeout.Token).ConfigureAwait(false);
         _connection = new NamedPipeProtocolConnection(client);
         _ = ReceiveLoopAsync();
@@ -70,6 +78,7 @@ internal sealed class VsHostBridgeClient : IDisposable
     public async Task<DocumentOpenedPayload> OpenDocumentAsync(VsDocumentSnapshot snapshot)
     {
         await EnsureConnectedAsync().ConfigureAwait(false);
+        Log?.Invoke($"VSIX_OPEN_DOCUMENT_SENT path={snapshot.FilePath}; version={snapshot.Version}");
         var response = await SendRequestAsync(DesignerHostMessageTypes.OpenDocument, snapshot.DocumentId, new OpenDocumentPayload
         {
             FilePath = snapshot.FilePath,
@@ -207,17 +216,61 @@ internal sealed class VsHostBridgeClient : IDisposable
             Details = details
         }, _cancellation.Token) ?? Task.CompletedTask;
 
-    private static string ResolveVsHostExecutable()
+    private string ResolveVsHostExecutable()
     {
-        var configured = Environment.GetEnvironmentVariable("AVALONIA_DESIGNER_VSHOST_PATH");
-        if (!string.IsNullOrWhiteSpace(configured) && File.Exists(configured))
-            return configured;
+        var extensionAssemblyPath = typeof(VsHostBridgeClient).Assembly.Location;
+        Log?.Invoke($"VSIX_EXTENSION_ASSEMBLY_LOCATION path={extensionAssemblyPath}");
 
-        var bundled = Path.Combine(AppContext.BaseDirectory, "VsHost", "AvaloniaDesigner.VsHost.exe");
-        if (File.Exists(bundled))
+        var extensionRoot = Path.GetDirectoryName(extensionAssemblyPath);
+        if (string.IsNullOrWhiteSpace(extensionRoot))
+            throw new InvalidOperationException("Avalonia Designer extension root cannot be resolved from its assembly location.");
+
+        Log?.Invoke($"VSIX_EXTENSION_ROOT_RESOLVED path={extensionRoot}");
+        var bundled = GetBundledVsHostExecutablePath(extensionAssemblyPath);
+        Log?.Invoke($"VSIX_VSHOST_EXPECTED_PATH path={bundled}");
+        var exists = File.Exists(bundled);
+        Log?.Invoke($"VSIX_VSHOST_EXISTS exists={exists}");
+        if (exists)
             return bundled;
 
-        throw new FileNotFoundException("AvaloniaDesigner.VsHost.exe is not bundled with this VSIX.", bundled);
+        LogBundledHostDirectoryContents(extensionRoot);
+        throw new FileNotFoundException("Avalonia Designer host is not found inside the installed extension.", bundled);
+    }
+
+    internal static string GetBundledVsHostExecutablePath(string extensionAssemblyPath)
+    {
+        if (string.IsNullOrWhiteSpace(extensionAssemblyPath))
+            throw new ArgumentException("Extension assembly location is required.", nameof(extensionAssemblyPath));
+
+        var extensionRoot = Path.GetDirectoryName(extensionAssemblyPath);
+        if (string.IsNullOrWhiteSpace(extensionRoot))
+            throw new ArgumentException("Extension assembly location does not contain a directory.", nameof(extensionAssemblyPath));
+
+        return Path.Combine(extensionRoot, "VsHost", "AvaloniaDesigner.VsHost.exe");
+    }
+
+    private void LogBundledHostDirectoryContents(string extensionRoot)
+    {
+        try
+        {
+            var hostDirectory = Path.Combine(extensionRoot, "VsHost");
+            if (!Directory.Exists(hostDirectory))
+            {
+                Log?.Invoke("VSIX_VSHOST_CONTENTS exists=false");
+                return;
+            }
+
+            var names = Directory.EnumerateFiles(hostDirectory)
+                .Select(Path.GetFileName)
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+                .Take(25);
+            Log?.Invoke($"VSIX_VSHOST_CONTENTS exists=true files={string.Join(",", names)}");
+        }
+        catch (Exception ex)
+        {
+            Log?.Invoke($"VSIX_VSHOST_CONTENTS_FAILED {ex.GetType().Name}: {ex.Message}");
+        }
     }
 
     private void OnDisconnected(string details)

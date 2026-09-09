@@ -4,15 +4,15 @@
   <Extern href="vsshlids.h" />
   <Commands package="guidAvaloniaDesignerVsixPackage">
     <Groups>
-      <Group guid="guidAvaloniaDesignerVsixCmdSet" id="DiagnosticGroup" priority="0x0600">
+      <Group guid="guidAvaloniaDesignerVsixCmdSet" id="DesignerGroup" priority="0x0600">
         <Parent guid="guidSHLMainMenu" id="IDM_VS_MENU_TOOLS" />
       </Group>
     </Groups>
     <Buttons>
-      <Button guid="guidAvaloniaDesignerVsixCmdSet" id="DiagnosticLoadProbeCommand" priority="0x0100" type="Button">
-        <Parent guid="guidAvaloniaDesignerVsixCmdSet" id="DiagnosticGroup" />
+      <Button guid="guidAvaloniaDesignerVsixCmdSet" id="OpenInDesignerCommand" priority="0x0100" type="Button">
+        <Parent guid="guidAvaloniaDesignerVsixCmdSet" id="DesignerGroup" />
         <Strings>
-          <ButtonText>Avalonia Designer Test</ButtonText>
+          <ButtonText>Open in Avalonia UI Visual Designer</ButtonText>
         </Strings>
       </Button>
     </Buttons>
@@ -21,8 +21,7 @@
     <GuidSymbol name="guidAvaloniaDesignerVsixPackage" value="{97151B7E-03CD-468B-80F6-32601757621A}" />
     <GuidSymbol name="guidAvaloniaDesignerVsixCmdSet" value="{343D141A-A3FC-4BA7-A0B0-A61F23AF1BCB}">
       <IDSymbol name="OpenInDesignerCommand" value="0x0100" />
-      <IDSymbol name="DiagnosticGroup" value="0x1021" />
-      <IDSymbol name="DiagnosticLoadProbeCommand" value="0x0101" />
+      <IDSymbol name="DesignerGroup" value="0x1020" />
     </GuidSymbol>
   </Symbols>
 </CommandTable>
