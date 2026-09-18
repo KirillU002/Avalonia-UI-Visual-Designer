@@ -6,6 +6,7 @@ using System.IO.Pipes;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Xml;
 using System.Xml.Serialization;
 
 namespace AvaloniaDesigner.Host.Protocol;
@@ -99,7 +100,10 @@ public sealed class NamedPipeProtocolConnection : IDisposable
     private static string Serialize<T>(T value)
     {
         using var writer = new Utf8StringWriter();
-        GetSerializer(typeof(T)).Serialize(writer, value);
+        // Both the payload and its envelope must escape CR. XML readers normalize
+        // literal CR/CRLF, invalidating source offsets and snapshot checksums.
+        using (var xml = XmlWriter.Create(writer, new XmlWriterSettings { NewLineHandling = NewLineHandling.Entitize }))
+            GetSerializer(typeof(T)).Serialize(xml, value);
         return writer.ToString();
     }
 
@@ -119,7 +123,11 @@ public sealed class NamedPipeProtocolConnection : IDisposable
         {
             var read = await _stream.ReadAsync(buffer, offset, buffer.Length - offset, cancellationToken).ConfigureAwait(false);
             if (read == 0)
-                return offset == 0;
+            {
+                if (offset == 0)
+                    return false;
+                throw new EndOfStreamException("IPC connection closed in the middle of a frame.");
+            }
             offset += read;
         }
         return true;

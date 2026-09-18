@@ -5,6 +5,7 @@ using Avalonia.Media;
 using FormDesigner.DesignerSystem.Hosting;
 using FormDesigner.Views;
 using System;
+using System.Threading.Tasks;
 
 namespace AvaloniaDesigner.VsHost;
 
@@ -18,7 +19,7 @@ public sealed class VsHostWindow : MainWindow
     private readonly TextBlock _statusText;
 
     public VsHostWindow(IDesignerHostServices hostServices)
-        : base(hostServices)
+        : base(hostServices, DesignerDocumentPersistence.HostBuffer)
     {
         var applyButton = new Button
         {
@@ -67,6 +68,15 @@ public sealed class VsHostWindow : MainWindow
 
     public event EventHandler? ApplyRequested;
     public event EventHandler? ReloadRequested;
+
+    protected override Task<bool> ApplyHostDocumentAsync()
+    {
+        ApplyRequested?.Invoke(this, EventArgs.Empty);
+        // Do not close/discard the session while its patch acknowledgement is pending.
+        return Task.FromResult(false);
+    }
+
+    protected override void ReloadHostDocument() => ReloadRequested?.Invoke(this, EventArgs.Empty);
 
     public void SetBridgeStatus(string text) => _statusText.Text = text;
 

@@ -22,6 +22,7 @@ public sealed class AxamlCapabilityReport
     public List<AxamlCapabilityEntry> Entries { get; } = new();
     public AxamlCapabilityLevel Level { get; private set; } = AxamlCapabilityLevel.FullyEditable;
     public bool CanSafelyPatch => Level is AxamlCapabilityLevel.FullyEditable or AxamlCapabilityLevel.PartiallyEditable;
+    public bool CanOpen => Level != AxamlCapabilityLevel.UnsafeToSave;
 
     public void Add(string subject, AxamlCapabilityLevel level, string message)
     {

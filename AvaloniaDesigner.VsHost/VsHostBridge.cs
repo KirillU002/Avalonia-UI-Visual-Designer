@@ -22,6 +22,9 @@ public sealed partial class VsHostBridge : IDisposable
     private readonly CancellationTokenSource _cancellation = new();
     private NamedPipeProtocolConnection? _connection;
     private OpenDocumentPayload? _document;
+    private string _sessionId = string.Empty;
+    private PendingPatch? _pendingPatch;
+    private sealed record PendingPatch(string RequestId, string DocumentId, long BaseVersion, string Text, string DesignerSnapshot);
     private bool _started;
     private bool _disposed;
 
@@ -46,6 +49,11 @@ public sealed partial class VsHostBridge : IDisposable
 
     public async Task ApplyAsync()
     {
+        if (_pendingPatch is not null)
+        {
+            SetStatus("Ожидается подтверждение предыдущего patch от Visual Studio.");
+            return;
+        }
         if (_document is null)
         {
             SetStatus("Нет открытого AXAML-документа.");
@@ -60,12 +68,16 @@ public sealed partial class VsHostBridge : IDisposable
 
         try
         {
-            Log("VSHOST_PATCH_CREATE_START", $"document={_document.FilePath}; version={_document.Version}");
+            if (!_viewModel.IsAxamlRoundTripDocument || _viewModel.DocumentSessionId != _sessionId)
+                throw new InvalidOperationException("AXAML session has changed. Reload the Visual Studio document before applying.");
+            Log("VSHOST_PATCH_CREATE_START", $"document={_document.FilePath}; baseVersion={_document.Version}; baseChecksum={_document.Checksum}");
             var patch = await Dispatcher.UIThread.InvokeAsync(() => _viewModel.CreateActiveAxamlPatch(_document.Text));
             if (!patch.CanApply)
             {
-                SetStatus("AXAML был изменён в Visual Studio. Перезагрузите документ.");
-                Log("VSHOST_PATCH_CREATE_FAILED", "reason=external-change-or-unsafe-patch");
+                SetStatus(patch.ExternalChangeDetected
+                    ? "AXAML был изменён в Visual Studio. Перезагрузите документ."
+                    : "Изменение не поддерживается в этом AXAML. Исходный текст сохранён без изменений.");
+                Log("VSHOST_PATCH_CREATE_FAILED", $"externalChange={patch.ExternalChangeDetected}; diagnostics={string.Join(",", patch.Diagnostics.Select(d => d.Code))}");
                 return;
             }
 
@@ -88,13 +100,16 @@ public sealed partial class VsHostBridge : IDisposable
                 }).ToList()
             };
 
-            Log("VSHOST_PATCH_CREATED", $"document={_document.FilePath}; edits={payload.Edits.Count}; version={payload.ExpectedVersion}");
+            _pendingPatch = new PendingPatch(requestId, _documentId, _document.Version, patch.PatchedText,
+                _viewModel.ActiveSession.CurrentSnapshot);
+            Log("VSHOST_PATCH_CREATED", $"document={_document.FilePath}; edits={payload.Edits.Count}; baseVersion={payload.ExpectedVersion}; baseChecksum={payload.ExpectedChecksum}");
             await _connection.SendAsync(DesignerHostMessageTypes.ApplyDesignerPatch, requestId, _documentId, payload, _cancellation.Token);
             SetStatus("Изменения отправлены в Visual Studio...");
             Log("VSHOST_PATCH_SENT", $"document={_document.FilePath}; edits={payload.Edits.Count}; version={payload.ExpectedVersion}");
         }
         catch (Exception ex)
         {
+            _pendingPatch = null;
             SetStatus($"Не удалось подготовить изменения: {ex.Message}");
             Log("VSHOST_PATCH_CREATE_FAILED", ex.ToString());
         }
@@ -129,7 +144,7 @@ public sealed partial class VsHostBridge : IDisposable
                 var message = await _connection.ReceiveAsync(_cancellation.Token);
                 if (message is null)
                     break;
-                await HandleMessageAsync(message);
+                await Dispatcher.UIThread.InvokeAsync(() => HandleMessageAsync(message));
             }
         }
         catch (OperationCanceledException) when (_cancellation.IsCancellationRequested)
@@ -188,16 +203,25 @@ public sealed partial class VsHostBridge : IDisposable
             case DesignerHostMessageTypes.PatchApplied:
                 var applied = _connection?.GetPayload<PatchAppliedPayload>(message);
                 if (applied is not null)
-                    await PatchAppliedAsync(applied);
+                    await PatchAppliedAsync(message, applied);
                 break;
 
             case DesignerHostMessageTypes.Error:
                 var error = _connection?.GetPayload<ErrorPayload>(message);
-                if (error is not null)
+                if (error is not null && message.DocumentId == _documentId
+                    && (_pendingPatch is null || message.RequestId == _pendingPatch.RequestId))
+                {
+                    _pendingPatch = null;
                     HandleBridgeError(error);
+                }
                 break;
 
             case DesignerHostMessageTypes.CloseDocument:
+                if (message.DocumentId != _documentId)
+                    return;
+                _document = null;
+                _documentId = string.Empty;
+                _pendingPatch = null;
                 SetStatus("Документ закрыт в Visual Studio.");
                 break;
 
@@ -214,9 +238,23 @@ public sealed partial class VsHostBridge : IDisposable
 
     private async Task OpenDocumentAsync(string documentId, OpenDocumentPayload document, DesignerHostEnvelope request)
     {
-        if (!string.Equals(document.Checksum, DesignerHostProtocol.ComputeChecksum(document.Text), StringComparison.Ordinal))
+        var calculatedChecksum = DesignerHostProtocol.ComputeChecksum(document.Text);
+        Log("VSHOST_OPEN_DOCUMENT_RECEIVED", $"documentId={documentId}; version={document.Version}; textLength={document.Text.Length}; checksum={document.Checksum}; calculatedChecksum={calculatedChecksum}");
+        if (_pendingPatch is not null)
+        {
+            await SendErrorAsync(request, "PATCH_PENDING", "Wait for the pending patch acknowledgement before reloading.");
+            return;
+        }
+        if (!string.Equals(document.Checksum, calculatedChecksum, StringComparison.Ordinal))
         {
             await SendErrorAsync(request, "DOCUMENT_CHECKSUM_MISMATCH", "The AXAML snapshot checksum does not match its text.");
+            return;
+        }
+        if (_document is not null && documentId == _documentId
+            && (document.Version < _document.Version
+                || (document.Version == _document.Version && document.Checksum != _document.Checksum)))
+        {
+            await SendErrorAsync(request, "SOURCE_VERSION_CONFLICT", "The received snapshot is older than the active AXAML session.");
             return;
         }
 
@@ -225,10 +263,11 @@ public sealed partial class VsHostBridge : IDisposable
             Log("VSHOST_DOCUMENT_RECEIVED", $"path={document.FilePath}; version={document.Version}; targetFramework={document.TargetFramework}");
             Log("VSHOST_AXAML_IMPORT_START", $"path={document.FilePath}; length={document.Text.Length}");
             var result = _importService.Import(document.Text, document.FilePath);
-            if (!result.CapabilityReport.CanSafelyPatch)
+            if (!result.CapabilityReport.CanOpen)
             {
-                await SendAsync(DesignerHostMessageTypes.DocumentOpened, request, ToOpenedPayload(result, canEdit: false));
-                SetStatus("AXAML открыт только для просмотра: безопасный patch невозможен.");
+                var details = string.Join(Environment.NewLine, result.CapabilityReport.Entries.Select(entry => entry.Message));
+                SetStatus($"Не удалось разобрать AXAML: {details}");
+                await SendErrorAsync(request, "AXAML_IMPORT_FAILED", details);
                 return;
             }
 
@@ -238,12 +277,18 @@ public sealed partial class VsHostBridge : IDisposable
                 _window.Title = $"Avalonia UI Visual Designer - {System.IO.Path.GetFileName(document.FilePath)} - Visual Studio bridge";
             });
 
+            Log("AXAML_SESSION_REOPEN", $"oldVersion={_document?.Version}; newVersion={document.Version}; oldChecksum={_document?.Checksum}; receivedChecksum={document.Checksum}; calculatedChecksum={calculatedChecksum}");
             _document = document;
             _documentId = documentId;
-            SetStatus($"Подключено к Visual Studio: {System.IO.Path.GetFileName(document.FilePath)}");
+            _sessionId = _viewModel.DocumentSessionId;
+            Log("AXAML_SESSION_CREATED", $"documentId={documentId}; session={_sessionId}; kind={_viewModel.DocumentKind}; version={document.Version}; checksum={document.Checksum}");
+            SetStatus(result.CapabilityReport.Level == AxamlCapabilityLevel.FullyEditable
+                ? $"Подключено к Visual Studio: {System.IO.Path.GetFileName(document.FilePath)}"
+                : "Ограниченный режим: неподдерживаемый AXAML сохраняется без визуального редактирования.");
+            Log("AXAML_IMPORT_CAPABILITY", $"level={result.CapabilityReport.Level}; supported={result.Document.Controls.Count}; opaque={result.Diagnostics.Count(d => d.Code == "AXAML_IMPORT_UNKNOWN_NODE_PRESERVED")}; warnings={result.CapabilityReport.Entries.Count(e => e.Level != AxamlCapabilityLevel.FullyEditable)}; errors=0");
             Log("VSHOST_AXAML_IMPORT_SUCCESS", $"controls={result.Document.Controls.Count}; capability={result.CapabilityReport.Level}");
             Log("VSHOST_SURFACE_ATTACHED", $"document={documentId}; surface=FormDesigner.Views.DesignerSurface");
-            await SendAsync(DesignerHostMessageTypes.DocumentOpened, request, ToOpenedPayload(result, canEdit: true));
+            await SendAsync(DesignerHostMessageTypes.DocumentOpened, request, ToOpenedPayload(result, result.CapabilityReport.CanSafelyPatch));
         }
         catch (Exception ex)
         {
@@ -253,22 +298,31 @@ public sealed partial class VsHostBridge : IDisposable
         }
     }
 
-    private async Task PatchAppliedAsync(PatchAppliedPayload applied)
+    private async Task PatchAppliedAsync(DesignerHostEnvelope message, PatchAppliedPayload applied)
     {
-        if (_document is null)
+        var pending = _pendingPatch;
+        if (_document is null || pending is null || message.DocumentId != pending.DocumentId
+            || message.RequestId != pending.RequestId || applied.Version <= pending.BaseVersion
+            || _viewModel.DocumentSessionId != _sessionId)
+        {
+            Log("VSHOST_PATCH_APPLY_FAILED", "reason=stale-or-unexpected-acknowledgement");
             return;
+        }
 
-        if (!string.Equals(applied.Checksum, DesignerHostProtocol.ComputeChecksum(applied.Text), StringComparison.Ordinal))
+        if (!string.Equals(applied.Checksum, DesignerHostProtocol.ComputeChecksum(applied.Text), StringComparison.Ordinal)
+            || applied.Text != pending.Text)
         {
             SetStatus("Visual Studio вернула некорректное подтверждение patch.");
             Log("VSHOST_PATCH_APPLY_FAILED", "reason=checksum-mismatch");
+            _pendingPatch = null;
             return;
         }
 
         _document.Text = applied.Text;
         _document.Version = applied.Version;
         _document.Checksum = applied.Checksum;
-        await Dispatcher.UIThread.InvokeAsync(() => _viewModel.MarkAxamlRoundTripSaved(_document.FilePath, applied.Text));
+        await Dispatcher.UIThread.InvokeAsync(() => _viewModel.MarkAxamlRoundTripSaved(_document.FilePath, applied.Text, pending.DesignerSnapshot));
+        _pendingPatch = null;
         SetStatus("Изменения применены к буферу Visual Studio. Нажмите Ctrl+S для сохранения.");
         Log("VSHOST_PATCH_APPLIED", $"acknowledgedVersion={applied.Version}");
     }
@@ -290,7 +344,7 @@ public sealed partial class VsHostBridge : IDisposable
     {
         CanEdit = canEdit,
         CapabilityLevel = result.CapabilityReport.Level.ToString(),
-        Status = canEdit ? "AXAML imported into the shared DesignerSurface." : "AXAML is read-only in this proof of concept.",
+        Status = canEdit ? "AXAML открыт в Designer." : "AXAML открыт только для чтения. Неподдерживаемая разметка сохранена без изменений.",
         Capabilities = result.CapabilityReport.Entries.Select(entry => new CapabilityEntryPayload
         {
             Subject = entry.Subject,
@@ -319,8 +373,14 @@ public sealed partial class VsHostBridge : IDisposable
         Dispatcher.UIThread.Post(() => _window.SetBridgeStatus(value));
     }
 
-    private static void Log(string eventName, string details) =>
+    private void Log(string eventName, string details)
+    {
         System.Diagnostics.Trace.WriteLine($"{eventName}: {details}");
+        void Write() => _viewModel.LogWorkspace(FormDesigner.Models.WorkspaceLogLevel.Info,
+            MainWindowViewModel.OutputCategoryDiagnostics, eventName, details);
+        if (Dispatcher.UIThread.CheckAccess()) Write();
+        else Dispatcher.UIThread.Post(Write);
+    }
 
     public void Dispose()
     {

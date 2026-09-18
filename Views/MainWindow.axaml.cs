@@ -145,6 +145,10 @@ public partial class MainWindow : Window
     private string _lastObservedDocumentSessionId = string.Empty;
     private int _responsiveShellBreakpoint = -1;
     private readonly IDesignerHostServices _hostServices;
+    private readonly DesignerDocumentPersistence _documentPersistence;
+    protected bool UsesHostDocumentBuffer => _documentPersistence == DesignerDocumentPersistence.HostBuffer;
+    protected virtual Task<bool> ApplyHostDocumentAsync() => Task.FromResult(false);
+    protected virtual void ReloadHostDocument() { }
 
     private sealed record SimpleInspectorEditContext(string ControlId, string PropertyName, string InitialText);
 
@@ -156,8 +160,9 @@ public partial class MainWindow : Window
     {
     }
 
-    public MainWindow(IDesignerHostServices? hostServices)
+    public MainWindow(IDesignerHostServices? hostServices, DesignerDocumentPersistence documentPersistence = DesignerDocumentPersistence.StandaloneFiles)
     {
+        _documentPersistence = documentPersistence;
         _hostServices = hostServices ?? new StandaloneDesignerHostServices();
         if (_hostServices is StandaloneDesignerHostServices standaloneHostServices)
             standaloneHostServices.AttachTopLevel(this);
@@ -410,6 +415,12 @@ public partial class MainWindow : Window
 
         ApplySessionWindowState(_appSettings.Session);
         _hasCheckedRecoveryOnStartup = true;
+        if (UsesHostDocumentBuffer)
+        {
+            VM.LogWorkspace(WorkspaceLogLevel.Info, MainWindowViewModel.OutputCategoryDiagnostics,
+                "HOST_BUFFER_LIFECYCLE", "Startup recovery and disk reopen disabled; awaiting host snapshot.");
+            return;
+        }
         var recoveryHandled = await CheckRecoveryOnStartupAsync();
         if (!recoveryHandled)
             await TryRestoreLastSessionDocumentAsync();
@@ -1468,7 +1479,7 @@ public partial class MainWindow : Window
 
     private async void AutosaveTimer_Tick(object? sender, EventArgs e)
     {
-        if (_isAutosaveRunning
+        if (UsesHostDocumentBuffer || VM.IsAxamlRoundTripDocument || _isAutosaveRunning
             || DataContext is not MainWindowViewModel
             || !VM.HasUnsavedChanges
             || VM.IsBusy
@@ -1578,8 +1589,29 @@ public partial class MainWindow : Window
         }
     }
 
+    private async Task LoadStandaloneDocumentAsync(string path)
+    {
+        if (UsesHostDocumentBuffer)
+            throw new InvalidOperationException("Host-owned documents must be supplied by the host buffer.");
+        using var reader = new StreamReader(path, detectEncodingFromByteOrderMarks: true);
+        var text = await reader.ReadToEndAsync();
+        if (FormDesigner.DesignerSystem.DesignerDocumentFormat.ForPath(path) == FormDesigner.DesignerSystem.DesignerDocumentKind.AxamlRoundTrip)
+        {
+            var result = new AxamlImportService().Import(text, path);
+            result.RoundTripDocument.SetTextEncoding(reader.CurrentEncoding);
+            VM.LoadAxamlImportedDocument(result, path);
+        }
+        else
+            VM.LoadDocumentJson(text, path);
+    }
+
     private async Task TryRestoreLastSessionDocumentAsync(bool ignoreSetting = false)
     {
+        if (UsesHostDocumentBuffer)
+        {
+            ReloadHostDocument();
+            return;
+        }
         if (!ignoreSetting && !_appSettings.Session.ReopenLastWorkspaceOnStartup)
         {
             VM.LogWorkspace(WorkspaceLogLevel.Info, MainWindowViewModel.OutputCategoryGeneral, "Reopen last workspace is disabled.");
@@ -1603,8 +1635,7 @@ public partial class MainWindow : Window
 
         try
         {
-            var json = await File.ReadAllTextAsync(lastPath);
-            VM.LoadDocumentJson(json, lastPath);
+            await LoadStandaloneDocumentAsync(lastPath);
             VM.AddOrUpdateRecentFile(lastPath);
             VM.StatusText = $"Восстановлена последняя сессия: {System.IO.Path.GetFileName(lastPath)}";
             VM.LogWorkspace(WorkspaceLogLevel.Success, MainWindowViewModel.OutputCategoryGeneral, VM.StatusText, lastPath);
@@ -1612,7 +1643,7 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             VM.StatusText = $"Не удалось восстановить последнюю сессию: {ex.Message}";
-            VM.LogWorkspace(WorkspaceLogLevel.Error, MainWindowViewModel.OutputCategoryGeneral, VM.StatusText, lastPath);
+            VM.LogWorkspace(WorkspaceLogLevel.Error, MainWindowViewModel.OutputCategoryGeneral, VM.StatusText, $"path={lastPath}; {ex}");
             VM.ShowWorkspaceToast(WorkspaceToastLevel.Error, "Reopen failed", ex.Message, isPersistent: true);
             VM.IsStartScreenVisible = true;
         }
@@ -9824,6 +9855,7 @@ public partial class MainWindow : Window
 
     private async void OpenDocumentButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
+        if (UsesHostDocumentBuffer) { ReloadHostDocument(); return; }
         if (!await EnsureUnsavedChangesHandledAsync())
             return;
 
@@ -9862,6 +9894,7 @@ public partial class MainWindow : Window
 
     private async void OpenAxamlDocumentButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
+        if (UsesHostDocumentBuffer) { ReloadHostDocument(); return; }
         if (!await EnsureUnsavedChangesHandledAsync())
             return;
 
@@ -9895,6 +9928,7 @@ public partial class MainWindow : Window
 
     private async void OpenRecentFileButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
+        if (UsesHostDocumentBuffer) { ReloadHostDocument(); return; }
         if (sender is not Button { Tag: RecentFileModel recentFile })
             return;
 
@@ -9917,8 +9951,7 @@ public partial class MainWindow : Window
 
         try
         {
-            var json = await _hostServices.FileSystem.ReadAllTextAsync(recentFile.FilePath);
-            VM.LoadDocumentJson(json, recentFile.FilePath);
+            await LoadStandaloneDocumentAsync(recentFile.FilePath);
             VM.AddOrUpdateRecentFile(recentFile.FilePath);
             _autosaveRecoveryService.TryDeleteDraft();
             VM.AutosaveStatusText = "Черновик очищен после открытия документа.";
@@ -9956,6 +9989,7 @@ public partial class MainWindow : Window
 
     private async void RestoreBackupButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
+        if (UsesHostDocumentBuffer) { ReloadHostDocument(); return; }
         if (string.IsNullOrWhiteSpace(VM.CurrentDocumentPath))
         {
             VM.StatusText = "Backup доступен после сохранения документа в файл.";
@@ -9992,6 +10026,7 @@ public partial class MainWindow : Window
 
     private async void NewDocumentButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
+        if (UsesHostDocumentBuffer) { ReloadHostDocument(); return; }
         if (!await EnsureUnsavedChangesHandledAsync())
             return;
 
@@ -10104,6 +10139,7 @@ public partial class MainWindow : Window
 
     private async void SaveDocumentAsButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
+        if (UsesHostDocumentBuffer) { await ApplyHostDocumentAsync(); return; }
         if (VM.IsAxamlRoundTripDocument)
             await SaveAxamlDocumentAsAsync();
         else
@@ -10112,6 +10148,8 @@ public partial class MainWindow : Window
 
     private async Task<bool> SaveCurrentDocumentAsync()
     {
+        if (UsesHostDocumentBuffer)
+            return await ApplyHostDocumentAsync();
         if (VM.IsAxamlRoundTripDocument)
         {
             if (string.IsNullOrWhiteSpace(VM.CurrentDocumentPath))

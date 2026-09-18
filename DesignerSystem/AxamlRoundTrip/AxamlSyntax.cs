@@ -35,6 +35,18 @@ public sealed class AxamlElementSyntax
 
     public string Name { get; }
     public string LocalName => AxamlSyntaxDocument.GetLocalName(Name);
+    public string NamespaceUri
+    {
+        get
+        {
+            var separator = Name.IndexOf(':');
+            var declaration = separator < 0 ? "xmlns" : "xmlns:" + Name[..separator];
+            for (var scope = this; scope is not null; scope = scope.Parent)
+                if (scope.GetAttributeValue(declaration) is { } value)
+                    return value;
+            return separator < 0 ? string.Empty : "unresolved:" + Name[..separator];
+        }
+    }
     public AxamlTextSpan OpeningTagSpan { get; }
     public AxamlTextSpan EndTagSpan { get; internal set; }
     public AxamlTextSpan ElementSpan { get; internal set; }

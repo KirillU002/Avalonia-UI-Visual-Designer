@@ -8,7 +8,7 @@ public sealed partial class VsHostBridge
     private async Task HandleDocumentChangedAsync(DesignerHostEnvelope message)
     {
         var changed = _connection?.GetPayload<DocumentChangedPayload>(message);
-        if (changed is null || _document is null)
+        if (changed is null || _document is null || message.DocumentId != _documentId)
         {
             await SendErrorAsync(message, "DOCUMENT_CHANGE_UNAVAILABLE", "There is no open document to reload.");
             return;

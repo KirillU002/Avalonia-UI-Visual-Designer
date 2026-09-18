@@ -117,6 +117,9 @@ Fixture: [Samples/VisualStudioPoC/SimpleAvaloniaApp/MainWindow.axaml](../Samples
 
 ## Проверки
 
+Hardening сложного AXAML и lifecycle в версии 0.1.11 описан в
+[AxamlVisualStudioHardening.md](AxamlVisualStudioHardening.md).
+
 `FormDesigner.ExportSmokeTests` содержит: `VsHostProtocolHandshakeWorks`, `VsHostCanStartAndAcceptConnection`, `VsHostUsesSharedDesignerSurface`, `VsHostReturnsMinimalAxamlPatch`, `VsHostRoundTripPreservesComment`, `VsHostRoundTripPreservesUnknownAttribute`, `VsHostRejectsPatchForStaleDocumentVersion` и `BridgeSurvivesVsHostDisconnect`.
 
 Полная проверка применения в Visual Studio text buffer — ручная, потому что автоматизированный запуск `devenv.exe` в обычном smoke runner нестабилен и не нужен для минимального архитектурного решения.

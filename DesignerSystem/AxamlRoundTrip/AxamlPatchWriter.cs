@@ -30,6 +30,10 @@ public sealed class AxamlPatchWriter
 
         if (!roundTripDocument.CapabilityReport.CanSafelyPatch)
         {
+            // A read-only projection has no editable controls. Saving it without
+            // edits is an identity operation, never regeneration of its source.
+            if (roundTripDocument.CapabilityReport.Level == AxamlCapabilityLevel.ReadOnly && document.Controls.Count == 0)
+                return AxamlPatchResult.Success(source, Array.Empty<AxamlTextEdit>(), diagnostics);
             diagnostics.Add(new AxamlRoundTripDiagnostic("AXAML_PATCH_BLOCKED", AxamlDiagnosticSeverity.Warning, $"capability={roundTripDocument.CapabilityReport.Level}"));
             return AxamlPatchResult.Unsafe(source, diagnostics);
         }

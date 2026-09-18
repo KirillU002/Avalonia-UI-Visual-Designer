@@ -9,7 +9,7 @@ using System.Threading.Tasks;
 namespace AvaloniaDesigner.VSIX;
 
 [PackageRegistration(UseManagedResourcesOnly = true, AllowsBackgroundLoading = true)]
-[InstalledProductRegistration("Avalonia UI Visual Designer", "External AXAML Designer host bridge", "0.1.10")]
+[InstalledProductRegistration("Avalonia UI Visual Designer", "External AXAML Designer host bridge", "0.1.11")]
 [ProvideMenuResource("Menus.ctmenu", 5)]
 [ProvideAutoLoad(UIContextGuids80.SolutionExists, PackageAutoLoadFlags.BackgroundLoad)]
 [Guid(Guids.PackageString)]

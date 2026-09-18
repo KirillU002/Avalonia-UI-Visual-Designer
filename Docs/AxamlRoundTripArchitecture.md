@@ -185,6 +185,9 @@ Smoke suite `FormDesigner.ExportSmokeTests` покрывает:
 
 ## Границы и roadmap
 
+Разделение JSON/AXAML reopen, identity patch для read-only документов и сохранение
+snapshot через IPC: [AXAML lifecycle hardening](AxamlVisualStudioHardening.md).
+
 Phase 1 намеренно не поддерживает full AXAML editing. Дальнейшее расширение идёт только после сохранения этих invariants:
 
 1. Phase 2: `Grid`, `StackPanel`, nested `Border`, `Image`, `CheckBox` расширенного вида.

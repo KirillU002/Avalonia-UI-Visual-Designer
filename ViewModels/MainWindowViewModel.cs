@@ -9288,9 +9288,14 @@ public partial class MainWindowViewModel : ObservableObject
 
     public void LoadDocumentJson(string json, string? sourcePath = null, bool markAsSaved = true)
     {
-        ClearAxamlRoundTripContext();
+        FormDesigner.DesignerSystem.DesignerDocumentFormat.Validate(json,
+            FormDesigner.DesignerSystem.DesignerDocumentKind.ProjectJson, nameof(LoadDocumentJson));
+        if (sourcePath is not null)
+            FormDesigner.DesignerSystem.DesignerDocumentFormat.Validate(json,
+                FormDesigner.DesignerSystem.DesignerDocumentFormat.ForPath(sourcePath), nameof(LoadDocumentJson));
         if (_projectWorkspaceService.TryDeserializeWorkspace(json, out var workspace))
         {
+            ClearAxamlRoundTripContext();
             ApplyWorkspace(workspace, sourcePath, markAsSaved);
             return;
         }
@@ -9298,6 +9303,7 @@ public partial class MainWindowViewModel : ObservableObject
         var document = JsonSerializer.Deserialize<DesignerDocumentFileModel>(json, JsonOptions)
             ?? throw new InvalidOperationException("Не удалось прочитать документ конструктора.");
 
+        ClearAxamlRoundTripContext();
         ApplyWorkspace(_projectWorkspaceService.WrapSingleDocument(document, sourcePath), sourcePath, markAsSaved);
     }
 
@@ -9308,8 +9314,8 @@ public partial class MainWindowViewModel : ObservableObject
     public void LoadAxamlImportedDocument(AxamlImportResult result, string? sourcePath = null)
     {
         ArgumentNullException.ThrowIfNull(result);
-        if (!result.CapabilityReport.CanSafelyPatch)
-            throw new InvalidOperationException("Этот AXAML нельзя безопасно редактировать в экспериментальном режиме.");
+        if (!result.CapabilityReport.CanOpen)
+            throw new InvalidOperationException(string.Join(Environment.NewLine, result.CapabilityReport.Entries.Select(entry => entry.Message)));
 
         _activeAxamlRoundTripDocument = result.RoundTripDocument;
         foreach (var diagnostic in result.Diagnostics)
@@ -9328,9 +9334,16 @@ public partial class MainWindowViewModel : ObservableObject
             sourcePath,
             markAsSaved: true);
         OnPropertyChanged(nameof(IsAxamlRoundTripDocument));
+        OnPropertyChanged(nameof(DocumentKind));
         OnPropertyChanged(nameof(ActiveAxamlCapabilityReport));
-        StatusText = $"AXAML открыт в experimental round-trip режиме: {Path.GetFileName(sourcePath ?? result.RoundTripDocument.SourcePath)}";
+        StatusText = result.CapabilityReport.Level == AxamlCapabilityLevel.FullyEditable
+            ? $"AXAML открыт: {Path.GetFileName(sourcePath ?? result.RoundTripDocument.SourcePath)}"
+            : "Документ открыт в ограниченном режиме. Неподдерживаемый AXAML сохраняется без визуального редактирования.";
     }
+
+    public FormDesigner.DesignerSystem.DesignerDocumentKind DocumentKind => IsAxamlRoundTripDocument
+        ? FormDesigner.DesignerSystem.DesignerDocumentKind.AxamlRoundTrip
+        : FormDesigner.DesignerSystem.DesignerDocumentKind.ProjectJson;
 
     public bool IsAxamlRoundTripDocument => _activeAxamlRoundTripDocument is not null;
 
@@ -9348,7 +9361,7 @@ public partial class MainWindowViewModel : ObservableObject
             currentSourceText);
     }
 
-    public void MarkAxamlRoundTripSaved(string path, string patchedText)
+    public void MarkAxamlRoundTripSaved(string path, string patchedText, string? acknowledgedSnapshot = null)
     {
         if (_activeAxamlRoundTripDocument is null)
             throw new InvalidOperationException("AXAML round-trip context is unavailable.");
@@ -9360,7 +9373,7 @@ public partial class MainWindowViewModel : ObservableObject
         var refreshed = _axamlImportService.Import(patchedText, path, idsByName);
         refreshed.RoundTripDocument.SetTextEncoding(_activeAxamlRoundTripDocument.TextEncoding);
         _activeAxamlRoundTripDocument = refreshed.RoundTripDocument;
-        MarkDocumentSaved(path);
+        MarkDocumentSaved(path, acknowledgedSnapshot);
         LogWorkspace(WorkspaceLogLevel.Success, OutputCategoryDiagnostics, "AXAML_PATCH_APPLIED", $"path={path}; controls={Controls.Count}");
         OnPropertyChanged(nameof(ActiveAxamlCapabilityReport));
     }
@@ -9380,14 +9393,15 @@ public partial class MainWindowViewModel : ObservableObject
 
         _activeAxamlRoundTripDocument = null;
         OnPropertyChanged(nameof(IsAxamlRoundTripDocument));
+        OnPropertyChanged(nameof(DocumentKind));
         OnPropertyChanged(nameof(ActiveAxamlCapabilityReport));
     }
 
-    public void MarkDocumentSaved(string path)
+    public void MarkDocumentSaved(string path, string? acknowledgedSnapshot = null)
     {
         CurrentDocumentPath = path;
         CurrentProjectPath = path;
-        _savedSnapshot = _currentSnapshot;
+        _savedSnapshot = acknowledgedSnapshot ?? _currentSnapshot;
         PersistActiveFormDocumentState(refreshProjectViews: false);
         foreach (var form in CurrentProject.Forms)
         {

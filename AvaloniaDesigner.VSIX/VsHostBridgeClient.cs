@@ -26,7 +26,7 @@ internal sealed class VsHostBridgeClient : IDisposable
 
     public VsHostBridgeClient(AsyncPackage package) => _package = package;
 
-    public event Func<ApplyDesignerPatchPayload, Task>? PatchReceived;
+    public event Func<DesignerHostEnvelope, ApplyDesignerPatchPayload, Task>? PatchReceived;
     public event Func<Task>? ReloadRequested;
     public event Action<string>? Log;
     public event Action? Disconnected;
@@ -79,6 +79,7 @@ internal sealed class VsHostBridgeClient : IDisposable
     {
         await EnsureConnectedAsync().ConfigureAwait(false);
         Log?.Invoke($"VSIX_OPEN_DOCUMENT_SENT path={snapshot.FilePath}; version={snapshot.Version}");
+        Log?.Invoke($"IPC_OPEN_DOCUMENT_SEND documentId={snapshot.DocumentId}; version={snapshot.Version}; textLength={snapshot.Text.Length}; checksum={snapshot.Checksum}");
         var response = await SendRequestAsync(DesignerHostMessageTypes.OpenDocument, snapshot.DocumentId, new OpenDocumentPayload
         {
             FilePath = snapshot.FilePath,
@@ -98,13 +99,16 @@ internal sealed class VsHostBridgeClient : IDisposable
     public async Task ReloadDocumentAsync(VsDocumentSnapshot snapshot)
     {
         await EnsureConnectedAsync().ConfigureAwait(false);
-        await SendRequestAsync(DesignerHostMessageTypes.ReloadDocument, snapshot.DocumentId, new OpenDocumentPayload
+        Log?.Invoke($"IPC_RELOAD_DOCUMENT_SEND documentId={snapshot.DocumentId}; version={snapshot.Version}; textLength={snapshot.Text.Length}; checksum={snapshot.Checksum}");
+        var response = await SendRequestAsync(DesignerHostMessageTypes.ReloadDocument, snapshot.DocumentId, new OpenDocumentPayload
         {
             FilePath = snapshot.FilePath,
             Text = snapshot.Text,
             Version = snapshot.Version,
             Checksum = snapshot.Checksum
         }).ConfigureAwait(false);
+        if (response.MessageType == DesignerHostMessageTypes.Error)
+            throw new InvalidOperationException(_connection!.GetPayload<ErrorPayload>(response)?.Message ?? "AXAML reload failed.");
     }
 
     private async Task<DesignerHostEnvelope> SendRequestAsync<TPayload>(string messageType, string documentId, TPayload payload)
@@ -174,7 +178,7 @@ internal sealed class VsHostBridgeClient : IDisposable
 
     private async Task HandlePatchAsync(DesignerHostEnvelope envelope, ApplyDesignerPatchPayload patch)
     {
-        Log?.Invoke($"VSIX_PATCH_RECEIVED document={envelope.DocumentId}; edits={patch.Edits.Count}; version={patch.ExpectedVersion}");
+        Log?.Invoke($"VSIX_PATCH_RECEIVED document={envelope.DocumentId}; requestId={envelope.RequestId}; edits={patch.Edits.Count}; baseVersion={patch.ExpectedVersion}; baseChecksum={patch.ExpectedChecksum}");
         var handler = PatchReceived;
         if (handler is null)
         {
@@ -184,7 +188,7 @@ internal sealed class VsHostBridgeClient : IDisposable
 
         try
         {
-            await handler(patch).ConfigureAwait(false);
+            await handler(envelope, patch).ConfigureAwait(false);
         }
         catch (VsSourceVersionConflictException ex)
         {

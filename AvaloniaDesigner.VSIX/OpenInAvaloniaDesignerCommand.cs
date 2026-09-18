@@ -94,11 +94,12 @@ internal sealed class OpenInAvaloniaDesignerCommand
             return;
         }
 
-        _snapshot = snapshot;
         Log($"ACTIVE_DOCUMENT_RESOLVED path={snapshot.FilePath}; version={snapshot.Version}");
+        Log($"VSIX_DOCUMENT_CAPTURE path={snapshot.FilePath}; version={snapshot.Version}; textLength={snapshot.Text.Length}; checksum={snapshot.Checksum}");
         try
         {
             var opened = await _bridge.OpenDocumentAsync(snapshot);
+            _snapshot = snapshot;
             if (!opened.CanEdit)
                 VsShellUtilities.ShowMessageBox(_package, opened.Status, "Avalonia UI Visual Designer", OLEMSGICON.OLEMSGICON_WARNING, OLEMSGBUTTON.OLEMSGBUTTON_OK, OLEMSGDEFBUTTON.OLEMSGDEFBUTTON_FIRST);
         }
@@ -131,10 +132,10 @@ internal sealed class OpenInAvaloniaDesignerCommand
         }
     }
 
-    private async Task ApplyPatchAsync(ApplyDesignerPatchPayload patch)
+    private async Task ApplyPatchAsync(DesignerHostEnvelope request, ApplyDesignerPatchPayload patch)
     {
         await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(_package.DisposalToken);
-        if (_snapshot is null)
+        if (_snapshot is null || request.DocumentId != _snapshot.DocumentId)
             throw new VsSourceVersionConflictException("В Visual Studio нет исходного snapshot для Designer patch.");
 
         if (!DesignerHostPatchGuard.Matches(new OpenDocumentPayload
@@ -150,8 +151,9 @@ internal sealed class OpenInAvaloniaDesignerCommand
         if (!_buffer.TryApplyPatch(_snapshot, patch.Edits, out var applied, out var error))
             throw new VsSourceVersionConflictException(error);
 
+        Log($"PATCH_APPLIED_TO_VS_BUFFER documentId={applied.DocumentId}; oldVersion={_snapshot.Version}; newVersion={applied.Version}; textLength={applied.Text.Length}; checksum={applied.Checksum}");
         _snapshot = applied;
-        await _bridge.SendPatchAppliedAsync(Guid.NewGuid().ToString("N"), applied.DocumentId, applied);
+        await _bridge.SendPatchAppliedAsync(request.RequestId, applied.DocumentId, applied);
     }
 
     private async Task ReloadFromVisualStudioAsync()
@@ -160,14 +162,21 @@ internal sealed class OpenInAvaloniaDesignerCommand
         var bufferResult = await GetDocumentBufferAsync();
         var captureError = string.Empty;
         if (bufferResult.Buffer is null
-            || !bufferResult.Buffer.TryCaptureActiveAxaml(out var snapshot, out captureError))
+            || !bufferResult.Buffer.TryCaptureAxaml(_snapshot?.FilePath, out var snapshot, out captureError))
         {
             Log($"VSIX_RELOAD_FAILED {(bufferResult.Buffer is null ? bufferResult.Error : captureError)}");
             return;
         }
 
-        _snapshot = snapshot;
-        await _bridge.ReloadDocumentAsync(snapshot);
+        try
+        {
+            await _bridge.ReloadDocumentAsync(snapshot);
+            _snapshot = snapshot;
+        }
+        catch (Exception ex)
+        {
+            Log("VSIX_RELOAD_FAILED", ex);
+        }
     }
 
     private async Task<(VsDocumentBuffer? Buffer, string Error)> GetDocumentBufferAsync()

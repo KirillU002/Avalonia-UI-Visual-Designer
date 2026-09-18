@@ -38,6 +38,7 @@ public sealed class AxamlImportService
 
         try
         {
+            DesignerDocumentFormat.Validate(sourceText ?? string.Empty, DesignerDocumentKind.AxamlRoundTrip, nameof(AxamlImportService));
             syntax = AxamlSyntaxDocument.Parse(sourceText ?? string.Empty);
         }
         catch (Exception ex) when (ex is AxamlSyntaxException or ArgumentException)
@@ -54,7 +55,7 @@ public sealed class AxamlImportService
 
         var rootType = syntax.Root.LocalName;
         diagnostics.Add(new AxamlRoundTripDiagnostic("AXAML_IMPORT_ROOT_RESOLVED", AxamlDiagnosticSeverity.Information, $"type={rootType}"));
-        if (!string.Equals(rootType, "Window", StringComparison.Ordinal) && !string.Equals(rootType, "UserControl", StringComparison.Ordinal))
+        if (!IsAvaloniaElement(syntax.Root) || (!string.Equals(rootType, "Window", StringComparison.Ordinal) && !string.Equals(rootType, "UserControl", StringComparison.Ordinal)))
         {
             report.Add(rootType, AxamlCapabilityLevel.ReadOnly, "Phase 1 supports Window and UserControl roots only.");
             diagnostics.Add(new AxamlRoundTripDiagnostic("AXAML_CAPABILITY_REPORT", AxamlDiagnosticSeverity.Warning, "readonly root"));
@@ -62,7 +63,13 @@ public sealed class AxamlImportService
             return new AxamlImportResult(CreateDocument(rootType, syntax.Root), new AxamlRoundTripDocument(sourcePath ?? string.Empty, syntax, map, report), diagnostics);
         }
 
-        var canvas = syntax.Root.Children.FirstOrDefault(element => string.Equals(element.LocalName, "Canvas", StringComparison.Ordinal));
+        var canvases = syntax.Root.Children.Where(element => IsAvaloniaElement(element) && element.LocalName == "Canvas").ToArray();
+        var canvas = canvases.Length == 1 ? canvases[0] : null;
+        foreach (var child in syntax.Root.Children.Where(child => child != canvas))
+        {
+            report.Add(child.Name, AxamlCapabilityLevel.PartiallyEditable, "Subtree is opaque and source-preserved in Phase 1.");
+            diagnostics.Add(new("AXAML_IMPORT_UNKNOWN_NODE_PRESERVED", AxamlDiagnosticSeverity.Warning, $"element={child.Name}"));
+        }
         if (canvas is null || canvas.IsSelfClosing)
         {
             report.Add(rootType, AxamlCapabilityLevel.ReadOnly, "Phase 1 requires a non-empty direct Canvas child.");
@@ -81,7 +88,7 @@ public sealed class AxamlImportService
         foreach (var element in canvas.Children)
         {
             var controlType = element.LocalName;
-            if (!SupportedControlTypes.Contains(controlType))
+            if (!IsAvaloniaElement(element) || !SupportedControlTypes.Contains(controlType))
             {
                 report.Add(controlType, AxamlCapabilityLevel.PartiallyEditable, "Unsupported element is preserved without modification.");
                 diagnostics.Add(new AxamlRoundTripDiagnostic("AXAML_IMPORT_UNKNOWN_NODE_PRESERVED", AxamlDiagnosticSeverity.Warning, $"element={element.Name}"));
@@ -131,6 +138,9 @@ public sealed class AxamlImportService
             $"level={report.Level}; controls={document.Controls.Count}; entries={report.Entries.Count}"));
         return new AxamlImportResult(document, new AxamlRoundTripDocument(sourcePath ?? string.Empty, syntax, sourceMap, report), diagnostics);
     }
+
+    private static bool IsAvaloniaElement(AxamlElementSyntax element) =>
+        element.NamespaceUri is "" or "https://github.com/avaloniaui";
 
     private static DesignerDocumentFileModel CreateDocument(string rootType, AxamlElementSyntax root)
     {

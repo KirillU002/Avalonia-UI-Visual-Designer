@@ -29,25 +29,30 @@ using System.Text.Json;
 
 namespace FormDesigner.ExportSmokeTests;
 
-internal static class Program
+internal static partial class Program
 {
     private const string AvaloniaVersion = "11.1.1";
     private const string AvaloniaDesktopVersion = "11.1.1";
-    private const int SmokeRunsToKeep = 5;
+    private const int FailedSmokeRunsToKeep = 2;
     private static readonly Dictionary<string, string> LinqToSqlSmokeDllCache = new(StringComparer.OrdinalIgnoreCase);
     private static bool _avaloniaRuntimeInitialized;
+    private static string? _activeScenarioWorkspace;
 
     [STAThread]
     public static int Main(string[] args)
     {
+        // Initialize the real UI dispatcher before any view model can create the
+        // fallback dispatcher; IPC continuations must run on the actual UI thread.
+        EnsureAvaloniaRuntimeInitialized();
         var artifactsRoot = args.Length > 0
             ? Path.GetFullPath(args[0])
-            : Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "artifacts", "smoke-tests"));
+            : Path.Combine(FindRepositoryRoot(), "artifacts", "smoke-tests");
 
         Directory.CreateDirectory(artifactsRoot);
         var runRoot = Path.Combine(artifactsRoot, DateTime.Now.ToString("yyyyMMdd-HHmmss"));
         Directory.CreateDirectory(runRoot);
         File.WriteAllText(Path.Combine(artifactsRoot, "latest-run.txt"), runRoot, Encoding.UTF8);
+        WriteArtifactDiagnostic("ARTIFACT_CREATED", runRoot, "reason=smoke-run");
         Console.WriteLine($"Run artifacts: {runRoot}");
 
         var scenarios = new SmokeScenario[]
@@ -293,6 +298,14 @@ internal static class Program
             new("AxamlRoundTripDoesNotReformatWholeDocument", ConfigureSimpleFormExport, AssertAxamlRoundTripDoesNotReformatWholeDocument),
             new("AxamlRoundTripDetectsExternalChange", ConfigureSimpleFormExport, AssertAxamlRoundTripDetectsExternalChange),
             new("VsHostProtocolHandshakeWorks", ConfigureSimpleFormExport, AssertVsHostProtocolHandshakeWorks),
+            new("AxamlHardeningProtocolPreservesSnapshot", ConfigureSimpleFormExport, AssertProtocolPreservesSnapshot),
+            new("AxamlHardeningJsonFormatGuard", ConfigureSimpleFormExport, AssertJsonFormatGuard),
+            new("AxamlHardeningRealMainWindow", ConfigureSimpleFormExport, AssertRealMainWindowRoundTrip),
+            new("AxamlHardeningComplexSourcePreservation", ConfigureSimpleFormExport, AssertComplexSourcePreservation),
+            new("AxamlHardeningJsonWorkflowAndReopen", ConfigureSimpleFormExport, AssertJsonWorkflowAndReopen),
+            new("AxamlHardeningVsBufferCoordinates", ConfigureSimpleFormExport, AssertVsBufferCoordinates),
+            new("AxamlHardeningIpcEditReloadLifecycle", ConfigureSimpleFormExport, AssertIpcEditReloadLifecycle),
+            new("AxamlHardeningRealDocumentExternalProcess", ConfigureSimpleFormExport, AssertRealDocumentExternalProcess),
             new("VsHostCanStartAndAcceptConnection", ConfigureSimpleFormExport, AssertVsHostCanStartAndAcceptConnection),
             new("VsHostUsesSharedDesignerSurface", ConfigureSimpleFormExport, AssertVsHostUsesSharedDesignerSurface),
             new("VsixBridgeDoesNotReferenceAvaloniaVisualAssemblies", ConfigureSimpleFormExport, AssertVsixBridgeDoesNotReferenceAvaloniaVisualAssemblies),
@@ -367,7 +380,15 @@ internal static class Program
                 .ToArray();
 
             if (scenarios.Length == 0)
+            {
+                if (!ShouldKeepSuccessfulSmokeArtifacts())
+                {
+                    _ = DeleteSmokeDirectory(runRoot, "empty-smoke-filter");
+                    ClearLatestRunPointer(artifactsRoot, runRoot);
+                }
+
                 throw new InvalidOperationException($"No smoke scenarios matched SMOKE_SCENARIO_FILTER='{scenarioFilter}'.");
+            }
 
             Console.WriteLine($"Scenario filter: {scenarioFilter} ({scenarios.Length} matched)");
         }
@@ -392,7 +413,18 @@ internal static class Program
             ? $"Smoke tests passed: {scenarios.Length}/{scenarios.Length}"
             : $"Smoke tests failed: {failed}/{scenarios.Length}");
 
-        PruneSmokeRuns(artifactsRoot, runRoot);
+        if (failed == 0 && !ShouldKeepSuccessfulSmokeArtifacts())
+        {
+            ForceFullGc();
+            if (DeleteSmokeDirectory(runRoot, "successful-smoke-run"))
+                ClearLatestRunPointer(artifactsRoot, runRoot);
+            PruneSmokeRuns(artifactsRoot, null);
+        }
+        else
+        {
+            PruneSmokeRuns(artifactsRoot, runRoot);
+        }
+
         return failed == 0 ? 0 : 1;
     }
 
@@ -400,25 +432,41 @@ internal static class Program
     {
         var projectPath = Path.Combine(artifactsRoot, scenario.Name);
         Directory.CreateDirectory(projectPath);
+        var previousWorkspace = _activeScenarioWorkspace;
+        _activeScenarioWorkspace = projectPath;
+        var succeeded = false;
 
-        var viewModel = CreateViewModel(scenario.Name);
-        scenario.Configure(viewModel);
-        viewModel.RefreshDiagnostics();
-        viewModel.GenerateXaml();
+        try
+        {
+            var viewModel = CreateViewModel(scenario.Name);
+            scenario.Configure(viewModel);
+            viewModel.RefreshDiagnostics();
+            viewModel.GenerateXaml();
 
-        var context = new SmokeContext(
-            Scenario: scenario,
-            ViewModel: viewModel,
-            ProjectPath: projectPath,
-            Xaml: viewModel.GeneratedXaml,
-            CSharp: viewModel.GeneratedCSharp,
-            GeneratedFiles: viewModel.GeneratedFiles.ToList(),
-            ChecklistText: string.Join(Environment.NewLine, viewModel.ExportChecklistItems.Select(item => $"{item.Title}: {item.Value} {item.Details}")),
-            DiagnosticsText: string.Join(Environment.NewLine, viewModel.Diagnostics.Select(item => $"{item.Category}: {item.Message} {item.Recommendation}")));
+            var context = new SmokeContext(
+                Scenario: scenario,
+                ViewModel: viewModel,
+                ProjectPath: projectPath,
+                Xaml: viewModel.GeneratedXaml,
+                CSharp: viewModel.GeneratedCSharp,
+                GeneratedFiles: viewModel.GeneratedFiles.ToList(),
+                ChecklistText: string.Join(Environment.NewLine, viewModel.ExportChecklistItems.Select(item => $"{item.Title}: {item.Value} {item.Details}")),
+                DiagnosticsText: string.Join(Environment.NewLine, viewModel.Diagnostics.Select(item => $"{item.Category}: {item.Message} {item.Recommendation}")));
 
-        WriteAvaloniaProject(context);
-        scenario.Assert(context);
-        DotnetBuild(projectPath);
+            WriteAvaloniaProject(context);
+            scenario.Assert(context);
+            DotnetBuild(projectPath);
+            succeeded = true;
+        }
+        finally
+        {
+            _activeScenarioWorkspace = previousWorkspace;
+            if (succeeded && !ShouldKeepSuccessfulSmokeArtifacts())
+            {
+                ForceFullGc();
+                CleanSuccessfulScenarioOutputs(projectPath);
+            }
+        }
     }
 
     private static MainWindowViewModel CreateViewModel(string scenarioName)
@@ -1469,7 +1517,7 @@ internal static class Program
 
     private static (ExportBuildValidationResult Result, List<string> Messages) RunValidateBuildForSmoke(MainWindowViewModel vm, string scenarioName, bool requirePassed = true)
     {
-        var validationRoot = Path.Combine(Path.GetTempPath(), "FormDesignerSmokeValidation", scenarioName, Guid.NewGuid().ToString("N"));
+        var validationRoot = CreateSmokeTemporaryWorkspace("validation", scenarioName);
         var messages = new List<string>();
         var result = vm.ValidateCurrentExportBuildAsync(validationRoot, message =>
         {
@@ -6367,7 +6415,7 @@ internal static class Program
         var before = CaptureEditorState(vm);
         vm.InteractionTraceEntries.Clear();
 
-        var validationRoot = Path.Combine(Path.GetTempPath(), "FormDesignerSmokeValidation", Guid.NewGuid().ToString("N"));
+        var validationRoot = CreateSmokeTemporaryWorkspace("validation", "active-form");
         var result = vm.ValidateCurrentExportBuildAsync(validationRoot).GetAwaiter().GetResult();
         if (result.Status != ExportBuildValidationStatus.Passed)
             throw new InvalidOperationException($"Validation build did not pass: {result.Status} {result.Output}");
@@ -8789,26 +8837,116 @@ Diagnostics:
         }
     }
 
-    private static void SafeCleanDirectory(string path)
+    private static string CreateSmokeTemporaryWorkspace(string category, string scenarioName)
+    {
+        var parent = string.IsNullOrWhiteSpace(_activeScenarioWorkspace)
+            ? Path.Combine(Path.GetTempPath(), "FormDesignerSmoke", category, scenarioName)
+            : Path.Combine(_activeScenarioWorkspace, ".smoke-temp", category);
+        var path = Path.Combine(parent, Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(path);
+        WriteArtifactDiagnostic("ARTIFACT_CREATED", path, $"reason=smoke-{category}; scenario={scenarioName}");
+        return path;
+    }
+
+    private static bool ShouldKeepSuccessfulSmokeArtifacts()
+    {
+        var value = Environment.GetEnvironmentVariable("FORMDESIGNER_KEEP_SMOKE_ARTIFACTS");
+        return string.Equals(value, "1", StringComparison.Ordinal)
+               || string.Equals(value, "true", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static void CleanSuccessfulScenarioOutputs(string projectPath)
+    {
+        foreach (var directoryName in new[] { ".smoke-temp", "bin", "obj" })
+        {
+            var path = Path.Combine(projectPath, directoryName);
+            if (Directory.Exists(path))
+                DeleteSmokeDirectory(path, $"successful-scenario-output; directory={directoryName}");
+        }
+    }
+
+    private static void ClearLatestRunPointer(string artifactsRoot, string runRoot)
+    {
+        var pointerPath = Path.Combine(artifactsRoot, "latest-run.txt");
+        if (!File.Exists(pointerPath))
+            return;
+
+        var pointerValue = File.ReadAllText(pointerPath, Encoding.UTF8).Trim();
+        if (string.Equals(Path.GetFullPath(pointerValue), Path.GetFullPath(runRoot), StringComparison.OrdinalIgnoreCase))
+            File.Delete(pointerPath);
+    }
+
+    private static bool DeleteSmokeDirectory(string path, string reason)
     {
         var fullPath = Path.GetFullPath(path);
         var directory = new DirectoryInfo(fullPath);
         if (!directory.Exists)
-            return;
+            return true;
 
-        if (!fullPath.Contains($"{Path.DirectorySeparatorChar}artifacts{Path.DirectorySeparatorChar}smoke-tests", StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException($"Refusing to clean unexpected directory: {fullPath}");
+        var root = GetSmokeArtifactsRoot(fullPath);
+        EnsureInsideRoot(root, fullPath);
+        var size = GetDirectorySize(directory);
+        if (reason.StartsWith("retention", StringComparison.OrdinalIgnoreCase))
+            WriteArtifactDiagnostic("ARTIFACT_RETENTION_DELETE", fullPath, $"reason={reason}; sizeBeforeDelete={size}");
+        WriteArtifactDiagnostic("ARTIFACT_CLEANUP_START", fullPath, $"reason={reason}; sizeBeforeDelete={size}");
 
-        foreach (var childDirectory in directory.GetDirectories())
-            DeleteWithRetry(() => childDirectory.Delete(recursive: true), childDirectory.FullName);
+        try
+        {
+            DeleteWithRetry(() => directory.Delete(recursive: true), fullPath);
+            WriteArtifactDiagnostic("ARTIFACT_CLEANUP_SUCCESS", fullPath, $"reason={reason}; sizeBeforeDelete={size}");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            WriteArtifactDiagnostic("ARTIFACT_CLEANUP_FAILED", fullPath, $"reason={reason}; exception={ex.GetType().Name}; message={ex.Message}");
+            return false;
+        }
+    }
 
-        foreach (var file in directory.GetFiles())
-            DeleteWithRetry(file.Delete, file.FullName);
+    private static string GetSmokeArtifactsRoot(string path)
+    {
+        var directory = new DirectoryInfo(path);
+        while (directory.Parent is not null && !directory.Name.Equals("artifacts", StringComparison.OrdinalIgnoreCase))
+            directory = directory.Parent;
+
+        if (directory.Name.Equals("artifacts", StringComparison.OrdinalIgnoreCase))
+            return directory.FullName;
+
+        throw new InvalidOperationException($"Refusing to clean smoke artifacts outside an artifacts directory: {path}");
+    }
+
+    private static void EnsureInsideRoot(string root, string path)
+    {
+        var normalizedRoot = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        var normalizedPath = Path.GetFullPath(path);
+        if (!normalizedPath.StartsWith(normalizedRoot, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException($"Refusing to clean smoke artifact outside its root: {normalizedPath}");
+    }
+
+    private static long GetDirectorySize(DirectoryInfo directory)
+    {
+        try
+        {
+            return directory.EnumerateFiles("*", SearchOption.AllDirectories).Sum(file => file.Length);
+        }
+        catch (IOException)
+        {
+            return 0;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return 0;
+        }
+    }
+
+    private static void WriteArtifactDiagnostic(string eventName, string path, string details)
+    {
+        Console.WriteLine($"{eventName} path={path}; {details}");
     }
 
     private static void DeleteWithRetry(Action delete, string path)
     {
-        const int attempts = 5;
+        const int attempts = 10;
         for (var attempt = 1; attempt <= attempts; attempt++)
         {
             try
@@ -8818,28 +8956,30 @@ Diagnostics:
             }
             catch (IOException) when (attempt < attempts)
             {
-                Thread.Sleep(250 * attempt);
+                ForceFullGc();
+                Thread.Sleep(300 * attempt);
             }
             catch (UnauthorizedAccessException) when (attempt < attempts)
             {
-                Thread.Sleep(250 * attempt);
+                ForceFullGc();
+                Thread.Sleep(300 * attempt);
             }
         }
 
         throw new IOException($"Could not clean smoke-test artifact path: {path}");
     }
 
-    private static void PruneSmokeRuns(string artifactsRoot, string currentRunRoot)
+    private static void PruneSmokeRuns(string artifactsRoot, string? currentRunRoot)
     {
         var root = new DirectoryInfo(Path.GetFullPath(artifactsRoot));
         if (!root.Exists)
             return;
 
-        var current = Path.GetFullPath(currentRunRoot);
+        var current = string.IsNullOrWhiteSpace(currentRunRoot) ? null : Path.GetFullPath(currentRunRoot);
         foreach (var staleRun in root.GetDirectories()
                      .OrderByDescending(directory => directory.LastWriteTimeUtc)
                      .ThenByDescending(directory => directory.Name, StringComparer.OrdinalIgnoreCase)
-                     .Skip(SmokeRunsToKeep))
+                     .Skip(FailedSmokeRunsToKeep))
         {
             var fullPath = Path.GetFullPath(staleRun.FullName);
             if (string.Equals(fullPath, current, StringComparison.OrdinalIgnoreCase))
@@ -8848,7 +8988,7 @@ Diagnostics:
             if (!fullPath.StartsWith(root.FullName.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
                 continue;
 
-            DeleteWithRetry(() => staleRun.Delete(recursive: true), staleRun.FullName);
+            DeleteSmokeDirectory(fullPath, "retention; kind=retained-smoke-run");
         }
     }
 

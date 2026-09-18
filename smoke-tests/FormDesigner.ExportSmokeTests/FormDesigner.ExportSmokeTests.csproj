@@ -7,6 +7,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="..\..\AvaloniaDesigner.VSIX\VsTextPatch.cs" Link="VsTextPatch.cs" />
     <ProjectReference Include="..\..\FormDesigner.csproj" />
     <ProjectReference Include="..\..\AvaloniaDesigner.Host.Protocol\AvaloniaDesigner.Host.Protocol.csproj" />
     <ProjectReference Include="..\..\AvaloniaDesigner.VsHost\AvaloniaDesigner.VsHost.csproj" />

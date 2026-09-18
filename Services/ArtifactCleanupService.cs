@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 
@@ -15,16 +16,20 @@ public sealed class ArtifactCleanupService
         var root = Path.GetFullPath(repositoryRoot);
         var artifactsRoot = Path.GetFullPath(Path.Combine(root, "artifacts"));
         EnsureInsideRoot(root, artifactsRoot);
+        WriteDiagnostic("ARTIFACT_CLEANUP_START", artifactsRoot, "reason=manual-or-host-retention");
 
         if (!Directory.Exists(artifactsRoot))
+        {
+            WriteDiagnostic("ARTIFACT_CLEANUP_SUCCESS", artifactsRoot, "reason=artifacts-root-missing; deletedBytes=0");
             return ArtifactCleanupResult.Empty(artifactsRoot);
+        }
 
         var deletedFiles = 0;
         var deletedDirectories = 0;
         long deletedBytes = 0;
         var removedPaths = new List<string>();
 
-        void DeleteDirectory(DirectoryInfo directory)
+        void DeleteDirectory(DirectoryInfo directory, string reason)
         {
             var fullName = Path.GetFullPath(directory.FullName);
             EnsureInsideRoot(artifactsRoot, fullName);
@@ -32,13 +37,23 @@ public sealed class ArtifactCleanupService
                 return;
 
             var size = GetDirectorySize(directory);
-            DeleteWithRetry(() => directory.Delete(recursive: true));
-            deletedDirectories++;
-            deletedBytes += size;
-            removedPaths.Add(fullName);
+            WriteDiagnostic("ARTIFACT_RETENTION_DELETE", fullName, $"reason={reason}; sizeBeforeDelete={size}");
+            try
+            {
+                DeleteWithRetry(() => directory.Delete(recursive: true));
+                deletedDirectories++;
+                deletedBytes += size;
+                removedPaths.Add(fullName);
+                WriteDiagnostic("ARTIFACT_CLEANUP_SUCCESS", fullName, $"reason={reason}; sizeBeforeDelete={size}");
+            }
+            catch (Exception ex)
+            {
+                WriteDiagnostic("ARTIFACT_CLEANUP_FAILED", fullName, $"reason={reason}; exception={ex.GetType().Name}; message={ex.Message}");
+                throw;
+            }
         }
 
-        void DeleteFile(FileInfo file)
+        void DeleteFile(FileInfo file, string reason)
         {
             var fullName = Path.GetFullPath(file.FullName);
             EnsureInsideRoot(artifactsRoot, fullName);
@@ -46,15 +61,25 @@ public sealed class ArtifactCleanupService
                 return;
 
             var size = file.Length;
-            DeleteWithRetry(file.Delete);
-            deletedFiles++;
-            deletedBytes += size;
-            removedPaths.Add(fullName);
+            WriteDiagnostic("ARTIFACT_RETENTION_DELETE", fullName, $"reason={reason}; sizeBeforeDelete={size}");
+            try
+            {
+                DeleteWithRetry(file.Delete);
+                deletedFiles++;
+                deletedBytes += size;
+                removedPaths.Add(fullName);
+                WriteDiagnostic("ARTIFACT_CLEANUP_SUCCESS", fullName, $"reason={reason}; sizeBeforeDelete={size}");
+            }
+            catch (Exception ex)
+            {
+                WriteDiagnostic("ARTIFACT_CLEANUP_FAILED", fullName, $"reason={reason}; exception={ex.GetType().Name}; message={ex.Message}");
+                throw;
+            }
         }
 
-        PruneTimestampedRuns(Path.Combine(artifactsRoot, "smoke-tests"), keepLatestRuns, DeleteDirectory);
-        PruneTimestampedRuns(Path.Combine(artifactsRoot, "export-validation"), keepLatestRuns, DeleteDirectory);
-        PruneTimestampedRuns(Path.Combine(artifactsRoot, "export"), keepLatestRuns, DeleteDirectory);
+        PruneTimestampedRuns(Path.Combine(artifactsRoot, "smoke-tests"), keepLatestRuns, directory => DeleteDirectory(directory, "retention; kind=smoke-run"));
+        PruneTimestampedRuns(Path.Combine(artifactsRoot, "export-validation"), keepLatestRuns, directory => DeleteDirectory(directory, "retention; kind=export-validation"));
+        PruneTimestampedRuns(Path.Combine(artifactsRoot, "export"), keepLatestRuns, directory => DeleteDirectory(directory, "retention; kind=export"));
 
         var threshold = DateTime.UtcNow - (maxAge ?? DefaultMaxAge);
         foreach (var directory in new DirectoryInfo(artifactsRoot).GetDirectories())
@@ -69,21 +94,23 @@ public sealed class ArtifactCleanupService
                 continue;
 
             if (directory.LastWriteTimeUtc < threshold)
-                DeleteDirectory(directory);
+                DeleteDirectory(directory, "retention; kind=stale-artifact-root");
         }
 
         foreach (var file in new DirectoryInfo(artifactsRoot).GetFiles())
         {
             if (file.LastWriteTimeUtc < threshold)
-                DeleteFile(file);
+                DeleteFile(file, "retention; kind=stale-artifact-file");
         }
 
-        return new ArtifactCleanupResult(
+        var result = new ArtifactCleanupResult(
             artifactsRoot,
             deletedFiles,
             deletedDirectories,
             deletedBytes,
             removedPaths);
+        WriteDiagnostic("ARTIFACT_CLEANUP_SUCCESS", artifactsRoot, $"reason=manual-or-host-retention; deletedBytes={deletedBytes}; deletedDirectories={deletedDirectories}; deletedFiles={deletedFiles}");
+        return result;
     }
 
     private static void PruneTimestampedRuns(string path, int keepLatestRuns, Action<DirectoryInfo> deleteDirectory)
@@ -149,6 +176,11 @@ public sealed class ArtifactCleanupService
         }
 
         delete();
+    }
+
+    private static void WriteDiagnostic(string eventName, string path, string details)
+    {
+        Trace.WriteLine($"{eventName} path={path}; {details}");
     }
 }
 

@@ -32,9 +32,15 @@ internal sealed class VsDocumentBuffer
     public bool TryCaptureActiveAxaml(out VsDocumentSnapshot snapshot, out string error)
     {
         ThreadHelper.ThrowIfNotOnUIThread();
+        return TryCaptureAxaml(_dte.ActiveDocument?.FullName, out snapshot, out error);
+    }
+
+    public bool TryCaptureAxaml(string? path, out VsDocumentSnapshot snapshot, out string error)
+    {
+        ThreadHelper.ThrowIfNotOnUIThread();
         snapshot = new VsDocumentSnapshot();
         error = string.Empty;
-        var document = _dte.ActiveDocument;
+        var document = path is null ? null : FindOpenDocument(path);
         if (document is null || !document.FullName.EndsWith(".axaml", StringComparison.OrdinalIgnoreCase))
         {
             error = "Откройте или выберите конкретный .axaml документ в Visual Studio.";
@@ -64,7 +70,7 @@ internal sealed class VsDocumentBuffer
         ThreadHelper.ThrowIfNotOnUIThread();
         appliedSnapshot = new VsDocumentSnapshot();
         error = string.Empty;
-        var document = FindOpenDocument(openedSnapshot.FilePath) ?? _dte.ActiveDocument;
+        var document = FindOpenDocument(openedSnapshot.FilePath);
         if (document is null || !TryGetTextDocument(document, out var textDocument))
         {
             error = "AXAML документ больше не открыт в Visual Studio.";
@@ -79,19 +85,30 @@ internal sealed class VsDocumentBuffer
             return false;
         }
 
-        foreach (var edit in edits.OrderByDescending(item => item.Start))
+        var ordered = VsTextPatch.Validate(currentText, edits);
+        var ownsUndo = !_dte.UndoContext.IsOpen;
+        if (ownsUndo) _dte.UndoContext.Open("Avalonia Designer patch");
+        try
         {
-            if (edit.Start < 0 || edit.Length < 0 || edit.Start + edit.Length > currentText.Length)
+            foreach (var edit in ordered)
             {
-                error = "Designer вернул patch за границами текущего AXAML документа.";
-                return false;
+                var from = VsTextPatch.Position(currentText, edit.Start);
+                var to = VsTextPatch.Position(currentText, edit.Start + edit.Length);
+                var start = textDocument.StartPoint.CreateEditPoint();
+                start.MoveToLineAndOffset(from.Line, from.Column);
+                var end = textDocument.StartPoint.CreateEditPoint();
+                end.MoveToLineAndOffset(to.Line, to.Column);
+                start.ReplaceText(end, edit.NewText ?? string.Empty, (int)vsEPReplaceTextOptions.vsEPReplaceTextKeepMarkers);
             }
-
-            var start = textDocument.StartPoint.CreateEditPoint();
-            start.MoveToAbsoluteOffset(edit.Start + 1);
-            var end = textDocument.StartPoint.CreateEditPoint();
-            end.MoveToAbsoluteOffset(edit.Start + edit.Length + 1);
-            start.ReplaceText(end, edit.NewText ?? string.Empty, (int)vsEPReplaceTextOptions.vsEPReplaceTextAutoformat);
+        }
+        catch
+        {
+            if (ownsUndo) _dte.UndoContext.SetAborted();
+            throw;
+        }
+        finally
+        {
+            if (ownsUndo && _dte.UndoContext.IsOpen) _dte.UndoContext.Close();
         }
 
         var patchedText = ReadText(textDocument);
