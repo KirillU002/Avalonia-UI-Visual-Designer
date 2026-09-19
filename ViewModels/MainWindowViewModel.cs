@@ -6754,7 +6754,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     public void MoveSelectedControl(double dx, double dy)
     {
-        var roots = GetEditableSelectedRootControls();
+        var roots = GetEditableSelectedRootControls().Where(CanMoveAxamlControl).ToList();
         if (roots.Count == 0)
             return;
 
@@ -6815,6 +6815,13 @@ public partial class MainWindowViewModel : ObservableObject
         bool bypassGridSnap,
         string targetDocumentId)
     {
+        if (_activeAxamlRoundTripDocument is { } axaml && (!axaml.SourceMap.CanInsertControls
+            || !axaml.CapabilityReport.CanSafelyPatch || !string.IsNullOrEmpty(parentId)
+            || AxamlRoundTripPropertyMap.PropertiesFor(type).Count == 0))
+        {
+            StatusText = "Добавление в этот AXAML-контейнер пока не поддерживается. Исходная разметка сохранена.";
+            return null;
+        }
         if (!IsActiveDocumentTarget(targetDocumentId, out var activeDocumentId))
         {
             TraceDocumentDebug(
@@ -9336,9 +9343,7 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(IsAxamlRoundTripDocument));
         OnPropertyChanged(nameof(DocumentKind));
         OnPropertyChanged(nameof(ActiveAxamlCapabilityReport));
-        StatusText = result.CapabilityReport.Level == AxamlCapabilityLevel.FullyEditable
-            ? $"AXAML открыт: {Path.GetFileName(sourcePath ?? result.RoundTripDocument.SourcePath)}"
-            : "Документ открыт в ограниченном режиме. Неподдерживаемый AXAML сохраняется без визуального редактирования.";
+        StatusText = result.CapabilityReport.StatusMessage;
     }
 
     public FormDesigner.DesignerSystem.DesignerDocumentKind DocumentKind => IsAxamlRoundTripDocument
@@ -9348,6 +9353,44 @@ public partial class MainWindowViewModel : ObservableObject
     public bool IsAxamlRoundTripDocument => _activeAxamlRoundTripDocument is not null;
 
     public AxamlCapabilityReport? ActiveAxamlCapabilityReport => _activeAxamlRoundTripDocument?.CapabilityReport;
+
+    public bool CanEditAxamlProperty(DesignControlModel? control, string propertyKey)
+    {
+        if (_activeAxamlRoundTripDocument is not { } axaml)
+            return true;
+        if (!axaml.CapabilityReport.CanSafelyPatch || control is null)
+            return false;
+        var key = propertyKey switch { "X" => "Canvas.Left", "Y" => "Canvas.Top", _ => propertyKey };
+        if (axaml.SourceMap.TryGet(control.Id, out var reference))
+            return reference.Capability.CanEditProperty(key);
+        return axaml.SourceMap.CanInsertControls && AxamlRoundTripPropertyMap.PropertiesFor(control.Type).Any(p => p.Key == key);
+    }
+
+    public bool CanMoveAxamlControl(DesignControlModel control) =>
+        CanEditAxamlProperty(control, nameof(control.X)) && CanEditAxamlProperty(control, nameof(control.Y));
+
+    public bool CanResizeAxamlControl(DesignControlModel control) =>
+        CanEditAxamlProperty(control, nameof(control.Width)) && CanEditAxamlProperty(control, nameof(control.Height));
+
+    private PropertyGridRowViewModel ApplyAxamlPropertyCapability(PropertyGridRowViewModel row)
+    {
+        if (_activeAxamlRoundTripDocument is null)
+            return row;
+        var selected = GetSelectedControls();
+        if (selected.Count > 0 && selected.All(control => CanEditAxamlProperty(control, row.Key)))
+            return row;
+        var value = row.Value;
+        var key = row.Key switch { "X" => "Canvas.Left", "Y" => "Canvas.Top", _ => row.Key };
+        if (SelectedControl is { } control && _activeAxamlRoundTripDocument.SourceMap.TryGet(control.Id, out var reference))
+        {
+            var property = reference.Capability.Properties.FirstOrDefault(p => p.Key == key);
+            value = property is null ? value : reference.Element.GetAttributeValue(property.SourceName) ?? value;
+        }
+        return new PropertyGridRowViewModel(row.Key, row.Label, row.Category, PropertyGridEditorKind.ReadOnly,
+            value, "AXAML: свойство сохраняется без редактирования.", isReadOnly: true, isFavorite: row.IsFavorite,
+            contextDocumentId: row.ContextDocumentId, contextControlId: row.ContextControlId,
+            contextControlName: row.ContextControlName, contextControlType: row.ContextControlType);
+    }
 
     public AxamlPatchResult CreateActiveAxamlPatch(string? currentSourceText = null)
     {
@@ -9373,6 +9416,7 @@ public partial class MainWindowViewModel : ObservableObject
         var refreshed = _axamlImportService.Import(patchedText, path, idsByName);
         refreshed.RoundTripDocument.SetTextEncoding(_activeAxamlRoundTripDocument.TextEncoding);
         _activeAxamlRoundTripDocument = refreshed.RoundTripDocument;
+        RebuildPropertyGrid("AxamlPatchAcknowledged");
         MarkDocumentSaved(path, acknowledgedSnapshot);
         LogWorkspace(WorkspaceLogLevel.Success, OutputCategoryDiagnostics, "AXAML_PATCH_APPLIED", $"path={path}; controls={Controls.Count}");
         OnPropertyChanged(nameof(ActiveAxamlCapabilityReport));
@@ -10270,7 +10314,7 @@ public partial class MainWindowViewModel : ObservableObject
             _propertyGridRebuildCount++;
             var query = PropertyGridSearchText.Trim();
             var hasSearch = !string.IsNullOrWhiteSpace(query);
-            var rows = RemoveDuplicatePropertyGridRows(BuildPropertyGridRows().ToList(), reason);
+            var rows = RemoveDuplicatePropertyGridRows(BuildPropertyGridRows().Select(ApplyAxamlPropertyCapability).ToList(), reason);
             if (hasSearch)
             {
                 rows = rows

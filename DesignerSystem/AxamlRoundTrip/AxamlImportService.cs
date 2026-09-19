@@ -46,7 +46,8 @@ public sealed class AxamlImportService
             report.Add("Document", AxamlCapabilityLevel.UnsafeToSave, ex.Message);
             diagnostics.Add(new AxamlRoundTripDiagnostic("AXAML_IMPORT_FAILED", AxamlDiagnosticSeverity.Error, ex.ToString()));
             var placeholderSyntax = AxamlSyntaxDocument.Parse("<UserControl />");
-            var placeholderMap = new AxamlSourceMap(placeholderSyntax.Root);
+            var placeholderMap = new AxamlSourceMap(null);
+            AppendCapabilityDiagnostics(sourcePath, report, diagnostics);
             return new AxamlImportResult(
                 new DesignerDocumentFileModel(),
                 new AxamlRoundTripDocument(sourcePath ?? string.Empty, placeholderSyntax, placeholderMap, report),
@@ -55,74 +56,57 @@ public sealed class AxamlImportService
 
         var rootType = syntax.Root.LocalName;
         diagnostics.Add(new AxamlRoundTripDiagnostic("AXAML_IMPORT_ROOT_RESOLVED", AxamlDiagnosticSeverity.Information, $"type={rootType}"));
-        if (!IsAvaloniaElement(syntax.Root) || (!string.Equals(rootType, "Window", StringComparison.Ordinal) && !string.Equals(rootType, "UserControl", StringComparison.Ordinal)))
-        {
-            report.Add(rootType, AxamlCapabilityLevel.ReadOnly, "Phase 1 supports Window and UserControl roots only.");
-            diagnostics.Add(new AxamlRoundTripDiagnostic("AXAML_CAPABILITY_REPORT", AxamlDiagnosticSeverity.Warning, "readonly root"));
-            var map = new AxamlSourceMap(syntax.Root);
-            return new AxamlImportResult(CreateDocument(rootType, syntax.Root), new AxamlRoundTripDocument(sourcePath ?? string.Empty, syntax, map, report), diagnostics);
-        }
-
+        var supportedRoot = IsAvaloniaElement(syntax.Root) && rootType is "Window" or "UserControl";
         var canvases = syntax.Root.Children.Where(element => IsAvaloniaElement(element) && element.LocalName == "Canvas").ToArray();
-        var canvas = canvases.Length == 1 ? canvases[0] : null;
-        foreach (var child in syntax.Root.Children.Where(child => child != canvas))
-        {
-            report.Add(child.Name, AxamlCapabilityLevel.PartiallyEditable, "Subtree is opaque and source-preserved in Phase 1.");
-            diagnostics.Add(new("AXAML_IMPORT_UNKNOWN_NODE_PRESERVED", AxamlDiagnosticSeverity.Warning, $"element={child.Name}"));
-        }
-        if (canvas is null || canvas.IsSelfClosing)
-        {
-            report.Add(rootType, AxamlCapabilityLevel.ReadOnly, "Phase 1 requires a non-empty direct Canvas child.");
-            diagnostics.Add(new AxamlRoundTripDiagnostic("AXAML_CAPABILITY_REPORT", AxamlDiagnosticSeverity.Warning, "readonly; Canvas missing"));
-            var map = new AxamlSourceMap(syntax.Root);
-            return new AxamlImportResult(CreateDocument(rootType, syntax.Root), new AxamlRoundTripDocument(sourcePath ?? string.Empty, syntax, map, report), diagnostics);
-        }
-
-        report.Add(rootType, AxamlCapabilityLevel.FullyEditable, "Root is supported.");
-        report.Add("Canvas", AxamlCapabilityLevel.FullyEditable, "Direct Canvas is supported.");
+        // Do not flatten layouts across an unknown parent or choose one of several content roots.
+        var contentRoots = syntax.Root.Children.Where(element => !element.LocalName.Contains('.')).ToArray();
+        var canvas = supportedRoot && canvases.Length == 1 && contentRoots.Length == 1 ? canvases[0] : null;
         var document = CreateDocument(rootType, syntax.Root);
         var sourceMap = new AxamlSourceMap(canvas);
         var importedControls = new List<(DesignerControlFileModel Control, int ZIndex, int SourceOrder)>();
         var sourceOrder = 0;
 
-        foreach (var element in canvas.Children)
+        if (!supportedRoot)
+            AddOpaqueSubtree(syntax.Root, "UnsupportedRoot", report, diagnostics);
+        else
+        {
+            report.AddElement(CreateContainerCapability(syntax.Root));
+            foreach (var child in syntax.Root.Children.Where(child => child != canvas))
+                AddOpaqueSubtree(child, "UnsupportedContainerOrSubtree", report, diagnostics);
+            if (canvas is not null)
+                report.AddElement(CreateContainerCapability(canvas));
+        }
+
+        foreach (var element in canvas?.Children ?? Enumerable.Empty<AxamlElementSyntax>())
         {
             var controlType = element.LocalName;
             if (!IsAvaloniaElement(element) || !SupportedControlTypes.Contains(controlType))
             {
-                report.Add(controlType, AxamlCapabilityLevel.PartiallyEditable, "Unsupported element is preserved without modification.");
-                diagnostics.Add(new AxamlRoundTripDiagnostic("AXAML_IMPORT_UNKNOWN_NODE_PRESERVED", AxamlDiagnosticSeverity.Warning, $"element={element.Name}"));
+                AddOpaqueSubtree(element, "UnsupportedControl", report, diagnostics);
                 continue;
             }
 
             if (element.Children.Count > 0 || HasUnsupportedInnerContent(syntax.Text, element))
             {
-                report.Add(controlType, AxamlCapabilityLevel.PartiallyEditable, "Nested child or raw content syntax is preserved and is not editable in Phase 1.");
-                diagnostics.Add(new AxamlRoundTripDiagnostic("AXAML_IMPORT_UNKNOWN_NODE_PRESERVED", AxamlDiagnosticSeverity.Warning, $"element={element.Name}; reason=nested children or raw content"));
+                AddOpaqueSubtree(element, "UnsupportedContent", report, diagnostics);
                 continue;
             }
 
-            var control = CreateControl(controlType, element, knownControlIdsByName, diagnostics, report);
+            var capability = new AxamlElementCapability(element, AxamlElementCapabilityMode.Editable);
+            var control = CreateControl(controlType, element, knownControlIdsByName, diagnostics, capability);
             var zIndex = int.TryParse(element.GetAttributeValue("Canvas.ZIndex"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedZIndex)
                 ? parsedZIndex
                 : sourceOrder;
             importedControls.Add((ToFileModel(control), zIndex, sourceOrder));
             sourceOrder++;
-            var reference = new AxamlSourceReference(control.Id, control.Type, element);
+            var reference = new AxamlSourceReference(control.Id, control.Type, element, capability);
             foreach (var property in AxamlRoundTripPropertyMap.PropertiesFor(control.Type))
             {
                 reference.SnapshotValues[property.Key] = property.Read(control);
-                var attribute = property.ResolveExistingAttribute(element);
-                if (attribute is null || !IsMarkupExtension(attribute.Value))
-                    reference.EditableProperties.Add(property.Key);
-                else
-                {
-                    report.Add($"{control.Name}.{property.Key}", AxamlCapabilityLevel.PartiallyEditable, "Markup extension is preserved read-only in Phase 1.");
-                }
             }
 
             sourceMap.Add(reference);
-            report.Add(control.Name, AxamlCapabilityLevel.FullyEditable, "Control is supported.");
+            report.AddElement(capability);
             diagnostics.Add(new AxamlRoundTripDiagnostic(
                 "AXAML_IMPORT_CONTROL",
                 AxamlDiagnosticSeverity.Information,
@@ -132,9 +116,10 @@ public sealed class AxamlImportService
         foreach (var imported in importedControls.OrderBy(item => item.ZIndex).ThenBy(item => item.SourceOrder))
             document.Controls.Add(imported.Control);
 
+        AppendCapabilityDiagnostics(sourcePath, report, diagnostics);
         diagnostics.Add(new AxamlRoundTripDiagnostic(
             "AXAML_CAPABILITY_REPORT",
-            report.Level == AxamlCapabilityLevel.FullyEditable ? AxamlDiagnosticSeverity.Information : AxamlDiagnosticSeverity.Warning,
+            report.DocumentReadOnly ? AxamlDiagnosticSeverity.Warning : AxamlDiagnosticSeverity.Information,
             $"level={report.Level}; controls={document.Controls.Count}; entries={report.Entries.Count}"));
         return new AxamlImportResult(document, new AxamlRoundTripDocument(sourcePath ?? string.Empty, syntax, sourceMap, report), diagnostics);
     }
@@ -162,16 +147,16 @@ public sealed class AxamlImportService
         AxamlElementSyntax element,
         IReadOnlyDictionary<string, string>? knownControlIdsByName,
         ICollection<AxamlRoundTripDiagnostic> diagnostics,
-        AxamlCapabilityReport report)
+        AxamlElementCapability capability)
     {
         var control = new DesignControlModel { Type = controlType };
         foreach (var property in AxamlRoundTripPropertyMap.PropertiesFor(controlType))
         {
             var attribute = property.ResolveExistingAttribute(element);
-            if (attribute is null)
-                continue;
-
-            property.TryWrite(control, attribute.Value);
+            var editable = attribute is null || property.TryWrite(control, attribute.Value);
+            capability.Properties.Add(new(property.Key, attribute?.Name ?? property.PreferredAttributeName,
+                editable ? AxamlPropertyCapabilityMode.Editable : AxamlPropertyCapabilityMode.Preserved,
+                editable ? "" : IsMarkupExtension(attribute!.Value) ? "MarkupExtension" : "UnsupportedValue"));
         }
 
         if (string.IsNullOrWhiteSpace(control.Name))
@@ -181,19 +166,70 @@ public sealed class AxamlImportService
 
         var knownAttributeNames = AxamlRoundTripPropertyMap.PropertiesFor(controlType)
             .SelectMany(property => property.AttributeNames)
-            .Append("xmlns")
-            .Append("Canvas.ZIndex")
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        foreach (var attribute in element.Attributes.Where(attribute => !knownAttributeNames.Contains(attribute.Name)))
+            .ToHashSet(StringComparer.Ordinal);
+        foreach (var attribute in element.Attributes.Where(attribute => !knownAttributeNames.Contains(attribute.Name) && !IsNamespace(attribute)))
         {
-            report.Add($"{control.Name}.{attribute.Name}", AxamlCapabilityLevel.PartiallyEditable, "Unknown attribute will be preserved.");
+            capability.Properties.Add(new(attribute.Name, attribute.Name, AxamlPropertyCapabilityMode.Preserved, "UnknownAttribute"));
             diagnostics.Add(new AxamlRoundTripDiagnostic(
                 "AXAML_IMPORT_UNKNOWN_ATTRIBUTE_PRESERVED",
                 AxamlDiagnosticSeverity.Information,
                 $"element={element.Name}; attribute={attribute.Name}"));
         }
 
+        if (capability.Properties.Any(p => p.Mode != AxamlPropertyCapabilityMode.Editable))
+            capability.Mode = AxamlElementCapabilityMode.PartiallyEditable;
         return control;
+    }
+
+    private static bool IsNamespace(AxamlAttributeSyntax attribute) => attribute.Name == "xmlns" || attribute.Name.StartsWith("xmlns:", StringComparison.Ordinal);
+
+    private static AxamlElementCapability CreateContainerCapability(AxamlElementSyntax element)
+    {
+        var capability = new AxamlElementCapability(element, AxamlElementCapabilityMode.Editable);
+        // Root metadata and container attributes are retained; this phase exposes only leaf editors.
+        foreach (var attribute in element.Attributes.Where(a => !IsNamespace(a)))
+        {
+            capability.Properties.Add(new(attribute.Name, attribute.Name, AxamlPropertyCapabilityMode.Preserved, "ContainerMetadata"));
+            if (IsMarkupExtension(attribute.Value) || attribute.Name is not ("x:Class" or "x:Name" or "Name" or "Title" or "Width" or "Height"))
+                capability.Mode = AxamlElementCapabilityMode.PartiallyEditable;
+        }
+        return capability;
+    }
+
+    private static void AddOpaqueSubtree(AxamlElementSyntax element, string reason, AxamlCapabilityReport report,
+        ICollection<AxamlRoundTripDiagnostic> diagnostics)
+    {
+        var pending = new Stack<(AxamlElementSyntax Element, string Reason)>();
+        pending.Push((element, reason));
+        while (pending.Count > 0)
+        {
+            var current = pending.Pop();
+            var capability = new AxamlElementCapability(current.Element, AxamlElementCapabilityMode.Opaque, current.Reason);
+            foreach (var attribute in current.Element.Attributes.Where(a => !IsNamespace(a)))
+                capability.Properties.Add(new(attribute.Name, attribute.Name, AxamlPropertyCapabilityMode.Preserved, current.Reason));
+            report.AddElement(capability);
+            diagnostics.Add(new("AXAML_IMPORT_UNKNOWN_NODE_PRESERVED", AxamlDiagnosticSeverity.Information,
+                $"element={current.Element.Name}; reason={current.Reason}"));
+            foreach (var child in current.Element.Children.AsEnumerable().Reverse())
+                pending.Push((child, "OpaqueAncestor:" + current.Element.Name));
+        }
+    }
+
+    private static void AppendCapabilityDiagnostics(string? path, AxamlCapabilityReport report, ICollection<AxamlRoundTripDiagnostic> diagnostics)
+    {
+        foreach (var element in report.Elements)
+            diagnostics.Add(new("AXAML_ELEMENT_CAPABILITY", AxamlDiagnosticSeverity.Information,
+                $"name={element.Name}; type={element.Element.Name}; mode={element.Mode}; reason={element.Reason}; " +
+                $"editableProperties={string.Join(",", element.Properties.Where(p => p.Mode == AxamlPropertyCapabilityMode.Editable).Select(p => p.SourceName))}; " +
+                $"opaqueProperties={string.Join(",", element.Properties.Where(p => p.Mode != AxamlPropertyCapabilityMode.Editable).Select(p => p.SourceName))}"));
+        diagnostics.Add(new("AXAML_DOCUMENT_CAPABILITY", AxamlDiagnosticSeverity.Information,
+            $"document={path}; editableElements={report.Elements.Count(e => e.Mode == AxamlElementCapabilityMode.Editable)}; " +
+            $"partialElements={report.Elements.Count(e => e.Mode == AxamlElementCapabilityMode.PartiallyEditable)}; " +
+            $"opaqueElements={report.Elements.Count(e => e.Mode == AxamlElementCapabilityMode.Opaque)}; " +
+            $"editableProperties={report.Elements.Sum(e => e.Properties.Count(p => p.Mode == AxamlPropertyCapabilityMode.Editable))}; " +
+            $"opaqueProperties={report.Elements.Sum(e => e.Properties.Count(p => p.Mode != AxamlPropertyCapabilityMode.Editable))}; " +
+            $"fatalIssues={report.Entries.Count(e => e.Level == AxamlCapabilityLevel.UnsafeToSave)}; " +
+            $"documentReadOnly={report.DocumentReadOnly}; reason={report.ReadOnlyReason}"));
     }
 
     private static DesignerControlFileModel ToFileModel(DesignControlModel model) => new()
@@ -224,7 +260,8 @@ public sealed class AxamlImportService
     };
 
     private static bool IsMarkupExtension(string value) => value.TrimStart().StartsWith("{", StringComparison.Ordinal);
-    private static bool TryParseDouble(string? value, out double result) => double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out result);
+    private static bool TryParseDouble(string? value, out double result) =>
+        double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out result) && double.IsFinite(result);
 
     private static bool HasUnsupportedInnerContent(string source, AxamlElementSyntax element)
     {
@@ -244,9 +281,9 @@ public sealed class AxamlImportService
 internal sealed class AxamlRoundTripProperty
 {
     private readonly Func<DesignControlModel, string> _read;
-    private readonly Action<DesignControlModel, string> _write;
+    private readonly Func<DesignControlModel, string, bool> _write;
 
-    public AxamlRoundTripProperty(string key, IEnumerable<string> attributeNames, Func<DesignControlModel, string> read, Action<DesignControlModel, string> write)
+    public AxamlRoundTripProperty(string key, IEnumerable<string> attributeNames, Func<DesignControlModel, string> read, Func<DesignControlModel, string, bool> write)
     {
         Key = key;
         AttributeNames = attributeNames.ToArray();
@@ -259,10 +296,9 @@ internal sealed class AxamlRoundTripProperty
     public string PreferredAttributeName => AttributeNames[0];
     public string Read(DesignControlModel control) => _read(control);
 
-    public void TryWrite(DesignControlModel control, string value)
+    public bool TryWrite(DesignControlModel control, string value)
     {
-        if (!value.TrimStart().StartsWith("{", StringComparison.Ordinal))
-            _write(control, WebUtility.HtmlDecode(value));
+        return !value.TrimStart().StartsWith("{", StringComparison.Ordinal) && _write(control, WebUtility.HtmlDecode(value));
     }
 
     public AxamlAttributeSyntax? ResolveExistingAttribute(AxamlElementSyntax element) =>
@@ -328,19 +364,23 @@ internal static class AxamlRoundTripPropertyMap
         Text(key, new[] { attributeName }, read, write);
 
     private static AxamlRoundTripProperty Text(string key, IEnumerable<string> attributeNames, Func<DesignControlModel, string> read, Action<DesignControlModel, string> write) =>
-        new(key, attributeNames, read, write);
+        new(key, attributeNames, read, (control, value) => { write(control, value); return true; });
 
     private static AxamlRoundTripProperty Number(string key, Func<DesignControlModel, double> read, Action<DesignControlModel, double> write) =>
         new(key, new[] { key }, control => read(control).ToString("0.###", CultureInfo.InvariantCulture), (control, value) =>
         {
-            if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed))
-                write(control, parsed);
+            if (!double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed) || !double.IsFinite(parsed))
+                return false;
+            write(control, parsed);
+            return true;
         });
 
     private static AxamlRoundTripProperty Bool(string key, Func<DesignControlModel, bool> read, Action<DesignControlModel, bool> write) =>
         new(key, new[] { key }, control => read(control) ? "True" : "False", (control, value) =>
         {
-            if (bool.TryParse(value, out var parsed))
-                write(control, parsed);
+            if (!bool.TryParse(value, out var parsed))
+                return false;
+            write(control, parsed);
+            return true;
         });
 }

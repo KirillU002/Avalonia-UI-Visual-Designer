@@ -119,6 +119,8 @@ Fixture: [Samples/VisualStudioPoC/SimpleAvaloniaApp/MainWindow.axaml](../Samples
 
 Hardening сложного AXAML и lifecycle в версии 0.1.11 описан в
 [AxamlVisualStudioHardening.md](AxamlVisualStudioHardening.md).
+Granular capability и partial editing в версии 0.1.12 описаны в
+[AxamlGranularCapabilities.md](AxamlGranularCapabilities.md).
 
 `FormDesigner.ExportSmokeTests` содержит: `VsHostProtocolHandshakeWorks`, `VsHostCanStartAndAcceptConnection`, `VsHostUsesSharedDesignerSurface`, `VsHostReturnsMinimalAxamlPatch`, `VsHostRoundTripPreservesComment`, `VsHostRoundTripPreservesUnknownAttribute`, `VsHostRejectsPatchForStaleDocumentVersion` и `BridgeSurvivesVsHostDisconnect`.
 

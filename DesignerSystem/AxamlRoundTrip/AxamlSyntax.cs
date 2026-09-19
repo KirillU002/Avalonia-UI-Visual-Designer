@@ -57,7 +57,7 @@ public sealed class AxamlElementSyntax
     public List<AxamlAttributeSyntax> Attributes { get; } = new();
 
     public AxamlAttributeSyntax? FindAttribute(string name) =>
-        Attributes.FirstOrDefault(attribute => string.Equals(attribute.Name, name, StringComparison.OrdinalIgnoreCase));
+        Attributes.FirstOrDefault(attribute => string.Equals(attribute.Name, name, StringComparison.Ordinal));
 
     public string? GetAttributeValue(string name) => FindAttribute(name)?.Value;
 }
@@ -203,6 +203,8 @@ public sealed class AxamlSyntaxDocument
                 throw new AxamlSyntaxException($"Attribute name is invalid at position {index}.");
 
             var name = text[index..nameEnd];
+            if (element.Attributes.Any(attribute => string.Equals(attribute.Name, name, StringComparison.Ordinal)))
+                throw new AxamlSyntaxException($"Ambiguous attribute '{name}' at position {index}.");
             index = SkipWhitespace(text, nameEnd, limit);
             if (index >= limit || text[index] != '=')
                 throw new AxamlSyntaxException($"Attribute '{name}' must have a value.");

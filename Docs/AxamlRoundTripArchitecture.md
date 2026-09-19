@@ -75,7 +75,7 @@ Standalone применяет `PatchedText` через `IDesignerFileSystem`. Б
 | Ручной inner content, например `<Button>Text</Button>` | Сохраняется как opaque subtree; не заменяется attribute-версией control. |
 | `Style`, `ResourceDictionary`, `Grid`, `StackPanel`, bindings, templates, `DataGrid`, Eremex | Не импортируются в visual projection Phase 1, но не удаляются и не регенерируются. |
 | Markup extension в поддерживаемом свойстве, например `{Binding Name}` | Сохраняется как read-only для этого свойства в Phase 1. |
-| Unsupported root / отсутствие `Canvas` | `ReadOnly`; normal save блокируется. |
+| Unsupported root / отсутствие `Canvas` | `PartiallyEditable` с opaque projection; no-edit save сохраняет source, вставка без безопасного Canvas блокируется. |
 | Invalid XML-like syntax | `UnsafeToSave`; patch не создаётся. |
 
 Следствие: Designer не должен молча уничтожать AXAML, который не понимает. При неопределённости действует правило `preserve -> warn -> read-only`, а не full regeneration.
@@ -102,6 +102,10 @@ custom:HandWrittenControl:    Unsupported but preserved
 ```
 
 `PartiallyEditable` можно сохранить, пока операция затрагивает только imported supported controls. `ReadOnly` и `UnsafeToSave` не дают `AxamlPatchWriter` применить изменения.
+
+С версии 0.1.12 report содержит element/property capabilities. Unsupported syntax
+не является причиной document-level ReadOnly. Подробности, операции и регрессии:
+[AxamlGranularCapabilities.md](AxamlGranularCapabilities.md).
 
 ## Patch model
 

@@ -30,10 +30,6 @@ public sealed class AxamlPatchWriter
 
         if (!roundTripDocument.CapabilityReport.CanSafelyPatch)
         {
-            // A read-only projection has no editable controls. Saving it without
-            // edits is an identity operation, never regeneration of its source.
-            if (roundTripDocument.CapabilityReport.Level == AxamlCapabilityLevel.ReadOnly && document.Controls.Count == 0)
-                return AxamlPatchResult.Success(source, Array.Empty<AxamlTextEdit>(), diagnostics);
             diagnostics.Add(new AxamlRoundTripDiagnostic("AXAML_PATCH_BLOCKED", AxamlDiagnosticSeverity.Warning, $"capability={roundTripDocument.CapabilityReport.Level}"));
             return AxamlPatchResult.Unsafe(source, diagnostics);
         }
@@ -54,12 +50,28 @@ public sealed class AxamlPatchWriter
             }
 
             var control = ToRuntimeModel(fileControl);
+            if (fileControl.Type != reference.ControlType || !string.IsNullOrEmpty(fileControl.ParentId)
+                || AxamlRoundTripPropertyMap.PropertiesFor(reference.ControlType).Any(property =>
+                    !reference.Capability.CanEditProperty(property.Key)
+                    && reference.SnapshotValues.TryGetValue(property.Key, out var original) && property.Read(control) != original))
+            {
+                diagnostics.Add(new("AXAML_PATCH_BLOCKED", AxamlDiagnosticSeverity.Warning, $"element={control.Name}; reason=OpaquePropertyOrHierarchyChange"));
+                return AxamlPatchResult.Unsafe(source, diagnostics);
+            }
             AppendPropertyEdits(source, reference, control, edits);
         }
 
         var addedControls = document.Controls.Where(control => !referencedIds.Contains(control.Id)).ToList();
         if (addedControls.Count > 0)
+        {
+            if (!roundTripDocument.SourceMap.CanInsertControls || addedControls.Any(c =>
+                AxamlRoundTripPropertyMap.PropertiesFor(c.Type).Count == 0 || !string.IsNullOrEmpty(c.ParentId)))
+            {
+                diagnostics.Add(new("AXAML_PATCH_BLOCKED", AxamlDiagnosticSeverity.Warning, "reason=NoSafeInsertionTargetOrUnsupportedControl"));
+                return AxamlPatchResult.Unsafe(source, diagnostics);
+            }
             AppendNewControlInsert(source, roundTripDocument, addedControls, edits);
+        }
 
         if (HasOverlaps(edits))
         {
@@ -90,7 +102,7 @@ public sealed class AxamlPatchWriter
         var additions = new List<(string Name, string Value)>();
         foreach (var property in AxamlRoundTripPropertyMap.PropertiesFor(reference.ControlType))
         {
-            if (!reference.EditableProperties.Contains(property.Key))
+            if (!reference.Capability.CanEditProperty(property.Key))
                 continue;
 
             var currentValue = property.Read(current);
@@ -99,7 +111,7 @@ public sealed class AxamlPatchWriter
 
             var attribute = property.ResolveExistingAttribute(reference.Element);
             if (attribute is not null)
-                edits.Add(new AxamlTextEdit(attribute.ValueSpan.Start, attribute.ValueSpan.Length, EscapeAttributeValue(currentValue)));
+                edits.Add(new AxamlTextEdit(attribute.ValueSpan.Start, attribute.ValueSpan.Length, EscapeAttributeValue(currentValue, attribute.Quote)));
             else
                 additions.Add((property.PreferredAttributeName, currentValue));
         }
@@ -121,7 +133,7 @@ public sealed class AxamlPatchWriter
         ICollection<AxamlTextEdit> edits)
     {
         var canvas = roundTripDocument.SourceMap.CanvasElement;
-        if (canvas.IsSelfClosing || canvas.EndTagSpan.IsEmpty)
+        if (canvas is null || !roundTripDocument.SourceMap.CanInsertControls)
             throw new InvalidOperationException("Cannot insert a control into a self-closing Canvas.");
 
         var canvasIndent = AxamlSyntaxDocument.GetLineIndent(source, canvas.OpeningTagSpan.Start);
@@ -129,6 +141,8 @@ public sealed class AxamlPatchWriter
             ? AxamlSyntaxDocument.GetLineIndent(source, canvas.Children[0].OpeningTagSpan.Start)
             : canvasIndent + roundTripDocument.Syntax.IndentUnit;
         var insertion = AxamlSyntaxDocument.GetLineStart(source, canvas.EndTagSpan.Start);
+        if (!string.IsNullOrWhiteSpace(source[insertion..canvas.EndTagSpan.Start]))
+            insertion = canvas.EndTagSpan.Start;
         var fragments = controls.Select(control => CreateFragment(
             control,
             roundTripDocument.Syntax.NewLine,
@@ -184,8 +198,10 @@ public sealed class AxamlPatchWriter
         return false;
     }
 
-    private static string EscapeAttributeValue(string value) =>
-        (value ?? string.Empty).Replace("&", "&amp;", StringComparison.Ordinal).Replace("\"", "&quot;", StringComparison.Ordinal).Replace("<", "&lt;", StringComparison.Ordinal).Replace(">", "&gt;", StringComparison.Ordinal);
+    private static string EscapeAttributeValue(string value, char quote = '"') =>
+        (value ?? string.Empty).Replace("&", "&amp;", StringComparison.Ordinal)
+            .Replace(quote.ToString(), quote == '\'' ? "&apos;" : "&quot;", StringComparison.Ordinal)
+            .Replace("<", "&lt;", StringComparison.Ordinal).Replace(">", "&gt;", StringComparison.Ordinal);
 
     private static DesignControlModel ToRuntimeModel(DesignerControlFileModel control) => new()
     {

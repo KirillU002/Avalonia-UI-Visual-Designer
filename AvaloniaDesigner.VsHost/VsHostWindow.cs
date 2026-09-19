@@ -78,7 +78,11 @@ public sealed class VsHostWindow : MainWindow
 
     protected override void ReloadHostDocument() => ReloadRequested?.Invoke(this, EventArgs.Empty);
 
-    public void SetBridgeStatus(string text) => _statusText.Text = text;
+    public void SetBridgeStatus(string text)
+    {
+        _statusText.Text = text;
+        ToolTip.SetTip(_statusText, text);
+    }
 
     public void CloseForBridgeShutdown() => CloseForExternalHost();
 

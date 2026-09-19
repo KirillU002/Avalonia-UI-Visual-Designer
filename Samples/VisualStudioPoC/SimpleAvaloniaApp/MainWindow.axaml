@@ -12,8 +12,8 @@
             Content="Привет"
             Width="160"
             Height="40"
-            Canvas.Left="280"
-            Canvas.Top="30" />
+            Canvas.Left="350"
+            Canvas.Top="140" />
 
         <TextBox
             x:Name="TextBox1"
@@ -24,5 +24,19 @@
             Canvas.Top="30"
             custom:Custom.Unknown="keep-me" />
 
+        <Button
+            x:Name="Button2"
+            Width="160"
+            Height="40"
+            Canvas.Left="90"
+            Canvas.Top="300"
+            Content="Кнопка"  Background="#2563EB" Foreground="#FFFFFF" BorderBrush="#1D4ED8" CornerRadius="8" Padding="10" FontWeight="SemiBold"/>
+        <CheckBox
+            x:Name="CheckBox1"
+            Width="180"
+            Height="32"
+            Canvas.Left="90"
+            Canvas.Top="210"
+            Content="Флажок" />
     </Canvas>
 </Window>

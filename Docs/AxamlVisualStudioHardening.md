@@ -1,5 +1,9 @@
 # AXAML lifecycle hardening, VSIX 0.1.11
 
+Исторический отчёт этапа 0.1.11. В 0.1.12 правило read-only для unsupported layout
+заменено granular capability; актуальное поведение описано в
+[AxamlGranularCapabilities.md](AxamlGranularCapabilities.md).
+
 ## Подтверждённые причины
 
 ### AXAML попадал в JSON reopen

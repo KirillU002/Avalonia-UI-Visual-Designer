@@ -252,8 +252,8 @@ internal static partial class Program
             await Open(realSource, 4);
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
-                if (vm.CreateActiveAxamlPatch(realSource).PatchedText != realSource || vm.ActiveAxamlCapabilityReport?.Level != AxamlCapabilityLevel.ReadOnly)
-                    throw new InvalidOperationException("Real MainWindow did not open as preserved read-only source.");
+                if (vm.CreateActiveAxamlPatch(realSource).PatchedText != realSource || vm.ActiveAxamlCapabilityReport?.Level != AxamlCapabilityLevel.PartiallyEditable)
+                    throw new InvalidOperationException("Real MainWindow did not open as a partial document with opaque layout.");
             });
         }, cancellation.Token);
         try { Pump(exercise); }
@@ -286,6 +286,10 @@ internal static partial class Program
                 var response = connection.ReceiveAsync(cancellation.Token).GetAwaiter().GetResult()!;
                 if (response.MessageType != DesignerHostMessageTypes.DocumentOpened)
                     throw new InvalidOperationException($"External VsHost failed to open {path}: {response.Payload}");
+                var capabilities = connection.GetPayload<DocumentOpenedPayload>(response)!;
+                if (!capabilities.CanEdit || capabilities.CapabilityLevel != nameof(AxamlCapabilityLevel.PartiallyEditable)
+                    || capabilities.Status.Contains("только для чтения") || capabilities.Status.Contains("Ограниченный режим"))
+                    throw new InvalidOperationException($"Partial source was presented as read-only: {path}: {capabilities.Status}");
                 Console.WriteLine($"REAL_VSHOST_OPEN path={path}; length={open.Text.Length}; checksum={open.Checksum}; capability={connection.GetPayload<DocumentOpenedPayload>(response)!.CapabilityLevel}");
             }
             connection.SendAsync(DesignerHostMessageTypes.HostShutdown, "shutdown", "", new EmptyPayload(), cancellation.Token).GetAwaiter().GetResult();

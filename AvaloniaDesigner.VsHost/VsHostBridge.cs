@@ -282,9 +282,7 @@ public sealed partial class VsHostBridge : IDisposable
             _documentId = documentId;
             _sessionId = _viewModel.DocumentSessionId;
             Log("AXAML_SESSION_CREATED", $"documentId={documentId}; session={_sessionId}; kind={_viewModel.DocumentKind}; version={document.Version}; checksum={document.Checksum}");
-            SetStatus(result.CapabilityReport.Level == AxamlCapabilityLevel.FullyEditable
-                ? $"Подключено к Visual Studio: {System.IO.Path.GetFileName(document.FilePath)}"
-                : "Ограниченный режим: неподдерживаемый AXAML сохраняется без визуального редактирования.");
+            SetStatus(result.CapabilityReport.StatusMessage);
             Log("AXAML_IMPORT_CAPABILITY", $"level={result.CapabilityReport.Level}; supported={result.Document.Controls.Count}; opaque={result.Diagnostics.Count(d => d.Code == "AXAML_IMPORT_UNKNOWN_NODE_PRESERVED")}; warnings={result.CapabilityReport.Entries.Count(e => e.Level != AxamlCapabilityLevel.FullyEditable)}; errors=0");
             Log("VSHOST_AXAML_IMPORT_SUCCESS", $"controls={result.Document.Controls.Count}; capability={result.CapabilityReport.Level}");
             Log("VSHOST_SURFACE_ATTACHED", $"document={documentId}; surface=FormDesigner.Views.DesignerSurface");
@@ -344,7 +342,7 @@ public sealed partial class VsHostBridge : IDisposable
     {
         CanEdit = canEdit,
         CapabilityLevel = result.CapabilityReport.Level.ToString(),
-        Status = canEdit ? "AXAML открыт в Designer." : "AXAML открыт только для чтения. Неподдерживаемая разметка сохранена без изменений.",
+        Status = result.CapabilityReport.StatusMessage,
         Capabilities = result.CapabilityReport.Entries.Select(entry => new CapabilityEntryPayload
         {
             Subject = entry.Subject,

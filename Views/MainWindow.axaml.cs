@@ -4357,9 +4357,9 @@ public partial class MainWindow : Window
         return wrapper;
     }
 
-    private static bool CanResizeControl(DesignControlModel model)
+    private bool CanResizeControl(DesignControlModel model)
     {
-        return !model.IsLocked && model.Type != DesignerControlTypes.Group;
+        return !model.IsLocked && model.Type != DesignerControlTypes.Group && VM.CanResizeAxamlControl(model);
     }
 
     private Control CreatePreviewControl(DesignControlModel model)
@@ -7174,6 +7174,8 @@ public partial class MainWindow : Window
 
     private void OpenInlineCanvasEditor(DesignControlModel model, string propertyName)
     {
+        if (!VM.CanEditAxamlProperty(model, propertyName))
+            return;
         CloseInlineCanvasEditor(commitChanges: true);
 
         if (!ReferenceEquals(VM.SelectedControl, model))
@@ -7498,7 +7500,7 @@ public partial class MainWindow : Window
             VM.SelectSingleControl(model);
 
         _dragSelectionRoots.Clear();
-        _dragSelectionRoots.AddRange(VM.GetEditableSelectedRootControls());
+        _dragSelectionRoots.AddRange(VM.GetEditableSelectedRootControls().Where(VM.CanMoveAxamlControl));
         if (_dragSelectionRoots.Count == 0)
         {
             VM.TraceDocumentDebug(
@@ -7711,7 +7713,7 @@ public partial class MainWindow : Window
         if (sender is not Border border || border.Tag is not DesignControlModel model)
             return;
 
-        if (model.IsLocked)
+        if (model.IsLocked || !VM.CanResizeAxamlControl(model))
             return;
 
         // При старте ресайза запоминаем исходный размер, а дальше считаем дельту мыши.
