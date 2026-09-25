@@ -10,6 +10,8 @@ namespace FormDesigner.Models;
 /// </summary>
 public partial class DesignControlModel : ObservableObject
 {
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool UsesSourceLayout { get; set; }
     public const string DataGridTextAlignmentLeft = "Left";
     public const string DataGridTextAlignmentCenter = "Center";
     public const string DataGridTextAlignmentRight = "Right";
@@ -282,14 +284,14 @@ public partial class DesignControlModel : ObservableObject
     // Ограничения снизу нужны, чтобы элемент не становился совсем неуловимым для мыши.
     partial void OnWidthChanged(double value)
     {
-        if (value < 40)
+        if (!UsesSourceLayout && value < 40)
             Width = 40;
     }
 
     // Минимальная высота подбирается так, чтобы у контрола оставалась видимая зона ресайза.
     partial void OnHeightChanged(double value)
     {
-        if (value < 24)
+        if (!UsesSourceLayout && value < 24)
             Height = 24;
     }
 
@@ -492,6 +494,7 @@ public partial class DesignControlModel : ObservableObject
     {
         var clone = new DesignControlModel
         {
+            UsesSourceLayout = UsesSourceLayout,
             Type = Type,
             Name = Name,
             ParentId = ParentId,

@@ -45,12 +45,35 @@ public sealed class AxamlPatchWriter
             referencedIds.Add(reference.ControlId);
             if (!currentById.TryGetValue(reference.ControlId, out var fileControl))
             {
+                if (roundTripDocument.SourceMap.Controls.Any(r => r != reference && currentById.ContainsKey(r.ControlId)
+                    && r.Element.ElementSpan.Start > reference.Element.ElementSpan.Start && r.Element.ElementSpan.End <= reference.Element.ElementSpan.End))
+                {
+                    diagnostics.Add(new("AXAML_PATCH_BLOCKED", AxamlDiagnosticSeverity.Warning, "reason=DeletionWouldRemoveRetainedChild"));
+                    return AxamlPatchResult.Unsafe(source, diagnostics);
+                }
+                if (AxamlImportStructureReport.Descendants(reference.Element).Skip(1).Any(e =>
+                    roundTripDocument.CapabilityReport.Elements.Any(c => c.Element == e && c.Mode == AxamlElementCapabilityMode.Opaque)))
+                {
+                    diagnostics.Add(new("AXAML_PATCH_BLOCKED", AxamlDiagnosticSeverity.Warning, "reason=DeletionContainsPreservedSubtree"));
+                    return AxamlPatchResult.Unsafe(source, diagnostics);
+                }
+                if (roundTripDocument.SourceMap.Controls.Any(r => r != reference && !currentById.ContainsKey(r.ControlId)
+                    && r.Element.ElementSpan.Start < reference.Element.ElementSpan.Start && r.Element.ElementSpan.End >= reference.Element.ElementSpan.End))
+                    continue;
                 edits.Add(new AxamlTextEdit(reference.Element.ElementSpan.Start, reference.Element.ElementSpan.Length, string.Empty));
                 continue;
             }
 
             var control = ToRuntimeModel(fileControl);
-            if (fileControl.Type != reference.ControlType || !string.IsNullOrEmpty(fileControl.ParentId)
+            if (AxamlRoundTripPropertyMap.PropertiesFor(reference.ControlType).Any(p => reference.Capability.CanEditProperty(p.Key)
+                && reference.SnapshotValues.TryGetValue(p.Key, out var before) && p.Read(control) != before
+                && !p.TryWrite(new DesignControlModel { UsesSourceLayout = true }, p.Read(control))))
+            {
+                diagnostics.Add(new("AXAML_PATCH_BLOCKED", AxamlDiagnosticSeverity.Warning, "reason=InvalidPropertyValue"));
+                return AxamlPatchResult.Unsafe(source, diagnostics);
+            }
+            if (fileControl.Type != reference.ControlType || (fileControl.ParentId ?? "") != (reference.ParentId ?? "")
+                || reference.SnapshotValues.TryGetValue("@ChildLayoutMode", out var layout) && layout != fileControl.ChildLayoutMode
                 || AxamlRoundTripPropertyMap.PropertiesFor(reference.ControlType).Any(property =>
                     !reference.Capability.CanEditProperty(property.Key)
                     && reference.SnapshotValues.TryGetValue(property.Key, out var original) && property.Read(control) != original))
@@ -61,11 +84,24 @@ public sealed class AxamlPatchWriter
             AppendPropertyEdits(source, reference, control, edits);
         }
 
+        foreach (var siblings in roundTripDocument.SourceMap.Controls.GroupBy(r => r.ParentId ?? ""))
+        {
+            // StackOrder has layout semantics only in ordered panels, not in Canvas/Grid.
+            if (!roundTripDocument.SourceMap.TryGet(siblings.Key, out var parent)
+                || parent.Element.LocalName is not ("StackPanel" or "DockPanel")) continue;
+            var surviving = siblings.Where(r => currentById.ContainsKey(r.ControlId)).OrderBy(r => r.Element.ElementSpan.Start).ToList();
+            if (!surviving.Select(r => r.ControlId).SequenceEqual(surviving.OrderBy(r => currentById[r.ControlId].StackOrder).Select(r => r.ControlId)))
+            {
+                diagnostics.Add(new("AXAML_PATCH_BLOCKED", AxamlDiagnosticSeverity.Warning, "reason=SourceOrderChangeNotSupported"));
+                return AxamlPatchResult.Unsafe(source, diagnostics);
+            }
+        }
+
         var addedControls = document.Controls.Where(control => !referencedIds.Contains(control.Id)).ToList();
         if (addedControls.Count > 0)
         {
             if (!roundTripDocument.SourceMap.CanInsertControls || addedControls.Any(c =>
-                AxamlRoundTripPropertyMap.PropertiesFor(c.Type).Count == 0 || !string.IsNullOrEmpty(c.ParentId)))
+                !AxamlRoundTripPropertyMap.CanInsertControl(c.Type) || !string.IsNullOrEmpty(c.ParentId)))
             {
                 diagnostics.Add(new("AXAML_PATCH_BLOCKED", AxamlDiagnosticSeverity.Warning, "reason=NoSafeInsertionTargetOrUnsupportedControl"));
                 return AxamlPatchResult.Unsafe(source, diagnostics);
@@ -170,16 +206,17 @@ public sealed class AxamlPatchWriter
             ("Canvas.Top", control.Y.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture))
         };
 
-        var contentAttribute = control.Type switch
+        // A newly inserted node must carry its supported template values in the first patch.
+        // Otherwise reimport after ACK sees them as unsent changes and creates a phantom patch.
+        var defaults = AxamlImportService.CreateSourceControlDefaults(control.Type);
+        foreach (var property in AxamlRoundTripPropertyMap.PropertiesFor(control.Type))
         {
-            DesignerControlTypes.Button or DesignerControlTypes.CheckBox => "Content",
-            DesignerControlTypes.TextBox or DesignerControlTypes.TextBlock => "Text",
-            _ => null
-        };
-        if (!string.IsNullOrWhiteSpace(contentAttribute) && !string.IsNullOrWhiteSpace(control.Text))
-            attributes.Add((contentAttribute, control.Text));
-        if (control.Type == DesignerControlTypes.TextBox && !string.IsNullOrWhiteSpace(control.PlaceholderText))
-            attributes.Add(("Watermark", control.PlaceholderText));
+            if (property.Key is "Name" or "Width" or "Height" or "Canvas.Left" or "Canvas.Top"
+                or "GridRow" or "GridColumn" or "GridRowSpan" or "GridColumnSpan") continue;
+            var value = property.Read(control);
+            if (property.Key == "Text" || value != property.Read(defaults))
+                attributes.Add((property.PreferredAttributeName, value));
+        }
 
         var body = string.Join(newLine, attributes.Select(attribute => attributeIndent + attribute.Name + "=\"" + EscapeAttributeValue(attribute.Value) + "\""));
         return elementIndent + "<" + control.Type + newLine + body + " />";
@@ -205,8 +242,14 @@ public sealed class AxamlPatchWriter
 
     private static DesignControlModel ToRuntimeModel(DesignerControlFileModel control) => new()
     {
+        UsesSourceLayout = true,
         Id = control.Id,
         Type = control.Type,
+        ParentId = control.ParentId,
+        GridRow = control.GridRow, GridColumn = control.GridColumn,
+        GridRowSpan = control.GridRowSpan, GridColumnSpan = control.GridColumnSpan,
+        GridRowDefinitions = control.GridRowDefinitions, GridColumnDefinitions = control.GridColumnDefinitions,
+        LayoutOrientation = control.LayoutOrientation, LayoutSpacing = control.LayoutSpacing,
         Name = control.Name,
         Text = control.Text,
         PlaceholderText = control.PlaceholderText,

@@ -1,0 +1,4 @@
+<Window xmlns="https://github.com/avaloniaui">
+  <Window.Styles><Style Selector="Button"><Setter Property="Foreground" Value="Red" /></Style></Window.Styles>
+  <Grid><Button Name="Action" Content="Old" /></Grid>
+</Window>

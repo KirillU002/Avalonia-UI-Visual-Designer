@@ -1,0 +1,6 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:custom="using:UserApp">
+  <Grid RowDefinitions="Auto,*" custom:Unknown="KEEP">
+    <!-- COMMENT -->
+    <Button Name="Action" Grid.Row="1" Content="Old" custom:Foo="KEEP2" />
+  </Grid>
+</Window>

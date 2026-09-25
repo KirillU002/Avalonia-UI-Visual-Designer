@@ -4,7 +4,8 @@
 
 Этот Proof of Concept подтверждает, что один экземпляр Designer может использоваться как самостоятельное Avalonia-приложение и как Designer, подключённый к Visual Studio, без загрузки Avalonia или Eremex в `devenv.exe` и без второй реализации Canvas, Toolbox либо Property Inspector.
 
-Поддерживаемый AXAML subset намеренно минимален: `Window`/`UserControl`, один `Canvas`, `Button` и `TextBox`. Поддерживаемые изменения: `Content`/`Text`, `Width`, `Height`, `Canvas.Left`, `Canvas.Top`.
+Исходный PoC subset: `Window`/`UserControl`, один `Canvas`, `Button` и `TextBox`; изменения `Content`/`Text`, `Width`, `Height`, `Canvas.Left`, `Canvas.Top`.
+В 0.1.13 добавлен контролируемый импорт вложенных Grid, StackPanel и DockPanel. Актуальная поддержка, ограничения и реальные числа для MainWindow описаны в [отчёте layout import](AxamlLayoutImport.md).
 
 ## Проекты и границы
 

@@ -42,6 +42,7 @@ public sealed class AxamlElementCapability
 
 public sealed class AxamlCapabilityReport
 {
+    public AxamlImportStructureReport? Structure { get; internal set; }
     public List<AxamlCapabilityEntry> Entries { get; } = new();
     public List<AxamlElementCapability> Elements { get; } = new();
     public AxamlCapabilityLevel Level { get; private set; } = AxamlCapabilityLevel.FullyEditable;
@@ -52,9 +53,10 @@ public sealed class AxamlCapabilityReport
     public string StatusMessage => Level switch
     {
         AxamlCapabilityLevel.FullyEditable => "AXAML открыт для редактирования.",
+        AxamlCapabilityLevel.PartiallyEditable when Structure is { EmptyProjectionMessage.Length: > 0 } => Structure.EmptyProjectionMessage,
         AxamlCapabilityLevel.PartiallyEditable when !Elements.Any(e => e.Properties.Any(p => p.Mode == AxamlPropertyCapabilityMode.Editable)) =>
             "Частичная поддержка AXAML: в текущей проекции нет редактируемых элементов. Исходная разметка сохранена без изменений.",
-        AxamlCapabilityLevel.PartiallyEditable => "Частичное редактирование: поддерживаемые элементы доступны, остальные элементы и свойства AXAML будут сохранены без изменений.",
+        AxamlCapabilityLevel.PartiallyEditable => $"Частичное редактирование: импортировано {Structure?.ImportedElements} из {Structure?.VisualElements} визуальных элементов. Остальная разметка сохраняется без изменений.",
         _ => "Документ открыт только для чтения: " + ReadOnlyReason
     };
 
@@ -95,6 +97,7 @@ public sealed class AxamlSourceReference
 
     public string ControlId { get; }
     public string ControlType { get; }
+    public string? ParentId { get; internal set; }
     public AxamlElementSyntax Element { get; }
     public Dictionary<string, string> SnapshotValues { get; } = new(StringComparer.Ordinal);
     public AxamlElementCapability Capability { get; }

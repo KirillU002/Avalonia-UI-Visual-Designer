@@ -1,0 +1,3 @@
+<Window xmlns="https://github.com/avaloniaui" Width="600" Height="400">
+  <Grid><Button Name="Action" Content="Old" Width="100" Height="30" /></Grid>
+</Window>

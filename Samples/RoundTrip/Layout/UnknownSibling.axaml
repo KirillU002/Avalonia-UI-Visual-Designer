@@ -1,0 +1,3 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:custom="using:UserApp">
+  <Grid><Button Name="Action" Content="Old" /><custom:Unknown Foo="KEEP" /><TextBox Name="Input" Text="Hello" /></Grid>
+</Window>

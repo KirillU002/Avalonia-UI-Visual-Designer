@@ -1,0 +1,6 @@
+<Window xmlns="https://github.com/avaloniaui" Width="600" Height="400">
+  <DockPanel LastChildFill="True" Margin="10">
+    <Button Name="First" DockPanel.Dock="Left" Width="100" Content="Left" />
+    <TextBox Name="Second" Text="Fill" />
+  </DockPanel>
+</Window>

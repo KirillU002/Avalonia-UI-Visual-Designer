@@ -1,0 +1,8 @@
+<Window xmlns="https://github.com/avaloniaui" Width="600" Height="400">
+  <Grid>
+    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+    <Grid.ColumnDefinitions><ColumnDefinition Width="100" /><ColumnDefinition Width="2*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+    <TextBlock Name="Header" Height="30" Text="Header" Grid.ColumnSpan="3" />
+    <Button Name="Action" Content="Old" Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" />
+  </Grid>
+</Window>

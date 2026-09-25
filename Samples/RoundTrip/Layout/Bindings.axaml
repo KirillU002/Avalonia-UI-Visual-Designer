@@ -1,0 +1,3 @@
+<Window xmlns="https://github.com/avaloniaui">
+  <Grid><TextBlock Name="Bound" Text="{Binding Name}" /><Button Name="Action" Content="Old" /></Grid>
+</Window>

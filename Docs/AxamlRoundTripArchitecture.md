@@ -2,6 +2,9 @@
 
 ## Назначение
 
+Текущий этап 0.1.13: [Grid / StackPanel / DockPanel, структурный отчёт и результаты проверки настоящего MainWindow](AxamlLayoutImport.md).
+Ниже сохранено описание исходного subset; актуальные ограничения layout import приведены в отчёте этапа.
+
 `AXAML Import — Experimental` добавляет безопасный обратный поток для существующего Avalonia-кода:
 
 ```text

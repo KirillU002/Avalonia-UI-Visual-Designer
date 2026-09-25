@@ -34,6 +34,8 @@ public sealed class VsHostWindow : MainWindow
             Classes = { "toolbar-button" }
         };
         reloadButton.Click += (_, _) => ReloadRequested?.Invoke(this, EventArgs.Empty);
+        var detailsButton = new Button { Content = "Подробнее", Classes = { "toolbar-button" } };
+        detailsButton.Click += (_, _) => ShowAxamlImportReport();
 
         _statusText = new TextBlock
         {
@@ -59,7 +61,7 @@ public sealed class VsHostWindow : MainWindow
             {
                 Orientation = Orientation.Horizontal,
                 Spacing = 8,
-                Children = { _statusText, applyButton, reloadButton }
+                Children = { _statusText, detailsButton, applyButton, reloadButton }
             }
         };
 

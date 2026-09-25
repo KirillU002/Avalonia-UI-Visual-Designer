@@ -87,8 +87,8 @@ internal static partial class Program
         var source = ComplexSource();
         var imported = new AxamlImportService().Import(source);
         if (imported.CapabilityReport.Level != AxamlCapabilityLevel.PartiallyEditable
-            || imported.Document.Controls.Count != 3)
-            throw new InvalidOperationException("Unknown/custom namesakes and nested subtrees must remain opaque.");
+            || imported.Document.Controls.Count != 6 || imported.Document.Controls.Any(c => c.Name == "OpaqueButton"))
+            throw new InvalidOperationException("Known nested containers must import; custom namesakes must remain opaque.");
         var writer = new AxamlPatchWriter();
         var noEdit = writer.CreatePatch(imported.RoundTripDocument, imported.Document, source);
         if (noEdit.HasChanges || noEdit.PatchedText != source)

@@ -2818,6 +2818,10 @@ public partial class MainWindow : Window
             DesignerCanvas.Children.Clear();
             _wrapperByControlId.Clear();
 
+            VM.AxamlLayoutBounds = VM.ActiveAxamlSourceDocument is { } axaml
+                ? AxamlLayoutProjection.Arrange(axaml, VM.Controls, surfaceWidth, surfaceHeight)
+                : new Dictionary<string, Rect>();
+
             if (!VM.IsUserPreviewMode && VM.Controls.Count == 0)
             {
                 DesignerCanvas.Children.Add(CreateEmptyStateCard());
@@ -2863,6 +2867,14 @@ public partial class MainWindow : Window
             .ToList();
         if (children.Count == 0)
             return;
+
+        if (VM.IsAxamlRoundTripDocument)
+        {
+            foreach (var child in children)
+                if (VM.AxamlLayoutBounds.TryGetValue(child.Id, out var bounds))
+                    AddRenderedControl(host, child, bounds, useUserPreview);
+            return;
+        }
 
         var layoutMode = parent is null
             ? DesignerLayoutModes.NormalizeMode(VM.SurfaceLayoutMode)
@@ -2936,8 +2948,39 @@ public partial class MainWindow : Window
         return clone;
     }
 
+    public void ShowAxamlImportReport()
+    {
+        var window = new Window
+        {
+            Title = "AXAML Import Report", Width = 960, Height = 680,
+            MinWidth = 480, MinHeight = 320,
+            Content = new TextBox
+            {
+                Text = VM.ActiveAxamlCapabilityReport?.Structure?.Format() ?? "Отчёт AXAML Import отсутствует.",
+                IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.NoWrap,
+                Margin = new Thickness(12)
+            }
+        };
+        window.Show(this);
+    }
+
     private Control CreateEmptyStateCard()
     {
+        if (VM.ActiveAxamlCapabilityReport?.Structure is { EmptyProjectionMessage.Length: > 0 } report)
+        {
+            var details = new Button { Content = "Подробнее" };
+            details.Click += (_, _) => ShowAxamlImportReport();
+            var message = new Border
+            {
+                Width = 440, Padding = new Thickness(16), Background = Brushes.White,
+                Child = new StackPanel { Spacing = 12, Children =
+                {
+                    new TextBlock { Text = report.EmptyProjectionMessage, TextWrapping = TextWrapping.Wrap }, details
+                } }
+            };
+            Canvas.SetLeft(message, 24); Canvas.SetTop(message, 24);
+            return message;
+        }
         var card = new Border
         {
             Background = new SolidColorBrush(Color.Parse("#F8FAFC")),
@@ -4168,7 +4211,20 @@ public partial class MainWindow : Window
         var isPrimary = VM.SelectedControl?.Id == model.Id;
         var isUserPreviewMode = VM.IsUserPreviewMode;
         var renderModel = CreateRenderModel(model, renderedWidth, renderedHeight);
-        var preview = CreatePreviewControl(renderModel);
+        var preview = VM.IsAxamlRoundTripDocument && VM.CanHostChildren(model)
+            ? CreateGroupPreview(renderModel) : CreatePreviewControl(renderModel);
+        if (VM.IsAxamlRoundTripDocument && VM.CanHostChildren(model) && preview is Border containerPreview
+            && VM.ActiveAxamlSourceDocument!.SourceMap.TryGet(model.Id, out var sourceReference))
+        {
+            if (sourceReference.Element.FindAttribute("Background") is not null && sourceReference.Capability.CanEditProperty("Background"))
+                containerPreview.Background = ParseBrush(model.Background, "Transparent");
+            if (sourceReference.Element.LocalName == "Border")
+            {
+                containerPreview.BorderBrush = ParseBrush(model.BorderBrush, "Transparent");
+                containerPreview.BorderThickness = sourceReference.Element.FindAttribute("BorderThickness") is null ? new Thickness(0) : UniformThickness(model.BorderThickness);
+                containerPreview.CornerRadius = sourceReference.Element.FindAttribute("CornerRadius") is null ? new CornerRadius(0) : UniformCornerRadius(model.CornerRadius);
+            }
+        }
 
         var root = new Canvas
         {
@@ -4252,7 +4308,8 @@ public partial class MainWindow : Window
                     FontWeight = FontWeight.SemiBold,
                     Foreground = Brushes.White
                 },
-                IsHitTestVisible = false
+                IsHitTestVisible = false,
+                IsVisible = !VM.IsAxamlRoundTripDocument || string.IsNullOrEmpty(model.ParentId) || isSelected
             };
 
             Canvas.SetLeft(label, 8);
@@ -7724,6 +7781,11 @@ public partial class MainWindow : Window
         _resizeStart = GetDesignCanvasPosition(e);
         _startWidth = model.Width;
         _startHeight = model.Height;
+        if (VM.IsAxamlRoundTripDocument && VM.AxamlLayoutBounds.TryGetValue(model.Id, out var bounds))
+        {
+            _startWidth = bounds.Width;
+            _startHeight = bounds.Height;
+        }
         BuildSnapCandidateSnapshot(new[] { model });
         VM.BeginInspectorInteraction($"CanvasResize:{model.Name}:{model.Id}");
         VM.BeginUndoBatch();
@@ -7760,6 +7822,11 @@ public partial class MainWindow : Window
         var parent = VM.GetControl(_resizingModel.ParentId);
         var containerWidth = parent?.Width ?? VM.PreviewFormWidth;
         var containerHeight = parent?.Height ?? VM.PreviewFormHeight;
+        if (VM.IsAxamlRoundTripDocument && parent is not null && VM.AxamlLayoutBounds.TryGetValue(parent.Id, out var parentBounds))
+        {
+            containerWidth = parentBounds.Width;
+            containerHeight = parentBounds.Height;
+        }
         var maxWidth = Math.Max(40, containerWidth - _resizingModel.X);
         var maxHeight = Math.Max(24, containerHeight - _resizingModel.Y);
 

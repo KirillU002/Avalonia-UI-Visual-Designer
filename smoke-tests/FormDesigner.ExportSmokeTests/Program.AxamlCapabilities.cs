@@ -152,7 +152,7 @@ internal static partial class Program
 
     private static void AssertCapabilityNoCanvasSafeIdentity(SmokeContext context)
     {
-        foreach (var source in new[] { "<Window><Grid><Button Content=\"Keep\" /></Grid></Window>", "<custom:Root xmlns:custom=\"using:X\"><Canvas><Button /></Canvas></custom:Root>" })
+        foreach (var source in new[] { "<Window><TabControl><Button Content=\"Keep\" /></TabControl></Window>", "<custom:Root xmlns:custom=\"using:X\"><Canvas><Button /></Canvas></custom:Root>" })
         {
             var result = new AxamlImportService().Import(source);
             RequireCapability(result.CapabilityReport.Level == AxamlCapabilityLevel.PartiallyEditable && result.Document.Controls.Count == 0, "Unsupported layout is opaque, not an unsafe document.");

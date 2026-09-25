@@ -6585,14 +6585,17 @@ public partial class MainWindowViewModel : ObservableObject
 
     public (double X, double Y) GetAbsolutePosition(DesignControlModel control)
     {
-        var x = control.X;
-        var y = control.Y;
+        var bounds = IsAxamlRoundTripDocument && AxamlLayoutBounds.TryGetValue(control.Id, out var frame) ? frame : new Avalonia.Rect(control.X, control.Y, control.Width, control.Height);
+        var x = bounds.X;
+        var y = bounds.Y;
         var currentParent = GetControl(control.ParentId);
 
         while (currentParent is not null)
         {
-            x += currentParent.X;
-            y += currentParent.Y;
+            var parentBounds = IsAxamlRoundTripDocument && AxamlLayoutBounds.TryGetValue(currentParent.Id, out var parentFrame)
+                ? parentFrame : new Avalonia.Rect(currentParent.X, currentParent.Y, currentParent.Width, currentParent.Height);
+            x += parentBounds.X;
+            y += parentBounds.Y;
             currentParent = GetControl(currentParent.ParentId);
         }
 
@@ -6721,6 +6724,8 @@ public partial class MainWindowViewModel : ObservableObject
 
     public void ClampControlToSurface(DesignControlModel model)
     {
+        // Source layout can legitimately overflow, use Auto, or have negative Canvas offsets.
+        if (IsAxamlRoundTripDocument) return;
         var container = GetControl(model.ParentId);
         var containerWidth = container?.Width ?? PreviewFormWidth;
         var containerHeight = container?.Height ?? PreviewFormHeight;
@@ -6817,7 +6822,7 @@ public partial class MainWindowViewModel : ObservableObject
     {
         if (_activeAxamlRoundTripDocument is { } axaml && (!axaml.SourceMap.CanInsertControls
             || !axaml.CapabilityReport.CanSafelyPatch || !string.IsNullOrEmpty(parentId)
-            || AxamlRoundTripPropertyMap.PropertiesFor(type).Count == 0))
+            || !AxamlRoundTripPropertyMap.CanInsertControl(type)))
         {
             StatusText = "Добавление в этот AXAML-контейнер пока не поддерживается. Исходная разметка сохранена.";
             return null;
@@ -9353,6 +9358,8 @@ public partial class MainWindowViewModel : ObservableObject
     public bool IsAxamlRoundTripDocument => _activeAxamlRoundTripDocument is not null;
 
     public AxamlCapabilityReport? ActiveAxamlCapabilityReport => _activeAxamlRoundTripDocument?.CapabilityReport;
+    public AxamlRoundTripDocument? ActiveAxamlSourceDocument => _activeAxamlRoundTripDocument;
+    public IReadOnlyDictionary<string, Avalonia.Rect> AxamlLayoutBounds { get; set; } = new Dictionary<string, Avalonia.Rect>();
 
     public bool CanEditAxamlProperty(DesignControlModel? control, string propertyKey)
     {
@@ -9409,10 +9416,30 @@ public partial class MainWindowViewModel : ObservableObject
         if (_activeAxamlRoundTripDocument is null)
             throw new InvalidOperationException("AXAML round-trip context is unavailable.");
 
-        var idsByName = Controls
+        // Rebase against the acknowledged snapshot, not edits made while an ACK was in flight.
+        if (acknowledgedSnapshot is not null)
+            FormDesigner.DesignerSystem.DesignerDocumentFormat.Validate(acknowledgedSnapshot,
+                FormDesigner.DesignerSystem.DesignerDocumentKind.ProjectJson, nameof(MarkAxamlRoundTripSaved));
+        var acknowledgedDocument = acknowledgedSnapshot is null ? CreateDocumentFileModel()
+            : JsonSerializer.Deserialize<DesignerDocumentFileModel>(acknowledgedSnapshot, JsonOptions)
+                ?? throw new InvalidOperationException("AXAML patch acknowledgement has no designer snapshot.");
+        var appliedPatch = _axamlPatchWriter.CreatePatch(_activeAxamlRoundTripDocument, acknowledgedDocument);
+        if (!appliedPatch.CanApply || appliedPatch.PatchedText != patchedText)
+            throw new InvalidOperationException("AXAML patch acknowledgement does not match the source projection.");
+        var newElements = AxamlImportStructureReport.Descendants(AxamlSyntaxDocument.Parse(patchedText).Root)
+            .ToDictionary(e => e.OpeningTagSpan.Start);
+        var idsByName = acknowledgedDocument.Controls
             .Where(control => !string.IsNullOrWhiteSpace(control.Name))
             .GroupBy(control => control.Name, StringComparer.Ordinal)
             .ToDictionary(group => group.Key, group => group.First().Id, StringComparer.Ordinal);
+        foreach (var reference in _activeAxamlRoundTripDocument.SourceMap.Controls.Where(r => acknowledgedDocument.Controls.Any(c => c.Id == r.ControlId)))
+        {
+            var start = reference.Element.OpeningTagSpan.Start;
+            var newStart = start + appliedPatch.Edits.Where(e => e.Start < start && e.End <= start).Sum(e => e.NewText.Length - e.Length);
+            if (!newElements.TryGetValue(newStart, out var element) || element.Name != reference.Element.Name)
+                throw new InvalidOperationException("AXAML source identity could not be rebased safely.");
+            idsByName["@path:" + AxamlImportStructureReport.PathOf(element)] = reference.ControlId;
+        }
         var refreshed = _axamlImportService.Import(patchedText, path, idsByName);
         refreshed.RoundTripDocument.SetTextEncoding(_activeAxamlRoundTripDocument.TextEncoding);
         _activeAxamlRoundTripDocument = refreshed.RoundTripDocument;
@@ -21082,10 +21109,11 @@ public partial class MainWindowViewModel : ObservableObject
         return source;
     }
 
-    private static DesignControlModel FromControlFileModel(DesignerControlFileModel controlFile)
+    private DesignControlModel FromControlFileModel(DesignerControlFileModel controlFile)
     {
         var model = new DesignControlModel
         {
+            UsesSourceLayout = IsAxamlRoundTripDocument,
             Id = string.IsNullOrWhiteSpace(controlFile.Id) ? Guid.NewGuid().ToString("N") : controlFile.Id,
             Type = controlFile.Type,
             Name = controlFile.Name,

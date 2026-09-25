@@ -1,0 +1,6 @@
+<Window xmlns="https://github.com/avaloniaui" Width="600" Height="400">
+  <Grid><StackPanel Spacing="10" Margin="12" Orientation="Vertical">
+    <Button Name="First" Content="One" Width="100" Height="20" />
+    <TextBox Name="Second" Text="Two" Width="100" Height="20" />
+  </StackPanel></Grid>
+</Window>
