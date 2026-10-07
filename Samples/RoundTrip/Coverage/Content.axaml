@@ -1,0 +1,10 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Width="600" Height="400">
+    <ScrollViewer x:Name="Scroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <ScrollViewer.Content>
+            <StackPanel>
+                <Button x:Name="Owner"><Button.Content><TextBlock x:Name="Label" Text="Old" /></Button.Content></Button>
+                <TextBox x:Name="Input" Text="Hello" Height="600" />
+            </StackPanel>
+        </ScrollViewer.Content>
+    </ScrollViewer>
+</Window>

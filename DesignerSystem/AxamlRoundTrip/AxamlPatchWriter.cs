@@ -65,7 +65,7 @@ public sealed class AxamlPatchWriter
             }
 
             var control = ToRuntimeModel(fileControl);
-            if (AxamlRoundTripPropertyMap.PropertiesFor(reference.ControlType).Any(p => reference.Capability.CanEditProperty(p.Key)
+            if (AxamlRoundTripPropertyMap.PropertiesFor(reference.Element.LocalName).Any(p => reference.Capability.CanEditProperty(p.Key)
                 && reference.SnapshotValues.TryGetValue(p.Key, out var before) && p.Read(control) != before
                 && !p.TryWrite(new DesignControlModel { UsesSourceLayout = true }, p.Read(control))))
             {
@@ -74,7 +74,7 @@ public sealed class AxamlPatchWriter
             }
             if (fileControl.Type != reference.ControlType || (fileControl.ParentId ?? "") != (reference.ParentId ?? "")
                 || reference.SnapshotValues.TryGetValue("@ChildLayoutMode", out var layout) && layout != fileControl.ChildLayoutMode
-                || AxamlRoundTripPropertyMap.PropertiesFor(reference.ControlType).Any(property =>
+                || AxamlRoundTripPropertyMap.PropertiesFor(reference.Element.LocalName).Any(property =>
                     !reference.Capability.CanEditProperty(property.Key)
                     && reference.SnapshotValues.TryGetValue(property.Key, out var original) && property.Read(control) != original))
             {
@@ -88,7 +88,7 @@ public sealed class AxamlPatchWriter
         {
             // StackOrder has layout semantics only in ordered panels, not in Canvas/Grid.
             if (!roundTripDocument.SourceMap.TryGet(siblings.Key, out var parent)
-                || parent.Element.LocalName is not ("StackPanel" or "DockPanel")) continue;
+                || parent.Element.LocalName is not ("StackPanel" or "DockPanel" or "WrapPanel" or "TabControl")) continue;
             var surviving = siblings.Where(r => currentById.ContainsKey(r.ControlId)).OrderBy(r => r.Element.ElementSpan.Start).ToList();
             if (!surviving.Select(r => r.ControlId).SequenceEqual(surviving.OrderBy(r => currentById[r.ControlId].StackOrder).Select(r => r.ControlId)))
             {
@@ -136,7 +136,7 @@ public sealed class AxamlPatchWriter
     private static void AppendPropertyEdits(string source, AxamlSourceReference reference, DesignControlModel current, ICollection<AxamlTextEdit> edits)
     {
         var additions = new List<(string Name, string Value)>();
-        foreach (var property in AxamlRoundTripPropertyMap.PropertiesFor(reference.ControlType))
+        foreach (var property in AxamlRoundTripPropertyMap.PropertiesFor(reference.Element.LocalName))
         {
             if (!reference.Capability.CanEditProperty(property.Key))
                 continue;
@@ -240,8 +240,10 @@ public sealed class AxamlPatchWriter
             .Replace(quote.ToString(), quote == '\'' ? "&apos;" : "&quot;", StringComparison.Ordinal)
             .Replace("<", "&lt;", StringComparison.Ordinal).Replace(">", "&gt;", StringComparison.Ordinal);
 
-    private static DesignControlModel ToRuntimeModel(DesignerControlFileModel control) => new()
+    private static DesignControlModel ToRuntimeModel(DesignerControlFileModel control)
     {
+        var model = new DesignControlModel
+        {
         UsesSourceLayout = true,
         Id = control.Id,
         Type = control.Type,
@@ -271,5 +273,9 @@ public sealed class AxamlPatchWriter
         Y = control.Y,
         Width = control.Width,
         Height = control.Height
-    };
+        };
+        foreach (var property in control.CustomProperties)
+            model.CustomProperties.Add(new DesignPropertyValueModel { Key = property.Key, ValueJson = property.ValueJson });
+        return model;
+    }
 }

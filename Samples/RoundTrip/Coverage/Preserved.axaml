@@ -1,0 +1,9 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:custom="using:Unknown">
+    <Window.Resources><ResourceDictionary><x:String x:Key="Title">Resource title</x:String></ResourceDictionary></Window.Resources>
+    <Window.DataTemplates><DataTemplate><Button Content="Not a live control" /></DataTemplate></Window.DataTemplates>
+    <TabControl x:Name="Tabs" SelectedIndex="{Binding Index}">
+        <TabItem x:Name="Page" Header="{DynamicResource Title}">
+            <Grid><Button x:Name="Editable" Content="Old" custom:Unknown="KEEP" /><custom:Container><Button Content="Opaque child" /></custom:Container></Grid>
+        </TabItem>
+    </TabControl>
+</Window>

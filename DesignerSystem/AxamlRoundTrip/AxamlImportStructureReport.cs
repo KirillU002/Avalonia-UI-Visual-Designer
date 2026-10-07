@@ -22,6 +22,10 @@ public sealed class AxamlImportStructureReport
     public int Bindings { get; init; }
     public int Styles { get; init; }
     public int Setters { get; init; }
+    public int PropertyElements { get; init; }
+    public int TemplateElements { get; init; }
+    public int ResourceElements { get; init; }
+    public IReadOnlyList<AxamlBlockerImpact> Blockers { get; init; } = Array.Empty<AxamlBlockerImpact>();
     public string FirstBlocker { get; init; } = "";
     public IReadOnlyList<string> Lines { get; init; } = Array.Empty<string>();
     public string EmptyProjectionMessage => VisualElements > ImplicitContainers && ImportedElements == 0
@@ -35,6 +39,12 @@ public sealed class AxamlImportStructureReport
         text.AppendLine($"XML elements: {TotalElements}; live visual candidates: {VisualElements}");
         text.AppendLine($"Designer controls: {ImportedElements}; implicit Canvas: {ImplicitContainers}; partial imported: {PartialElements}; opaque/skipped visual: {OpaqueVisualElements}; skipped subtrees: {SkippedSubtrees}");
         text.AppendLine($"Bindings: {Bindings}; Styles: {Styles}; Setters: {Setters}\nFirst projection blocker: {FirstBlocker}");
+        text.AppendLine($"Property wrappers: {PropertyElements}; template roots: {TemplateElements}; resource roots: {ResourceElements}");
+        text.AppendLine("BLOCKER IMPACT: Type | Instances | Blocked descendants | Known descendants (upper bound) | Reachable known descendants | Category");
+        foreach (var group in Blockers.GroupBy(b => b.Type).OrderByDescending(g => g.Sum(b => b.BlockedVisualDescendants)))
+            text.AppendLine($"{group.Key} | {group.Count()} | {group.Sum(b => b.BlockedVisualDescendants)} | {group.Sum(b => b.KnownVisualDescendants)} | {group.Sum(b => b.ReachableKnownDescendants)} | {group.First().Category}");
+        foreach (var blocker in Blockers)
+            text.AppendLine($"BLOCKER path={blocker.Path}; namespace={blocker.Namespace}; children={blocker.DirectChildren}; visualDescendants={blocker.BlockedVisualDescendants}; knownDescendants={blocker.KnownVisualDescendants}; reason={blocker.Reason}");
         text.AppendLine("Layout uses Avalonia Measure/Arrange. Styles, templates, bindings and custom controls are preserved, not executed.");
         foreach (var line in Lines) text.AppendLine(line);
         return text.ToString();
@@ -65,6 +75,7 @@ public sealed class AxamlImportStructureReport
             if (IsPropertyElement(node) && node.LocalName.Split('.').Last() is not ("Content" or "Child" or "Children" or "Items")) return false;
             if (node.LocalName is "Styles" or "Style" or "Setter" or "Resources" or "ResourceDictionary"
                 or "DataTemplate" or "ControlTemplate" or "TreeDataTemplate" or "ItemsPanelTemplate"
+                or "DataTemplates" or "ControlTheme" or "StyleInclude" or "ResourceInclude"
                 or "RowDefinition" or "ColumnDefinition" or "Binding" or "MultiBinding") return false;
         }
         return true;
@@ -111,6 +122,10 @@ public sealed class AxamlImportStructureReport
                 || a.Value.StartsWith("{CompiledBinding", StringComparison.Ordinal) || a.Value.StartsWith("{ReflectionBinding", StringComparison.Ordinal)))
                 + elements.Count(e => e.LocalName == "Binding"),
             Styles = elements.Count(e => e.LocalName == "Style"), Setters = elements.Count(e => e.LocalName == "Setter"),
+            PropertyElements = elements.Count(IsPropertyElement),
+            TemplateElements = elements.Count(e => e.LocalName is "DataTemplate" or "ControlTemplate" or "TreeDataTemplate" or "ItemsPanelTemplate" or "DataTemplates"),
+            ResourceElements = elements.Count(e => e.LocalName is "Resources" or "ResourceDictionary" or "ResourceInclude" || e.LocalName.EndsWith(".Resources", StringComparison.Ordinal)),
+            Blockers = AxamlBlockerImpact.Analyze(syntax, capability),
             FirstBlocker = blockers.FirstOrDefault() is { } first ? $"{PathOf(first)}: {opaque[first].Reason}" : "none",
             Lines = lines
         };

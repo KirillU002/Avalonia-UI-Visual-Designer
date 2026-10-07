@@ -2872,7 +2872,7 @@ public partial class MainWindow : Window
         {
             foreach (var child in children)
                 if (VM.AxamlLayoutBounds.TryGetValue(child.Id, out var bounds))
-                    AddRenderedControl(host, child, bounds, useUserPreview);
+                    if (bounds.Width > 0 && bounds.Height > 0) AddRenderedControl(host, child, bounds, useUserPreview);
             return;
         }
 
@@ -4213,6 +4213,16 @@ public partial class MainWindow : Window
         var renderModel = CreateRenderModel(model, renderedWidth, renderedHeight);
         var preview = VM.IsAxamlRoundTripDocument && VM.CanHostChildren(model)
             ? CreateGroupPreview(renderModel) : CreatePreviewControl(renderModel);
+        if (VM.ActiveAxamlSourceDocument?.SourceMap.TryGet(model.Id, out var tabReference) == true
+            && tabReference.Element.LocalName == "TabControl")
+        {
+            var tabs = new TabControl { Width = renderedWidth, Height = renderedHeight, IsHitTestVisible = false };
+            foreach (var child in VM.Controls.Where(c => c.ParentId == model.Id).OrderBy(c => c.StackOrder))
+                tabs.Items.Add(new TabItem { Header = AxamlControlMetadata.Find("TabItem")!.LiteralProperties[0].Read(child) });
+            var selected = AxamlControlMetadata.Find("TabControl")!.LiteralProperties[0].Read(model);
+            tabs.SelectedIndex = int.TryParse(selected, out var index) ? index : 0;
+            preview = tabs;
+        }
         if (VM.IsAxamlRoundTripDocument && VM.CanHostChildren(model) && preview is Border containerPreview
             && VM.ActiveAxamlSourceDocument!.SourceMap.TryGet(model.Id, out var sourceReference))
         {

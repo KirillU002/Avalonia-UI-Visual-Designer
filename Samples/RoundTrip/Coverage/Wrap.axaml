@@ -1,0 +1,7 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Width="600" Height="400">
+    <WrapPanel x:Name="Wrap" Width="250" Orientation="Horizontal">
+        <Button x:Name="One" Width="100" Height="30" Content="One" />
+        <Button x:Name="Two" Width="100" Height="30" Content="Two" />
+        <Button x:Name="Three" Width="100" Height="30" Content="Three" />
+    </WrapPanel>
+</Window>

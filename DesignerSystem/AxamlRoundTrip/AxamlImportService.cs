@@ -15,16 +15,6 @@ namespace FormDesigner.DesignerSystem.AxamlRoundTrip;
 /// </summary>
 public sealed class AxamlImportService
 {
-    private static readonly HashSet<string> SupportedControlTypes = new(StringComparer.Ordinal)
-    {
-        DesignerControlTypes.Button,
-        DesignerControlTypes.TextBox,
-        DesignerControlTypes.TextBlock,
-        DesignerControlTypes.Border,
-        DesignerControlTypes.CheckBox,
-        DesignerControlTypes.LayoutGrid, DesignerControlTypes.StackLayout, "DockPanel", "Canvas"
-    };
-
     public AxamlImportResult Import(
         string sourceText,
         string? sourcePath = null,
@@ -86,16 +76,23 @@ public sealed class AxamlImportService
                 AddOpaqueSubtree(element, "PropertyElementPreserved", report, diagnostics);
                 return;
             }
-            if (!IsAvaloniaElement(element) || !SupportedControlTypes.Contains(controlType))
+            var metadata = AxamlControlMetadata.Find(controlType);
+            if (!IsAvaloniaElement(element) || metadata is null)
             {
                 AddOpaqueSubtree(element, IsAvaloniaElement(element) ? "UnsupportedControl" : "UnsupportedCustomControl", report, diagnostics);
                 return;
             }
 
-            var isContainer = controlType is "Grid" or "StackPanel" or "DockPanel" or "Canvas" or "Border";
-            var visualChildren = element.Children.Where(e => !AxamlImportStructureReport.IsPropertyElement(e)).ToArray();
+            var isContainer = metadata.ContainerKind != AxamlContainerKind.None;
+            var childWrappers = element.Children.Where(metadata.IsChildProperty).ToArray();
+            var directChildren = element.Children.Where(e => !AxamlImportStructureReport.IsPropertyElement(e)).ToArray();
+            var visualChildren = directChildren.Concat(childWrappers.SelectMany(e => e.Children)).ToArray();
             if ((!isContainer && (visualChildren.Length > 0 || HasUnsupportedInnerContent(syntax.Text, element)))
-                || (controlType == "Border" && visualChildren.Length > 1))
+                || (visualChildren.Length == 0 && metadata.ContainerKind is AxamlContainerKind.SingleContent or AxamlContainerKind.HeaderedContent
+                    && HasUnsupportedInnerContent(syntax.Text, element))
+                || (metadata.ContainerKind is AxamlContainerKind.SingleContent or AxamlContainerKind.HeaderedContent or AxamlContainerKind.Decorator && visualChildren.Length > 1)
+                || childWrappers.Length > 1 || (childWrappers.Length > 0 && directChildren.Length > 0)
+                || (visualChildren.Length > 0 && element.FindAttribute(metadata.ChildProperty ?? "") is not null))
             {
                 AddOpaqueSubtree(element, "UnsupportedContent", report, diagnostics);
                 return;
@@ -105,10 +102,11 @@ public sealed class AxamlImportService
             var control = CreateControl(controlType, element, knownControlIdsByName, diagnostics, capability);
             // Generic containers already participate in the shared ParentId hierarchy.
             // Source type remains on Element; it is never regenerated from the Group alias.
-            control.Type = controlType is "DockPanel" or "Canvas" ? DesignerControlTypes.Group : controlType;
+            control.Type = metadata.ProjectionType;
             control.ParentId = parentId ?? "";
             control.StackOrder = element.Parent?.Children.IndexOf(element) ?? 0;
-            control.ChildLayoutMode = isContainer ? DesignerLayoutModes.GetModeForControlType(control.Type) : "";
+            control.ChildLayoutMode = isContainer && (controlType != "Button" || visualChildren.Length > 0)
+                ? DesignerLayoutModes.GetModeForControlType(control.Type) : "";
             if (controlType == "StackPanel" && element.FindAttribute("Spacing") is null) control.LayoutSpacing = 0;
             if (controlType == "Grid")
             {
@@ -129,13 +127,16 @@ public sealed class AxamlImportService
                 foreach (var property in capability.Properties.Where(p => p.SourceName == sourceName).ToArray())
                     capability.Properties[capability.Properties.IndexOf(property)] = property with { Mode = AxamlPropertyCapabilityMode.Preserved, Reason = "PropertyElementValue" };
             }
+            if (visualChildren.Length > 0 && metadata.ContainerKind == AxamlContainerKind.SingleContent)
+                foreach (var property in capability.Properties.Where(p => p.SourceName == metadata.ChildProperty).ToArray())
+                    capability.Properties[capability.Properties.IndexOf(property)] = property with { Mode = AxamlPropertyCapabilityMode.Preserved, Reason = "VisualContentChild" };
             var zIndex = int.TryParse(element.GetAttributeValue("Canvas.ZIndex"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedZIndex)
                 ? parsedZIndex
                 : sourceOrder;
             importedControls.Add((ToFileModel(control), zIndex, sourceOrder));
             sourceOrder++;
             var reference = new AxamlSourceReference(control.Id, control.Type, element, capability) { ParentId = parentId };
-            foreach (var property in AxamlRoundTripPropertyMap.PropertiesFor(control.Type))
+            foreach (var property in AxamlRoundTripPropertyMap.PropertiesFor(controlType))
             {
                 reference.SnapshotValues[property.Key] = property.Read(control);
             }
@@ -147,8 +148,24 @@ public sealed class AxamlImportService
                 "AXAML_IMPORT_CONTROL",
                 AxamlDiagnosticSeverity.Information,
                 $"type={controlType}; name={control.Name}; supported=true"));
+            void ImportChild(AxamlElementSyntax child)
+            {
+                if (metadata.ItemType is not null && (element.FindAttribute("ItemsSource") is not null
+                    || !IsAvaloniaElement(child) || child.LocalName != metadata.ItemType))
+                    AddOpaqueSubtree(child, "UnsupportedStaticItemOrItemsSource", report, diagnostics);
+                else ImportElement(child, control.Id, controlType);
+            }
             foreach (var child in element.Children)
-                ImportElement(child, control.Id, controlType);
+            {
+                if (metadata.IsChildProperty(child))
+                {
+                    report.AddElement(CreateContainerCapability(child));
+                    foreach (var item in child.Children) ImportChild(item);
+                }
+                else if (AxamlImportStructureReport.IsPropertyElement(child))
+                    AddOpaqueSubtree(child, "PropertyElementPreserved", report, diagnostics);
+                else ImportChild(child);
+            }
         }
 
         if (supportedRoot)
@@ -312,6 +329,7 @@ public sealed class AxamlImportService
         StackOrder = model.StackOrder,
         GridRowDefinitions = model.GridRowDefinitions, GridColumnDefinitions = model.GridColumnDefinitions,
         ShowGridLines = model.ShowGridLines,
+        CustomProperties = model.CustomProperties.Select(p => new DesignPropertyValueFileModel { Key = p.Key, ValueJson = p.ValueJson }).ToList(),
         Name = model.Name,
         Text = model.Text,
         PlaceholderText = model.PlaceholderText,
@@ -450,14 +468,19 @@ internal static class AxamlRoundTripPropertyMap
         Text("Text", "Content", control => control.Text, (control, value) => control.Text = value)
     }).ToArray();
 
-    public static IReadOnlyList<AxamlRoundTripProperty> PropertiesFor(string controlType) => controlType switch
+    public static IReadOnlyList<AxamlRoundTripProperty> PropertiesFor(string controlType) => StandardPropertiesFor(controlType)
+        .Concat(AxamlControlMetadata.Find(controlType)?.LiteralProperties.Select(p => new AxamlRoundTripProperty(p.Key,
+            controlType == "ScrollViewer" ? new[] { p.Key, "ScrollViewer." + p.Key } : new[] { p.Key }, p.Read, p.Write))
+            ?? Enumerable.Empty<AxamlRoundTripProperty>()).ToArray();
+
+    private static IReadOnlyList<AxamlRoundTripProperty> StandardPropertiesFor(string controlType) => controlType switch
     {
         DesignerControlTypes.Button => Button,
         DesignerControlTypes.TextBox => TextBox,
         DesignerControlTypes.TextBlock => TextBlock,
         DesignerControlTypes.CheckBox => CheckBox,
         DesignerControlTypes.Border => Common,
-        DesignerControlTypes.Group or "DockPanel" or "Canvas" => Common,
+        DesignerControlTypes.Group or "DockPanel" or "Canvas" or "ScrollViewer" or "TabControl" or "TabItem" or "WrapPanel" => Common,
         DesignerControlTypes.LayoutGrid => Common.Concat(new[]
         {
             Text("GridRowDefinitions", "RowDefinitions", c => c.GridRowDefinitions, (c, v) => c.GridRowDefinitions = v),

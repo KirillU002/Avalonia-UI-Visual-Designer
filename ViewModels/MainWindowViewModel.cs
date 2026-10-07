@@ -4493,6 +4493,9 @@ public partial class MainWindowViewModel : ObservableObject
 
     public bool CanHostChildren(DesignControlModel? control)
     {
+        if (control is not null && _activeAxamlRoundTripDocument?.SourceMap.TryGet(control.Id, out var reference) == true
+            && AxamlControlMetadata.Find(reference.Element.LocalName)?.ContainerKind == AxamlContainerKind.SingleContent
+            && Controls.Any(c => c.ParentId == control.Id)) return true;
         return control is not null && GetDescriptor(control.Type).CanHostChildren;
     }
 
@@ -10683,6 +10686,25 @@ public partial class MainWindowViewModel : ObservableObject
             yield return CreateDescriptorPropertyRow(descriptor);
 
         var descriptorKeys = descriptorProperties.Select(descriptor => descriptor.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (_activeAxamlRoundTripDocument?.SourceMap.TryGet(control.Id, out var axamlReference) == true)
+        {
+            var metadata = AxamlControlMetadata.Find(axamlReference.Element.LocalName);
+            foreach (var property in metadata?.LiteralProperties ?? Array.Empty<AxamlLiteralProperty>())
+            {
+                descriptorKeys.Add(property.Key);
+                void SetValue(string value) { if (property.Write(control, value)) NotifyDesignerStateChanged(); }
+                if (property.IsInteger)
+                    yield return CreateNumberRow(PropertyGridCategoryCommon, property.Key, property.Key,
+                        int.TryParse(property.Read(control), out var index) ? index : 0, "Avalonia " + property.Key,
+                        value => SetValue(((int)Math.Round(value)).ToString(CultureInfo.InvariantCulture)));
+                else if (property.Options is not null)
+                    yield return CreateEnumRow(PropertyGridCategoryCommon, property.Key, property.Key, property.Read(control),
+                        property.Options, "Avalonia " + property.Key, SetValue);
+                else
+                    yield return CreateTextRow(PropertyGridCategoryCommon, property.Key, property.Key, property.Read(control),
+                        "Avalonia " + property.Key, SetValue);
+            }
+        }
         foreach (var customProperty in control.CustomProperties.Where(property =>
                      !descriptorKeys.Contains(property.Key)
                      && !IsInternalPluginDependencyMetadata(property.Key)))

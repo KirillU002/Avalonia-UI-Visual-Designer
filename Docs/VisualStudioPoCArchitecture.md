@@ -122,6 +122,9 @@ Hardening сложного AXAML и lifecycle в версии 0.1.11 описа�
 [AxamlVisualStudioHardening.md](AxamlVisualStudioHardening.md).
 Granular capability и partial editing в версии 0.1.12 описаны в
 [AxamlGranularCapabilities.md](AxamlGranularCapabilities.md).
+Layout containers Phase 2 описаны в [AxamlLayoutImport.md](AxamlLayoutImport.md).
+Blocker impact, TabControl/TabItem/ScrollViewer/WrapPanel и coverage Phase 3
+в версии 0.1.14 описаны в [AxamlCoveragePhase3.md](AxamlCoveragePhase3.md).
 
 `FormDesigner.ExportSmokeTests` содержит: `VsHostProtocolHandshakeWorks`, `VsHostCanStartAndAcceptConnection`, `VsHostUsesSharedDesignerSurface`, `VsHostReturnsMinimalAxamlPatch`, `VsHostRoundTripPreservesComment`, `VsHostRoundTripPreservesUnknownAttribute`, `VsHostRejectsPatchForStaleDocumentVersion` и `BridgeSurvivesVsHostDisconnect`.
 

@@ -1,0 +1,14 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:custom="using:Unknown" Width="600" Height="400">
+    <!-- KEEP -->
+    <Window.Styles><Style Selector="Button"><Setter Property="Foreground" Value="Red" /></Style></Window.Styles>
+    <TabControl x:Name="Tabs" SelectedIndex="0">
+        <TabControl.Items>
+            <TabItem x:Name="FirstPage" Header="Old" custom:Something="KEEP">
+                <TabItem.Content><Grid><Button x:Name="First" Content="First" Width="100" Height="40" /></Grid></TabItem.Content>
+            </TabItem>
+            <TabItem x:Name="SecondPage" Header="Two">
+                <StackPanel><TextBox x:Name="Second" Text="Second" Height="40" /></StackPanel>
+            </TabItem>
+        </TabControl.Items>
+    </TabControl>
+</Window>
