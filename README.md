@@ -4,7 +4,7 @@
 
 Avalonia UI Visual Designer - визуальный дизайнер форм для Avalonia UI. Alpha 3.0 - стабилизационный релиз после Alpha 2.0: основной фокус сделан на стабильность Multi Form, Property Inspector, Export, DataGrid, DLL Import и соответствие Preview/Export.
 
-![C#](https://img.shields.io/badge/C%23-.NET_6-blue?style=for-the-badge&logo=csharp)
+![C#](https://img.shields.io/badge/C%23-.NET_8-blue?style=for-the-badge&logo=csharp)
 ![Avalonia](https://img.shields.io/badge/Avalonia-11.1.1-purple?style=for-the-badge)
 ![Status](https://img.shields.io/badge/status-Alpha_3.0-orange?style=for-the-badge)
 
@@ -46,7 +46,8 @@ Avalonia UI Visual Designer - визуальный дизайнер форм д�
 
 ## Требования
 
-- .NET 6 SDK
+- .NET 8 SDK или более новый; для запуска Designer/VsHost требуется .NET 8 runtime
+- VSIX bridge сохраняет net472; generated export projects пока сохраняют net6.0
 - Avalonia NuGet packages 11.1.1
 - Windows для desktop-сценариев разработки
 
@@ -76,6 +77,7 @@ Smoke tests:
 - [DeveloperArchitecture](Docs/DeveloperArchitecture.md) - техническая документация для разработчиков.
 - [Alpha 0.2 manual checklist](Docs/ALPHA_0_2_MANUAL_TEST_CHECKLIST.md)
 - [Plugin guide](Docs/PluginGuide.md)
+- [Контролируемая миграция .NET 8](Docs/Net8Migration.md)
 - [Undo/Redo smoke checklist](Docs/UndoRedoSmokeTest.md)
 
 ## Примечания

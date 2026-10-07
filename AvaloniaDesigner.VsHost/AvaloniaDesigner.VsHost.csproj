@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net6.0</TargetFramework>
+    <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
@@ -10,4 +10,23 @@
     <ProjectReference Include="..\FormDesigner.csproj" />
     <ProjectReference Include="..\AvaloniaDesigner.Host.Protocol\AvaloniaDesigner.Host.Protocol.csproj" />
   </ItemGroup>
+
+  <!-- Plugins are loaded dynamically, so ProjectReference runtime discovery cannot copy them. -->
+  <Target Name="CopyDesignerPluginRuntime" AfterTargets="Build">
+    <ItemGroup>
+      <DesignerPluginRuntime Include="..\bin\$(Configuration)\$(TargetFramework)\Plugins\**\*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(DesignerPluginRuntime)"
+          DestinationFiles="@(DesignerPluginRuntime->'$(TargetDir)Plugins\%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+  </Target>
+
+  <Target Name="CopyDesignerPluginRuntimeToPublish" AfterTargets="Publish">
+    <ItemGroup>
+      <PublishedDesignerPluginRuntime Include="$(TargetDir)Plugins\**\*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(PublishedDesignerPluginRuntime)"
+          DestinationFiles="@(PublishedDesignerPluginRuntime->'$(PublishDir)Plugins\%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+  </Target>
 </Project>

@@ -42,6 +42,10 @@ User action
 
 ## 2. Архитектура приложения
 
+Runtime projects используют `net8.0`, VSIX bridge сохраняет `net472`, Host.Protocol
+собирается для `netstandard2.0;net8.0`. NuGet versions при миграции не обновлялись.
+Аудит и границы совместимости: [Net8Migration.md](Net8Migration.md).
+
 Проект построен вокруг MVVM, но исторически `MainWindowViewModel` стал центральным orchestration layer. Он управляет project state, active form, selection, PropertyGrid, export generation, DataGrid/DataSource state, Logic Editor, diagnostics и settings bindings. `MainWindow.axaml.cs` содержит существенную часть real UI behavior: canvas rendering, pointer handling, drag/drop, dialogs, preview opening, clipboard, file dialogs и некоторые визуальные repair-операции.
 
 Ключевой принцип:

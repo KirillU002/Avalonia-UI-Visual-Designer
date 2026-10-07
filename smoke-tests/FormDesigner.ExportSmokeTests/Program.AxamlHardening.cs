@@ -262,7 +262,7 @@ internal static partial class Program
 
     private static void AssertRealDocumentExternalProcess(SmokeContext context)
     {
-        var executable = Path.Combine(FindRepositoryRoot(), "AvaloniaDesigner.VsHost", "bin", "Debug", "net6.0", "AvaloniaDesigner.VsHost.exe");
+        var executable = ResolveVsHostSmokeExecutable();
         var pipe = $"{DesignerHostProtocol.PipePrefix}.real.{Guid.NewGuid():N}";
         using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(40));
         using var process = Process.Start(new ProcessStartInfo(executable, $"--pipe {pipe}")

@@ -343,6 +343,7 @@ internal static partial class Program
             new("VsixPackageRuntimeDependencyClosureIsValid", ConfigureSimpleFormExport, AssertVsixPackageRuntimeDependencyClosureIsValid),
             new("VsixResolvesVsHostRelativeToExtensionAssembly", ConfigureSimpleFormExport, AssertVsixResolvesVsHostRelativeToExtensionAssembly),
             new("VsixContainsCompleteVsHostRuntime", ConfigureSimpleFormExport, AssertVsixContainsCompleteVsHostRuntime),
+            new("Net8RuntimeBaseline", ConfigureSimpleFormExport, AssertNet8RuntimeBaseline),
             new("VsHostReturnsMinimalAxamlPatch", ConfigureSimpleFormExport, AssertVsHostReturnsMinimalAxamlPatch),
             new("VsHostRoundTripPreservesComment", ConfigureSimpleFormExport, AssertVsHostRoundTripPreservesComment),
             new("VsHostRoundTripPreservesUnknownAttribute", ConfigureSimpleFormExport, AssertVsHostRoundTripPreservesUnknownAttribute),
@@ -5071,7 +5072,7 @@ internal static partial class Program
 
     private static void AssertVsHostCanStartAndAcceptConnection(SmokeContext context)
     {
-        var executable = Path.Combine(FindRepositoryRoot(), "AvaloniaDesigner.VsHost", "bin", "Debug", "net6.0", "AvaloniaDesigner.VsHost.exe");
+        var executable = ResolveVsHostSmokeExecutable();
         RequireFileExists(executable, "VsHost executable was not built before the smoke test.");
 
         var pipeName = $"{DesignerHostProtocol.PipePrefix}.smoke.{Guid.NewGuid():N}";
@@ -5274,7 +5275,13 @@ internal static partial class Program
             "VsHost/Avalonia.dll",
             "VsHost/Avalonia.Desktop.dll",
             "VsHost/Avalonia.Themes.Fluent.dll",
-            "VsHost/Avalonia.Controls.DataGrid.dll"
+            "VsHost/Avalonia.Controls.DataGrid.dll",
+            "VsHost/Plugins/DemoDesignerPlugin/DemoDesignerPlugin.dll",
+            "VsHost/Plugins/MinimalDesignerPlugin/MinimalDesignerPlugin.dll",
+            "VsHost/Plugins/EremexDesignerPlugin/EremexDesignerPlugin.dll",
+            "VsHost/Plugins/EremexDesignerPlugin/plugin.runtime.json",
+            "VsHost/Plugins/EremexDesignerPlugin/Eremex.Avalonia.Controls.dll",
+            "VsHost/Plugins/EremexDesignerPlugin/Eremex.Avalonia.Themes.DeltaDesign.dll"
         };
 
         using var archive = ZipFile.OpenRead(archivePath);
@@ -5283,6 +5290,38 @@ internal static partial class Program
             if (archive.GetEntry(entry) is null)
                 throw new InvalidOperationException($"VSIX is missing required VsHost runtime asset '{entry}'.");
         }
+        using var runtime = archive.GetEntry("VsHost/AvaloniaDesigner.VsHost.runtimeconfig.json")!.Open();
+        using var config = JsonDocument.Parse(runtime);
+        var options = config.RootElement.GetProperty("runtimeOptions");
+        if (options.GetProperty("tfm").GetString() != "net8.0"
+            || options.GetProperty("framework").GetProperty("name").GetString() != "Microsoft.NETCore.App"
+            || !options.GetProperty("framework").GetProperty("version").GetString()!.StartsWith("8.0.", StringComparison.Ordinal))
+            throw new InvalidOperationException("Packaged VsHost must run on .NET 8, not a stale build output.");
+    }
+
+    private static void AssertNet8RuntimeBaseline(SmokeContext context)
+    {
+        if (Environment.Version.Major != 8)
+            throw new InvalidOperationException($"Smoke runner is not executing on .NET 8: {Environment.Version}");
+        foreach (var assembly in new[] { typeof(MainWindow).Assembly, typeof(IControlDescriptor).Assembly,
+            typeof(VsHostWindow).Assembly, typeof(DesignerHostProtocol).Assembly })
+        {
+            var framework = assembly.GetCustomAttribute<System.Runtime.Versioning.TargetFrameworkAttribute>()?.FrameworkName;
+            if (framework != ".NETCoreApp,Version=v8.0")
+                throw new InvalidOperationException($"{assembly.GetName().Name} loaded the wrong framework asset: {framework}");
+        }
+        Console.WriteLine($"NET8_RUNTIME_BASELINE runtime={Environment.Version}; Avalonia={typeof(Avalonia.Application).Assembly.GetName().Version}");
+    }
+
+    private static string ResolveVsHostSmokeExecutable()
+    {
+        var deploymentPath = Environment.GetEnvironmentVariable("FORMDESIGNER_SMOKE_VSHOST_EXECUTABLE");
+        var executable = string.IsNullOrWhiteSpace(deploymentPath)
+            ? Path.Combine(FindRepositoryRoot(), "AvaloniaDesigner.VsHost", "bin", "Debug", "net8.0", "AvaloniaDesigner.VsHost.exe")
+            : Path.GetFullPath(deploymentPath);
+        RequireFileExists(executable, "VsHost build/publish/package executable is missing.");
+        Console.WriteLine($"VSHOST_SMOKE_EXECUTABLE path={executable}");
+        return executable;
     }
 
     private static void AssertVsHostReturnsMinimalAxamlPatch(SmokeContext context)
@@ -5799,6 +5838,10 @@ internal static partial class Program
         vm.SelectSingleControl(button);
         vm.InteractionTraceEntries.Clear();
 
+        var rowsBefore = vm.PropertyGridCategories.SelectMany(category => category.Rows).ToArray();
+        var selectionChanges = 0;
+        vm.ActiveSession.SelectionChanged += (_, _) => selectionChanges++;
+
         var sameIdentity = new DesignControlModel
         {
             Id = button.Id,
@@ -5807,8 +5850,11 @@ internal static partial class Program
         };
         vm.SelectedControl = sameIdentity;
 
-        if (!vm.InteractionTraceEntries.Any(entry => entry.EventName == "SELECTED_CONTROL_SAME_SUPPRESSED"))
-            throw new InvalidOperationException("Same selection was not suppressed.");
+        // The session suppresses duplicate IDs before the view-model tracing hook runs.
+        if (selectionChanges != 0 || !ReferenceEquals(vm.SelectedControl, button)
+            || rowsBefore.Length == 0
+            || !rowsBefore.SequenceEqual(vm.PropertyGridCategories.SelectMany(category => category.Rows)))
+            throw new InvalidOperationException("Same selection changed the session or rebuilt PropertyGrid rows.");
 
         if (vm.InteractionTraceEntries.Any(entry =>
             entry.EventName == "RebuildPropertyGrid"
@@ -7936,7 +7982,7 @@ internal static partial class Program
 
     private static void LoadBuiltEremexPlugin(MainWindowViewModel vm)
     {
-        var pluginsRoot = Path.Combine(FindRepositoryRoot(), "bin", "Debug", "net6.0", "Plugins");
+        var pluginsRoot = Path.Combine(FindRepositoryRoot(), "bin", "Debug", "net8.0", "Plugins");
         if (!Directory.Exists(Path.Combine(pluginsRoot, "EremexDesignerPlugin")))
             throw new InvalidOperationException($"Built Eremex plugin folder was not found: {pluginsRoot}");
 
