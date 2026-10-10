@@ -55,16 +55,7 @@ public static class AxamlLayoutProjection
             native[model.Id] = view;
             if (view is TextBlock text) text.FontSize = model.FontSize;
             if (view is Avalonia.Controls.Primitives.TemplatedControl templated) templated.FontSize = model.FontSize;
-            if (reference is null || IsExplicitOrChanged(reference, model, "Width")) view.Width = Math.Max(0, model.Width);
-            if (reference is null || IsExplicitOrChanged(reference, model, "Height")) view.Height = Math.Max(0, model.Height);
-            try { view.Margin = Thickness.Parse(model.Margin); } catch (FormatException) { }
-            if (Enum.TryParse<HorizontalAlignment>(model.HorizontalAlignment, out var horizontal)) view.HorizontalAlignment = horizontal;
-            if (Enum.TryParse<VerticalAlignment>(model.VerticalAlignment, out var vertical)) view.VerticalAlignment = vertical;
-            // Bindings and styles are not executed. Literal size constraints still participate in native measurement.
-            ApplyConstraint(reference, "MinWidth", v => view.MinWidth = v);
-            ApplyConstraint(reference, "MinHeight", v => view.MinHeight = v);
-            ApplyConstraint(reference, "MaxWidth", v => view.MaxWidth = v);
-            ApplyConstraint(reference, "MaxHeight", v => view.MaxHeight = v);
+            ApplySourceLayout(reference, model, view);
             if (view is Grid grid)
             {
                 try { grid.RowDefinitions = RowDefinitions.Parse(model.GridRowDefinitions); } catch (FormatException) { }
@@ -105,7 +96,7 @@ public static class AxamlLayoutProjection
                 tabs.SelectedIndex = children.Length == 0 || index < 0 ? -1 : Math.Min(index, children.Length - 1);
                 selectedTabs[model.Id] = tabs.SelectedIndex < 0 ? "" : children[tabs.SelectedIndex].Id;
             }
-            if (view is ComboBox combo)
+            if (view is ComboBox or ListBox && view is SelectingItemsControl combo)
                 AxamlPhase4Projection.SelectStaticItem(combo, reference!, model, children, source.SourceMap);
             return view;
         }
@@ -130,17 +121,12 @@ public static class AxamlLayoutProjection
                 content.ApplyTemplate();
                 foreach (var presenter in content.GetVisualDescendants().OfType<ContentPresenter>().ToArray())
                 {
-                    if (presenter is ScrollContentPresenter scroll && scroll.TemplatedParent is ScrollViewer owner)
-                    {
-                        if (!scroll.IsSet(ContentPresenter.ContentProperty)) scroll.Content = owner.Content;
-                        if (!scroll.IsSet(ScrollContentPresenter.CanHorizontallyScrollProperty))
-                            scroll.CanHorizontallyScroll = owner.HorizontalScrollBarVisibility != ScrollBarVisibility.Disabled;
-                        if (!scroll.IsSet(ScrollContentPresenter.CanVerticallyScrollProperty))
-                            scroll.CanVerticallyScroll = owner.VerticalScrollBarVisibility != ScrollBarVisibility.Disabled;
-                    }
+                    PreparePresenter(presenter);
                     presenter.UpdateChild();
                 }
             }
+            foreach (var items in native.Values.OfType<ItemsControl>().Where(i => i is not (TabControl or ComboBox)))
+                PrepareOffscreen(items);
             measurementRoot.Measure(new Size(width, height));
             measurementRoot.Arrange(new Rect(0, 0, width, height));
             return native.ToDictionary(pair => pair.Key, pair =>
@@ -148,7 +134,7 @@ public static class AxamlLayoutProjection
                 for (var child = models[pair.Key]; !string.IsNullOrEmpty(child.ParentId); child = models[child.ParentId])
                 {
                     if (selectedTabs.TryGetValue(child.ParentId, out var selected) && selected != child.Id) return default(Rect);
-                    if (native[child.ParentId] is ComboBox or Expander { IsExpanded: false }) return default(Rect);
+                    if (native[child.ParentId] is ComboBox or Expander { IsExpanded: false } or TreeViewItem { IsExpanded: false }) return default(Rect);
                 }
                 var parent = models[pair.Key].ParentId;
                 var relativeTo = !string.IsNullOrEmpty(parent) && native.TryGetValue(parent, out var parentView) ? parentView : root;
@@ -157,6 +143,48 @@ public static class AxamlLayoutProjection
             });
         }
         finally { measurementRoot.Child = null; }
+    }
+
+    public static void PrepareOffscreen(Control root)
+    {
+        var pending = new Queue<Control>();
+        var visited = new HashSet<Control>();
+        pending.Enqueue(root);
+        while (pending.TryDequeue(out var control))
+        {
+            if (!visited.Add(control)) continue;
+            if (control is TemplatedControl templated) templated.ApplyTemplate();
+            if (control is ItemsPresenter items) items.ApplyTemplate();
+            if (control is ContentPresenter presenter)
+            {
+                PreparePresenter(presenter);
+                presenter.UpdateChild();
+            }
+            foreach (var child in control.GetVisualChildren().OfType<Control>()) pending.Enqueue(child);
+        }
+    }
+
+    private static void PreparePresenter(ContentPresenter presenter)
+    {
+        if (presenter is not ScrollContentPresenter scroll || scroll.TemplatedParent is not ScrollViewer owner) return;
+        if (!scroll.IsSet(ContentPresenter.ContentProperty)) scroll.Content = owner.Content;
+        if (!scroll.IsSet(ScrollContentPresenter.CanHorizontallyScrollProperty))
+            scroll.CanHorizontallyScroll = owner.HorizontalScrollBarVisibility != ScrollBarVisibility.Disabled;
+        if (!scroll.IsSet(ScrollContentPresenter.CanVerticallyScrollProperty))
+            scroll.CanVerticallyScroll = owner.VerticalScrollBarVisibility != ScrollBarVisibility.Disabled;
+    }
+
+    public static void ApplySourceLayout(AxamlSourceReference? reference, DesignControlModel model, Control view)
+    {
+        if (reference is null || IsExplicitOrChanged(reference, model, "Width")) view.Width = Math.Max(0, model.Width);
+        if (reference is null || IsExplicitOrChanged(reference, model, "Height")) view.Height = Math.Max(0, model.Height);
+        try { view.Margin = Thickness.Parse(model.Margin); } catch (FormatException) { }
+        if (Enum.TryParse<HorizontalAlignment>(model.HorizontalAlignment, out var horizontal)) view.HorizontalAlignment = horizontal;
+        if (Enum.TryParse<VerticalAlignment>(model.VerticalAlignment, out var vertical)) view.VerticalAlignment = vertical;
+        ApplyConstraint(reference, "MinWidth", v => view.MinWidth = v);
+        ApplyConstraint(reference, "MinHeight", v => view.MinHeight = v);
+        ApplyConstraint(reference, "MaxWidth", v => view.MaxWidth = v);
+        ApplyConstraint(reference, "MaxHeight", v => view.MaxHeight = v);
     }
 
     private static bool IsExplicitOrChanged(AxamlSourceReference reference, DesignControlModel model, string key)

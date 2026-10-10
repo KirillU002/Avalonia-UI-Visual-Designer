@@ -1,0 +1,8 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:custom="using:Unknown" Width="600" Height="400">
+  <ListBox x:Name="List" SelectedIndex="1" SelectionMode="Single" Width="240" Height="160" Margin="8" custom:Unknown="KEEP">
+    <!-- KEEP -->
+    <ListBoxItem x:Name="First" Content="First"/>
+    <ListBoxItem x:Name="Second" Content="Second"/>
+    <ListBoxItem x:Name="Third"><TextBlock x:Name="Label" Text="Third"/></ListBoxItem>
+  </ListBox>
+</Window>

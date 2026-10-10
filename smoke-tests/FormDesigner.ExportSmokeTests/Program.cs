@@ -356,6 +356,31 @@ internal static partial class Program
             new("AxamlPhase4Diagnostics", ConfigureSimpleFormExport, AssertPhase4Diagnostics),
             new("AxamlPhase4RealMainWindow", ConfigureSimpleFormExport, AssertPhase4RealMainWindow),
             new("AxamlPhase4Ipc", ConfigureSimpleFormExport, AssertPhase4Ipc),
+            new("AxamlPhase5ItemsStatic", ConfigureSimpleFormExport, AssertPhase5ItemsStatic),
+            new("AxamlPhase5ItemsBinding", ConfigureSimpleFormExport, AssertPhase5ItemsBinding),
+            new("AxamlPhase5Templates", ConfigureSimpleFormExport, AssertPhase5Templates),
+            new("AxamlPhase5ListStatic", ConfigureSimpleFormExport, AssertPhase5ListStatic),
+            new("AxamlPhase5ListIndex", ConfigureSimpleFormExport, AssertPhase5ListIndex),
+            new("AxamlPhase5ListBinding", ConfigureSimpleFormExport, AssertPhase5ListBinding),
+            new("AxamlPhase5ListMode", ConfigureSimpleFormExport, AssertPhase5ListMode),
+            new("AxamlPhase5TreeStatic", ConfigureSimpleFormExport, AssertPhase5TreeStatic),
+            new("AxamlPhase5TreeHeader", ConfigureSimpleFormExport, AssertPhase5TreeHeader),
+            new("AxamlPhase5TreeCollapsed", ConfigureSimpleFormExport, AssertPhase5TreeCollapsed),
+            new("AxamlPhase5TreeBinding", ConfigureSimpleFormExport, AssertPhase5TreeBinding),
+            new("AxamlPhase5Progress", ConfigureSimpleFormExport, AssertPhase5Progress),
+            new("AxamlPhase5ProgressIndeterminate", ConfigureSimpleFormExport, AssertPhase5ProgressIndeterminate),
+            new("AxamlPhase5ProgressBinding", ConfigureSimpleFormExport, AssertPhase5ProgressBinding),
+            new("AxamlPhase5ProgressRange", ConfigureSimpleFormExport, AssertPhase5ProgressRange),
+            new("AxamlPhase5NoEdit", ConfigureSimpleFormExport, AssertPhase5NoEdit),
+            new("AxamlPhase5AckConflict", ConfigureSimpleFormExport, AssertPhase5AckConflict),
+            new("AxamlPhase5UnsafeItems", ConfigureSimpleFormExport, AssertPhase5UnsafeItems),
+            new("AxamlPhase5SourcePreservation", ConfigureSimpleFormExport, AssertPhase5SourcePreservation),
+            new("AxamlPhase5RealMainWindow", ConfigureSimpleFormExport, AssertPhase5RealMainWindow),
+            new("AxamlPhase5Ipc", ConfigureSimpleFormExport, AssertPhase5Ipc),
+            new("AxamlPhase5PointerSelection", ConfigureSimpleFormExport, AssertPhase5PointerSelection),
+            new("AxamlPhase5ItemGeometry", ConfigureSimpleFormExport, AssertPhase5ItemGeometry),
+            new("AxamlPhase5QualifiedBindings", ConfigureSimpleFormExport, AssertPhase5QualifiedBindings),
+            new("AxamlPhase5ItemsWrappers", ConfigureSimpleFormExport, AssertPhase5ItemsWrappers),
             new("VsHostCanStartAndAcceptConnection", ConfigureSimpleFormExport, AssertVsHostCanStartAndAcceptConnection),
             new("VsHostUsesSharedDesignerSurface", ConfigureSimpleFormExport, AssertVsHostUsesSharedDesignerSurface),
             new("VsixBridgeDoesNotReferenceAvaloniaVisualAssemblies", ConfigureSimpleFormExport, AssertVsixBridgeDoesNotReferenceAvaloniaVisualAssemblies),
@@ -511,6 +536,10 @@ internal static partial class Program
         }
         finally
         {
+            foreach (var surface in AxamlSmokeSurfaces.Values)
+                if (surface.GetLogicalAncestors().OfType<MainWindow>().FirstOrDefault() is { IsVisible: true } host)
+                    host.CloseForExternalHost();
+            AxamlSmokeSurfaces.Clear();
             _activeScenarioWorkspace = previousWorkspace;
             if (succeeded && !ShouldKeepSuccessfulSmokeArtifacts())
             {
@@ -6919,7 +6948,9 @@ internal static partial class Program
     {
         var scenarioRoot = Directory.GetParent(context.ProjectPath)?.FullName ?? context.ProjectPath;
         var validationRoot = Path.Combine(scenarioRoot, $"{context.Scenario.Name}-validation");
-        var result = context.ViewModel.ValidateCurrentExportBuildAsync(validationRoot).GetAwaiter().GetResult();
+        var validation = context.ViewModel.ValidateCurrentExportBuildAsync(validationRoot);
+        Pump(validation);
+        var result = validation.GetAwaiter().GetResult();
         if (result.Status != ExportBuildValidationStatus.Passed)
             throw new InvalidOperationException($"Export pipeline build validation failed.{Environment.NewLine}{result.Output}");
 

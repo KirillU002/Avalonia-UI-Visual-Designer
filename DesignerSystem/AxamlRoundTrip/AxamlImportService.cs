@@ -137,13 +137,16 @@ public sealed class AxamlImportService
             foreach (var propertyElement in element.Children.Where(AxamlImportStructureReport.IsPropertyElement))
             {
                 var sourceName = propertyElement.LocalName.Split('.').Last();
-                foreach (var property in capability.Properties.Where(p => p.SourceName == sourceName).ToArray())
+                foreach (var property in capability.Properties.Where(p => p.SourceName == sourceName || p.SourceName.EndsWith("." + sourceName, StringComparison.Ordinal)).ToArray())
                     capability.Properties[capability.Properties.IndexOf(property)] = property with { Mode = AxamlPropertyCapabilityMode.Preserved, Reason = "PropertyElementValue" };
             }
+            foreach (var property in capability.Properties.Where(p => p.Mode == AxamlPropertyCapabilityMode.Editable).ToArray())
+                if (element.FindAttribute(property.SourceName) is null && AxamlControlMetadata.HasSourceValue(element, property.SourceName))
+                    capability.Properties[capability.Properties.IndexOf(property)] = property with { Mode = AxamlPropertyCapabilityMode.Preserved, Reason = "QualifiedSourceValuePreserved" };
             if (visualChildren.Length > 0 && metadata.ContainerKind is AxamlContainerKind.SingleContent or AxamlContainerKind.HeaderedContent)
                 foreach (var property in capability.Properties.Where(p => p.SourceName == metadata.ChildProperty).ToArray())
                     capability.Properties[capability.Properties.IndexOf(property)] = property with { Mode = AxamlPropertyCapabilityMode.Preserved, Reason = "VisualContentChild" };
-            if (controlType == "ComboBox" && (AxamlControlMetadata.HasSourceValue(element, "SelectedItem") || AxamlControlMetadata.HasSourceValue(element, "SelectedValue")))
+            if (controlType is "ComboBox" or "ListBox" && (AxamlControlMetadata.HasSourceValue(element, "SelectedItem") || AxamlControlMetadata.HasSourceValue(element, "SelectedValue")))
                 PreserveProperty(capability, "SelectedIndex", "SelectionSourcePreserved");
             if (capability.Properties.Any(p => p.Mode == AxamlPropertyCapabilityMode.Preserved
                 || p.Mode == AxamlPropertyCapabilityMode.Unsupported && AxamlControlMetadata.HasSourceValue(element, p.SourceName)))
@@ -168,7 +171,7 @@ public sealed class AxamlImportService
                 $"type={controlType}; name={control.Name}; supported=true"));
             void ImportChild(AxamlElementSyntax child)
             {
-                if (metadata.ItemType is not null && (AxamlControlMetadata.HasSourceValue(element, "ItemsSource")
+                if (metadata.ContainerKind == AxamlContainerKind.Items && (AxamlControlMetadata.HasSourceValue(element, "ItemsSource")
                     || !metadata.AcceptsItem(child)))
                     AddOpaqueSubtree(child, "UnsupportedStaticItemOrItemsSource", report, diagnostics);
                 else ImportElement(child, control.Id, controlType);
@@ -200,10 +203,10 @@ public sealed class AxamlImportService
             document.Controls.Add(imported.Control);
 
         report.Structure = AxamlImportStructureReport.Create(sourcePath, syntax, sourceMap, report, diagnostics);
-        foreach (var type in new[] { "Expander", "ComboBox" })
+        foreach (var type in new[] { "Expander", "ComboBox", "ItemsControl", "ListBox", "TreeView", "ProgressBar" })
         {
             var references = sourceMap.Controls.Where(r => r.Element.LocalName == type).ToArray();
-            var prefix = type == "Expander" ? "AXAML_EXPANDER" : "AXAML_COMBOBOX";
+            var prefix = "AXAML_" + type.ToUpperInvariant();
             diagnostics.Add(new(prefix + "_IMPORTED", AxamlDiagnosticSeverity.Information, $"count={references.Length}"));
             diagnostics.Add(new(prefix + (type == "Expander" ? "_CHILDREN_IMPORTED" : "_ITEMS_IMPORTED"), AxamlDiagnosticSeverity.Information,
                 $"count={sourceMap.Controls.Count(r => references.Any(parent => r.ParentId == parent.ControlId))}"));
@@ -532,7 +535,7 @@ internal static class AxamlRoundTripPropertyMap
 
     public static IReadOnlyList<AxamlRoundTripProperty> PropertiesFor(string controlType) => StandardPropertiesFor(controlType)
         .Concat(AxamlControlMetadata.Find(controlType)?.LiteralProperties.Select(p => new AxamlRoundTripProperty(p.Key,
-            controlType == "ScrollViewer" ? new[] { p.Key, "ScrollViewer." + p.Key } : new[] { p.Key }, p.Read, p.Write))
+            new[] { p.Key, controlType + "." + p.Key }, p.Read, p.Write))
             ?? Enumerable.Empty<AxamlRoundTripProperty>()).ToArray();
 
     private static IReadOnlyList<AxamlRoundTripProperty> StandardPropertiesFor(string controlType) => controlType switch
@@ -542,7 +545,8 @@ internal static class AxamlRoundTripPropertyMap
         DesignerControlTypes.TextBlock => TextBlock,
         DesignerControlTypes.CheckBox => CheckBox,
         DesignerControlTypes.Border => Common,
-        DesignerControlTypes.Group or "DockPanel" or "Canvas" or "ScrollViewer" or "TabControl" or "TabItem" or "WrapPanel" or "Expander" or "ComboBox" or "ComboBoxItem" => Common,
+        DesignerControlTypes.Group or "DockPanel" or "Canvas" or "ScrollViewer" or "TabControl" or "TabItem" or "WrapPanel" or "Expander" or "ComboBox" or "ComboBoxItem"
+            or "ItemsControl" or "ListBox" or "ListBoxItem" or "TreeView" or "TreeViewItem" or "ProgressBar" => Common,
         DesignerControlTypes.LayoutGrid => Common.Concat(new[]
         {
             Text("GridRowDefinitions", "RowDefinitions", c => c.GridRowDefinitions, (c, v) => c.GridRowDefinitions = v),

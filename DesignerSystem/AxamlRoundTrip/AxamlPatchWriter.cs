@@ -88,7 +88,8 @@ public sealed class AxamlPatchWriter
         {
             // StackOrder has layout semantics only in ordered panels, not in Canvas/Grid.
             if (!roundTripDocument.SourceMap.TryGet(siblings.Key, out var parent)
-                || parent.Element.LocalName is not ("StackPanel" or "DockPanel" or "WrapPanel" or "TabControl" or "ComboBox")) continue;
+                || !(parent.Element.LocalName is "StackPanel" or "DockPanel" or "WrapPanel"
+                    || AxamlControlMetadata.Find(parent.Element.LocalName)?.ContainerKind == AxamlContainerKind.Items)) continue;
             var surviving = siblings.Where(r => currentById.ContainsKey(r.ControlId)).OrderBy(r => r.Element.ElementSpan.Start).ToList();
             if (!surviving.Select(r => r.ControlId).SequenceEqual(surviving.OrderBy(r => currentById[r.ControlId].StackOrder).Select(r => r.ControlId)))
             {

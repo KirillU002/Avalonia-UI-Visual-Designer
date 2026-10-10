@@ -4219,6 +4219,7 @@ public partial class MainWindow : Window
             preview = nativePreview;
             preview.Width = renderedWidth;
             preview.Height = renderedHeight;
+            preview.Margin = new Thickness(0);
             preview.Tag = model;
             if (preview is TemplatedControl templatedPreview) templatedPreview.FontSize = model.FontSize;
             preview.IsHitTestVisible = false;
@@ -4248,6 +4249,18 @@ public partial class MainWindow : Window
                 foreach (var child in children)
                     combo.Items.Add(AxamlPhase4Projection.Create(VM.ActiveAxamlSourceDocument.SourceMap.ByControlId[child.Id], child));
                 AxamlPhase4Projection.SelectStaticItem(combo, phase4Reference, model, children, VM.ActiveAxamlSourceDocument.SourceMap);
+            }
+            else if (preview is ItemsControl items)
+            {
+                PopulateAxamlItemsPreview(items, model);
+                if (items is ListBox list)
+                    AxamlPhase4Projection.SelectStaticItem(list, phase4Reference, model,
+                        VM.Controls.Where(c => c.ParentId == model.Id), VM.ActiveAxamlSourceDocument.SourceMap);
+            }
+            else if (preview is ListBoxItem item)
+            {
+                var child = VM.Controls.SingleOrDefault(c => c.ParentId == model.Id);
+                if (child is not null) item.Content = CreateAxamlItemChildWrapper(child);
             }
         }
         if (VM.ActiveAxamlSourceDocument?.SourceMap.TryGet(model.Id, out var tabReference) == true
@@ -4292,7 +4305,8 @@ public partial class MainWindow : Window
         Canvas.SetLeft(preview, 0);
         Canvas.SetTop(preview, 0);
 
-        if (VM.CanHostChildren(model) && preview is not (Expander or ComboBox or ComboBoxItem))
+        if (VM.CanHostChildren(model)
+            && (preview is TabControl || preview is not (Expander or ItemsControl or ComboBoxItem or ListBoxItem)))
         {
             var childHost = new Canvas
             {
@@ -4356,7 +4370,7 @@ public partial class MainWindow : Window
                     Foreground = Brushes.White
                 },
                 IsHitTestVisible = false,
-                IsVisible = !(VM.IsAxamlRoundTripDocument && preview is (Expander or ComboBox))
+                IsVisible = !(VM.IsAxamlRoundTripDocument && preview is (Expander or ItemsControl or ListBoxItem or ProgressBar))
                     && (!VM.IsAxamlRoundTripDocument || string.IsNullOrEmpty(model.ParentId) || isSelected)
             };
 
@@ -4465,8 +4479,66 @@ public partial class MainWindow : Window
     private bool CanResizeControl(DesignControlModel model)
     {
         var nativeContentControl = VM.ActiveAxamlSourceDocument?.SourceMap.TryGet(model.Id, out var reference) == true
-            && reference.Element.LocalName is "Expander" or "ComboBox";
+            && reference.Element.LocalName is "Expander" or "ComboBox" or "ItemsControl" or "ListBox" or "TreeView" or "ProgressBar";
         return !model.IsLocked && (model.Type != DesignerControlTypes.Group || nativeContentControl) && VM.CanResizeAxamlControl(model);
+    }
+
+    private Border CreateAxamlItemChildWrapper(DesignControlModel child)
+    {
+        VM.AxamlLayoutBounds.TryGetValue(child.Id, out var bounds);
+        var wrapper = CreateDesignerWrapper(child, bounds.Width, bounds.Height);
+        _wrapperByControlId[child.Id] = wrapper;
+        try { wrapper.Margin = Thickness.Parse(child.Margin); } catch (FormatException) { }
+        if (Enum.TryParse<HorizontalAlignment>(child.HorizontalAlignment, out var horizontal)) wrapper.HorizontalAlignment = horizontal;
+        if (Enum.TryParse<VerticalAlignment>(child.VerticalAlignment, out var vertical)) wrapper.VerticalAlignment = vertical;
+        return wrapper;
+    }
+
+    private void PopulateAxamlItemsPreview(ItemsControl items, DesignControlModel model)
+    {
+        // Native item containers retain Avalonia hierarchy; designer wrappers remain selectable content.
+        items.IsHitTestVisible = true;
+        foreach (var child in VM.Controls.Where(c => c.ParentId == model.Id)
+            .OrderBy(c => VM.ActiveAxamlSourceDocument!.SourceMap.ByControlId[c.Id].Element.ElementSpan.Start))
+        {
+            var reference = VM.ActiveAxamlSourceDocument!.SourceMap.ByControlId[child.Id];
+            if (reference.Element.LocalName == "TreeViewItem")
+            {
+                var node = (TreeViewItem)AxamlPhase4Projection.Create(reference, child)!;
+                node.Tag = child;
+                var header = new Border
+                {
+                    Tag = child, Background = Brushes.Transparent,
+                    BorderBrush = VM.IsControlSelected(child) ? Brushes.DodgerBlue : Brushes.Transparent,
+                    BorderThickness = new Thickness(1),
+                    Child = new TextBlock { Text = node.Header?.ToString(), FontSize = child.FontSize }
+                };
+                if (!VM.IsUserPreviewMode) header.PointerPressed += Control_PointerPressed;
+                _wrapperByControlId[child.Id] = header;
+                node.Header = header;
+                node.TemplateApplied += (_, _) =>
+                {
+                    foreach (var toggle in node.GetVisualDescendants().OfType<ToggleButton>().Where(t => t.TemplatedParent == node))
+                        toggle.IsHitTestVisible = false;
+                };
+                PopulateAxamlItemsPreview(node, child);
+                items.Items.Add(node);
+            }
+            else if (reference.Element.LocalName == "ListBoxItem")
+            {
+                var item = (ListBoxItem)AxamlPhase4Projection.Create(reference, child)!;
+                item.Tag = child;
+                var contentChild = VM.Controls.SingleOrDefault(c => c.ParentId == child.Id);
+                var content = contentChild is null
+                    ? new Border { Tag = child, Background = Brushes.Transparent, Child = new TextBlock { Text = item.Content?.ToString(), FontSize = child.FontSize } }
+                    : CreateAxamlItemChildWrapper(contentChild);
+                if (contentChild is null && !VM.IsUserPreviewMode) content.PointerPressed += Control_PointerPressed;
+                _wrapperByControlId[child.Id] = content;
+                item.Content = content;
+                items.Items.Add(item);
+            }
+            else items.Items.Add(CreateAxamlItemChildWrapper(child));
+        }
     }
 
     private Control CreatePreviewControl(DesignControlModel model)

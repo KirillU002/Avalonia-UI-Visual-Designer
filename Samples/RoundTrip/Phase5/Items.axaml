@@ -1,0 +1,7 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:custom="using:Unknown" Width="600" Height="400">
+  <ItemsControl x:Name="Items" Width="240" Margin="8" custom:Unknown="KEEP">
+    <!-- KEEP -->
+    <TextBlock x:Name="First" Text="First" Height="30"/>
+    <TextBlock x:Name="Second" Text="Second" Height="30"/>
+  </ItemsControl>
+</Window>

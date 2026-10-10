@@ -1,0 +1,3 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:custom="using:Unknown" Width="600" Height="400">
+  <ProgressBar x:Name="Progress" Minimum="0" Maximum="200" Value="80" IsIndeterminate="False" Orientation="Horizontal" Width="300" Height="30" Margin="8" custom:Unknown="KEEP"/>
+</Window>

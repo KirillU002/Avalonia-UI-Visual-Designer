@@ -1,0 +1,11 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:custom="using:Unknown" Width="600" Height="400">
+  <TreeView x:Name="Tree" Width="300" Height="250" Margin="8">
+    <TreeViewItem x:Name="Section" Header="Section" IsExpanded="True" custom:Unknown="KEEP">
+      <!-- KEEP -->
+      <TreeViewItem x:Name="Child" Header="Child" IsExpanded="True">
+        <TreeViewItem x:Name="Leaf" Header="Leaf"/>
+      </TreeViewItem>
+    </TreeViewItem>
+    <TreeViewItem x:Name="Other" Header="Other"/>
+  </TreeView>
+</Window>

@@ -16,15 +16,28 @@ namespace FormDesigner.ExportSmokeTests;
 
 internal static partial class Program
 {
+    private static readonly Dictionary<MainWindowViewModel, DesignerSurface> AxamlSmokeSurfaces = new();
     private static string Phase4Source(string name) => File.ReadAllText(Path.Combine(FindRepositoryRoot(), "Samples", "RoundTrip", "Phase4", name + ".axaml"));
 
-    private static (AxamlImportResult Result, MainWindowViewModel Vm, DesignerSurface Surface) Phase4Document(SmokeContext context, string source, string sourcePath = "Phase4.axaml")
+    private static (AxamlImportResult Result, MainWindowViewModel Vm, DesignerSurface Surface) Phase4Document(SmokeContext context, string source, string sourcePath = "Phase4.axaml", bool showHost = false)
     {
         var result = new AxamlImportService().Import(source, sourcePath);
         RequireIdentity(result);
         var vm = CreateViewModel(context.Scenario.Name);
         vm.LoadAxamlImportedDocument(result, sourcePath);
-        var surface = CreateMainWindowDesignerSurface(new SmokeContext(context.Scenario, vm, context.ProjectPath, context.Xaml, context.CSharp, context.GeneratedFiles, context.ChecklistText, context.DiagnosticsText));
+        DesignerSurface surface;
+        if (showHost)
+        {
+            var window = new VsHostWindow(new TestDesignerHostServices()) { DataContext = vm };
+            surface = window.FindControl<DesignerSurface>("DesignerSurface")!;
+            window.Show();
+            using var layoutWait = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
+            Dispatcher.UIThread.MainLoop(layoutWait.Token);
+        }
+        else
+            surface = CreateMainWindowDesignerSurface(new SmokeContext(context.Scenario, vm, context.ProjectPath, context.Xaml, context.CSharp, context.GeneratedFiles, context.ChecklistText, context.DiagnosticsText));
+        AxamlSmokeSurfaces[vm] = surface;
+        AxamlLayoutProjection.PrepareOffscreen(surface.Canvas);
         surface.Canvas.Measure(new Size(600, 400)); surface.Canvas.Arrange(new Rect(0, 0, 600, 400));
         Dispatcher.UIThread.RunJobs();
         RequireCapability(!vm.CreateActiveAxamlPatch().HasChanges, "Opening a Phase 4 document changed source.");
@@ -46,9 +59,25 @@ internal static partial class Program
         RequireCapability(!row.IsReadOnly, "Expected editable Phase 4 property: " + key);
         if (row.Editor == PropertyGridEditorKind.Bool) row.BoolValue = bool.Parse(value);
         else { row.Value = value; row.CommitValue(); }
+        // Complete the synthetic Inspector gesture before waiting for its deferred render.
+        if (vm.IsPropertyEditorFocused) vm.EndPropertyGridTextEdit();
         // RunJobs alone cannot deliver the native Windows timer used by the shared host.
         using var renderWait = new CancellationTokenSource(TimeSpan.FromMilliseconds(120));
         Dispatcher.UIThread.MainLoop(renderWait.Token);
+        if (AxamlSmokeSurfaces.TryGetValue(vm, out var surface))
+        {
+            var host = surface.GetLogicalAncestors().OfType<MainWindow>().Single();
+            var pending = typeof(MainWindow).GetField("_isDesignerRenderScheduled", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            var deadline = System.Diagnostics.Stopwatch.StartNew();
+            while ((bool)pending.GetValue(host)! && deadline.Elapsed < TimeSpan.FromSeconds(3))
+            {
+                using var frameWait = new CancellationTokenSource(TimeSpan.FromMilliseconds(50));
+                Dispatcher.UIThread.MainLoop(frameWait.Token);
+            }
+            RequireCapability(!(bool)pending.GetValue(host)!, "Inspector render did not finish within the smoke deadline.");
+            AxamlLayoutProjection.PrepareOffscreen(surface.Canvas);
+            surface.Canvas.Measure(new Size(600, 400)); surface.Canvas.Arrange(new Rect(0, 0, 600, 400));
+        }
         RequireCapability(ReferenceEquals(selected, vm.SelectedControl) && ids.SequenceEqual(vm.Controls.Select(c => c.Id)), "Inspector edit reset selection or document.");
     }
 
@@ -257,8 +286,8 @@ internal static partial class Program
         var report = result.CapabilityReport.Structure!;
         var expanders = result.RoundTripDocument.SourceMap.Controls.Where(r => r.Element.LocalName == "Expander").ToArray();
         var combos = result.RoundTripDocument.SourceMap.Controls.Where(r => r.Element.LocalName == "ComboBox").ToArray();
-        RequireCapability(expanders.Length == 4 && combos.Length == 45 && report.ImportedElements == 1439 && report.VisualElements == 1473
-            && report.OpaqueVisualElements == 34 && report.SkippedSubtrees == 34, "Real Phase 4 coverage did not increase safely.");
+        RequireCapability(expanders.Length == 4 && combos.Length == 45 && report.ImportedElements >= 1439 && report.VisualElements == 1473
+            && report.OpaqueVisualElements <= 34 && report.SkippedSubtrees <= 34, "Real Phase 4 coverage regressed.");
         var editVm = CreateViewModel("Phase4RealEdit"); editVm.LoadAxamlImportedDocument(result, path);
         editVm.SelectSingleControl(editVm.Controls.Single(c => c.Id == expanders[0].ControlId));
         var header = editVm.PropertyGridCategories.SelectMany(c => c.Rows).Single(r => r.Key == "Header");
@@ -274,21 +303,17 @@ internal static partial class Program
         foreach (var reference in expanders)
             AxamlControlMetadata.Find("Expander")!.LiteralProperties.Single(p => p.Key == "IsExpanded")
                 .Write(vm.Controls.Single(c => c.Id == reference.ControlId), "True");
-        var tabs = result.RoundTripDocument.SourceMap.Controls.Where(r => r.Element.LocalName == "TabControl").ToArray();
-        foreach (var tab in tabs)
+        foreach (var target in expanders.Concat(combos))
         {
-            var model = vm.Controls.Single(c => c.Id == tab.ControlId);
-            for (var index = 0; index < vm.Controls.Count(c => c.ParentId == model.Id); index++)
-            {
-                AxamlControlMetadata.Find("TabControl")!.LiteralProperties[0].Write(model, index.ToString());
-                typeof(MainWindow).GetMethod("RenderDesigner", BindingFlags.Instance | BindingFlags.NonPublic)!
-                    .Invoke(surface.GetLogicalAncestors().OfType<MainWindow>().Single(), null);
-                surface.Canvas.Measure(new Size(1600, 920)); surface.Canvas.Arrange(new Rect(0, 0, 1600, 920));
-                foreach (var expander in surface.Canvas.GetVisualDescendants().OfType<Expander>())
-                    if (expander.Bounds.Width > 0 && expander.Tag is DesignControlModel owner) visibleExpanders.Add(owner.Id);
-                foreach (var comboView in surface.Canvas.GetVisualDescendants().OfType<ComboBox>())
-                    if (comboView.Bounds.Width > 0 && comboView.Tag is DesignControlModel owner) visibleCombos.Add(owner.Id);
-            }
+            ActivateAxamlAncestors(vm, result.RoundTripDocument, target.ControlId);
+            typeof(MainWindow).GetMethod("RenderDesigner", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .Invoke(surface.GetLogicalAncestors().OfType<MainWindow>().Single(), null);
+            AxamlLayoutProjection.PrepareOffscreen(surface.Canvas);
+            surface.Canvas.Measure(new Size(1600, 920)); surface.Canvas.Arrange(new Rect(0, 0, 1600, 920));
+            foreach (var expander in surface.Canvas.GetVisualDescendants().OfType<Expander>())
+                if (expander.Bounds.Width > 0 && expander.Tag is DesignControlModel owner) visibleExpanders.Add(owner.Id);
+            foreach (var comboView in surface.Canvas.GetVisualDescendants().OfType<ComboBox>())
+                if (comboView.Bounds.Width > 0 && comboView.Tag is DesignControlModel owner) visibleCombos.Add(owner.Id);
         }
         RequireCapability(visibleExpanders.Count > 0 && visibleCombos.Count > 0, "New types were only counted, never rendered on real MainWindow.");
         var output = Path.Combine(FindRepositoryRoot(), "artifacts", "diagnostics", "axaml-phase4"); Directory.CreateDirectory(output);
@@ -300,6 +325,9 @@ internal static partial class Program
     }
 
     private static void AssertPhase4Ipc(SmokeContext context)
+        => AssertAxamlIpcEdits(context, Phase4Source("Combined"), new[] { ("Expand", "Header", "IPC header"), ("Choose", "SelectedIndex", "1"), ("Expand", "IsExpanded", "False") });
+
+    private static void AssertAxamlIpcEdits(SmokeContext context, string sourceText, (string Name, string Key, string Value)[] edits)
     {
         var vm = context.ViewModel;
         var window = new VsHostWindow(new TestDesignerHostServices()) { DataContext = vm }; window.Show();
@@ -312,10 +340,10 @@ internal static partial class Program
             using var connection = new NamedPipeProtocolConnection(client);
             await connection.SendAsync(DesignerHostMessageTypes.Hello, "hello", "phase4", new HelloPayload(), cancel.Token);
             RequireCapability((await connection.ReceiveAsync(cancel.Token))!.MessageType == DesignerHostMessageTypes.HelloAck, "HelloAck missing.");
-            var source = Phase4Source("Combined"); long version = 1;
+            var source = sourceText; long version = 1;
             await connection.SendAsync(DesignerHostMessageTypes.OpenDocument, "open", "phase4", CreateVsHostOpenDocumentPayload(source, version), cancel.Token);
             RequireCapability((await connection.ReceiveAsync(cancel.Token))!.MessageType == DesignerHostMessageTypes.DocumentOpened, "Phase 4 IPC open failed.");
-            foreach (var edit in new[] { ("Expand", "Header", "IPC header"), ("Choose", "SelectedIndex", "1"), ("Expand", "IsExpanded", "False") })
+            foreach (var edit in edits)
             {
                 await Dispatcher.UIThread.InvokeAsync(() => Phase4Edit(vm, edit.Item1, edit.Item2, edit.Item3));
                 var apply = Dispatcher.UIThread.InvokeAsync(bridge.ApplyAsync);

@@ -10700,6 +10700,10 @@ public partial class MainWindowViewModel : ObservableObject
                     yield return CreateNumberRow(PropertyGridCategoryCommon, property.Key, property.Key,
                         int.TryParse(property.Read(control), out var index) ? index : 0, "Avalonia " + property.Key,
                         value => SetValue(((int)Math.Round(value)).ToString(CultureInfo.InvariantCulture)));
+                else if (property.IsNumber)
+                    yield return CreateNumberRow(PropertyGridCategoryCommon, property.Key, property.Key,
+                        double.Parse(property.Read(control), CultureInfo.InvariantCulture), "Avalonia " + property.Key,
+                        value => SetValue(value.ToString(CultureInfo.InvariantCulture)));
                 else if (property.Options is not null)
                     yield return CreateEnumRow(PropertyGridCategoryCommon, property.Key, property.Key, property.Read(control),
                         property.Options, "Avalonia " + property.Key, SetValue);
