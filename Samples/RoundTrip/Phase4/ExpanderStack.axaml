@@ -1,0 +1,11 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:custom="using:Unknown" Width="600" Height="400">
+    <Canvas>
+        <!-- KEEP -->
+        <Expander x:Name="Expand" Header="Old" IsExpanded="True" ExpandDirection="Down" Width="300" Margin="4,6" HorizontalAlignment="Left" VerticalAlignment="Top" Canvas.Left="10" Canvas.Top="12" custom:Unknown="KEEP">
+            <StackPanel x:Name="Body" Spacing="8" Margin="2,3">
+                <TextBlock x:Name="Label" Text="Parameters" Height="20"/>
+                <Button x:Name="Action" Content="Apply" Width="100" Height="40"/>
+            </StackPanel>
+        </Expander>
+    </Canvas>
+</Window>

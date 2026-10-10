@@ -10693,7 +10693,10 @@ public partial class MainWindowViewModel : ObservableObject
             {
                 descriptorKeys.Add(property.Key);
                 void SetValue(string value) { if (property.Write(control, value)) NotifyDesignerStateChanged(); }
-                if (property.IsInteger)
+                if (property.IsBoolean)
+                    yield return CreateBoolRow(PropertyGridCategoryCommon, property.Key, property.Key,
+                        bool.Parse(property.Read(control)), "Avalonia " + property.Key, value => SetValue(value ? "True" : "False"));
+                else if (property.IsInteger)
                     yield return CreateNumberRow(PropertyGridCategoryCommon, property.Key, property.Key,
                         int.TryParse(property.Read(control), out var index) ? index : 0, "Avalonia " + property.Key,
                         value => SetValue(((int)Math.Round(value)).ToString(CultureInfo.InvariantCulture)));
@@ -10704,6 +10707,9 @@ public partial class MainWindowViewModel : ObservableObject
                     yield return CreateTextRow(PropertyGridCategoryCommon, property.Key, property.Key, property.Read(control),
                         "Avalonia " + property.Key, SetValue);
             }
+            foreach (var property in axamlReference.Capability.Properties.Where(p => p.SourceName is "ItemsSource" or "SelectedItem" or "SelectedValue"))
+                yield return CreateReadOnlyRow(PropertyGridCategoryCommon, property.Key, property.SourceName,
+                    axamlReference.Element.GetAttributeValue(property.SourceName) ?? "", "AXAML source value is preserved; user bindings are not evaluated.");
         }
         foreach (var customProperty in control.CustomProperties.Where(property =>
                      !descriptorKeys.Contains(property.Key)

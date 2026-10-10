@@ -1,0 +1,12 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:custom="using:Unknown" Width="600" Height="400">
+    <Grid RowDefinitions="Auto,*">
+        <!-- KEEP -->
+        <Expander x:Name="Expand" Header="Old" IsExpanded="True" custom:Unknown="KEEP">
+            <StackPanel x:Name="Body"><Button x:Name="Action" Content="Apply"/></StackPanel>
+        </Expander>
+        <ComboBox x:Name="Choose" Grid.Row="1" Width="200" VerticalAlignment="Top" SelectedIndex="0">
+            <ComboBoxItem Content="One"/>
+            <ComboBoxItem Content="Two"/>
+        </ComboBox>
+    </Grid>
+</Window>

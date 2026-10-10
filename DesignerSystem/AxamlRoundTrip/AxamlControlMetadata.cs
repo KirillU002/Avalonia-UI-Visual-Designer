@@ -12,7 +12,7 @@ namespace FormDesigner.DesignerSystem.AxamlRoundTrip;
 public enum AxamlContainerKind { None, PanelChildren, SingleContent, HeaderedContent, Items, Decorator }
 
 public sealed record AxamlControlMetadata(string SourceType, string ProjectionType, AxamlContainerKind ContainerKind,
-    string? ChildProperty = null, string? ItemType = null)
+    string? ChildProperty = null, string? ItemType = null, string? TextContentProperty = null)
 {
     private static readonly Dictionary<string, AxamlControlMetadata> Known = new(StringComparer.Ordinal)
     {
@@ -28,10 +28,30 @@ public sealed record AxamlControlMetadata(string SourceType, string ProjectionTy
         ["WrapPanel"] = new("WrapPanel", "WrapPanel", AxamlContainerKind.PanelChildren, "Children"),
         ["ScrollViewer"] = new("ScrollViewer", "Group", AxamlContainerKind.SingleContent, "Content"),
         ["TabControl"] = new("TabControl", "Group", AxamlContainerKind.Items, "Items", "TabItem"),
-        ["TabItem"] = new("TabItem", "Group", AxamlContainerKind.HeaderedContent, "Content")
+        ["TabItem"] = new("TabItem", "Group", AxamlContainerKind.HeaderedContent, "Content"),
+        ["Expander"] = new("Expander", "Group", AxamlContainerKind.HeaderedContent, "Content", TextContentProperty: "Content"),
+        ["ComboBox"] = new("ComboBox", "Group", AxamlContainerKind.Items, "Items", "ComboBoxItem"),
+        ["ComboBoxItem"] = new("ComboBoxItem", "Group", AxamlContainerKind.None, TextContentProperty: "Content"),
+        ["String"] = new("String", "Group", AxamlContainerKind.None, TextContentProperty: "Content")
     };
 
     public static AxamlControlMetadata? Find(string sourceType) => Known.TryGetValue(sourceType, out var value) ? value : null;
+    public static AxamlControlMetadata? FindSourceElement(AxamlElementSyntax element, string parentType)
+    {
+        if (element.LocalName == "String")
+            return parentType == "ComboBox" && element.NamespaceUri is "http://schemas.microsoft.com/winfx/2006/xaml" or "clr-namespace:System;assembly=mscorlib"
+                ? Find("String") : null;
+        return element.NamespaceUri is "" or "https://github.com/avaloniaui" ? Find(element.LocalName) : null;
+    }
+
+    public bool AcceptsItem(AxamlElementSyntax element) => ItemType is null
+        || element.LocalName == ItemType && element.NamespaceUri is "" or "https://github.com/avaloniaui"
+        || SourceType == "ComboBox" && FindSourceElement(element, SourceType)?.SourceType == "String";
+
+    public static bool HasSourceValue(AxamlElementSyntax element, string property) => element.Attributes.Any(a => a.Name == property
+            || a.Name.EndsWith("." + property, StringComparison.Ordinal))
+        || element.Children.Any(c => c.LocalName.EndsWith("." + property, StringComparison.Ordinal));
+
     public bool IsChildProperty(AxamlElementSyntax element) => ChildProperty is not null
         && element.NamespaceUri is "" or "https://github.com/avaloniaui"
         && element.LocalName == SourceType + "." + ChildProperty;
@@ -40,6 +60,19 @@ public sealed record AxamlControlMetadata(string SourceType, string ProjectionTy
     {
         "TabControl" => new[] { new AxamlLiteralProperty(nameof(TabControl.SelectedIndex), "0", IsInteger: true) },
         "TabItem" => new[] { new AxamlLiteralProperty(nameof(TabItem.Header), "") },
+        "Expander" => new[]
+        {
+            new AxamlLiteralProperty(nameof(Expander.Header), ""),
+            new AxamlLiteralProperty(nameof(Expander.Content), ""),
+            new AxamlLiteralProperty(nameof(Expander.IsExpanded), "False", IsBoolean: true),
+            new AxamlLiteralProperty(nameof(Expander.ExpandDirection), "Down", Enum.GetNames<ExpandDirection>())
+        },
+        "ComboBox" => new[]
+        {
+            new AxamlLiteralProperty(nameof(ComboBox.SelectedIndex), "-1", IsInteger: true),
+            new AxamlLiteralProperty(nameof(ComboBox.PlaceholderText), "")
+        },
+        "ComboBoxItem" or "String" => new[] { new AxamlLiteralProperty("Content", "") },
         "ScrollViewer" => new[]
         {
             new AxamlLiteralProperty(nameof(ScrollViewer.HorizontalScrollBarVisibility), "Disabled", Enum.GetNames<ScrollBarVisibility>()),
@@ -51,7 +84,7 @@ public sealed record AxamlControlMetadata(string SourceType, string ProjectionTy
 }
 
 // Uses the existing serialized property bag; no new JSON schema or plugin ABI.
-public sealed record AxamlLiteralProperty(string Key, string DefaultValue, string[]? Options = null, bool IsInteger = false)
+public sealed record AxamlLiteralProperty(string Key, string DefaultValue, string[]? Options = null, bool IsInteger = false, bool IsBoolean = false)
 {
     public string Read(DesignControlModel model)
     {
@@ -65,6 +98,11 @@ public sealed record AxamlLiteralProperty(string Key, string DefaultValue, strin
     {
         if (Options is not null && !Options.Contains(value, StringComparer.Ordinal)) return false;
         if (IsInteger && (!int.TryParse(value, out var index) || index < -1)) return false;
+        if (IsBoolean)
+        {
+            if (!bool.TryParse(value, out var flag)) return false;
+            value = flag ? "True" : "False";
+        }
         var stored = model.CustomProperties.FirstOrDefault(p => p.Key == Key);
         if (stored is null) model.CustomProperties.Add(stored = new DesignPropertyValueModel { Key = Key });
         stored.ValueJson = JsonSerializer.Serialize(value);

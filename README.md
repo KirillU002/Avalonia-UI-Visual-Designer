@@ -1,6 +1,6 @@
 # Avalonia UI Visual Designer
 
-**Текущая версия:** Alpha 3.0, development-ветка `main` · **Visual Studio Extension:** 0.1.15
+**Текущая версия:** Alpha 3.0, development-ветка `main` · **Visual Studio Extension:** 0.1.16
 
 Avalonia UI Visual Designer - визуальный дизайнер форм для Avalonia UI. Он позволяет создавать многоформенные проекты, редактировать интерфейс, настраивать источники данных, просматривать результат и экспортировать Avalonia-проект с AXAML и C#.
 
@@ -14,7 +14,7 @@ Avalonia UI Visual Designer - визуальный дизайнер форм д�
 
 Проект находится на стадии **Alpha** и активно развивается. Standalone-сценарии, Visual Studio bridge и AXAML Round-trip имеют smoke/regression tests, но проект пока не считается production-ready.
 
-Текущая `main` включает миграцию на .NET 8 и AXAML Import Phase 2/3. Она новее зафиксированного standalone-релиза `v0.3.0-alpha`; нового продуктового тега для этого состояния пока нет. Visual Studio integration остаётся экспериментальной: это отдельное окно Designer, а не встроенный редактор Visual Studio.
+Текущая `main` включает миграцию на .NET 8 и AXAML Import Phase 2/3/4. Она новее зафиксированного standalone-релиза `v0.3.0-alpha`; нового продуктового тега для этого состояния пока нет. Visual Studio integration остаётся экспериментальной: это отдельное окно Designer, а не встроенный редактор Visual Studio.
 
 ## Что изменилось в Alpha 3.0
 
@@ -24,6 +24,7 @@ Avalonia UI Visual Designer - визуальный дизайнер форм д�
 - Добавлен VSIX bridge: активный AXAML из text buffer передаётся во внешний VsHost через Named Pipes.
 - Реализованы AXAML Import, granular capabilities и minimal patches с сохранением исходной разметки.
 - Phase 2/3 добавили вложенные layout containers, статические вкладки и отчёт о partial import.
+- Phase 4 добавила native Expander и ComboBox: Content hierarchy, static items, безопасные Inspector edits и minimal patches.
 - Designer, VsHost, plugins, sample и smoke runner переведены на .NET 8 без изменения версий NuGet-пакетов. VSIX сохраняет совместимый `net472`.
 
 ## Основные возможности
@@ -91,11 +92,13 @@ VSIX получает текст открытого документа, вклю
 | Grid, StackPanel, DockPanel | Вложенное дерево, native layout projection; Grid definitions/row/column/spans, StackPanel orientation/spacing, Dock semantics |
 | WrapPanel, ScrollViewer | Native wrapping, orientation; один Content child и scrollbar visibility |
 | TabControl / TabItem | Статические вкладки, Header и SelectedIndex; содержимое всех страниц сохраняется, отображается выбранная |
+| Expander | Native Header/Content, IsExpanded, ExpandDirection; закрытое дочернее дерево сохраняется в модели |
+| ComboBox / ComboBoxItem | Статические items, SelectedIndex, PlaceholderText и literal item Content; bindings остаются preserved, без mock DataContext |
 | Styles, Resources, Templates, Bindings, неизвестная syntax | Source-preserved / opaque; без визуального редактора и без выполнения пользовательского DataContext |
 
 Capability model разделяет **document → element → property**: supported части доступны для редактирования, unsupported сохраняются. Unknown attribute не блокирует остальные свойства элемента; unknown sibling не блокирует поддерживаемых соседей. Поддерево неизвестного контейнера остаётся opaque, когда его semantics нельзя безопасно спроецировать. Read-only применяется при невозможности безопасного разбора/patch, а не просто из-за partial support. В режиме частичной поддержки кнопка **«Подробнее»** открывает AXAML Import Report с counts, paths, причинами и blockers.
 
-На настоящем [`Views/MainWindow.axaml`](Views/MainWindow.axaml) текущий Phase 3 импортирует **1251 / 1473 visual candidates (84.93%)**: 2507 XML elements, 222 opaque/skipped visual candidates, 76 skipped subtree boundaries. Это **coverage модели/source map одного stress-test документа**, не «85% всей Avalonia», не поддержка всех properties и не полная visual equivalence. Данные подтверждены `AxamlCoverageRealMainWindow` и описаны в [Phase 3 report](Docs/AxamlCoveragePhase3.md) и [проверке после .NET 8 migration](Docs/Net8Migration.md).
+На настоящем [`Views/MainWindow.axaml`](Views/MainWindow.axaml) Phase 4 импортирует **1439 / 1473 visual candidates (97.69%)**: 2507 XML elements, 34 opaque/skipped visual candidates, 34 skipped subtree boundaries. Это **coverage модели/source map одного stress-test документа**, не процент поддержки всей Avalonia, не поддержка всех properties и не полная visual equivalence. Native Expander/ComboBox проверены на shared surface; данные подтверждены `AxamlPhase4RealMainWindow`. Подробнее: [Phase 4 report](Docs/AxamlCoveragePhase4.md), [Phase 3 baseline](Docs/AxamlCoveragePhase3.md) и [проверка после .NET 8 migration](Docs/Net8Migration.md).
 
 Перед применением patch проверяются version/checksum текущего VS buffer. При внешнем изменении source patch отклоняется; после успешного Apply документ остаётся dirty и сохраняется обычным `Ctrl+S`. ACK обновляет snapshot для следующего редактирования.
 
@@ -107,7 +110,7 @@ Plugin реализует vertical slices **TextEditor** и **DataGridControl**:
 
 ## Версии
 
-Текущая разработка: **Alpha 3.0 (`main`)**, VSIX **0.1.15**. Ниже сохранены ссылки на **две предыдущие зафиксированные версии**, чтобы можно было посмотреть проект до текущих изменений.
+Текущая разработка: **Alpha 3.0 (`main`)**, VSIX **0.1.16**. Ниже сохранены ссылки на **две предыдущие зафиксированные версии**, чтобы можно было посмотреть проект до текущих изменений.
 
 ## Alpha 3.0
 
@@ -161,7 +164,7 @@ dotnet run --no-build --project .\FormDesigner.csproj
 
 ### Visual Studio Extension
 
-После Debug-сборки solution пакет **0.1.15** находится в:
+После Debug-сборки solution пакет **0.1.16** находится в:
 
 ```text
 AvaloniaDesigner.VSIX/bin/Debug/net472/AvaloniaDesigner.VSIX.vsix
@@ -195,7 +198,7 @@ Runner содержит AXAML/layout/source-preservation, DesignerSurface, VSIX/
 
 - [DeveloperArchitecture](Docs/DeveloperArchitecture.md) - техническая документация для разработчиков.
 - [DesignerSurface](Docs/DesignerSurfaceArchitecture.md), [document sessions](Docs/DesignerDocumentSessionArchitecture.md) и [host services](Docs/DesignerHostServicesArchitecture.md).
-- [AXAML Round-trip architecture](Docs/AxamlRoundTripArchitecture.md), [granular capabilities](Docs/AxamlGranularCapabilities.md) и [Phase 3 coverage](Docs/AxamlCoveragePhase3.md).
+- [AXAML Round-trip architecture](Docs/AxamlRoundTripArchitecture.md), [granular capabilities](Docs/AxamlGranularCapabilities.md), [Phase 3 coverage](Docs/AxamlCoveragePhase3.md) и [Phase 4: Expander / ComboBox](Docs/AxamlCoveragePhase4.md).
 - [Visual Studio fixture / ручная проверка](Samples/VisualStudioPoC/README.md).
 - [Alpha 0.2 manual checklist](Docs/ALPHA_0_2_MANUAL_TEST_CHECKLIST.md) - исторический checklist standalone-сценариев.
 - [Plugin guide](Docs/PluginGuide.md)
@@ -204,10 +207,10 @@ Runner содержит AXAML/layout/source-preservation, DesignerSurface, VSIX/
 
 ## Ограничения и roadmap
 
-- AXAML Import не воспроизводит весь Avalonia API. Expander, ComboBox, ItemsControl, ListBox, TreeView, DataGrid и custom/Eremex controls пока не входят в поддержанный import subset.
+- AXAML Import не воспроизводит весь Avalonia API. ItemsControl, ListBox, TreeView, DataGrid и custom/Eremex controls пока не входят в поддержанный import subset. ComboBox поддерживает простой static Items slice, не полный Selector/ItemsControl framework.
 - Bindings, Styles, Resources и Templates сохраняются, но не вычисляются и не редактируются специальными визуальными редакторами. Arbitrary assemblies/plugins открытого VS solution не загружаются.
 - Изменение hierarchy, insertion и destructive operations ограничиваются безопасными source-mapped сценариями. Partial import не гарантирует runtime-equivalent внешний вид.
-- Следующее расширение import coverage выбирается по blocker impact реальных документов; наиболее крупный оставшийся blocker текущего MainWindow - Expander. Дальнейшие направления: стандартные Items/Selector controls, расширение безопасных patches и hardening Visual Studio lifecycle.
+- Следующее расширение import coverage выбирается по blocker impact реальных документов; после Phase 4 среди оставшихся типов текущего MainWindow наиболее часто встречается ItemsControl. Дальнейшие направления: стандартные Items/Selector controls, расширение безопасных patches и hardening Visual Studio lifecycle.
 
 ## Примечания
 

@@ -30,7 +30,7 @@ public static class AxamlLayoutProjection
             source.SourceMap.TryGet(model.Id, out var reference);
             var type = reference?.Element.LocalName ?? model.Type;
             string Literal(string key) => AxamlControlMetadata.Find(type)!.LiteralProperties.First(p => p.Key == key).Read(model);
-            Control view = type switch
+            Control view = AxamlPhase4Projection.Create(reference, model) ?? type switch
             {
                 "Grid" => new Grid(), "StackPanel" => new StackPanel
                 {
@@ -105,6 +105,8 @@ public static class AxamlLayoutProjection
                 tabs.SelectedIndex = children.Length == 0 || index < 0 ? -1 : Math.Min(index, children.Length - 1);
                 selectedTabs[model.Id] = tabs.SelectedIndex < 0 ? "" : children[tabs.SelectedIndex].Id;
             }
+            if (view is ComboBox combo)
+                AxamlPhase4Projection.SelectStaticItem(combo, reference!, model, children, source.SourceMap);
             return view;
         }
 
@@ -144,7 +146,10 @@ public static class AxamlLayoutProjection
             return native.ToDictionary(pair => pair.Key, pair =>
             {
                 for (var child = models[pair.Key]; !string.IsNullOrEmpty(child.ParentId); child = models[child.ParentId])
+                {
                     if (selectedTabs.TryGetValue(child.ParentId, out var selected) && selected != child.Id) return default(Rect);
+                    if (native[child.ParentId] is ComboBox or Expander { IsExpanded: false }) return default(Rect);
+                }
                 var parent = models[pair.Key].ParentId;
                 var relativeTo = !string.IsNullOrEmpty(parent) && native.TryGetValue(parent, out var parentView) ? parentView : root;
                 var point = pair.Value.TranslatePoint(default, relativeTo);
@@ -156,8 +161,8 @@ public static class AxamlLayoutProjection
 
     private static bool IsExplicitOrChanged(AxamlSourceReference reference, DesignControlModel model, string key)
     {
-        var property = AxamlRoundTripPropertyMap.PropertiesFor(reference.Element.LocalName).First(p => p.Key == key);
-        return reference.Capability.CanEditProperty(key) && (reference.Element.FindAttribute(key) is not null
+        var property = AxamlRoundTripPropertyMap.PropertiesFor(reference.Element.LocalName).FirstOrDefault(p => p.Key == key);
+        return property is not null && reference.Capability.CanEditProperty(key) && (reference.Element.FindAttribute(key) is not null
             || reference.SnapshotValues.TryGetValue(key, out var before) && before != property.Read(model));
     }
 

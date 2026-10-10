@@ -5,6 +5,8 @@ using System.Globalization;
 using System.Linq;
 using System.Net;
 using System.Text.RegularExpressions;
+using System.Xml;
+using System.Xml.Linq;
 
 namespace FormDesigner.DesignerSystem.AxamlRoundTrip;
 
@@ -18,8 +20,10 @@ public sealed class AxamlImportService
     public AxamlImportResult Import(
         string sourceText,
         string? sourcePath = null,
-        IReadOnlyDictionary<string, string>? knownControlIdsByName = null)
+        IReadOnlyDictionary<string, string>? knownControlIdsByName = null,
+        bool detailedDiagnostics = false)
     {
+        detailedDiagnostics |= string.Equals(Environment.GetEnvironmentVariable("FORMDESIGNER_AXAML_IMPORT_DIAGNOSTICS"), "verbose", StringComparison.OrdinalIgnoreCase);
         var diagnostics = new List<AxamlRoundTripDiagnostic>
         {
             new("AXAML_IMPORT_START", AxamlDiagnosticSeverity.Information, $"path={sourcePath ?? string.Empty}; length={sourceText?.Length ?? 0}")
@@ -76,8 +80,8 @@ public sealed class AxamlImportService
                 AddOpaqueSubtree(element, "PropertyElementPreserved", report, diagnostics);
                 return;
             }
-            var metadata = AxamlControlMetadata.Find(controlType);
-            if (!IsAvaloniaElement(element) || metadata is null)
+            var metadata = AxamlControlMetadata.FindSourceElement(element, parentType);
+            if (metadata is null)
             {
                 AddOpaqueSubtree(element, IsAvaloniaElement(element) ? "UnsupportedControl" : "UnsupportedCustomControl", report, diagnostics);
                 return;
@@ -87,9 +91,12 @@ public sealed class AxamlImportService
             var childWrappers = element.Children.Where(metadata.IsChildProperty).ToArray();
             var directChildren = element.Children.Where(e => !AxamlImportStructureReport.IsPropertyElement(e)).ToArray();
             var visualChildren = directChildren.Concat(childWrappers.SelectMany(e => e.Children)).ToArray();
-            if ((!isContainer && (visualChildren.Length > 0 || HasUnsupportedInnerContent(syntax.Text, element)))
+            var textContent = "";
+            var hasTextContent = metadata.TextContentProperty is not null && TryReadTextContent(syntax.Text, element, out textContent);
+            if ((!isContainer && (visualChildren.Length > 0 || !hasTextContent && HasUnsupportedInnerContent(syntax.Text, element)))
                 || (visualChildren.Length == 0 && metadata.ContainerKind is AxamlContainerKind.SingleContent or AxamlContainerKind.HeaderedContent
-                    && HasUnsupportedInnerContent(syntax.Text, element))
+                    && !hasTextContent && HasUnsupportedInnerContent(syntax.Text, element))
+                || (hasTextContent && (visualChildren.Length > 0 || element.FindAttribute(metadata.TextContentProperty!) is not null))
                 || (metadata.ContainerKind is AxamlContainerKind.SingleContent or AxamlContainerKind.HeaderedContent or AxamlContainerKind.Decorator && visualChildren.Length > 1)
                 || childWrappers.Length > 1 || (childWrappers.Length > 0 && directChildren.Length > 0)
                 || (visualChildren.Length > 0 && element.FindAttribute(metadata.ChildProperty ?? "") is not null))
@@ -100,6 +107,12 @@ public sealed class AxamlImportService
 
             var capability = new AxamlElementCapability(element, AxamlElementCapabilityMode.Editable);
             var control = CreateControl(controlType, element, knownControlIdsByName, diagnostics, capability);
+            if (hasTextContent)
+            {
+                var literal = metadata.LiteralProperties.Single(p => p.Key == metadata.TextContentProperty);
+                literal.Write(control, textContent!);
+                PreserveProperty(capability, literal.Key, "TextContentPreserved");
+            }
             // Generic containers already participate in the shared ParentId hierarchy.
             // Source type remains on Element; it is never regenerated from the Group alias.
             control.Type = metadata.ProjectionType;
@@ -127,9 +140,14 @@ public sealed class AxamlImportService
                 foreach (var property in capability.Properties.Where(p => p.SourceName == sourceName).ToArray())
                     capability.Properties[capability.Properties.IndexOf(property)] = property with { Mode = AxamlPropertyCapabilityMode.Preserved, Reason = "PropertyElementValue" };
             }
-            if (visualChildren.Length > 0 && metadata.ContainerKind == AxamlContainerKind.SingleContent)
+            if (visualChildren.Length > 0 && metadata.ContainerKind is AxamlContainerKind.SingleContent or AxamlContainerKind.HeaderedContent)
                 foreach (var property in capability.Properties.Where(p => p.SourceName == metadata.ChildProperty).ToArray())
                     capability.Properties[capability.Properties.IndexOf(property)] = property with { Mode = AxamlPropertyCapabilityMode.Preserved, Reason = "VisualContentChild" };
+            if (controlType == "ComboBox" && (AxamlControlMetadata.HasSourceValue(element, "SelectedItem") || AxamlControlMetadata.HasSourceValue(element, "SelectedValue")))
+                PreserveProperty(capability, "SelectedIndex", "SelectionSourcePreserved");
+            if (capability.Properties.Any(p => p.Mode == AxamlPropertyCapabilityMode.Preserved
+                || p.Mode == AxamlPropertyCapabilityMode.Unsupported && AxamlControlMetadata.HasSourceValue(element, p.SourceName)))
+                capability.Mode = AxamlElementCapabilityMode.PartiallyEditable;
             var zIndex = int.TryParse(element.GetAttributeValue("Canvas.ZIndex"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedZIndex)
                 ? parsedZIndex
                 : sourceOrder;
@@ -150,8 +168,8 @@ public sealed class AxamlImportService
                 $"type={controlType}; name={control.Name}; supported=true"));
             void ImportChild(AxamlElementSyntax child)
             {
-                if (metadata.ItemType is not null && (element.FindAttribute("ItemsSource") is not null
-                    || !IsAvaloniaElement(child) || child.LocalName != metadata.ItemType))
+                if (metadata.ItemType is not null && (AxamlControlMetadata.HasSourceValue(element, "ItemsSource")
+                    || !metadata.AcceptsItem(child)))
                     AddOpaqueSubtree(child, "UnsupportedStaticItemOrItemsSource", report, diagnostics);
                 else ImportElement(child, control.Id, controlType);
             }
@@ -182,7 +200,29 @@ public sealed class AxamlImportService
             document.Controls.Add(imported.Control);
 
         report.Structure = AxamlImportStructureReport.Create(sourcePath, syntax, sourceMap, report, diagnostics);
-        AppendCapabilityDiagnostics(sourcePath, report, diagnostics);
+        foreach (var type in new[] { "Expander", "ComboBox" })
+        {
+            var references = sourceMap.Controls.Where(r => r.Element.LocalName == type).ToArray();
+            var prefix = type == "Expander" ? "AXAML_EXPANDER" : "AXAML_COMBOBOX";
+            diagnostics.Add(new(prefix + "_IMPORTED", AxamlDiagnosticSeverity.Information, $"count={references.Length}"));
+            diagnostics.Add(new(prefix + (type == "Expander" ? "_CHILDREN_IMPORTED" : "_ITEMS_IMPORTED"), AxamlDiagnosticSeverity.Information,
+                $"count={sourceMap.Controls.Count(r => references.Any(parent => r.ParentId == parent.ControlId))}"));
+        }
+        if (detailedDiagnostics)
+            foreach (var reference in sourceMap.Controls)
+                foreach (var property in reference.Capability.Properties.Where(p => p.Mode != AxamlPropertyCapabilityMode.Editable))
+                    diagnostics.Add(new("AXAML_PROPERTY_OPAQUE", AxamlDiagnosticSeverity.Information,
+                        $"path={AxamlImportStructureReport.PathOf(reference.Element)}; property={property.SourceName}; reason={property.Reason}"));
+        else
+        {
+            var unknownAttributes = diagnostics.Count(d => d.Code == "AXAML_IMPORT_UNKNOWN_ATTRIBUTE_PRESERVED");
+            diagnostics.RemoveAll(d => d.Code is "AXAML_ELEMENT_DISCOVERED" or "AXAML_ELEMENT_IMPORTED" or "AXAML_ELEMENT_OPAQUE" or "AXAML_IMPORT_CONTROL" or "AXAML_IMPORT_UNKNOWN_NODE_PRESERVED" or "AXAML_IMPORT_UNKNOWN_ATTRIBUTE_PRESERVED");
+            if (unknownAttributes > 0)
+                diagnostics.Add(new("AXAML_IMPORT_UNKNOWN_ATTRIBUTE_PRESERVED", AxamlDiagnosticSeverity.Information, $"count={unknownAttributes}"));
+            diagnostics.Add(new("AXAML_PROPERTY_OPAQUE", AxamlDiagnosticSeverity.Information,
+                $"count={report.Elements.Sum(e => e.Properties.Count(p => p.Mode != AxamlPropertyCapabilityMode.Editable))}; detailed=false"));
+        }
+        AppendCapabilityDiagnostics(sourcePath, report, diagnostics, detailedDiagnostics);
         diagnostics.Add(new AxamlRoundTripDiagnostic(
             "AXAML_CAPABILITY_REPORT",
             report.DocumentReadOnly ? AxamlDiagnosticSeverity.Warning : AxamlDiagnosticSeverity.Information,
@@ -267,6 +307,28 @@ public sealed class AxamlImportService
 
     private static bool IsNamespace(AxamlAttributeSyntax attribute) => attribute.Name == "xmlns" || attribute.Name.StartsWith("xmlns:", StringComparison.Ordinal);
 
+    private static void PreserveProperty(AxamlElementCapability capability, string key, string reason)
+    {
+        var property = capability.Properties.Single(p => p.Key == key);
+        capability.Properties[capability.Properties.IndexOf(property)] = property with { Mode = AxamlPropertyCapabilityMode.Preserved, Reason = reason };
+    }
+
+    private static bool TryReadTextContent(string source, AxamlElementSyntax element, out string text)
+    {
+        text = "";
+        if (element.IsSelfClosing) return false;
+        var content = source.Substring(element.ContentStart, element.EndTagSpan.Start - element.ContentStart);
+        foreach (var child in element.Children.OrderByDescending(c => c.ElementSpan.Start))
+            content = content.Remove(child.ElementSpan.Start - element.ContentStart, child.ElementSpan.Length);
+        try
+        {
+            // Decode XML entities/CDATA without resolving external resources or executing markup.
+            text = XElement.Parse("<value>" + content + "</value>").Value.Trim();
+            return text.Length > 0;
+        }
+        catch (XmlException) { return false; }
+    }
+
     private static AxamlElementCapability CreateContainerCapability(AxamlElementSyntax element)
     {
         var capability = new AxamlElementCapability(element, AxamlElementCapabilityMode.Editable);
@@ -299,9 +361,9 @@ public sealed class AxamlImportService
         }
     }
 
-    private static void AppendCapabilityDiagnostics(string? path, AxamlCapabilityReport report, ICollection<AxamlRoundTripDiagnostic> diagnostics)
+    private static void AppendCapabilityDiagnostics(string? path, AxamlCapabilityReport report, ICollection<AxamlRoundTripDiagnostic> diagnostics, bool detailed = false)
     {
-        foreach (var element in report.Elements)
+        foreach (var element in detailed ? report.Elements : Enumerable.Empty<AxamlElementCapability>())
             diagnostics.Add(new("AXAML_ELEMENT_CAPABILITY", AxamlDiagnosticSeverity.Information,
                 $"name={element.Name}; type={element.Element.Name}; mode={element.Mode}; reason={element.Reason}; " +
                 $"editableProperties={string.Join(",", element.Properties.Where(p => p.Mode == AxamlPropertyCapabilityMode.Editable).Select(p => p.SourceName))}; " +
@@ -480,7 +542,7 @@ internal static class AxamlRoundTripPropertyMap
         DesignerControlTypes.TextBlock => TextBlock,
         DesignerControlTypes.CheckBox => CheckBox,
         DesignerControlTypes.Border => Common,
-        DesignerControlTypes.Group or "DockPanel" or "Canvas" or "ScrollViewer" or "TabControl" or "TabItem" or "WrapPanel" => Common,
+        DesignerControlTypes.Group or "DockPanel" or "Canvas" or "ScrollViewer" or "TabControl" or "TabItem" or "WrapPanel" or "Expander" or "ComboBox" or "ComboBoxItem" => Common,
         DesignerControlTypes.LayoutGrid => Common.Concat(new[]
         {
             Text("GridRowDefinitions", "RowDefinitions", c => c.GridRowDefinitions, (c, v) => c.GridRowDefinitions = v),

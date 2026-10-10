@@ -152,7 +152,7 @@ internal static partial class Program
 
     private static void AssertCapabilityNoCanvasSafeIdentity(SmokeContext context)
     {
-        foreach (var source in new[] { "<Window><Expander><Button Content=\"Keep\" /></Expander></Window>", "<custom:Root xmlns:custom=\"using:X\"><Canvas><Button /></Canvas></custom:Root>" })
+        foreach (var source in new[] { "<Window><UnknownContainer><Button Content=\"Keep\" /></UnknownContainer></Window>", "<custom:Root xmlns:custom=\"using:X\"><Canvas><Button /></Canvas></custom:Root>" })
         {
             var result = new AxamlImportService().Import(source);
             RequireCapability(result.CapabilityReport.Level == AxamlCapabilityLevel.PartiallyEditable && result.Document.Controls.Count == 0, "Unsupported layout is opaque, not an unsafe document.");
@@ -178,7 +178,7 @@ internal static partial class Program
     {
         foreach (var path in new[] { Path.Combine(FindRepositoryRoot(), "Views", "MainWindow.axaml"), Path.Combine(FindRepositoryRoot(), "Samples", "VisualStudioPoC", "SimpleAvaloniaApp", "MainWindow.axaml") })
         {
-            var result = new AxamlImportService().Import(File.ReadAllText(path), path);
+            var result = new AxamlImportService().Import(File.ReadAllText(path), path, detailedDiagnostics: true);
             RequireCapability(result.CapabilityReport.Level == AxamlCapabilityLevel.PartiallyEditable && !result.CapabilityReport.DocumentReadOnly, "Real document was globally made read-only by unsupported syntax.");
             RequireCapability(result.Diagnostics.Any(d => d.Code == "AXAML_DOCUMENT_CAPABILITY") && result.Diagnostics.Any(d => d.Code == "AXAML_ELEMENT_CAPABILITY"), "Granular diagnostics missing.");
             RequireIdentity(result);

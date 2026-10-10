@@ -1,0 +1,12 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:custom="using:Unknown" Width="600" Height="400">
+    <Canvas>
+        <!-- KEEP -->
+        <ComboBox x:Name="Choose" SelectedIndex="1" PlaceholderText="Pick" Width="200" Height="36" Margin="2,4" HorizontalAlignment="Left" VerticalAlignment="Top" Canvas.Left="20" Canvas.Top="20" custom:Unknown="KEEP">
+            <ComboBox.Items>
+                <ComboBoxItem x:Name="One" Content="One"/>
+                <ComboBoxItem x:Name="Two" Content="Two" custom:Item="KEEP"/>
+                <ComboBoxItem x:Name="Three" Content="Three"/>
+            </ComboBox.Items>
+        </ComboBox>
+    </Canvas>
+</Window>

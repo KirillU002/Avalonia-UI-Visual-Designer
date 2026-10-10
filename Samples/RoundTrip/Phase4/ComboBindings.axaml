@@ -1,0 +1,9 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:custom="using:Unknown" Width="600" Height="400">
+    <Window.Styles><Style Selector="ComboBox"><Setter Property="MinHeight" Value="30"/></Style></Window.Styles>
+    <Grid>
+        <!-- KEEP -->
+        <ComboBox x:Name="Choose" ItemsSource="{Binding AvailableItems}" SelectedItem="{Binding CurrentItem}" Width="200" Margin="3,5" custom:Unknown="KEEP">
+            <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding Caption}"/></DataTemplate></ComboBox.ItemTemplate>
+        </ComboBox>
+    </Grid>
+</Window>

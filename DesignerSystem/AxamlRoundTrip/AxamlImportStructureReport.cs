@@ -70,6 +70,7 @@ public sealed class AxamlImportStructureReport
     public static bool IsVisualCandidate(AxamlElementSyntax element)
     {
         if (element.Parent is null || IsPropertyElement(element)) return false;
+        if (element.LocalName == "String" && element.NamespaceUri is "http://schemas.microsoft.com/winfx/2006/xaml" or "clr-namespace:System;assembly=mscorlib") return false;
         for (var node = element; node.Parent is not null; node = node.Parent)
         {
             if (IsPropertyElement(node) && node.LocalName.Split('.').Last() is not ("Content" or "Child" or "Children" or "Items")) return false;
@@ -114,9 +115,9 @@ public sealed class AxamlImportStructureReport
             VisualRoot = string.Join(", ", syntax.Root.Children.Where(IsVisualCandidate).Select(PathOf)),
             TotalElements = elements.Count, VisualElements = visual.Count,
             // The implicit root Canvas is counted as projected visual, but not as a designer control.
-            ImportedElements = map.Controls.Count,
+            ImportedElements = map.Controls.Count(r => IsVisualCandidate(r.Element)),
             ImplicitContainers = map.CanvasElement is null ? 0 : 1,
-            PartialElements = map.Controls.Count(r => r.Capability.Mode == AxamlElementCapabilityMode.PartiallyEditable),
+            PartialElements = map.Controls.Count(r => IsVisualCandidate(r.Element) && r.Capability.Mode == AxamlElementCapabilityMode.PartiallyEditable),
             SkippedSubtrees = blockers.Count,
             Bindings = elements.Sum(e => e.Attributes.Count(a => a.Value.StartsWith("{Binding", StringComparison.Ordinal)
                 || a.Value.StartsWith("{CompiledBinding", StringComparison.Ordinal) || a.Value.StartsWith("{ReflectionBinding", StringComparison.Ordinal)))
@@ -133,6 +134,8 @@ public sealed class AxamlImportStructureReport
         diagnostics.Add(new("AXAML_VISUAL_ROOT_DETECTED", AxamlDiagnosticSeverity.Information, $"path={result.VisualRoot}"));
         diagnostics.Add(new("AXAML_IMPORT_SUMMARY", AxamlDiagnosticSeverity.Information,
             $"totalElements={result.TotalElements}; visualElements={result.VisualElements}; importedElements={result.ImportedElements}; partialElements={result.PartialElements}; opaqueElements={result.OpaqueVisualElements}; skippedSubtrees={result.SkippedSubtrees}; bindings={result.Bindings}; styles={result.Styles}; designerControlsCreated={map.Controls.Count}"));
+        diagnostics.Add(new("AXAML_COVERAGE_SUMMARY", AxamlDiagnosticSeverity.Information,
+            $"imported={result.ImportedElements}; visualCandidates={result.VisualElements}; opaque={result.OpaqueVisualElements}; skippedBoundaries={result.SkippedSubtrees}"));
         return result;
     }
 }

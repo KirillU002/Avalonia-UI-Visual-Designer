@@ -4213,6 +4213,43 @@ public partial class MainWindow : Window
         var renderModel = CreateRenderModel(model, renderedWidth, renderedHeight);
         var preview = VM.IsAxamlRoundTripDocument && VM.CanHostChildren(model)
             ? CreateGroupPreview(renderModel) : CreatePreviewControl(renderModel);
+        if (VM.ActiveAxamlSourceDocument?.SourceMap.TryGet(model.Id, out var phase4Reference) == true
+            && AxamlPhase4Projection.Create(phase4Reference, model) is { } nativePreview)
+        {
+            preview = nativePreview;
+            preview.Width = renderedWidth;
+            preview.Height = renderedHeight;
+            preview.Tag = model;
+            if (preview is TemplatedControl templatedPreview) templatedPreview.FontSize = model.FontSize;
+            preview.IsHitTestVisible = false;
+            if (preview is Expander expander)
+            {
+                expander.IsHitTestVisible = true;
+                expander.TemplateApplied += (_, _) =>
+                {
+                    foreach (var toggle in expander.GetVisualDescendants().OfType<ToggleButton>().Where(t => t.TemplatedParent == expander))
+                        toggle.IsHitTestVisible = false;
+                };
+                var child = VM.Controls.SingleOrDefault(c => c.ParentId == model.Id);
+                if (expander.IsExpanded && child is not null && VM.AxamlLayoutBounds.TryGetValue(child.Id, out var childBounds))
+                {
+                    var contentWrapper = CreateDesignerWrapper(child, childBounds.Width, childBounds.Height);
+                    _wrapperByControlId[child.Id] = contentWrapper;
+                    try { contentWrapper.Margin = Thickness.Parse(child.Margin); } catch (FormatException) { }
+                    if (Enum.TryParse<HorizontalAlignment>(child.HorizontalAlignment, out var horizontal)) contentWrapper.HorizontalAlignment = horizontal;
+                    if (Enum.TryParse<VerticalAlignment>(child.VerticalAlignment, out var vertical)) contentWrapper.VerticalAlignment = vertical;
+                    expander.Content = contentWrapper;
+                }
+            }
+            if (preview is ComboBox combo)
+            {
+                var children = VM.Controls.Where(c => c.ParentId == model.Id)
+                    .OrderBy(c => VM.ActiveAxamlSourceDocument.SourceMap.ByControlId[c.Id].Element.ElementSpan.Start).ToArray();
+                foreach (var child in children)
+                    combo.Items.Add(AxamlPhase4Projection.Create(VM.ActiveAxamlSourceDocument.SourceMap.ByControlId[child.Id], child));
+                AxamlPhase4Projection.SelectStaticItem(combo, phase4Reference, model, children, VM.ActiveAxamlSourceDocument.SourceMap);
+            }
+        }
         if (VM.ActiveAxamlSourceDocument?.SourceMap.TryGet(model.Id, out var tabReference) == true
             && tabReference.Element.LocalName == "TabControl")
         {
@@ -4255,7 +4292,7 @@ public partial class MainWindow : Window
         Canvas.SetLeft(preview, 0);
         Canvas.SetTop(preview, 0);
 
-        if (VM.CanHostChildren(model))
+        if (VM.CanHostChildren(model) && preview is not (Expander or ComboBox or ComboBoxItem))
         {
             var childHost = new Canvas
             {
@@ -4319,7 +4356,8 @@ public partial class MainWindow : Window
                     Foreground = Brushes.White
                 },
                 IsHitTestVisible = false,
-                IsVisible = !VM.IsAxamlRoundTripDocument || string.IsNullOrEmpty(model.ParentId) || isSelected
+                IsVisible = !(VM.IsAxamlRoundTripDocument && preview is (Expander or ComboBox))
+                    && (!VM.IsAxamlRoundTripDocument || string.IsNullOrEmpty(model.ParentId) || isSelected)
             };
 
             Canvas.SetLeft(label, 8);
@@ -4426,7 +4464,9 @@ public partial class MainWindow : Window
 
     private bool CanResizeControl(DesignControlModel model)
     {
-        return !model.IsLocked && model.Type != DesignerControlTypes.Group && VM.CanResizeAxamlControl(model);
+        var nativeContentControl = VM.ActiveAxamlSourceDocument?.SourceMap.TryGet(model.Id, out var reference) == true
+            && reference.Element.LocalName is "Expander" or "ComboBox";
+        return !model.IsLocked && (model.Type != DesignerControlTypes.Group || nativeContentControl) && VM.CanResizeAxamlControl(model);
     }
 
     private Control CreatePreviewControl(DesignControlModel model)
