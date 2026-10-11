@@ -1618,11 +1618,13 @@ internal static partial class Program
     {
         var validationRoot = CreateSmokeTemporaryWorkspace("validation", scenarioName);
         var messages = new List<string>();
-        var result = vm.ValidateCurrentExportBuildAsync(validationRoot, message =>
+        var validation = vm.ValidateCurrentExportBuildAsync(validationRoot, message =>
         {
             messages.Add(message);
             return Task.CompletedTask;
-        }).GetAwaiter().GetResult();
+        });
+        Pump(validation);
+        var result = validation.GetAwaiter().GetResult();
 
         if (requirePassed && result.Status != ExportBuildValidationStatus.Passed)
             throw new InvalidOperationException($"Validation build did not pass: {result.Status} {result.Output}");
@@ -6560,7 +6562,9 @@ internal static partial class Program
         vm.InteractionTraceEntries.Clear();
 
         var validationRoot = CreateSmokeTemporaryWorkspace("validation", "active-form");
-        var result = vm.ValidateCurrentExportBuildAsync(validationRoot).GetAwaiter().GetResult();
+        var validation = vm.ValidateCurrentExportBuildAsync(validationRoot);
+        Pump(validation);
+        var result = validation.GetAwaiter().GetResult();
         if (result.Status != ExportBuildValidationStatus.Passed)
             throw new InvalidOperationException($"Validation build did not pass: {result.Status} {result.Output}");
 
