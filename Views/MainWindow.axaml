@@ -17,7 +17,7 @@
         MinWidth="1040"
         MinHeight="640"
         RequestedThemeVariant="Light"
-        Title="Конструктор форм Avalonia · Alpha 0.2"
+        Title="Конструктор форм Avalonia · Alpha 4.0"
         Background="#EAF1F8"
         Classes.density-comfortable="{Binding IsComfortableUiDensity}"
         Classes.density-compact="{Binding IsCompactUiDensity}"
