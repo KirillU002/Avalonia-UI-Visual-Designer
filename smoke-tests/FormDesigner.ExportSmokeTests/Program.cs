@@ -3828,6 +3828,7 @@ internal static partial class Program
         if (string.Equals(source.PreviewRowsDataKind, "SampleRows", StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("Real DLL preview rows must not be marked as sample rows.");
 
+        Dispatcher.UIThread.RunJobs();
         RequireTraceEvent(context, "DATAGRID_PREVIEW_REAL_ROWS_APPLIED");
     }
 
