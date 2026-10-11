@@ -213,6 +213,8 @@ public partial class MainWindow : Window
             ApplySurfaceZoom();
         };
         Opened += MainWindow_Opened;
+        Closed += (_, _) => StopWindowTimers();
+        InitializeInputDiagnostics();
         Closing += MainWindow_Closing;
         PositionChanged += (_, _) =>
         {
@@ -412,21 +414,9 @@ public partial class MainWindow : Window
     {
         if (_hasCheckedRecoveryOnStartup)
             return;
-
-        ApplySessionWindowState(_appSettings.Session);
         _hasCheckedRecoveryOnStartup = true;
-        if (UsesHostDocumentBuffer)
-        {
-            VM.LogWorkspace(WorkspaceLogLevel.Info, MainWindowViewModel.OutputCategoryDiagnostics,
-                "HOST_BUFFER_LIFECYCLE", "Startup recovery and disk reopen disabled; awaiting host snapshot.");
-            return;
-        }
-        var recoveryHandled = await CheckRecoveryOnStartupAsync();
-        if (!recoveryHandled)
-            await TryRestoreLastSessionDocumentAsync();
-
-        ApplySessionViewportState(_appSettings.Session);
-        _autosaveTimer.Start();
+        _startupTask = InitializeWorkspaceOnStartupAsync();
+        await _startupTask;
     }
 
     private async void MainWindow_Closing(object? sender, WindowClosingEventArgs e)
@@ -456,6 +446,7 @@ public partial class MainWindow : Window
     public void CloseForExternalHost()
     {
         _isCloseConfirmed = true;
+        StopWindowTimers();
         Close();
     }
 
@@ -463,6 +454,9 @@ public partial class MainWindow : Window
     {
         if (sender is not MainWindowViewModel viewModel)
             return;
+
+        if (e.PropertyName == nameof(MainWindowViewModel.IsBusy))
+            LogStartupEvent("BUSY_STATE_CHANGED");
 
         if (e.PropertyName == nameof(MainWindowViewModel.IsUserPreviewMode))
         {
@@ -1607,6 +1601,19 @@ public partial class MainWindow : Window
 
     private async Task TryRestoreLastSessionDocumentAsync(bool ignoreSetting = false)
     {
+        LogStartupEvent("WORKSPACE_RESTORE_BEGIN", $"ignoreSetting={ignoreSetting}");
+        try
+        {
+            await RestoreLastSessionDocumentCoreAsync(ignoreSetting);
+        }
+        finally
+        {
+            LogStartupEvent("WORKSPACE_RESTORE_END");
+        }
+    }
+
+    private async Task RestoreLastSessionDocumentCoreAsync(bool ignoreSetting)
+    {
         if (UsesHostDocumentBuffer)
         {
             ReloadHostDocument();
@@ -1629,7 +1636,7 @@ public partial class MainWindow : Window
             VM.StatusText = $"Последний файл недоступен: {lastPath}";
             VM.LogWorkspace(WorkspaceLogLevel.Warning, MainWindowViewModel.OutputCategoryGeneral, VM.StatusText);
             VM.ShowWorkspaceToast(WorkspaceToastLevel.Warning, "Last workspace unavailable", lastPath, isPersistent: true);
-            VM.IsStartScreenVisible = true;
+            LogStartupEvent("WORKSPACE_RESTORE_FAILED", $"reason=FileNotFound; path={lastPath}; rooted={System.IO.Path.IsPathFullyQualified(lastPath)}", WorkspaceLogLevel.Warning);
             return;
         }
 
@@ -1645,7 +1652,7 @@ public partial class MainWindow : Window
             VM.StatusText = $"Не удалось восстановить последнюю сессию: {ex.Message}";
             VM.LogWorkspace(WorkspaceLogLevel.Error, MainWindowViewModel.OutputCategoryGeneral, VM.StatusText, $"path={lastPath}; {ex}");
             VM.ShowWorkspaceToast(WorkspaceToastLevel.Error, "Reopen failed", ex.Message, isPersistent: true);
-            VM.IsStartScreenVisible = true;
+            LogStartupEvent("WORKSPACE_RESTORE_FAILED", $"path={lastPath}; exception={ex}", WorkspaceLogLevel.Error);
         }
     }
 
@@ -10047,11 +10054,11 @@ public partial class MainWindow : Window
     private async void OpenDocumentButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (UsesHostDocumentBuffer) { ReloadHostDocument(); return; }
-        if (!await EnsureUnsavedChangesHandledAsync())
-            return;
-
+        LogStartupEvent("COMMAND_EXECUTION_STARTED", "command=Open; scope=operation");
         try
         {
+            if (!await EnsureUnsavedChangesHandledAsync())
+                return;
             VM.LogWorkspace(WorkspaceLogLevel.Info, MainWindowViewModel.OutputCategoryDiagnostics, "HOST_FILE_PICKER_REQUEST", "operation=OpenDocument");
             var files = await _hostServices.FilePicker.OpenFilesAsync(new DesignerOpenFilePickerOptions(
                 "Открыть документ конструктора",
@@ -10078,9 +10085,10 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             VM.StatusText = $"Ошибка открытия: {ex.Message}";
-            VM.LogWorkspace(WorkspaceLogLevel.Error, MainWindowViewModel.OutputCategoryGeneral, "Open failed.", ex.Message);
+            VM.LogWorkspace(WorkspaceLogLevel.Error, MainWindowViewModel.OutputCategoryGeneral, "Open failed.", ex.ToString());
             VM.ShowWorkspaceToast(WorkspaceToastLevel.Error, "Open failed", ex.Message, isPersistent: true);
         }
+        finally { LogStartupEvent("COMMAND_EXECUTION_FINISHED", "command=Open; scope=operation"); }
     }
 
     private async void OpenAxamlDocumentButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
@@ -10218,13 +10226,22 @@ public partial class MainWindow : Window
     private async void NewDocumentButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (UsesHostDocumentBuffer) { ReloadHostDocument(); return; }
-        if (!await EnsureUnsavedChangesHandledAsync())
-            return;
-
-        VM.NewDocumentCommand.Execute(null);
-        _autosaveRecoveryService.TryDeleteDraft();
-        VM.AutosaveStatusText = "Черновик очищен для нового документа.";
-        await SaveAppSettingsNowAsync();
+        LogStartupEvent("COMMAND_EXECUTION_STARTED", "command=New; scope=operation");
+        try
+        {
+            if (!await EnsureUnsavedChangesHandledAsync())
+                return;
+            VM.NewDocumentCommand.Execute(null);
+            _autosaveRecoveryService.TryDeleteDraft();
+            VM.AutosaveStatusText = "Черновик очищен для нового документа.";
+            await SaveAppSettingsNowAsync();
+        }
+        catch (Exception ex)
+        {
+            LogStartupEvent("COMMAND_EXECUTION_FAILED", $"command=New; exception={ex}", WorkspaceLogLevel.Error);
+            VM.ShowWorkspaceToast(WorkspaceToastLevel.Error, "New project failed", ex.Message, isPersistent: true);
+        }
+        finally { LogStartupEvent("COMMAND_EXECUTION_FINISHED", "command=New; scope=operation"); }
     }
 
     private async void CopyGeneratedXamlButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)

@@ -37,6 +37,7 @@ internal static partial class Program
     private static readonly Dictionary<string, string> LinqToSqlSmokeDllCache = new(StringComparer.OrdinalIgnoreCase);
     private static bool _avaloniaRuntimeInitialized;
     private static string? _activeScenarioWorkspace;
+    private static readonly List<MainWindow> SmokeWindows = new();
 
     [STAThread]
     public static int Main(string[] args)
@@ -57,6 +58,22 @@ internal static partial class Program
 
         var scenarios = new SmokeScenario[]
         {
+            new("StartupMissingWorkspaceInput", ConfigureSimpleFormExport, AssertStartupMissingWorkspaceInput),
+            new("StartupNoWorkspace", ConfigureSimpleFormExport, AssertStartupScenario),
+            new("StartupExistingJsonWorkspace", ConfigureSimpleFormExport, AssertStartupScenario),
+            new("StartupExistingAxamlWorkspace", ConfigureSimpleFormExport, AssertStartupScenario),
+            new("StartupCorruptJsonWorkspace", ConfigureSimpleFormExport, AssertStartupScenario),
+            new("StartupCorruptAxamlWorkspace", ConfigureSimpleFormExport, AssertStartupScenario),
+            new("StartupNewAfterRestoreFailure", ConfigureSimpleFormExport, AssertStartupScenario),
+            new("StartupOpenAfterRestoreFailure", ConfigureSimpleFormExport, AssertStartupScenario),
+            new("StartupToastDismissAndMenuHitTest", ConfigureSimpleFormExport, AssertStartupScenario),
+            new("StartupStartScreenHasDismissAction", ConfigureSimpleFormExport, AssertStartupScenario),
+            new("StartupDispatcherAndInputDiagnostics", ConfigureSimpleFormExport, AssertStartupScenario),
+            new("StartupBusyResetAfterException", ConfigureSimpleFormExport, AssertStartupScenario),
+            new("StartupRepeatAfterRestoreFailure", ConfigureSimpleFormExport, AssertStartupScenario),
+            new("StartupInterruptedSessionRecovery", ConfigureSimpleFormExport, AssertStartupScenario),
+            new("StartupSmokeSettingsIsolation", ConfigureSimpleFormExport, AssertStartupScenario),
+            new("StartupKeyboardAndModeInput", ConfigureSimpleFormExport, AssertStartupScenario),
             new("LocalizationKeysExistForMainUi", ConfigureSimpleFormExport, AssertLocalizationKeysExistForMainUi),
             new("PropertyNamesAreNotLocalized", ConfigureSimpleFormExport, AssertPropertyNamesAreNotLocalized),
             new("ControlNamesAreNotLocalized", ConfigureSimpleFormExport, AssertControlNamesAreNotLocalized),
@@ -540,6 +557,8 @@ internal static partial class Program
                 if (surface.GetLogicalAncestors().OfType<MainWindow>().FirstOrDefault() is { IsVisible: true } host)
                     host.CloseForExternalHost();
             AxamlSmokeSurfaces.Clear();
+            foreach (var window in SmokeWindows) window.CloseForExternalHost();
+            SmokeWindows.Clear();
             _activeScenarioWorkspace = previousWorkspace;
             if (succeeded && !ShouldKeepSuccessfulSmokeArtifacts())
             {
@@ -555,7 +574,7 @@ internal static partial class Program
         BuiltInControlRegistrar.Register(registry);
         registry.RegisterBindingProvider(new ReflectionBindingMetadataProvider());
 
-        var viewModel = new MainWindowViewModel(registry)
+        var viewModel = new MainWindowViewModel(registry, new TestDesignerHostServices(useUiScheduler: true))
         {
             ExportProjectNamespace = $"SmokeGenerated.{scenarioName.Replace("-", "").Replace("_", "")}",
             ExportTarget = MainWindowViewModel.ExportTargetMainWindow,
@@ -4654,7 +4673,7 @@ internal static partial class Program
     private static void AssertDesignerSurfaceToolboxUsesSharedRegistry(SmokeContext context)
     {
         EnsureAvaloniaRuntimeInitialized();
-        var window = new MainWindow { DataContext = context.ViewModel };
+        var window = CreateSmokeWindow(context.ViewModel);
         var toolbox = window.FindControl<DesignerToolbox>("DesignerToolbox")
             ?? throw new InvalidOperationException("MainWindow did not host the extracted DesignerToolbox.");
         if (!ReferenceEquals(toolbox.Context, context.ViewModel))
@@ -4697,7 +4716,7 @@ internal static partial class Program
         var vm = context.ViewModel;
         var button = vm.Controls.Single(control => control.Name == "SurfaceButton");
         vm.SelectSingleControl(button);
-        var window = new MainWindow { DataContext = vm };
+        var window = CreateSmokeWindow(vm);
         var inspector = window.FindControl<DesignerPropertyInspector>("DesignerPropertyInspector")
             ?? throw new InvalidOperationException("MainWindow did not host the extracted DesignerPropertyInspector.");
 
@@ -4717,7 +4736,7 @@ internal static partial class Program
         var button = vm.Controls.Single(control => control.Name == "SurfaceButton");
         vm.SelectSingleControl(button);
 
-        var window = new MainWindow { DataContext = vm };
+        var window = CreateSmokeWindow(vm);
         var inspector = window.FindControl<DesignerPropertyInspector>("DesignerPropertyInspector")
             ?? throw new InvalidOperationException("MainWindow did not host the extracted DesignerPropertyInspector.");
         var command = inspector.ToggleFavoriteCommand
@@ -4919,7 +4938,7 @@ internal static partial class Program
     private static DesignerSurface CreateMainWindowDesignerSurface(SmokeContext context)
     {
         EnsureAvaloniaRuntimeInitialized();
-        var window = new MainWindow { DataContext = context.ViewModel };
+        var window = CreateSmokeWindow(context.ViewModel);
         var surface = window.FindControl<DesignerSurface>("DesignerSurface")
             ?? throw new InvalidOperationException("MainWindow did not host a DesignerSurface named 'DesignerSurface'.");
         surface.Context = context.ViewModel;
@@ -7428,7 +7447,7 @@ internal static partial class Program
             ?? throw new InvalidOperationException("Avalonia application was not initialized for the Eremex theme scope test.");
         var globalStyleCount = application.Styles.Count;
         var editor = context.ViewModel.Controls.Single(control => control.Type == "Eremex.TextEditor");
-        var canvasWindow = new MainWindow { DataContext = context.ViewModel };
+        var canvasWindow = CreateSmokeWindow(context.ViewModel);
         var preview = InvokePreviewFactory(canvasWindow, "CreatePreviewControl", editor);
 
         if (application.Styles.Count != globalStyleCount)
@@ -7540,7 +7559,7 @@ internal static partial class Program
         }
 
         EnsureAvaloniaRuntimeInitialized();
-        var canvasWindow = new MainWindow { DataContext = vm };
+        var canvasWindow = CreateSmokeWindow(vm);
         var canvasGrid = InvokePreviewFactory(canvasWindow, "CreatePreviewControl", grid);
         AssertRealEremexDataGrid(canvasGrid, "Designer Canvas");
         RequireControlCanApplyTemplateAndLayout(canvasGrid, "Eremex DataGrid Designer Canvas");
@@ -7750,7 +7769,7 @@ internal static partial class Program
         RequireControlCanApplyTemplateAndLayout(preview, "Descriptor preview");
         RequireSingleCoreAvaloniaAssemblyIdentity();
 
-        var canvasWindow = new MainWindow { DataContext = vm };
+        var canvasWindow = CreateSmokeWindow(vm);
         var canvasPreview = InvokePreviewFactory(canvasWindow, "CreatePreviewControl", editor);
         AssertRealEremexTextEditor(canvasPreview, "Designer Canvas");
         RequireControlCanApplyTemplateAndLayout(canvasPreview, "Designer Canvas");
@@ -9171,7 +9190,7 @@ Diagnostics:
 
     private sealed class TestDesignerHostServices : IDesignerHostServices
     {
-        public TestDesignerHostServices()
+        public TestDesignerHostServices(bool useUiScheduler = false)
         {
             Clipboard = new TestDesignerClipboard();
             Dialogs = new TestDesignerDialogService();
@@ -9179,7 +9198,7 @@ Diagnostics:
             Notifications = new TestDesignerNotificationService();
             Paths = new TestDesignerPathService();
             FileSystem = new PhysicalDesignerFileSystem();
-            Scheduler = new TestDesignerScheduler();
+            Scheduler = useUiScheduler ? new AvaloniaDesignerScheduler() : new TestDesignerScheduler();
             ExternalLauncher = new TestDesignerExternalLauncher();
             Commands = new TestDesignerHostCommandService();
         }

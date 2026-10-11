@@ -2827,7 +2827,12 @@ public partial class MainWindowViewModel : ObservableObject
             Icon = icon,
             Shortcut = shortcut,
             Category = category,
-            Execute = execute,
+            Execute = () =>
+            {
+                LogWorkspace(WorkspaceLogLevel.Info, OutputCategoryDiagnostics, "COMMAND_EXECUTION_STARTED", $"command={id}; busy={IsBusy}");
+                try { execute(); }
+                finally { LogWorkspace(WorkspaceLogLevel.Info, OutputCategoryDiagnostics, "COMMAND_EXECUTION_FINISHED", $"command={id}; busy={IsBusy}; scope=dispatch"); }
+            },
             GetState = getState,
             IsDangerous = isDangerous
         });

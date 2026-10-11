@@ -8032,7 +8032,8 @@
       </Grid>
     </Border>
 
-    <Border Grid.RowSpan="3"
+    <Border x:Name="StartScreenOverlay"
+            Grid.RowSpan="3"
             Background="#0F172A70"
             IsVisible="{Binding IsStartScreenVisible}">
       <Grid>
@@ -8044,8 +8045,7 @@
                 BorderBrush="#CBD5E1"
                 BorderThickness="1"
                 HorizontalAlignment="Center"
-                      VerticalAlignment="Center"
-                      IsVisible="False">
+                VerticalAlignment="Center">
           <Grid RowDefinitions="Auto,Auto,*">
             <Grid ColumnDefinitions="*,Auto">
               <StackPanel Spacing="3">
@@ -8139,7 +8139,8 @@
       </Grid>
     </Border>
 
-    <Border Grid.RowSpan="3"
+    <Border x:Name="CommandPaletteOverlay"
+            Grid.RowSpan="3"
             Background="#0F172A80"
             IsVisible="{Binding IsCommandPaletteOpen}">
       <Grid>
@@ -8235,7 +8236,8 @@
       </Grid>
     </Border>
 
-    <ItemsControl Grid.RowSpan="3"
+    <ItemsControl x:Name="WorkspaceToastHost"
+                  Grid.RowSpan="3"
                   ItemsSource="{Binding WorkspaceToasts}"
                   HorizontalAlignment="Right"
                   VerticalAlignment="Top"
@@ -8278,7 +8280,8 @@
       </ItemsControl.ItemTemplate>
     </ItemsControl>
 
-    <Border Grid.RowSpan="3"
+    <Border x:Name="BusyOverlay"
+            Grid.RowSpan="3"
             Background="#0F172AB8"
             IsVisible="{Binding IsBusy}">
       <Grid>
