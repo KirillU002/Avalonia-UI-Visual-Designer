@@ -1,6 +1,6 @@
 # Avalonia UI Visual Designer
 
-**Текущая версия:** Alpha 3.0, development-ветка `main` · **Visual Studio Extension:** 0.1.17
+**Текущая версия:** Alpha 4.0 (`v0.4.0-alpha.1`) · **Visual Studio Extension:** 0.1.17
 
 Avalonia UI Visual Designer - визуальный дизайнер форм для Avalonia UI. Он позволяет создавать многоформенные проекты, редактировать интерфейс, настраивать источники данных, просматривать результат и экспортировать Avalonia-проект с AXAML и C#.
 
@@ -8,15 +8,15 @@ Avalonia UI Visual Designer - визуальный дизайнер форм д�
 
 ![C#](https://img.shields.io/badge/C%23-.NET_8-blue?style=for-the-badge&logo=csharp)
 ![Avalonia](https://img.shields.io/badge/Avalonia-11.1.1-purple?style=for-the-badge)
-![Status](https://img.shields.io/badge/status-Alpha_3.0-orange?style=for-the-badge)
+![Status](https://img.shields.io/badge/status-Alpha_4.0-orange?style=for-the-badge)
 
 ## Статус проекта
 
 Проект находится на стадии **Alpha** и активно развивается. Standalone-сценарии, Visual Studio bridge и AXAML Round-trip имеют smoke/regression tests, но проект пока не считается production-ready.
 
-Текущая `main` включает миграцию на .NET 8 и AXAML Import Phase 2/3/4. Она новее зафиксированного standalone-релиза `v0.3.0-alpha`; нового продуктового тега для этого состояния пока нет. Visual Studio integration остаётся экспериментальной: это отдельное окно Designer, а не встроенный редактор Visual Studio.
+**Alpha 4.0** объединяет .NET 8, Visual Studio integration и AXAML Import Phase 2–5. Visual Studio integration остаётся экспериментальной: это отдельное окно Designer, а не встроенный редактор Visual Studio. Состояние предварительного релиза закреплено тегом [`v0.4.0-alpha.1`](https://github.com/KirillU002/Avalonia-UI-Visual-Designer/tree/v0.4.0-alpha.1); основные изменения и ограничения описаны в [Release Notes](Docs/Alpha4ReleaseNotes.md).
 
-## Что изменилось в Alpha 3.0
+## Что изменилось в Alpha 4.0
 
 - Сохранены улучшения New Project, Multi Form, Property Inspector, DataGrid, DLL Import и соответствия Preview/Export.
 - Export Pipeline изолирован от editor state; доступны Build Validation, diagnostics и smoke tests.
@@ -27,6 +27,8 @@ Avalonia UI Visual Designer - визуальный дизайнер форм д�
 - Phase 4 добавила native Expander и ComboBox: Content hierarchy, static items, безопасные Inspector edits и minimal patches.
 - Phase 5 добавила ItemsControl, ListBox/ListBoxItem, TreeView/TreeViewItem и ProgressBar: статические collections/hierarchy, native preview и безопасные property patches.
 - Designer, VsHost, plugins, sample и smoke runner переведены на .NET 8 без изменения версий NuGet-пакетов. VSIX сохраняет совместимый `net472`.
+- Исправлен блокирующий startup overlay: отсутствующий или повреждённый последний workspace больше не мешает работе New/Open и остального интерфейса. Smoke hosts изолированы от пользовательских настроек.
+- Расширены regression tests для startup/input, shared surface, AXAML patches, ACK/checksum и внешнего VsHost.
 
 ## Основные возможности
 
@@ -114,11 +116,11 @@ Plugin реализует vertical slices **TextEditor** и **DataGridControl**:
 
 ## Версии
 
-Текущая разработка: **Alpha 3.0 (`main`)**, VSIX **0.1.17**. Ниже сохранены ссылки на **две предыдущие зафиксированные версии**, чтобы можно было посмотреть проект до текущих изменений.
+Текущая версия: **[Alpha 4.0 / `v0.4.0-alpha.1`](https://github.com/KirillU002/Avalonia-UI-Visual-Designer/tree/v0.4.0-alpha.1)**, VSIX **0.1.17**. Ниже сохранены ссылки на **две предыдущие версии**, чтобы можно было посмотреть проект до текущих изменений.
 
 ## Alpha 3.0
 
-[Alpha 3.0 / `v0.3.0-alpha`](https://github.com/KirillU002/Avalonia-UI-Visual-Designer/releases/tag/v0.3.0-alpha) - предыдущий standalone-релиз со стабилизацией конструктора, Export, DataGrid и DLL Import. Это исторический release, не сборка текущей `main` с .NET 8 и новым AXAML Import.
+[Alpha 3.0 / `v0.3.0-alpha`](https://github.com/KirillU002/Avalonia-UI-Visual-Designer/tree/v0.3.0-alpha) - предыдущая зафиксированная standalone-версия. Это существующий Git tag, не сборка текущей `main` с .NET 8 и новым AXAML Import; отдельной GitHub Release page для него нет.
 
 ## Alpha 2.0
 
@@ -196,7 +198,7 @@ dotnet run -c Debug --project .\smoke-tests\FormDesigner.ExportSmokeTests\FormDe
 Remove-Item Env:SMOKE_SCENARIO_FILTER
 ```
 
-Runner содержит AXAML/layout/source-preservation, DesignerSurface, VSIX/VsHost/IPC, JSON/Multi Form, Preview/Export и Eremex suites. Для generated-project build scenarios требуется NuGet restore. Результаты последней целевой проверки и её границы, включая непроверенный полный Release-прогон, перечислены в [Net8Migration](Docs/Net8Migration.md).
+Runner содержит AXAML/layout/source-preservation, startup/input, DesignerSurface, VSIX/VsHost/IPC, JSON/Multi Form, Preview/Export и Eremex suites. Для generated-project build scenarios требуется NuGet restore. Проверки Alpha 4.0 описаны в [Release Notes](Docs/Alpha4ReleaseNotes.md); предыдущие результаты миграции сохранены в [Net8Migration](Docs/Net8Migration.md).
 
 ## Документация
 
@@ -207,6 +209,8 @@ Runner содержит AXAML/layout/source-preservation, DesignerSurface, VSIX/
 - [Alpha 0.2 manual checklist](Docs/ALPHA_0_2_MANUAL_TEST_CHECKLIST.md) - исторический checklist standalone-сценариев.
 - [Plugin guide](Docs/PluginGuide.md)
 - [Контролируемая миграция .NET 8](Docs/Net8Migration.md)
+- [Alpha 4.0 Release Notes](Docs/Alpha4ReleaseNotes.md)
+- [Standalone startup/input fix](Docs/StandaloneStartupInputFix.md)
 - [Undo/Redo smoke checklist](Docs/UndoRedoSmokeTest.md)
 
 ## Ограничения и roadmap
@@ -214,6 +218,7 @@ Runner содержит AXAML/layout/source-preservation, DesignerSurface, VSIX/
 - AXAML Import не воспроизводит весь Avalonia API. DataGrid и custom/Eremex controls пока не входят в поддержанный import subset. Items/Selector controls поддерживают статические коллекции, не runtime Binding Engine или пользовательские templates/ItemsPanel.
 - Bindings, Styles, Resources и Templates сохраняются, но не вычисляются и не редактируются специальными визуальными редакторами. Arbitrary assemblies/plugins открытого VS solution не загружаются.
 - Изменение hierarchy, insertion и destructive operations ограничиваются безопасными source-mapped сценариями. Partial import не гарантирует runtime-equivalent внешний вид.
+- Известные отклонения полного smoke-прогона и границы релизной проверки перечислены в [Alpha 4.0 Release Notes](Docs/Alpha4ReleaseNotes.md).
 - Следующее расширение import coverage выбирается по blocker impact реальных документов; после Phase 5 в текущем MainWindow остаются три custom controls. Дальнейшие направления: безопасная custom-control metadata, расширение patches и hardening Visual Studio lifecycle.
 
 ## Примечания
