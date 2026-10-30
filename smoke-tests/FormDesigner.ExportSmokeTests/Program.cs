@@ -45,6 +45,9 @@ internal static partial class Program
         // Initialize the real UI dispatcher before any view model can create the
         // fallback dispatcher; IPC continuations must run on the actual UI thread.
         EnsureAvaloniaRuntimeInitialized();
+        if (args.Contains("--datagrid-preview-checks")) return RunDataGridPreviewChecks();
+        if (args.Contains("--datagrid-preview-export-check")) return RunDataGridPreviewLiveExport();
+        if (args.Contains("--datagrid-preview-source-check")) return RunDataGridPreviewSourceWorkflow();
         if (args.Contains("--postgres-eremex-checks")) return RunPostgreSqlEremexServerChecks();
         if (args.Contains("--postgres-checks")) return RunPostgreSqlChecks();
         var artifactsRoot = args.Length > 0

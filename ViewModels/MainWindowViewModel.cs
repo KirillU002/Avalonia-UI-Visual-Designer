@@ -14271,7 +14271,7 @@ public partial class MainWindowViewModel : ObservableObject
             var runtimePreviewAxaml = GeneratedAxamlService.Create(
                 exportAxaml.Axaml,
                 AxamlGenerationMode.RuntimePreview,
-                preserveRuntimeNames: exportViewModel.Controls.Any(control => StandardItemsProperties.IsStandardItemsControl(control.Type)));
+                preserveRuntimeNames: exportViewModel.Controls.Any(control => control.Type == DesignerControlTypes.DataGrid || StandardItemsProperties.IsStandardItemsControl(control.Type)));
             stopwatch.Stop();
 
             foreach (var propertyName in runtimePreviewAxaml.RemovedRootProperties)
@@ -14348,6 +14348,9 @@ public partial class MainWindowViewModel : ObservableObject
                 ProjectForms = exportViewModel.CurrentProject.Forms.Select(CloneFormDocumentForPreview).ToList(),
                 ActiveFormId = form.Id,
                 StandardControlNames = BuildExportControlNameMap(exportViewModel.Controls, exportViewModel.ResolveExportWindowClassName(), exportViewModel.ResolveExportViewModelClassName()),
+                DataGridFieldPaths = exportViewModel.BuildCrudGenerationContexts()
+                    .ToDictionary(context => context.Source.Id,
+                        context => (IReadOnlyDictionary<string, string>)context.Fields.ToDictionary(field => field.Path, GetGeneratedRowPropertyName, StringComparer.Ordinal), StringComparer.Ordinal),
                 PostgreSqlFieldPaths = exportViewModel.BuildCrudGenerationContexts()
                     .Where(context => DataSourceIdentity.IsPostgreSql(context.Source.SourceKind))
                     .ToDictionary(context => context.Source.Id,

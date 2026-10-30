@@ -78,7 +78,7 @@ internal static class SqlPreviewDataLoader
             source.SourceConnectionString,
             source.SourceSchemaName,
             source.SourceTableName,
-            source.SourceQuery);
+            source.SourceQuery, cancellationToken);
     }
 
     public static Task<IReadOnlyList<Dictionary<string, string>>> LoadRowsAsync(BindingSourceFileModel source, System.Threading.CancellationToken cancellationToken = default)
@@ -94,7 +94,7 @@ internal static class SqlPreviewDataLoader
             source.SourceConnectionString,
             source.SourceSchemaName,
             source.SourceTableName,
-            source.SourceQuery);
+            source.SourceQuery, cancellationToken);
     }
 
     private static string Normalize(string? value)
@@ -115,12 +115,12 @@ internal static class SqlPreviewDataLoader
         string connectionString,
         string schemaName,
         string tableName,
-        string? sourceQuery)
+        string? sourceQuery, System.Threading.CancellationToken cancellationToken)
     {
         if (TestRowsProviderAsync is { } testRowsProvider)
-            return await testRowsProvider(connectionString, schemaName, tableName, sourceQuery).ConfigureAwait(false);
+            return await testRowsProvider(connectionString, schemaName, tableName, sourceQuery).WaitAsync(cancellationToken).ConfigureAwait(false);
 
-        var connectionResult = await OpenSqlConnectionAsync(connectionString);
+        var connectionResult = await OpenSqlConnectionAsync(connectionString, cancellationToken).ConfigureAwait(false);
         await using var connection = connectionResult.Connection;
 
         using var command = connection.CreateCommand();
@@ -128,11 +128,11 @@ internal static class SqlPreviewDataLoader
         command.CommandType = CommandType.Text;
         command.CommandTimeout = 30;
 
-        using var reader = await command.ExecuteReaderAsync(CommandBehavior.SequentialAccess);
+        using var reader = await command.ExecuteReaderAsync(CommandBehavior.SequentialAccess, cancellationToken).ConfigureAwait(false);
         var schema = reader.GetColumnSchema();
         var rows = new List<Dictionary<string, string>>();
 
-        while (await reader.ReadAsync())
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             var row = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
@@ -191,13 +191,13 @@ internal static class SqlPreviewDataLoader
         return $"[{normalized.Replace("]", "]]", StringComparison.Ordinal)}]";
     }
 
-    private static async Task<(SqlConnection Connection, string EffectiveConnectionString)> OpenSqlConnectionAsync(string connectionString)
+    private static async Task<(SqlConnection Connection, string EffectiveConnectionString)> OpenSqlConnectionAsync(string connectionString, System.Threading.CancellationToken cancellationToken)
     {
         var primaryConnection = new SqlConnection(connectionString);
 
         try
         {
-            await primaryConnection.OpenAsync();
+            await primaryConnection.OpenAsync(cancellationToken).ConfigureAwait(false);
             return (primaryConnection, connectionString);
         }
         catch (Exception ex) when (ShouldRetryWithTrustedCertificate(connectionString, ex))
@@ -210,9 +210,14 @@ internal static class SqlPreviewDataLoader
             };
 
             var retryConnection = new SqlConnection(builder.ConnectionString);
-            await retryConnection.OpenAsync();
-            return (retryConnection, builder.ConnectionString);
+            try
+            {
+                await retryConnection.OpenAsync(cancellationToken).ConfigureAwait(false);
+                return (retryConnection, builder.ConnectionString);
+            }
+            catch { await retryConnection.DisposeAsync(); throw; }
         }
+        catch { await primaryConnection.DisposeAsync(); throw; }
     }
 
     private static bool ShouldRetryWithTrustedCertificate(string connectionString, Exception ex)

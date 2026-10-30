@@ -27,6 +27,9 @@ public sealed class ExportedAxamlPreviewModel
 
     public IReadOnlyDictionary<string, string> StandardControlNames { get; init; } = new Dictionary<string, string>();
 
+    public IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> DataGridFieldPaths { get; init; }
+        = new Dictionary<string, IReadOnlyDictionary<string, string>>();
+
     public bool IncludeDemoData { get; init; }
 
     public bool FallbackToLegacyPreviewOnError { get; init; } = true;

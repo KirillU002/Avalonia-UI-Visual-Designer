@@ -76,6 +76,8 @@ artifacts/smoke-tests/latest-run.txt
 
 ## Сценарии
 
+- `--datagrid-preview-checks`: отдельный набор native Legacy/AXAML DataGrid contracts и live SQL Server checks при наличии `FORMDESIGNER_TEST_SQLSERVER`. `--datagrid-preview-export-check` проверяет restore/build и реальный SQL runtime в отдельном generated process. Запуск на изолированном LocalDB: `run-datagrid-preview-regression.ps1 -LocalDb -IncludeExport`. Подробности: [DataGridPreviewRegression](../Docs/DataGridPreviewRegression.md).
+
 - `ToolboxStandard*`: DropDownButton, SplitButton и ListBox во всех основных путях Designer. Включает настоящий отдельный процесс экспортированного приложения, оба Preview, JSON, минимальный AXAML patch, Multi Form, реальные и пустые DLL rows. PostgreSQL здесь проверяется на отказ без подставных данных. Описание и ограничения: [StandardToolboxControls](../Docs/StandardToolboxControls.md).
 
 - `SimpleFormExport`  

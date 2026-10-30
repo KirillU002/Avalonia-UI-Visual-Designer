@@ -8406,6 +8406,9 @@ public partial class MainWindow : Window
                 previewWindow = new PreviewWindow(snapshot, VM.Registry, projectForms, VM.ActiveFormDocument?.Id ?? string.Empty, VM.ShowPreviewRuntimeBadge);
             }
 
+            previewWindow.DataGridDiagnosticEmitted += (_, diagnostic) => VM.LogWorkspace(
+                diagnostic.Event.EndsWith("FAILED", StringComparison.Ordinal) ? WorkspaceLogLevel.Error : WorkspaceLogLevel.Info,
+                "DataGrid Preview", diagnostic.Event, System.Text.Json.JsonSerializer.Serialize(diagnostic));
             previewWindow.Closed += LaunchPreviewWindow_Closed;
             _launchPreviewWindow = previewWindow;
             previewWindow.Show();

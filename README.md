@@ -222,6 +222,7 @@ Runner содержит AXAML/layout/source-preservation, startup/input, Designe
 
 ## Документация
 
+- [P0 DataGrid Preview regression: root cause, live SQL Server и результаты проверок](Docs/DataGridPreviewRegression.md).
 - [DropDownButton, SplitButton и ListBox: Toolbox, Preview, Export и проверки](Docs/StandardToolboxControls.md).
 - [DeveloperArchitecture](Docs/DeveloperArchitecture.md) - техническая документация для разработчиков.
 - [DesignerSurface](Docs/DesignerSurfaceArchitecture.md), [document sessions](Docs/DesignerDocumentSessionArchitecture.md) и [host services](Docs/DesignerHostServicesArchitecture.md).

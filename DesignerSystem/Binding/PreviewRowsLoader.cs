@@ -171,7 +171,7 @@ internal static class PreviewRowsLoader
                 $"sourceKey={sourceKey}; queryHash={SqlPreviewDataLoader.BuildQueryHash(source)}; topN={source.PreviewTopN}");
             try
             {
-                var sqlRows = await SqlPreviewDataLoader.LoadRowsAsync(source).ConfigureAwait(false);
+                var sqlRows = await SqlPreviewDataLoader.LoadRowsAsync(source, cancellationToken).ConfigureAwait(false);
                 var limitedRows = ApplySortAndLimit(source, sqlRows, out var beforeCount);
                 Debug.WriteLine(
                     "PREVIEW_SQL_ROWS_LOAD_END " +
@@ -179,21 +179,22 @@ internal static class PreviewRowsLoader
                 Debug.WriteLine($"DATAGRID_PREVIEW_TOP_N_APPLIED sourceKey={DataSourceIdentity.BuildKey(source)}; topN={source.PreviewTopN}; rowsBefore={beforeCount}; rowsAfter={limitedRows.Count}");
                 return Complete(source, limitedRows, true, "RealData", $"Загружены реальные SQL rows: {limitedRows.Count}.", "sql", updateSourceStatus);
             }
+            catch (OperationCanceledException) { throw; }
             catch (Exception ex) when (AllowsDemoRows(source))
             {
                 Debug.WriteLine(
                     "PREVIEW_SQL_ROWS_LOAD_FAILED " +
-                    $"sourceKey={sourceKey}; reason={ex.Message}");
+                    $"sourceKey={sourceKey}; reason={Services.SqlPreviewErrors.Details(ex)}");
                 Debug.WriteLine(
                     "PREVIEW_DATAGRID_UNEXPECTED_DEMO_FALLBACK " +
-                    $"sourceKind={source.SourceKind}; sourceConfigured=True; reason={ex.Message}");
+                    $"sourceKind={source.SourceKind}; sourceConfigured=True; reason={Services.SqlPreviewErrors.Details(ex)}");
                 var fallbackRows = BuildSampleRows(source, Math.Max(1, source.PreviewTopN));
-                return Complete(source, fallbackRows, false, "SampleRows", $"Используются demo rows, реальные SQL данные не загружены. Причина: {ex.Message}", ex.Message, updateSourceStatus);
+                return Complete(source, fallbackRows, false, "SampleRows", Services.SqlPreviewErrors.Message(ex), Services.SqlPreviewErrors.Details(ex), updateSourceStatus);
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"PREVIEW_SQL_ROWS_LOAD_FAILED sourceKey={sourceKey}; reason={ex.Message}");
-                return Complete(source, Array.Empty<Dictionary<string, string>>(), false, DataModeRealSqlData, $"Не удалось загрузить реальные SQL rows: {ex.Message}", ex.Message, updateSourceStatus);
+                Debug.WriteLine($"PREVIEW_SQL_ROWS_LOAD_FAILED sourceKey={sourceKey}; reason={Services.SqlPreviewErrors.Details(ex)}");
+                return Complete(source, Array.Empty<Dictionary<string, string>>(), false, DataModeRealSqlData, Services.SqlPreviewErrors.Message(ex), Services.SqlPreviewErrors.Details(ex), updateSourceStatus);
             }
         }
 
