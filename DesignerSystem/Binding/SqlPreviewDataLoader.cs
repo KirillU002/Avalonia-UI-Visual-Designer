@@ -21,7 +21,7 @@ internal static class SqlPreviewDataLoader
     public static bool CanLoad(BindingSourceModel? source)
     {
         return source is not null
-            && DataSourceIdentity.IsSqlServer(source.SourceKind)
+            && DataSourceIdentity.IsDatabase(source.SourceKind)
             && !string.IsNullOrWhiteSpace(source.SourceConnectionString)
             && (!string.IsNullOrWhiteSpace(source.SourceQuery) || !string.IsNullOrWhiteSpace(source.SourceTableName));
     }
@@ -29,7 +29,7 @@ internal static class SqlPreviewDataLoader
     public static bool CanLoad(BindingSourceFileModel? source)
     {
         return source is not null
-            && DataSourceIdentity.IsSqlServer(source.SourceKind)
+            && DataSourceIdentity.IsDatabase(source.SourceKind)
             && !string.IsNullOrWhiteSpace(source.SourceConnectionString)
             && (!string.IsNullOrWhiteSpace(source.SourceQuery) || !string.IsNullOrWhiteSpace(source.SourceTableName));
     }
@@ -70,8 +70,10 @@ internal static class SqlPreviewDataLoader
             Normalize(source.SourceQuery));
     }
 
-    public static Task<IReadOnlyList<Dictionary<string, string>>> LoadRowsAsync(BindingSourceModel source)
+    public static Task<IReadOnlyList<Dictionary<string, string>>> LoadRowsAsync(BindingSourceModel source, System.Threading.CancellationToken cancellationToken = default)
     {
+        if (DataSourceIdentity.IsPostgreSql(source.SourceKind))
+            return new DatabaseReadService(DatabaseProviderAdapters.PostgreSql).LoadRowsAsync(source, cancellationToken);
         return LoadRowsCoreAsync(
             source.SourceConnectionString,
             source.SourceSchemaName,
@@ -79,8 +81,15 @@ internal static class SqlPreviewDataLoader
             source.SourceQuery);
     }
 
-    public static Task<IReadOnlyList<Dictionary<string, string>>> LoadRowsAsync(BindingSourceFileModel source)
+    public static Task<IReadOnlyList<Dictionary<string, string>>> LoadRowsAsync(BindingSourceFileModel source, System.Threading.CancellationToken cancellationToken = default)
     {
+        if (DataSourceIdentity.IsPostgreSql(source.SourceKind))
+            return new DatabaseReadService(DatabaseProviderAdapters.PostgreSql).LoadRowsAsync(new BindingSourceModel
+            {
+                SourceKind = source.SourceKind, SourceConnectionString = source.SourceConnectionString,
+                SourceSchemaName = source.SourceSchemaName, SourceTableName = source.SourceTableName,
+                SourceQuery = source.SourceQuery, PreviewTopN = source.PreviewTopN
+            }, cancellationToken);
         return LoadRowsCoreAsync(
             source.SourceConnectionString,
             source.SourceSchemaName,

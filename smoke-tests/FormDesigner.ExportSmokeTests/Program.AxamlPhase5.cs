@@ -206,7 +206,7 @@ internal static partial class Program
         var path = Path.Combine(FindRepositoryRoot(), "Views", "MainWindow.axaml");
         var (result, vm, surface) = Phase4Document(context, File.ReadAllText(path), path);
         var report = result.CapabilityReport.Structure!;
-        RequireCapability(report.ImportedElements == 1470 && report.VisualElements == 1473 && report.OpaqueVisualElements == 3 && report.SkippedSubtrees == 3, "Real MainWindow coverage/classification differs.");
+        RequireCapability(report.ImportedElements == 1487 && report.VisualElements == 1490 && report.OpaqueVisualElements == 3 && report.SkippedSubtrees == 3, "Real MainWindow coverage/classification differs.");
         var types = new[] { "ItemsControl", "ListBox", "TreeView", "ProgressBar" };
         var references = result.RoundTripDocument.SourceMap.Controls.Where(r => types.Contains(r.Element.LocalName)).ToArray();
         var rendered = new HashSet<string>();

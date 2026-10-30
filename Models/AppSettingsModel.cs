@@ -34,6 +34,8 @@ public class AppSettingsModel
 
     public SqlServerSettingsModel SqlServer { get; set; } = new();
 
+    public PostgreSqlSettingsModel PostgreSql { get; set; } = new();
+
     public AdvancedSettingsModel Advanced { get; set; } = new();
 
     public AutosaveMetadataModel Autosave { get; set; } = new();

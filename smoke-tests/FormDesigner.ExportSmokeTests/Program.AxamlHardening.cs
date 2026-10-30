@@ -143,6 +143,10 @@ internal static partial class Program
         var position = AvaloniaDesigner.VSIX.VsTextPatch.Position(text, text.IndexOf("Old", StringComparison.Ordinal));
         if (position != (2, 19))
             throw new InvalidOperationException($"CRLF source offsets were not mapped to DTE line/column: {position}");
+        var original = new[] { new TextEditPayload { Start = 0, Length = 1 }, new TextEditPayload { Start = text.IndexOf("Old", StringComparison.Ordinal), Length = 3 } };
+        var descending = AvaloniaDesigner.VSIX.VsTextPatch.Validate(text, original);
+        if (descending.Count != 2 || descending[0].Start != original[1].Start || descending[1].Start != 0 || original[0].Start != 0)
+            throw new InvalidOperationException("Validated patches must be returned in descending order without mutating the caller's array.");
         try
         {
             AvaloniaDesigner.VSIX.VsTextPatch.Validate(text, new[] {

@@ -40,7 +40,11 @@ public sealed class AppSettingsService
                 return new AppSettingsModel();
 
             var json = File.ReadAllText(SettingsFilePath);
-            return JsonSerializer.Deserialize<AppSettingsModel>(json, JsonOptions) ?? new AppSettingsModel();
+            var settings = JsonSerializer.Deserialize<AppSettingsModel>(json, JsonOptions) ?? new AppSettingsModel();
+            settings.PostgreSql ??= new PostgreSqlSettingsModel();
+            settings.PostgreSql.Password = settings.PostgreSql.RememberPassword
+                ? WindowsSecretProtection.Unprotect(settings.PostgreSql.ProtectedPassword) : "";
+            return settings;
         }
         catch (Exception ex)
         {
@@ -56,6 +60,9 @@ public sealed class AppSettingsService
         try
         {
             Directory.CreateDirectory(SettingsDirectoryPath);
+
+            settings.PostgreSql.ProtectedPassword = settings.PostgreSql.RememberPassword
+                ? WindowsSecretProtection.Protect(settings.PostgreSql.Password) : "";
 
             var tempPath = SettingsFilePath + ".tmp";
             var json = JsonSerializer.Serialize(settings, JsonOptions);

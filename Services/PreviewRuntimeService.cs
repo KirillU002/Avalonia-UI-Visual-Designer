@@ -115,7 +115,7 @@ public sealed class PreviewRuntimeContext
         IEnumerable<BindingSourceModel> bindingSources,
         IEnumerable<InteractionModel> interactions)
     {
-        var controlCopies = controls
+        var controlCopies = StandardItemsProperties.WithMenuSources(controls)
             .Select(CloneControlPreservingId)
             .ToList();
         var sourceCopies = bindingSources

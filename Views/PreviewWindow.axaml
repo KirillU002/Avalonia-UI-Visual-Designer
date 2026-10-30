@@ -50,6 +50,11 @@
       </Grid>
     </Border>
 
+    <Border x:Name="DatabaseErrorBanner" IsVisible="False" VerticalAlignment="Bottom"
+            Background="#FEF2F2" BorderBrush="#FCA5A5" BorderThickness="1" Padding="12" Margin="10">
+      <TextBlock x:Name="DatabaseErrorText" TextWrapping="Wrap" Foreground="#991B1B"/>
+    </Border>
+
     <Border x:Name="LoadingOverlay"
             Background="#0F172AB8">
       <Grid>

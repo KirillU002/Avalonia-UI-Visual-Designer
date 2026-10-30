@@ -59,7 +59,9 @@ public static class GeneratedAxamlService
         "ExtendClientAreaTitleBarHeightHint"
     };
 
-    public static GeneratedAxamlDocument Create(string exportAxaml, AxamlGenerationMode mode)
+    public static GeneratedAxamlDocument Create(string exportAxaml, AxamlGenerationMode mode) => Create(exportAxaml, mode, false);
+
+    public static GeneratedAxamlDocument Create(string exportAxaml, AxamlGenerationMode mode, bool preserveRuntimeNames)
     {
         if (string.IsNullOrWhiteSpace(exportAxaml))
             throw new InvalidOperationException("Generated AXAML is empty.");
@@ -105,7 +107,10 @@ public static class GeneratedAxamlService
             if (xNameAttribute is null)
                 continue;
 
+            var runtimeName = xNameAttribute.Value;
             xNameAttribute.Remove();
+            if (preserveRuntimeNames && element.Attribute("Name") is null)
+                element.SetAttributeValue("Name", runtimeName);
             normalizedXNameCount++;
         }
 

@@ -22,6 +22,11 @@ public sealed class ExportedAxamlPreviewModel
 
     public string ActiveFormId { get; init; } = "";
 
+    public IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> PostgreSqlFieldPaths { get; init; }
+        = new Dictionary<string, IReadOnlyDictionary<string, string>>();
+
+    public IReadOnlyDictionary<string, string> StandardControlNames { get; init; } = new Dictionary<string, string>();
+
     public bool IncludeDemoData { get; init; }
 
     public bool FallbackToLegacyPreviewOnError { get; init; } = true;

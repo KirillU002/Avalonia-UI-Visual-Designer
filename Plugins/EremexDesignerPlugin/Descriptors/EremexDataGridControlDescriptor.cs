@@ -309,7 +309,7 @@ public sealed class EremexDataGridControlDescriptor : IControlDescriptor, IDesig
             writer.WriteLine(indentLevel, $"<mxdg:DataGridControl {string.Join(" ", attributes)}>");
             writer.WriteLine(indentLevel + 1, "<mxdg:DataGridControl.Columns>");
             foreach (var field in fields)
-                writer.WriteLine(indentLevel + 2, BuildColumnAxaml(field));
+                writer.WriteLine(indentLevel + 2, BuildColumnAxaml(field, pathResolver?.GetFieldPath(source, field) ?? field.Path));
             writer.WriteLine(indentLevel + 1, "</mxdg:DataGridControl.Columns>");
             writer.WriteLine(indentLevel, "</mxdg:DataGridControl>");
         }
@@ -547,11 +547,11 @@ public sealed class EremexDataGridControlDescriptor : IControlDescriptor, IDesig
         column.VisibleIndex = field.VisibleIndex >= 0 ? field.VisibleIndex : column.VisibleIndex;
     }
 
-    private static string BuildColumnAxaml(BindingFieldMetadata field)
+    private static string BuildColumnAxaml(BindingFieldMetadata field, string exportedPath)
     {
         var attributes = new List<string>
         {
-            $"FieldName=\"{EscapeXml(field.Path)}\"",
+            $"FieldName=\"{EscapeXml(exportedPath)}\"",
             $"Header=\"{EscapeXml(string.IsNullOrWhiteSpace(field.Header) ? field.Path : field.Header)}\"",
             $"IsVisible=\"{ToXamlBoolean(field.IsVisible)}\"",
             $"ReadOnly=\"{ToXamlBoolean(!field.CanWrite)}\"",

@@ -19,6 +19,7 @@ public static class AxamlPhase4Projection
         string Value(string key) => AxamlControlMetadata.Find(type!)!.LiteralProperties.Single(p => p.Key == key).Read(model);
         Control? control = type switch
         {
+            "DropDownButton" or "SplitButton" => BuiltIn.StandardItemsControlFactory.Create(BuiltIn.StandardItemsControlFactory.Snapshot(model)),
             "Expander" => new Expander
             {
                 Header = Value("Header"), Content = Value("Content"),
@@ -28,7 +29,7 @@ public static class AxamlPhase4Projection
             "ComboBox" => new ComboBox { PlaceholderText = Value("PlaceholderText") },
             "ComboBoxItem" or "String" => new ComboBoxItem { Content = Value("Content") },
             "ItemsControl" => new ItemsControl(),
-            "ListBox" => new ListBox { SelectionMode = Enum.Parse<SelectionMode>(Value("SelectionMode")) },
+            "ListBox" => BuiltIn.StandardItemsControlFactory.CreateListBox(Enum.Parse<SelectionMode>(Value("SelectionMode"))),
             "ListBoxItem" => new ListBoxItem { Content = Value("Content") },
             "TreeView" => new TreeView { SelectionMode = Enum.Parse<SelectionMode>(Value("SelectionMode")) },
             "TreeViewItem" => new TreeViewItem { Header = Value("Header"), IsExpanded = bool.Parse(Value("IsExpanded")) },

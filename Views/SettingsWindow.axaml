@@ -180,13 +180,12 @@
             ClipToBounds="True">
       <ScrollViewer x:Name="SettingsContentScrollViewer"
                     Grid.Row="0"
-                    Padding="24"
                     HorizontalAlignment="Stretch"
                     VerticalAlignment="Stretch"
                     HorizontalScrollBarVisibility="Disabled"
                     VerticalScrollBarVisibility="Auto"
                     ClipToBounds="True">
-        <StackPanel>
+        <StackPanel x:Name="SettingsSectionContainer" Margin="24">
           <Border Background="#0F766E"
                   CornerRadius="18"
                   Padding="18"
@@ -380,6 +379,76 @@
                           Command="{Binding ClearNuGetSourceCommand}"
                           Margin="0,0,8,8"/>
                 </WrapPanel>
+              </StackPanel>
+            </Border>
+          </StackPanel>
+
+          <StackPanel IsVisible="{Binding IsPostgresSelected}" Spacing="12"
+                      MaxWidth="{Binding Bounds.Width, ElementName=SettingsSectionContainer}">
+            <Border Classes="settings-card">
+              <StackPanel Spacing="12">
+                <TextBlock Text="PostgreSQL" Classes="settings-title"/>
+                <TextBlock Text="Подключение для источников данных и Preview" Classes="settings-hint"/>
+                <Grid ColumnDefinitions="3*,*">
+                  <StackPanel Spacing="5" Margin="0,0,12,0">
+                    <TextBlock Text="Сервер (Host)" Classes="settings-label"/>
+                    <TextBox Text="{Binding Postgres.Host, Mode=TwoWay}" Watermark="localhost"/>
+                  </StackPanel>
+                  <StackPanel Grid.Column="1" Spacing="5">
+                    <TextBlock Text="Порт" Classes="settings-label"/>
+                    <NumericUpDown Value="{Binding Postgres.Port, Mode=TwoWay}" Minimum="1" Maximum="65535" FormatString="0" MinWidth="0"/>
+                  </StackPanel>
+                </Grid>
+                <Grid ColumnDefinitions="*,*">
+                  <StackPanel Spacing="5" Margin="0,0,12,0">
+                    <TextBlock Text="База данных" Classes="settings-label"/>
+                    <TextBox Text="{Binding Postgres.Database, Mode=TwoWay}"/>
+                  </StackPanel>
+                  <StackPanel Grid.Column="1" Spacing="5">
+                    <TextBlock Text="Имя пользователя" Classes="settings-label"/>
+                    <TextBox Text="{Binding Postgres.Username, Mode=TwoWay}"/>
+                  </StackPanel>
+                </Grid>
+                <TextBlock Text="Пароль" Classes="settings-label"/>
+                <TextBox Text="{Binding Postgres.Password, Mode=TwoWay}" PasswordChar="●"/>
+                <CheckBox Content="Запомнить пароль в защищённых локальных настройках" IsChecked="{Binding Postgres.RememberPassword, Mode=TwoWay}"/>
+                <TextBlock Text="В Windows пароль защищается для текущего пользователя. Если защита недоступна, введите пароль при следующем подключении. В проект и экспорт пароль не записывается." Classes="settings-hint"/>
+              </StackPanel>
+            </Border>
+            <Border Classes="settings-card">
+              <StackPanel Spacing="12">
+                <TextBlock Text="Дополнительные параметры" Classes="settings-title"/>
+                <Grid ColumnDefinitions="*,*">
+                  <StackPanel Spacing="5" Margin="0,0,12,0">
+                    <TextBlock Text="SSL Mode" Classes="settings-label"/>
+                    <ComboBox ItemsSource="{Binding PostgreSqlSslModes}" SelectedItem="{Binding Postgres.SslMode, Mode=TwoWay}" HorizontalAlignment="Stretch"/>
+                  </StackPanel>
+                  <StackPanel Grid.Column="1" Spacing="5">
+                    <TextBlock Text="Схема по умолчанию" Classes="settings-label"/>
+                    <TextBox Text="{Binding Postgres.DefaultSchema, Mode=TwoWay}" Watermark="public"/>
+                  </StackPanel>
+                </Grid>
+                <Grid ColumnDefinitions="*,*,*">
+                  <StackPanel Spacing="5" Margin="0,0,12,0">
+                    <TextBlock Text="Подключение, сек." Classes="settings-label"/>
+                    <NumericUpDown Value="{Binding Postgres.ConnectionTimeoutSeconds, Mode=TwoWay}" Minimum="1" Maximum="300" FormatString="0" MinWidth="0"/>
+                  </StackPanel>
+                  <StackPanel Grid.Column="1" Spacing="5" Margin="0,0,12,0">
+                    <TextBlock Text="Запрос, сек." Classes="settings-label"/>
+                    <NumericUpDown Value="{Binding Postgres.CommandTimeoutSeconds, Mode=TwoWay}" Minimum="1" Maximum="300" FormatString="0" MinWidth="0"/>
+                  </StackPanel>
+                  <StackPanel Grid.Column="2" Spacing="5">
+                    <TextBlock Text="Лимит Preview" Classes="settings-label"/>
+                    <NumericUpDown Value="{Binding Postgres.PreviewRowsLimit, Mode=TwoWay}" Minimum="1" Maximum="10000" FormatString="0" MinWidth="0"/>
+                  </StackPanel>
+                </Grid>
+                <TextBlock Text="{Binding PostgresStatus}" Classes="settings-hint"/>
+                <WrapPanel Orientation="Horizontal">
+                  <Button Content="Проверить подключение" Classes="settings-primary" Command="{Binding TestPostgreSqlConnectionCommand}" Margin="0,0,8,8"/>
+                  <Button Content="Отменить проверку" Classes="settings-secondary" Command="{Binding CancelPostgreSqlTestCommand}" Margin="0,0,8,8"/>
+                  <Button Content="Сбросить PostgreSQL" Classes="settings-secondary" Command="{Binding ResetPostgreSqlSettingsCommand}" Margin="0,0,8,8"/>
+                </WrapPanel>
+                <TextBlock Text="Кнопки «Применить» и «Сохранить» внизу Settings Center применяют также настройки PostgreSQL." Classes="settings-hint"/>
               </StackPanel>
             </Border>
           </StackPanel>

@@ -42,7 +42,7 @@ internal static class BindingPreviewItemsBuilder
             .Select(row => row.ToDictionary(
                 pair => pair.Key,
                 pair => (object?)pair.Value,
-                StringComparer.OrdinalIgnoreCase))
+                row.Comparer))
             .ToList();
     }
 

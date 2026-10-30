@@ -45,6 +45,8 @@ internal static partial class Program
         // Initialize the real UI dispatcher before any view model can create the
         // fallback dispatcher; IPC continuations must run on the actual UI thread.
         EnsureAvaloniaRuntimeInitialized();
+        if (args.Contains("--postgres-eremex-checks")) return RunPostgreSqlEremexServerChecks();
+        if (args.Contains("--postgres-checks")) return RunPostgreSqlChecks();
         var artifactsRoot = args.Length > 0
             ? Path.GetFullPath(args[0])
             : Path.Combine(FindRepositoryRoot(), "artifacts", "smoke-tests");
@@ -58,6 +60,16 @@ internal static partial class Program
 
         var scenarios = new SmokeScenario[]
         {
+            new("ToolboxStandardItemsExport", ConfigureToolboxStandardItems, AssertToolboxStandardItems),
+            new("ToolboxStandardListBindingExport", ConfigureToolboxListBinding, AssertToolboxListBinding),
+            new("ToolboxStandardMultiFormExport", ConfigureToolboxStandardMultiForm, AssertToolboxStandardMultiForm),
+            new("ToolboxStandardRoundTrip", ConfigureSimpleFormExport, AssertToolboxStandardRoundTrip),
+            new("ToolboxStandardEmptyListExport", ConfigureToolboxEmptyList, AssertToolboxEmptyList),
+            new("ToolboxStandardPostgresListExport", ConfigureToolboxPostgresList, AssertToolboxPostgresList),
+            new("PostgresDataGridExport", ConfigurePostgreSqlDataGridExport, AssertPostgreSqlDataGridExport, RequiresRealDataGrid: true),
+            new("PostgresMixedMultiFormExport", ConfigurePostgreSqlMixedMultiForm, AssertPostgreSqlMixedMultiForm, RequiresRealDataGrid: true),
+            new("PostgresQuotedColumnsExport", ConfigurePostgreSqlQuotedColumns, AssertPostgreSqlQuotedColumns, RequiresRealDataGrid: true),
+            new("PostgresEremexDataGridExport", ConfigurePostgreSqlEremexExport, AssertPostgreSqlEremexExport),
             new("StartupMissingWorkspaceInput", ConfigureSimpleFormExport, AssertStartupMissingWorkspaceInput),
             new("StartupNoWorkspace", ConfigureSimpleFormExport, AssertStartupScenario),
             new("StartupExistingJsonWorkspace", ConfigureSimpleFormExport, AssertStartupScenario),
@@ -253,7 +265,10 @@ internal static partial class Program
             new("RemoveDllReleasesMetadataAndCaches", ConfigureManyTableDllImport, AssertRemoveDllReleasesMetadataAndCaches),
             new("DataGridBindingUsesFullDllSourceKey", ConfigureLinqToSqlDllImport, AssertDataGridBindingUsesFullDllSourceKey),
             new("DllTablePreviewDoesNotUseFakeRowsWhenRealRowsAvailable", ConfigureDllTablePreviewRealRows, AssertDllTablePreviewDoesNotUseFakeRowsWhenRealRowsAvailable),
-            new("DllTablePreviewClearlyMarksSampleRows", ConfigureLinqToSqlDllImport, AssertDllTablePreviewClearlyMarksSampleRows),
+            new("DllTablePreviewClearlyMarksSampleRows", ConfigureDllTablePreviewSampleFallback, AssertDllTablePreviewClearlyMarksSampleRows),
+            new("DllSampleFallbackRequiresOptIn", ConfigureLinqToSqlDllImport, AssertDllSampleFallbackRequiresOptIn),
+            new("DllSampleFallbackPreservesRealRows", ConfigureDllSampleFallbackWithRealRows, AssertDllTablePreviewDoesNotUseFakeRowsWhenRealRowsAvailable),
+            new("DllSampleFallbackRespectsCancellation", ConfigureDllTablePreviewSampleFallback, AssertDllSampleFallbackRespectsCancellation),
             new("DllTablePreviewTopNWorks", ConfigureDllTablePreviewTopN, AssertDllTablePreviewTopNWorks),
             new("DllTablePreviewSortThenTopNWorks", ConfigureDllTablePreviewSortThenTopN, AssertDllTablePreviewSortThenTopNWorks),
             new("GeneratedNugetConfigContainsAllowInsecureConnectionsForHttpSource", ConfigureSimpleFormExport, AssertGeneratedNugetConfigContainsAllowInsecureConnectionsForHttpSource),
@@ -466,6 +481,13 @@ internal static partial class Program
         };
 
         var scenarioFilter = Environment.GetEnvironmentVariable("SMOKE_SCENARIO_FILTER");
+        var scenarioNamesFile = Environment.GetEnvironmentVariable("SMOKE_SCENARIO_NAMES_FILE");
+        if (!string.IsNullOrWhiteSpace(scenarioNamesFile))
+        {
+            var selectedNames = File.ReadAllLines(scenarioNamesFile).Where(name => !string.IsNullOrWhiteSpace(name)).ToHashSet(StringComparer.Ordinal);
+            scenarios = scenarios.Where(scenario => selectedNames.Contains(scenario.Name)).ToArray();
+            if (scenarios.Length != selectedNames.Count) throw new InvalidOperationException("Smoke scenario names file contains unknown or duplicate names.");
+        }
         if (!string.IsNullOrWhiteSpace(scenarioFilter))
         {
             scenarios = scenarios

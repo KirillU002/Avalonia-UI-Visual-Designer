@@ -194,8 +194,20 @@ public class BindingSourceFileModel
     public string SourceAssemblyPath { get; set; } = "";
     public string SourceTypeFullName { get; set; } = "";
     public string SourceTableName { get; set; } = "";
-    public string SourceConnectionString { get; set; } = "";
-    public string SourceSchemaName { get; set; } = "dbo";
+    private string sourceConnectionString = "";
+    public string SourceConnectionString
+    {
+        get => DesignerSystem.Binding.DataSourceIdentity.IsPostgreSql(SourceKind)
+            ? Services.PostgreSqlConnectionService.WithoutSecrets(sourceConnectionString) : sourceConnectionString;
+        set => sourceConnectionString = DesignerSystem.Binding.DataSourceIdentity.IsPostgreSql(SourceKind)
+            ? Services.PostgreSqlConnectionService.WithoutSecrets(value) : value;
+    }
+    private string? sourceSchemaName;
+    public string SourceSchemaName
+    {
+        get => sourceSchemaName ?? (DesignerSystem.Binding.DataSourceIdentity.IsPostgreSql(SourceKind) ? "public" : "dbo");
+        set => sourceSchemaName = value;
+    }
     public string SourceQuery { get; set; } = "";
     public string PreviewRowMode { get; set; } = BindingSourceModel.PreviewRowModeTopN;
     public int PreviewTopN { get; set; } = 50;

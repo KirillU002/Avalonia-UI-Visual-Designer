@@ -277,6 +277,7 @@ public sealed partial class SettingsWindowViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsExportSelected));
         OnPropertyChanged(nameof(IsNuGetSelected));
         OnPropertyChanged(nameof(IsSqlSelected));
+        OnPropertyChanged(nameof(IsPostgresSelected));
         OnPropertyChanged(nameof(IsLogsSelected));
         OnPropertyChanged(nameof(IsAdvancedSelected));
         OnPropertyChanged(nameof(SectionTitle));
@@ -385,6 +386,7 @@ public sealed partial class SettingsWindowViewModel : ViewModelBase
         ApplyPreview(defaults.Preview);
         ApplyBuildAndLogs(defaults.BuildAndLogs);
         ApplySql(defaults.SqlServer);
+        Postgres = defaults.PostgreSql;
         ApplyAdvanced(defaults.Advanced);
         RebuildLocalizedContent(InterfaceLanguage, preserveSelection: true);
         IsDirty = true;
@@ -478,6 +480,7 @@ public sealed partial class SettingsWindowViewModel : ViewModelBase
 
     public void ApplyToSource()
     {
+        _source.ApplyPostgreSqlSettings(Postgres);
         _source.InterfaceLanguage = InterfaceLanguage;
         _source.AppThemeMode = AppThemeMode;
         _source.UiDensityMode = UiDensityMode;
@@ -538,6 +541,7 @@ public sealed partial class SettingsWindowViewModel : ViewModelBase
 
     private void CopyFromSource()
     {
+        Postgres = _source.CapturePostgreSqlSettings();
         InterfaceLanguage = SettingsTextCatalog.NormalizeLanguage(_source.InterfaceLanguage);
         AppThemeMode = NormalizeTheme(_source.AppThemeMode);
         UiDensityMode = NormalizeDensity(_source.UiDensityMode);
@@ -720,6 +724,7 @@ public sealed partial class SettingsWindowViewModel : ViewModelBase
             Sections.Add(new SettingsSectionModel("export", Texts.ExportTitle, Texts.ExportSubtitle, "EX"));
             Sections.Add(new SettingsSectionModel("nuget", Texts.NuGetTitle, Texts.NuGetSubtitle, "NG"));
             Sections.Add(new SettingsSectionModel("sql", Texts.SqlTitle, Texts.SqlSubtitle, "SQL"));
+            Sections.Add(new SettingsSectionModel("postgres", "PostgreSQL", "Подключение, SSL и реальные данные", "PG"));
             Sections.Add(new SettingsSectionModel("logs", Texts.LogsTitle, Texts.LogsSubtitle, "LG"));
             Sections.Add(new SettingsSectionModel("advanced", Texts.AdvancedTitle, Texts.AdvancedSubtitle, "AD"));
             SelectedSection = Sections.FirstOrDefault(section => string.Equals(section.Id, selectedId, StringComparison.OrdinalIgnoreCase))
@@ -743,7 +748,7 @@ public sealed partial class SettingsWindowViewModel : ViewModelBase
             or nameof(SelectedSqlAuthenticationOption) or nameof(SelectedLogLevelOption)
             or nameof(IsGeneralSelected) or nameof(IsInterfaceSelected) or nameof(IsPreviewSelected)
             or nameof(IsExportSelected) or nameof(IsNuGetSelected) or nameof(IsSqlSelected)
-            or nameof(IsLogsSelected) or nameof(IsAdvancedSelected)
+            or nameof(IsLogsSelected) or nameof(IsAdvancedSelected) or nameof(IsPostgresSelected) or nameof(PostgresStatus)
             or nameof(EffectiveNuGetSourceText) or nameof(NuGetSummaryText)
             or nameof(SqlConnectionPreviewText) or nameof(SqlStatusText) or nameof(IsSqlConfigured)
             or nameof(IsSqlLoginSelected)
@@ -806,6 +811,8 @@ public sealed partial class SettingsWindowViewModel : ViewModelBase
         Count(_source.SqlDefaultPreviewTopN != SqlDefaultPreviewTopN);
         Count(_source.SaveLogsToFile != SaveLogsToFile);
         Count(!string.Equals(_source.LogLevel, LogLevel, StringComparison.Ordinal));
+        Count(System.Text.Json.JsonSerializer.Serialize(_source.CapturePostgreSqlSettings()) != System.Text.Json.JsonSerializer.Serialize(Postgres));
+        Count(_source.CapturePostgreSqlSettings().Password != Postgres.Password);
         return count;
     }
 

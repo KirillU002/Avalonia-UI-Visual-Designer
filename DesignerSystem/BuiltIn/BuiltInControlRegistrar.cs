@@ -17,10 +17,11 @@ internal interface IBuiltInXamlBridge
     void AppendXaml(string typeKey, IXamlWriter writer, IDesignControlNode control, int indentLevel, IXamlExportContext context);
 }
 
-public static class BuiltInControlRegistrar
+public static partial class BuiltInControlRegistrar
 {
     public static void Register(IDesignerRegistry registry)
     {
+        RegisterStandardItems(registry);
         RegisterSimple(registry, DesignerControlTypes.Button, "Button", "Ввод", "Кнопка для запуска действий.", false, DesignerLayoutModes.Absolute,
             CreateCommonProperties(includeText: true, includeBackground: true, includeBorder: true, includeForeground: true, includeFont: true, includePadding: true),
             context =>

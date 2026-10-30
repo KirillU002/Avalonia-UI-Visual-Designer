@@ -47,6 +47,8 @@ public partial class PreviewWindow : Window
     private const string RuntimeDataGridUngroupFieldFormat = "formdesigner-preview-datagrid-ungroup-field";
 
     private DesignerDocumentFileModel _document = new();
+    private System.Threading.CancellationTokenSource? _databasePreviewCancellation;
+    private bool _databasePreviewClosed;
     private readonly Dictionary<string, DesignerFormDocument> _projectFormsById = new(StringComparer.OrdinalIgnoreCase);
     private string _currentFormId = "";
     private readonly Dictionary<string, Bitmap?> _imageCache = new(StringComparer.OrdinalIgnoreCase);
@@ -91,6 +93,11 @@ public partial class PreviewWindow : Window
         _registry = registry;
         _showRuntimeBadge = showRuntimeBadge;
         InitializeComponent();
+        Closed += (_, _) =>
+        {
+            _databasePreviewClosed = true;
+            _databasePreviewCancellation?.Cancel();
+        };
         RuntimeBadgeOverlay.IsVisible = _showRuntimeBadge;
         ApplyWindowSettings();
         Opened += PreviewWindow_Opened;
@@ -271,6 +278,7 @@ public partial class PreviewWindow : Window
             ApplyRuntimePreviewPluginStyles(loadedRoot as Control ?? content, preview);
             PreviewSurfaceBorder.Child = content;
             ApplyExportedAxamlPreviewData(content, preview.ExportAxaml);
+            WireStandardItemsAxaml(content, preview);
             LogResolvedRuntimePreviewPluginControls(content, pluginAssemblies);
             stopwatch.Stop();
             Debug.WriteLine($"AXAML_PREVIEW_LOAD_SUCCESS rootType={loadedRoot.GetType().FullName}; elapsedMs={stopwatch.ElapsedMilliseconds}");
@@ -691,15 +699,20 @@ public partial class PreviewWindow : Window
             $"grid={gridName}; groupPanelVisible={groupPanelVisible}; filterRowVisible={filterRowVisible}; columns={grid.Columns.Count}; rows={rowCount}; dataGridRow={dataGridRow}; rowDefinitions={host?.RowDefinitions.Count ?? 0}");
     }
 
-    private static DataView BuildExportedAxamlDataGridView(
+    private DataView BuildExportedAxamlDataGridView(
         BindingSourceFileModel source,
         ExportedAxamlDataGridBinding binding,
         IReadOnlyList<Dictionary<string, string>> rows)
     {
         var visibleFields = OrderBindingFieldsForDisplay(source.Fields.Where(field => field.IsVisible)).ToList();
+        var postgres = DataSourceIdentity.IsPostgreSql(source.SourceKind);
+        IReadOnlyDictionary<string, string>? postgresNames = null;
+        if (postgres)
+            postgresNames = _exportedAxamlPreview is not null && _exportedAxamlPreview.PostgreSqlFieldPaths.TryGetValue(source.Id, out var mapped)
+                ? mapped : PostgreSqlExportNames.FieldPaths(source.Fields.Select(field => field.Path), PostgreSqlExportNames.Identifier(source.ItemTypeName));
         var bindingColumns = binding.Columns.Count > 0
             ? binding.Columns
-            : visibleFields.Select(field => new ExportedAxamlDataGridColumn(field.Header, field.Path)).ToList();
+            : visibleFields.Select(field => new ExportedAxamlDataGridColumn(field.Header, postgresNames?[field.Path] ?? field.Path)).ToList();
         var table = new DataTable(binding.ItemsSourcePath);
         var usedColumns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var column in bindingColumns)
@@ -715,7 +728,8 @@ public partial class PreviewWindow : Window
             for (var index = 0; index < bindingColumns.Count; index++)
             {
                 var field = index < visibleFields.Count ? visibleFields[index] : null;
-                dataRow[index] = ResolveExportedAxamlCellValue(row, field, bindingColumns[index].BindingPath);
+                dataRow[index] = postgres && field is not null && row.TryGetValue(field.Path, out var exactValue)
+                    ? exactValue : ResolveExportedAxamlCellValue(row, field, bindingColumns[index].BindingPath);
             }
 
             table.Rows.Add(dataRow);
@@ -1000,47 +1014,73 @@ public partial class PreviewWindow : Window
 
     private async Task PreloadBindingPreviewRowsAsync()
     {
-        var previewSources = _document.BindingSources
-            .Select(CreateRuntimeBindingSourceModel)
-            .Where(PreviewRowsLoader.CanLoad)
-            .DistinctBy(DataSourceIdentity.BuildKey)
-            .ToList();
-
-        foreach (var source in previewSources)
+        if (_databasePreviewClosed) return;
+        _databasePreviewCancellation?.Cancel();
+        using var databaseCancellation = new System.Threading.CancellationTokenSource();
+        _databasePreviewCancellation = databaseCancellation;
+        try
         {
-            var sourceKey = DataSourceIdentity.BuildKey(source);
-            var signature = PreviewRowsLoader.BuildSignature(source);
-            if (_previewRowsBySourceKey.TryGetValue(sourceKey, out var cached)
-                && string.Equals(cached.Signature, signature, StringComparison.Ordinal))
-            {
-                Debug.WriteLine($"DATAGRID_PREVIEW_CACHE_HIT sourceKey={sourceKey}; rows={cached.Rows.Count}");
-                Debug.WriteLine($"PREVIEW_DATA_CACHE_HIT key={sourceKey}; rows={cached.Rows.Count}");
-                continue;
-            }
+            DatabaseErrorBanner.IsVisible = false;
+            DatabaseErrorText.Text = "";
+            var previewSources = _document.BindingSources
+                .Select(CreateRuntimeBindingSourceModel)
+                .Where(PreviewRowsLoader.CanLoad)
+                .DistinctBy(DataSourceIdentity.BuildKey)
+                .ToList();
 
-            try
+            foreach (var source in previewSources)
             {
-                var result = await PreviewRowsLoader.LoadRowsAsync(source);
-                _previewRowsBySourceKey[sourceKey] = (signature, result.Rows, result.DataKind);
-                Debug.WriteLine($"DATAGRID_PREVIEW_ROWS_LOADED sourceKey={sourceKey}; display={DataSourceIdentity.BuildDisplayName(source)}; rows={result.Rows.Count}; dataKind={result.DataKind}");
-                if (!result.IsRealData
-                    && DataSourceIdentity.IsSqlServer(source.SourceKind)
-                    && SqlPreviewDataLoader.CanLoad(source)
-                    && source.UseRealPreviewRowsIfAvailable)
+                var sourceKey = DataSourceIdentity.BuildKey(source);
+                var signature = PreviewRowsLoader.BuildSignature(source);
+                if (_previewRowsBySourceKey.TryGetValue(sourceKey, out var cached)
+                    && string.Equals(cached.Signature, signature, StringComparison.Ordinal))
                 {
-                    Debug.WriteLine(
-                        "PREVIEW_DATAGRID_UNEXPECTED_DEMO_FALLBACK " +
-                        $"sourceKind={source.SourceKind}; sourceConfigured=True; reason={result.Reason}");
+                    Debug.WriteLine($"DATAGRID_PREVIEW_CACHE_HIT sourceKey={sourceKey}; rows={cached.Rows.Count}");
+                    Debug.WriteLine($"PREVIEW_DATA_CACHE_HIT key={sourceKey}; rows={cached.Rows.Count}");
+                    continue;
+                }
+
+                try
+                {
+                    var result = await PreviewRowsLoader.LoadRowsAsync(source, databaseCancellation.Token);
+                    if (databaseCancellation.IsCancellationRequested) return;
+                    _previewRowsBySourceKey[sourceKey] = (signature, result.Rows, result.DataKind);
+                    if (DataSourceIdentity.IsPostgreSql(source.SourceKind))
+                    {
+                        PostgreSqlDiagnostics.Write("POSTGRES_RUNTIME_BINDING_CHECK", $"rows={result.Rows.Count}; real={result.IsRealData}");
+                        if (!result.IsRealData && result.DataKind != PreviewRowsLoader.DataModeSchemaOnly)
+                        {
+                            DatabaseErrorBanner.IsVisible = true;
+                            DatabaseErrorText.Text += result.Status + " ";
+                        }
+                    }
+                    Debug.WriteLine($"DATAGRID_PREVIEW_ROWS_LOADED sourceKey={sourceKey}; display={DataSourceIdentity.BuildDisplayName(source)}; rows={result.Rows.Count}; dataKind={result.DataKind}");
+                    if (!result.IsRealData
+                        && DataSourceIdentity.IsDatabase(source.SourceKind)
+                        && SqlPreviewDataLoader.CanLoad(source)
+                        && source.UseRealPreviewRowsIfAvailable)
+                    {
+                        Debug.WriteLine(
+                            "PREVIEW_DATAGRID_UNEXPECTED_DEMO_FALLBACK " +
+                            $"sourceKind={source.SourceKind}; sourceConfigured=True; reason={result.Reason}");
+                    }
+                }
+                catch (OperationCanceledException) when (databaseCancellation.IsCancellationRequested) { return; }
+                catch (Exception ex)
+                {
+                    _previewRowsBySourceKey.Remove(sourceKey);
+                    Debug.WriteLine($"DATAGRID_PREVIEW_CACHE_INVALIDATED sourceKey={sourceKey}; reason={ex.Message}");
+                    Debug.WriteLine($"PREVIEW_DATA_CACHE_INVALIDATED key={sourceKey}; reason={ex.Message}");
+                    if (DataSourceIdentity.IsDatabase(source.SourceKind))
+                        Debug.WriteLine($"PREVIEW_SQL_ROWS_LOAD_FAILED sourceKey={sourceKey}; reason={ex.Message}");
                 }
             }
-            catch (Exception ex)
-            {
-                _previewRowsBySourceKey.Remove(sourceKey);
-                Debug.WriteLine($"DATAGRID_PREVIEW_CACHE_INVALIDATED sourceKey={sourceKey}; reason={ex.Message}");
-                Debug.WriteLine($"PREVIEW_DATA_CACHE_INVALIDATED key={sourceKey}; reason={ex.Message}");
-                if (DataSourceIdentity.IsSqlServer(source.SourceKind))
-                    Debug.WriteLine($"PREVIEW_SQL_ROWS_LOAD_FAILED sourceKey={sourceKey}; reason={ex.Message}");
-            }
+            try { await PreloadStandardListBoxesAsync(databaseCancellation.Token); }
+            catch (OperationCanceledException) when (databaseCancellation.IsCancellationRequested) { }
+        }
+        finally
+        {
+            if (ReferenceEquals(_databasePreviewCancellation, databaseCancellation)) _databasePreviewCancellation = null;
         }
     }
 
@@ -1719,6 +1759,9 @@ public partial class PreviewWindow : Window
             {
                 [DesignerControlTypes.Group] = _owner.CreateGroupPreview,
                 [DesignerControlTypes.Button] = _owner.CreateButtonPreview,
+                [DesignerControlTypes.DropDownButton] = _owner.CreateStandardItemsPreview,
+                [DesignerControlTypes.SplitButton] = _owner.CreateStandardItemsPreview,
+                [DesignerControlTypes.ListBox] = _owner.CreateStandardItemsPreview,
                 [DesignerControlTypes.TextBox] = _owner.CreateTextBoxPreview,
                 [DesignerControlTypes.TextBlock] = _owner.CreateTextBlockPreview,
                 [DesignerControlTypes.CheckBox] = _owner.CreateCheckBoxPreview,
@@ -4335,7 +4378,7 @@ public partial class PreviewWindow : Window
 
         var mode = usesLoadedRows
             ? string.Equals(loadedDataKind, "RealData", StringComparison.OrdinalIgnoreCase)
-                ? DataSourceIdentity.IsSqlServer(source.SourceKind)
+                ? DataSourceIdentity.IsDatabase(source.SourceKind)
                     ? PreviewRowsLoader.DataModeRealSqlData
                     : PreviewRowsLoader.DataModeRealDllData
                 : PreviewRowsLoader.DataModeDemoData
@@ -4352,7 +4395,7 @@ public partial class PreviewWindow : Window
     private static List<Dictionary<string, string>> ClonePreviewWindowRows(IReadOnlyList<Dictionary<string, string>> rows)
     {
         return rows
-            .Select(row => new Dictionary<string, string>(row, StringComparer.OrdinalIgnoreCase))
+            .Select(row => new Dictionary<string, string>(row, row.Comparer))
             .ToList();
     }
 

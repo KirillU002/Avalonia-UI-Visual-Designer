@@ -37,7 +37,7 @@ Avalonia UI Visual Designer - визуальный дизайнер форм д�
 | Visual Designer | Canvas, Toolbox, selection, Drag & Drop, перемещение, resize, Property Inspector, Undo/Redo |
 | Проекты | New/Open/Save, JSON-формат `.formdesigner.json`, Multi Form, вкладки и Project Explorer |
 | Preview и Export | Preview, генерация AXAML/C#, Export Pipeline, экспорт Avalonia-проекта и Build Validation через restore/build |
-| Данные | DataGrid Designer и Column Editor, Binding Source, SQL Data Source, DLL Import метаданных источников данных |
+| Данные | DataGrid Designer и Column Editor, Binding Source, SQL Server / PostgreSQL Data Source, DLL Import метаданных источников данных |
 | Расширение Designer | Plugin contracts, demo/minimal plugins, собственные properties, preview и export plugin controls |
 | Eremex | Отдельные vertical slices TextEditor и DataGridControl, не весь каталог controls |
 | Visual Studio | Открытие активного `.axaml`, внешний VsHost, Apply в VS buffer, ACK, version/checksum conflict protection |
@@ -104,9 +104,29 @@ VSIX получает текст открытого документа, вклю
 
 Capability model разделяет **document → element → property**: supported части доступны для редактирования, unsupported сохраняются. Unknown attribute не блокирует остальные свойства элемента; unknown sibling не блокирует поддерживаемых соседей. Поддерево неизвестного контейнера остаётся opaque, когда его semantics нельзя безопасно спроецировать. Read-only применяется при невозможности безопасного разбора/patch, а не просто из-за partial support. В режиме частичной поддержки кнопка **«Подробнее»** открывает AXAML Import Report с counts, paths, причинами и blockers.
 
-На настоящем [`Views/MainWindow.axaml`](Views/MainWindow.axaml) Phase 5 импортирует **1470 / 1473 visual candidates (99.80%)**: 2507 XML elements, 3 opaque visual candidates, 3 skipped subtree boundaries (custom controls). Это **coverage модели/source map одного stress-test документа**, не процент поддержки всей Avalonia, не поддержка всех properties и не полная visual equivalence. Статические items проверены на native shared surface; bindings/templates приложения сохраняются, но не исполняются. Данные подтверждены `AxamlPhase5RealMainWindow`. Подробнее: [Phase 5 report](Docs/AxamlCoveragePhase5.md), [Phase 4 baseline](Docs/AxamlCoveragePhase4.md) и [проверка после .NET 8 migration](Docs/Net8Migration.md).
+На настоящем [`Views/MainWindow.axaml`](Views/MainWindow.axaml) Phase 5 импортирует **1487 / 1490 visual candidates (99.80%)**: 2524 XML elements, 3 opaque visual candidates, 3 skipped subtree boundaries (custom controls). PostgreSQL-панель рабочей ветки добавила 17 standard visuals к прежнему fixture 1470/1473. Это **coverage модели/source map одного stress-test документа**, не процент поддержки всей Avalonia, не поддержка всех properties и не полная visual equivalence. Статические items проверены на native shared surface; bindings/templates приложения сохраняются, но не исполняются. Проверка: `AxamlPhase5RealMainWindow`. Исторические отчёты: [Phase 5](Docs/AxamlCoveragePhase5.md), [Phase 4](Docs/AxamlCoveragePhase4.md), [миграция .NET 8](Docs/Net8Migration.md).
 
 Перед применением patch проверяются version/checksum текущего VS buffer. При внешнем изменении source patch отклоняется; после успешного Apply документ остаётся dirty и сохраняется обычным `Ctrl+S`. ACK обновляет snapshot для следующего редактирования.
+
+## PostgreSQL в рабочей ветке
+
+Phase 2: исправлена сборка VSIX и подготовлен настоящий DB fixture/runner;
+результаты и оставшаяся runtime-приёмка описаны в
+[PostgreSQL Integration Phase 2](Docs/PostgreSqlIntegrationPhase2.md).
+
+Settings → PostgreSQL → Host/Port/Database/Username/Password → проверить и применить.
+Затем Data → PostgreSQL → получить схемы → таблицы → колонки → выбрать BindingSource
+у DataGrid. Поддерживаются обычный и AXAML Preview, SELECT/WITH queries, отмена и
+лимит строк. Ошибки и пустые таблицы не подменяются демонстрационными данными.
+
+Экспорт получает Npgsql только при использовании PostgreSQL. Каждая форма запускает
+свой async loader; подключение задаётся через `FORMDESIGNER_POSTGRES_CONNECTION_STRING`
+или отдельную переменную источника, указанную в README.generated.md. Пароль Designer
+в экспорт не переносится. Локальное сохранение использует Windows DPAPI.
+
+Реальный тестовый PostgreSQL отсутствует: успешный end-to-end с сервером пока не
+подтверждён. Архитектура, безопасность, результаты проверок и перечень невыполненных
+integration checks: [PostgreSQL Integration](Docs/PostgreSqlIntegration.md).
 
 ## Eremex integration
 
@@ -202,6 +222,7 @@ Runner содержит AXAML/layout/source-preservation, startup/input, Designe
 
 ## Документация
 
+- [DropDownButton, SplitButton и ListBox: Toolbox, Preview, Export и проверки](Docs/StandardToolboxControls.md).
 - [DeveloperArchitecture](Docs/DeveloperArchitecture.md) - техническая документация для разработчиков.
 - [DesignerSurface](Docs/DesignerSurfaceArchitecture.md), [document sessions](Docs/DesignerDocumentSessionArchitecture.md) и [host services](Docs/DesignerHostServicesArchitecture.md).
 - [AXAML Round-trip architecture](Docs/AxamlRoundTripArchitecture.md), [granular capabilities](Docs/AxamlGranularCapabilities.md), [Phase 4: Expander / ComboBox](Docs/AxamlCoveragePhase4.md) и [Phase 5: standard controls](Docs/AxamlCoveragePhase5.md).

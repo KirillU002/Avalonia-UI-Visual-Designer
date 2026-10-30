@@ -5434,7 +5434,7 @@
 
                               <ComboBox Grid.Row="1"
                                         Grid.Column="0"
-                                        ItemsSource="{Binding AvailablePreviewRowModes}"
+                                        ItemsSource="{Binding AvailableControlPreviewRowModes}"
                                         SelectedItem="{Binding SelectedBindingSourceForControl.PreviewRowMode, Mode=TwoWay}"/>
                               <TextBox Grid.Row="1"
                                        Grid.Column="1"
@@ -5872,6 +5872,8 @@
                                 Margin="0,0,8,8"
                                 Padding="14,10"/>
 
+                        <Button Content="PostgreSQL..." Classes="data-action-button"
+                                Click="AddPostgreSqlBindingSourceButton_Click" Margin="0,0,8,8" Padding="14,10"/>
                         <Button Content="SQL Server..."
                                 Classes="data-action-button"
                                 Click="AddSqlBindingSourceButton_Click"
@@ -5995,9 +5997,8 @@
                             CornerRadius="10"
                             Padding="10">
                       <StackPanel Spacing="8">
-                        <TextBlock Text="SQL Server"
-                                   FontWeight="Bold"/>
-                        <TextBlock Text="Data source использует глобальные SQL Server настройки. Обычно достаточно настроить Server name и Database name один раз в Settings."
+                        <TextBlock Text="{Binding SelectedDatabaseProviderLabel}" FontWeight="Bold"/>
+                        <TextBlock IsVisible="{Binding IsSqlServerSourceSelected}" Text="Data source использует глобальные SQL Server настройки. Обычно достаточно настроить Server name и Database name один раз в Settings."
                                    Foreground="#475569"
                                    TextWrapping="Wrap"/>
 
@@ -6007,22 +6008,42 @@
                                 CornerRadius="10"
                                 Padding="10">
                           <StackPanel Spacing="6">
-                            <TextBlock Text="{Binding GlobalSqlSettingsStatusText}"
+                            <TextBlock IsVisible="{Binding IsSqlServerSourceSelected}" Text="{Binding GlobalSqlSettingsStatusText}"
                                        Foreground="#1D4ED8"
                                        FontWeight="SemiBold"
                                        TextWrapping="Wrap"/>
-                            <TextBlock Text="{Binding DataSqlGlobalSettingsHint}"
+                            <TextBlock IsVisible="{Binding IsSqlServerSourceSelected}" Text="{Binding DataSqlGlobalSettingsHint}"
                                        Foreground="#475569"
                                        FontSize="12"
                                        TextWrapping="Wrap"/>
-                            <CheckBox Content="Использовать глобальные SQL Server настройки"
+                            <CheckBox IsVisible="{Binding IsSqlServerSourceSelected}" Content="Использовать глобальные SQL Server настройки"
                                       IsChecked="{Binding UseGlobalSqlServerSettings, Mode=TwoWay}"/>
-                            <Button Content="Открыть SQL настройки"
+                            <Button IsVisible="{Binding IsSqlServerSourceSelected}" Content="Открыть SQL настройки"
                                     Classes="data-action-button"
                                     Click="OpenSqlSettingsButton_Click"
                                     HorizontalAlignment="Left"/>
                           </StackPanel>
                         </Border>
+
+                        <StackPanel IsVisible="{Binding IsPostgreSqlSourceSelected}" Spacing="8">
+                          <TextBlock Text="Настройте PostgreSQL в Settings, затем загрузите схемы и таблицы. Имена из списка сохраняются с исходным регистром. Запрос имеет приоритет над таблицей; для возврата к таблице очистите запрос." TextWrapping="Wrap"/>
+                          <WrapPanel Orientation="Horizontal">
+                            <Button Classes="data-action-button" Content="Настройки PostgreSQL" Click="OpenPostgreSqlSettingsButton_Click" Margin="0,0,8,8"/>
+                            <Button Classes="data-action-button" Content="Применить глобальные настройки" Command="{Binding ApplyGlobalPostgreSqlSettingsCommand}" Margin="0,0,8,8"/>
+                            <Button Classes="data-action-button" Content="Проверить подключение" Command="{Binding TestPostgreSqlSourceCommand}" Margin="0,0,8,8"/>
+                            <Button Classes="data-action-button" Content="Получить схемы" Command="{Binding LoadPostgreSqlSchemasCommand}" Margin="0,0,8,8"/>
+                            <Button Classes="data-action-button" Content="Получить таблицы" Command="{Binding LoadPostgreSqlTablesCommand}" Margin="0,0,8,8"/>
+                          </WrapPanel>
+                          <TextBlock Text="Схемы" FontWeight="SemiBold"/>
+                          <ComboBox ItemsSource="{Binding PostgreSqlSchemas}" SelectedItem="{Binding SelectedBindingSource.SourceSchemaName, Mode=TwoWay}"/>
+                          <TextBlock Text="Таблицы и представления" FontWeight="SemiBold"/>
+                          <ComboBox ItemsSource="{Binding PostgreSqlTables}" SelectedItem="{Binding SelectedBindingSource.SourceTableName, Mode=TwoWay}"/>
+                          <WrapPanel Orientation="Horizontal">
+                            <Button Classes="data-action-button" Content="Получить колонки" Command="{Binding LoadPostgreSqlColumnsCommand}" Margin="0,0,8,8"/>
+                            <Button Classes="data-action-button" Content="Отменить" Command="{Binding CancelPostgreSqlOperationCommand}" Margin="0,0,8,8"/>
+                          </WrapPanel>
+                          <ProgressBar IsVisible="{Binding IsPostgreSqlLoading}" IsIndeterminate="True" Height="3"/>
+                        </StackPanel>
 
                         <Grid ColumnDefinitions="*,*">
                           <StackPanel Spacing="4">
@@ -6055,7 +6076,7 @@
                           <StackPanel Spacing="4">
                             <TextBlock Text="Preview rows mode"
                                        FontWeight="SemiBold"/>
-                            <ComboBox ItemsSource="{Binding AvailablePreviewRowModes}"
+                            <ComboBox ItemsSource="{Binding AvailableSelectedSourcePreviewRowModes}"
                                       SelectedItem="{Binding SelectedBindingSource.PreviewRowMode, Mode=TwoWay}"/>
                           </StackPanel>
                           <StackPanel Grid.Column="1"
@@ -6067,14 +6088,14 @@
                           </StackPanel>
                         </Grid>
 
-                        <CheckBox Content="Использовать demo data"
+                        <CheckBox IsVisible="{Binding IsSqlServerSourceSelected}" Content="Использовать demo data"
                                   IsChecked="{Binding SelectedBindingSource.UseDemoData, Mode=TwoWay}"
                                   ToolTip.Tip="Если выключено, ненастроенный SQL source остаётся пустым и тестовые строки не создаются."/>
 
                         <WrapPanel Orientation="Horizontal"
                                    ItemHeight="44"
                                    ItemWidth="160">
-                          <Button Content="Подтянуть из БД"
+                          <Button IsVisible="{Binding IsSqlServerSourceSelected}" Content="Подтянуть из БД"
                                   Classes="data-action-button"
                                   Click="RefreshBindingSourceFromDatabaseButton_Click"/>
                           <Button Content="Очистить SQL-запрос"
@@ -7059,6 +7080,7 @@
                         <TextBlock Text="Источник"
                                    FontWeight="SemiBold"/>
                         <ComboBox ItemsSource="{Binding InteractionSourceControlNames}"
+                                  x:Name="LogicSourceControlSelector"
                                   DropDownOpened="LogicComboBox_DropDownOpened"
                                   DropDownClosed="LogicComboBox_DropDownClosed"
                                   SelectedItem="{Binding SelectedInteraction.SourceControlName, Mode=TwoWay}"/>

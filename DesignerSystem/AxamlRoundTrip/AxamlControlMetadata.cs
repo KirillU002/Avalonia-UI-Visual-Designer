@@ -18,6 +18,8 @@ public sealed record AxamlControlMetadata(string SourceType, string ProjectionTy
     private static readonly Dictionary<string, AxamlControlMetadata> Known = new(StringComparer.Ordinal)
     {
         ["Button"] = new("Button", "Button", AxamlContainerKind.SingleContent, "Content"),
+        ["DropDownButton"] = new("DropDownButton", "DropDownButton", AxamlContainerKind.SingleContent, "Content"),
+        ["SplitButton"] = new("SplitButton", "SplitButton", AxamlContainerKind.SingleContent, "Content"),
         ["TextBox"] = new("TextBox", "TextBox", AxamlContainerKind.None),
         ["TextBlock"] = new("TextBlock", "TextBlock", AxamlContainerKind.None),
         ["CheckBox"] = new("CheckBox", "CheckBox", AxamlContainerKind.None),
@@ -84,8 +86,11 @@ public sealed record AxamlControlMetadata(string SourceType, string ProjectionTy
         "ListBox" => new[]
         {
             new AxamlLiteralProperty(nameof(ListBox.SelectedIndex), "-1", IsInteger: true),
-            new AxamlLiteralProperty(nameof(ListBox.SelectionMode), "Single", Enum.GetNames<SelectionMode>())
+            new AxamlLiteralProperty(nameof(ListBox.SelectionMode), "Single", Enum.GetNames<SelectionMode>()),
+            new AxamlLiteralProperty("ScrollViewer.HorizontalScrollBarVisibility", "Disabled", Enum.GetNames<ScrollBarVisibility>()),
+            new AxamlLiteralProperty("ScrollViewer.VerticalScrollBarVisibility", "Auto", Enum.GetNames<ScrollBarVisibility>())
         },
+        "DropDownButton" or "SplitButton" => new[] { new AxamlLiteralProperty("IsEnabled", "True", IsBoolean: true) },
         "ListBoxItem" => new[] { new AxamlLiteralProperty(nameof(ListBoxItem.Content), "") },
         "TreeView" => new[] { new AxamlLiteralProperty(nameof(TreeView.SelectionMode), "Single", Enum.GetNames<SelectionMode>()) },
         "TreeViewItem" => new[]

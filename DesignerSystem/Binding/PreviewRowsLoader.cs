@@ -128,15 +128,38 @@ internal static class PreviewRowsLoader
         CancellationToken cancellationToken = default,
         bool updateSourceStatus = true)
     {
+        if (DataSourceIdentity.IsPostgreSql(source.SourceKind))
+        {
+            if (!source.UseRealPreviewRowsIfAvailable || source.PreviewRowMode == BindingSourceModel.PreviewRowModeSchemaOnly)
+                return Complete(source, Array.Empty<Dictionary<string, string>>(), false, DataModeSchemaOnly, "Загружена только схема PostgreSQL.", "schema-only", updateSourceStatus);
+            try
+            {
+                var rows = await SqlPreviewDataLoader.LoadRowsAsync(source, cancellationToken).ConfigureAwait(false);
+                var limited = ApplySortAndLimit(source, rows, out _);
+                return Complete(source, limited, true, "RealData", $"Загружены реальные строки PostgreSQL: {limited.Count}.", "postgres", updateSourceStatus);
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex)
+            {
+                Services.PostgreSqlDiagnostics.Write("POSTGRES_CONNECTION_FAILED", Services.PostgreSqlErrors.Details(ex));
+                return Complete(source, Array.Empty<Dictionary<string, string>>(), false, DataModeNoData,
+                    Services.PostgreSqlErrors.Message(ex), Services.PostgreSqlErrors.Details(ex), updateSourceStatus);
+            }
+        }
+
         var mode = BindingSourceModel.NormalizePreviewRowMode(source.PreviewRowMode);
         var runtimeMode = DataGridRuntimeDataModeResolver.Resolve(source);
-        if (runtimeMode.Mode == DataGridRuntimeDataMode.Empty)
+        var dllFallbackEnabled = DataSourceIdentity.IsAssembly(source.SourceKind)
+            && source.AllowPreviewSampleFallback && mode != BindingSourceModel.PreviewRowModeSchemaOnly
+            && source.Fields.Any(field => field.IsVisible && !string.IsNullOrWhiteSpace(field.Path));
+        if (runtimeMode.Mode == DataGridRuntimeDataMode.Empty && !dllFallbackEnabled)
             return Complete(source, Array.Empty<Dictionary<string, string>>(), false, "SchemaOnly", "Загружена только схема источника.", "schema-only", updateSourceStatus);
 
         if (runtimeMode.Mode == DataGridRuntimeDataMode.Demo)
         {
             var rows = BuildSampleRows(source, Math.Max(1, source.PreviewTopN));
-            return Complete(source, rows, false, "SampleRows", "Используются demo rows, реальные данные не загружались.", "sample-mode", updateSourceStatus);
+            return Complete(source, rows, false, DataSourceIdentity.IsSqlServer(source.SourceKind) ? DataModeDemoData : "SampleRows",
+                "Используются demo rows, реальные данные не загружались.", "sample-mode", updateSourceStatus);
         }
 
         if (SqlPreviewDataLoader.CanLoad(source))
@@ -207,6 +230,7 @@ internal static class PreviewRowsLoader
                     Debug.WriteLine($"DATAGRID_PREVIEW_TOP_N_APPLIED sourceKey={DataSourceIdentity.BuildKey(source)}; topN={source.PreviewTopN}; rowsBefore={beforeCount}; rowsAfter={limitedRows.Count}");
                     return Complete(source, limitedRows, true, "RealData", $"Загружены реальные DLL rows: {limitedRows.Count}.", "dll-provider", updateSourceStatus);
                 }
+                catch (OperationCanceledException) { throw; }
                 catch (Exception ex) when (AllowsDemoRows(source))
                 {
                     Debug.WriteLine($"DLL_TABLE_REAL_ROWS_LOAD_FAILED sourceKey={DataSourceIdentity.BuildKey(source)}; reason={ex.Message}");
@@ -510,12 +534,14 @@ internal static class PreviewRowsLoader
 
     private static bool AllowsDemoRows(BindingSourceModel source)
     {
-        return DataGridRuntimeDataModeResolver.IsExplicitDemoEnabled(source);
+        return DataGridRuntimeDataModeResolver.IsExplicitDemoEnabled(source)
+            || (DataSourceIdentity.IsAssembly(source.SourceKind) && source.AllowPreviewSampleFallback);
     }
 
     private static bool AllowsDemoRows(BindingSourceFileModel source)
     {
-        return DataGridRuntimeDataModeResolver.IsExplicitDemoEnabled(source);
+        return DataGridRuntimeDataModeResolver.IsExplicitDemoEnabled(source)
+            || (DataSourceIdentity.IsAssembly(source.SourceKind) && source.AllowPreviewSampleFallback);
     }
 
     private static string CreateDemoValue(DemoField field, int rowIndex)

@@ -50,12 +50,12 @@ internal static class DataSourceIdentity
             return "No source";
 
         var sourceName = string.IsNullOrWhiteSpace(source.Name) ? "BindingSource" : source.Name.Trim();
-        if (IsSqlServer(source.SourceKind))
+        if (IsDatabase(source.SourceKind))
         {
             var queryLabel = string.IsNullOrWhiteSpace(source.SourceQuery)
                 ? BuildSqlObjectLabel(source.SourceSchemaName, source.SourceTableName)
                 : $"query:{ShortHash(source.SourceQuery)}";
-            return $"{sourceName} | SQL | {queryLabel}";
+            return $"{sourceName} | {(IsPostgreSql(source.SourceKind) ? "PostgreSQL" : "SQL Server")} | {queryLabel}";
         }
 
         if (IsAssembly(source.SourceKind))
@@ -78,12 +78,12 @@ internal static class DataSourceIdentity
             return "No source";
 
         var sourceName = string.IsNullOrWhiteSpace(source.Name) ? "BindingSource" : source.Name.Trim();
-        if (IsSqlServer(source.SourceKind))
+        if (IsDatabase(source.SourceKind))
         {
             var queryLabel = string.IsNullOrWhiteSpace(source.SourceQuery)
                 ? BuildSqlObjectLabel(source.SourceSchemaName, source.SourceTableName)
                 : $"query:{ShortHash(source.SourceQuery)}";
-            return $"{sourceName} | SQL | {queryLabel}";
+            return $"{sourceName} | {(IsPostgreSql(source.SourceKind) ? "PostgreSQL" : "SQL Server")} | {queryLabel}";
         }
 
         if (IsAssembly(source.SourceKind))
@@ -104,6 +104,11 @@ internal static class DataSourceIdentity
     {
         return string.Equals(sourceKind, "SqlServer", StringComparison.OrdinalIgnoreCase);
     }
+
+    public static bool IsPostgreSql(string? sourceKind) =>
+        string.Equals(sourceKind, "PostgreSql", StringComparison.OrdinalIgnoreCase);
+
+    public static bool IsDatabase(string? sourceKind) => IsSqlServer(sourceKind) || IsPostgreSql(sourceKind);
 
     public static bool IsAssembly(string? sourceKind)
     {
@@ -128,10 +133,10 @@ internal static class DataSourceIdentity
             .OrderBy(field => Normalize(field.Path, string.Empty), StringComparer.OrdinalIgnoreCase)
             .Select(field => $"{Normalize(field.Path, string.Empty)}:{Normalize(field.TypeName, "string")}:{field.IsVisible}:{Normalize(field.DbType, string.Empty)}:{field.IsPrimaryKey}:{field.IsNullable}")));
 
-        if (IsSqlServer(kind))
+        if (IsDatabase(kind))
         {
             return string.Join("|",
-                "SQL",
+                IsPostgreSql(kind) ? "POSTGRES" : "SQL",
                 Normalize(id, string.Empty),
                 Hash(connectionString),
                 Normalize(schemaName, "dbo"),

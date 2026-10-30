@@ -48,6 +48,7 @@ public partial class SettingsWindow : Window
     {
         if (DataContext is SettingsWindowViewModel viewModel)
         {
+            viewModel.CancelPostgreSqlTestCommand.Execute(null);
             viewModel.ApplyRequested -= SettingsViewModel_ApplyRequested;
             viewModel.SaveRequested -= SettingsViewModel_SaveRequested;
             viewModel.CloseRequested -= SettingsViewModel_CloseRequested;

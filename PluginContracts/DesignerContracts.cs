@@ -301,6 +301,7 @@ public interface IPreviewBindingItemsProvider
 public interface IRuntimeBindingExportPathProvider
 {
     string GetItemsSourcePath(BindingSourceMetadata? bindingSource);
+    string GetFieldPath(BindingSourceMetadata? bindingSource, BindingFieldMetadata field) => field.Path;
 }
 
 public interface IXamlExportContext

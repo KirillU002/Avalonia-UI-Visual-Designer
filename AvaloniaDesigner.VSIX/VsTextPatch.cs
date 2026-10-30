@@ -49,6 +49,6 @@ internal static class VsTextPatch
             previousStart = edit.Start;
             previousEnd = edit.Start + edit.Length;
         }
-        return ordered.Reverse().ToArray();
+        return Enumerable.Reverse(ordered).ToArray();
     }
 }

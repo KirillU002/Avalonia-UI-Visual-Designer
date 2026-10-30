@@ -681,6 +681,16 @@ internal sealed class Program
 {(hasSqlConnectionTodo ? "- SQL connection string export was disabled or incomplete. Replace `TODO: set SQL Server connection string` before calling the loader." : "- The exported code contains the SQL connection string that was explicitly allowed in Export settings. Move it to configuration/secrets before production use.")}
 - The SQL query/table mapping is generated from the Data mode source schema."
             : "";
+        var postgresNotes = result.RequiredPackages.Any(package => package.Id == "Npgsql")
+            ? @"
+## PostgreSQL runtime
+- Npgsql 8.0.9 is included only for forms with a PostgreSQL DataGrid.
+- Before starting, set FORMDESIGNER_POSTGRES_CONNECTION_STRING in the application environment.
+- Form/source keys listed in README.generated.md take priority, followed by FORMDESIGNER_POSTGRES_<source id> aliases and the shared value. Copied forms have separate scoped keys.
+- Use the usual Npgsql Host/Port/Database/Username/Password/Ssl Mode options. Store credentials outside the repository.
+- Designer passwords are never copied. Each form loads real rows asynchronously on Opened and cancels on Closed.
+- Read-only transactions prevent data changes. An empty result stays empty; connection errors are reported in Russian without secret-bearing exception messages."
+            : "";
         var eremexNotes = hasEremexControls
             ? @"
 ## Eremex controls
@@ -722,7 +732,7 @@ NuGet sources:
 - Generated bindings are runtime bindings unless a real exported ViewModel type exists.
 - If your NuGet source is HTTP/intranet-only, the generated `NuGet.config` must mark that source with `allowInsecureConnections=""true""`.
 - This export clears `packageSourceMapping` in the local `NuGet.config` so user/global source mapping does not block restore for the generated project.
-{sqlRuntimeNotes}{eremexNotes}
+{sqlRuntimeNotes}{postgresNotes}{eremexNotes}
 
 ## Files
 {string.Join(Environment.NewLine, result.GeneratedFiles.Select(file => $"- {file.Path} ({file.StatusText})"))}

@@ -1072,7 +1072,7 @@ public partial class MainWindowViewModel : ObservableObject
     public bool IsDemoDataGenerationMode => !IsCleanUiGenerationMode;
     public bool ShouldGenerateDemoRuntimeCode => IsDemoDataGenerationMode || IncludeSampleData || IncludeCrudSkeleton;
 
-    private bool ShouldGenerateRuntimeDataBindingCode => ShouldGenerateDemoRuntimeCode || HasRuntimeDataGridBindingSource();
+    private bool ShouldGenerateRuntimeDataBindingCode => ShouldGenerateDemoRuntimeCode || HasRuntimeDataGridBindingSource() || HasBoundListBox();
 
     private bool HasRuntimeDataGridBindingSource()
     {
@@ -1559,7 +1559,7 @@ public partial class MainWindowViewModel : ObservableObject
     public bool CanEditCommonForeground => CanEditForeground && !CanEditDataGridBasic;
     public bool CanEditCommonBorder => CanEditBorder && !CanEditDataGridBasic;
     public bool CanEditCommonFont => CanEditFont && !CanEditDataGridBasic;
-    public bool CanEditClassicBindingEditor => CanEditBindingEditor && !CanEditDataGridBasic;
+    public bool CanEditClassicBindingEditor => CanEditBindingEditor && !CanEditDataGridBasic && SelectedControl?.Type != DesignerControlTypes.ListBox;
     public bool CanApplyDataGridVisualPresets => false;
     public bool CanEditDataGridGlowColor => false;
     public bool CanEditDataGridRowBackground => false;
@@ -2262,7 +2262,7 @@ public partial class MainWindowViewModel : ObservableObject
         SelectedInteraction?.TargetProperty)?.Description
         ?? "Свойство цели показывает, куда будет записано значение.";
 
-    public IReadOnlyList<string> InteractionSourceControlNames => Controls
+    public IReadOnlyList<string> InteractionSourceControlNames => StandardItemsProperties.WithMenuSources(Controls)
         .Where(IsSupportedInteractionSource)
         .Select(control => control.Name)
         .Where(name => !string.IsNullOrWhiteSpace(name))
@@ -2388,7 +2388,8 @@ public partial class MainWindowViewModel : ObservableObject
                 || !string.IsNullOrWhiteSpace(SelectedBindingSource.SourceQuery)
                 || !string.IsNullOrWhiteSpace(SelectedBindingSource.SourceTableName))
             {
-                var sourceLabel = BuildSqlConnectionSummary(SelectedBindingSource.SourceConnectionString);
+                var sourceLabel = DataSourceIdentity.IsPostgreSql(SelectedBindingSource.SourceKind)
+                    ? "PostgreSQL" : BuildSqlConnectionSummary(SelectedBindingSource.SourceConnectionString);
                 var objectLabel = !string.IsNullOrWhiteSpace(SelectedBindingSource.SourceQuery)
                     ? "SQL-запрос"
                     : $"{NormalizeSqlSchemaName(SelectedBindingSource.SourceSchemaName)}.{NormalizeSqlTableName(SelectedBindingSource.SourceTableName)}";
@@ -4303,7 +4304,7 @@ public partial class MainWindowViewModel : ObservableObject
         var result = await PreviewRowsLoader.LoadRowsAsync(source, cancellationToken).ConfigureAwait(false);
         UpdatePreviewRowsCount(result.Rows.Count);
         var dataMode = result.IsRealData
-            ? DataSourceIdentity.IsSqlServer(source.SourceKind)
+            ? DataSourceIdentity.IsDatabase(source.SourceKind)
                 ? PreviewRowsLoader.DataModeRealSqlData
                 : PreviewRowsLoader.DataModeRealDllData
             : string.Equals(result.DataKind, "DemoData", StringComparison.OrdinalIgnoreCase)
@@ -4999,7 +5000,7 @@ public partial class MainWindowViewModel : ObservableObject
     public bool SupportsDataBinding(DesignControlModel? control)
     {
         return DescriptorDeclaresProperty(control, nameof(DesignControlModel.AutoGenerateColumns))
-            || control?.Type == DesignerControlTypes.DataGrid;
+            || control?.Type is DesignerControlTypes.DataGrid or DesignerControlTypes.ListBox;
     }
 
     public bool SupportsFieldBinding(DesignControlModel? control)
@@ -5017,7 +5018,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     public static bool IsSupportedInteractionSource(DesignControlModel control)
     {
-        return control.Type is DesignerControlTypes.Button
+        return control.Type is DesignerControlTypes.Button or DesignerControlTypes.DropDownButton or DesignerControlTypes.SplitButton
             or DesignerControlTypes.TextBox
             or DesignerControlTypes.CheckBox
             or DesignerControlTypes.DataGrid;
@@ -5027,7 +5028,7 @@ public partial class MainWindowViewModel : ObservableObject
     {
         return control?.Type switch
         {
-            DesignerControlTypes.Button => InteractionModel.EventButtonClick,
+            DesignerControlTypes.Button or DesignerControlTypes.DropDownButton or DesignerControlTypes.SplitButton => InteractionModel.EventButtonClick,
             DesignerControlTypes.TextBox => InteractionModel.EventTextBoxTextChanged,
             DesignerControlTypes.CheckBox => InteractionModel.EventCheckBoxChecked,
             DesignerControlTypes.DataGrid => InteractionModel.EventDataGridSelectionChanged,
@@ -7885,7 +7886,7 @@ public partial class MainWindowViewModel : ObservableObject
         var objectLabel = !string.IsNullOrWhiteSpace(importedSource.SourceQuery)
             ? "SQL-запрос"
             : $"{NormalizeSqlSchemaName(importedSource.SourceSchemaName)}.{NormalizeSqlTableName(importedSource.SourceTableName)}";
-        var usedCertificateFallback = !string.IsNullOrWhiteSpace(originalConnectionString)
+        var usedCertificateFallback = !DataSourceIdentity.IsPostgreSql(importedSource.SourceKind) && !string.IsNullOrWhiteSpace(originalConnectionString)
             && !string.Equals(originalConnectionString, importedSource.SourceConnectionString, StringComparison.Ordinal);
 
         BeginUndoBatch();
@@ -9516,6 +9517,7 @@ public partial class MainWindowViewModel : ObservableObject
         ApplyPreviewSettings(settings.Preview);
         ApplyBuildAndLogsSettings(settings.BuildAndLogs);
         ApplySqlServerSettings(settings.SqlServer);
+        ApplyPostgreSqlSettings(settings.PostgreSql);
         ApplyAdvancedSettings(settings.Advanced);
 
         RecentFiles.Clear();
@@ -10656,7 +10658,7 @@ public partial class MainWindowViewModel : ObservableObject
             foreach (var row in BuildDataGridPropertyRows(control, includeDataAndExport: false))
                 yield return row;
         }
-        else if (SupportsDataBinding(control)
+        else if (control.Type != DesignerControlTypes.ListBox && SupportsDataBinding(control)
                  && DescriptorDeclaresProperty(control, nameof(DesignControlModel.BindingSourceId)))
         {
             yield return CreateBindingSourceRow(control, "BindingSource used by this data control.");
@@ -10686,16 +10688,19 @@ public partial class MainWindowViewModel : ObservableObject
             || string.Equals(interaction.TargetControlName, control.Name, StringComparison.OrdinalIgnoreCase));
         yield return CreateReadOnlyRow(PropertyGridCategoryInteraction, "Interactions", "Interactions", interactionCount.ToString(CultureInfo.InvariantCulture), "Rules that use this control.");
 
-        var descriptorProperties = GetCustomDescriptorProperties(control).ToList();
+        var standardRows = StandardItemsRows(control).ToList();
+        foreach (var row in standardRows) yield return row;
+        var descriptorProperties = GetCustomDescriptorProperties(control).Where(property => !standardRows.Any(row => row.Key == property.Key)).ToList();
         foreach (var descriptor in descriptorProperties)
             yield return CreateDescriptorPropertyRow(descriptor);
 
-        var descriptorKeys = descriptorProperties.Select(descriptor => descriptor.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var descriptorKeys = descriptorProperties.Select(descriptor => descriptor.Key).Concat(standardRows.Select(row => row.Key)).ToHashSet(StringComparer.OrdinalIgnoreCase);
         if (_activeAxamlRoundTripDocument?.SourceMap.TryGet(control.Id, out var axamlReference) == true)
         {
             var metadata = AxamlControlMetadata.Find(axamlReference.Element.LocalName);
             foreach (var property in metadata?.LiteralProperties ?? Array.Empty<AxamlLiteralProperty>())
             {
+                if (standardRows.Any(row => row.Key == property.Key)) continue;
                 descriptorKeys.Add(property.Key);
                 void SetValue(string value) { if (property.Write(control, value)) NotifyDesignerStateChanged(); }
                 if (property.IsBoolean)
@@ -11838,7 +11843,7 @@ public partial class MainWindowViewModel : ObservableObject
         try
         {
             var toRemove = roots.SelectMany(GetControlAndDescendants).DistinctBy(control => control.Id).ToList();
-            var removedNames = toRemove
+            var removedNames = StandardItemsProperties.WithMenuSources(toRemove)
                 .Select(control => control.Name)
                 .Where(name => !string.IsNullOrWhiteSpace(name))
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -14138,7 +14143,7 @@ public partial class MainWindowViewModel : ObservableObject
             yield return new GeneratedFileModel
             {
                 Path = "README.generated.md",
-                Content = primaryFiles.BindingGuide,
+                Content = primaryFiles.BindingGuide + BuildPostgreSqlProjectConfigurationGuide(),
                 Severity = ExportChecklistSeverity.Ok
             };
         }
@@ -14265,7 +14270,8 @@ public partial class MainWindowViewModel : ObservableObject
                 toOutput: false);
             var runtimePreviewAxaml = GeneratedAxamlService.Create(
                 exportAxaml.Axaml,
-                AxamlGenerationMode.RuntimePreview);
+                AxamlGenerationMode.RuntimePreview,
+                preserveRuntimeNames: exportViewModel.Controls.Any(control => StandardItemsProperties.IsStandardItemsControl(control.Type)));
             stopwatch.Stop();
 
             foreach (var propertyName in runtimePreviewAxaml.RemovedRootProperties)
@@ -14341,6 +14347,11 @@ public partial class MainWindowViewModel : ObservableObject
                 Document = CloneDocumentFileModel(exportViewModel.ActiveFormDocument.Document),
                 ProjectForms = exportViewModel.CurrentProject.Forms.Select(CloneFormDocumentForPreview).ToList(),
                 ActiveFormId = form.Id,
+                StandardControlNames = BuildExportControlNameMap(exportViewModel.Controls, exportViewModel.ResolveExportWindowClassName(), exportViewModel.ResolveExportViewModelClassName()),
+                PostgreSqlFieldPaths = exportViewModel.BuildCrudGenerationContexts()
+                    .Where(context => DataSourceIdentity.IsPostgreSql(context.Source.SourceKind))
+                    .ToDictionary(context => context.Source.Id,
+                        context => (IReadOnlyDictionary<string, string>)context.Fields.ToDictionary(field => field.Path, GetGeneratedRowPropertyName, StringComparer.Ordinal), StringComparer.Ordinal),
                 IncludeDemoData = IncludeSampleData,
                 FallbackToLegacyPreviewOnError = FallbackToLegacyPreviewOnAxamlError,
                 ShowGeneratedAxamlOnError = ShowGeneratedAxamlOnPreviewError,
@@ -14551,6 +14562,7 @@ public partial class MainWindowViewModel : ObservableObject
         target.IncludeCrudSkeleton = IncludeCrudSkeleton;
         target.IncludeCommunityToolkitAttributes = IncludeCommunityToolkitAttributes;
         target.IncludePluginRuntimeReferences = IncludePluginRuntimeReferences;
+        target.ApplyPostgreSqlSettings(CapturePostgreSqlSettings());
         target.ExportSqlConnectionString = ExportSqlConnectionString;
         target.SqlServerName = SqlServerName;
         target.SqlDatabaseName = SqlDatabaseName;
@@ -14583,7 +14595,7 @@ public partial class MainWindowViewModel : ObservableObject
                 Control = control,
                 Source = exportViewModel.GetBindingSource(control.BindingSourceId)
             })
-            .Where(item => item.Source is not null && IsSqlServerSource(item.Source))
+            .Where(item => item.Source is not null && IsDatabaseSource(item.Source))
             .ToList();
         TraceDocumentDebug(
             "EXPORT_FORM_SQL_CONTEXT_START",
@@ -14625,7 +14637,7 @@ public partial class MainWindowViewModel : ObservableObject
                     $"form={form.DisplayName}:{form.Id}; grid={item.Control.Name}; loader={plan.LoaderMethodName}; viewmodel={className}ViewModel; autoCall={plan.ShouldCallLoader}",
                     toOutput: false);
             }
-            if (!plan.HasConnectionString)
+            if (!plan.HasConnectionString && !plan.IsPostgreSql)
             {
                 TraceDocumentDebug(
                     "EXPORT_FORM_SQL_CONNECTION_MISSING",
@@ -14914,6 +14926,9 @@ public partial class MainWindowViewModel : ObservableObject
             {
                 packageIds.Add("Microsoft.Data.SqlClient");
             }
+            if (boundSources.Any(source => DataSourceIdentity.IsPostgreSql(source.SourceKind)
+                && (!string.IsNullOrWhiteSpace(source.SourceQuery) || !string.IsNullOrWhiteSpace(source.SourceTableName))))
+                packageIds.Add("Npgsql");
         }
 
         return packageIds.OrderBy(id => id, StringComparer.OrdinalIgnoreCase).ToList();
@@ -14982,6 +14997,7 @@ public partial class MainWindowViewModel : ObservableObject
             "Avalonia.Controls.DataGrid" => "11.1.1",
             "CommunityToolkit.Mvvm" => "8.2.1",
             "Microsoft.Data.SqlClient" => "5.2.2",
+            "Npgsql" => PostgreSqlConnectionService.PackageVersion,
             _ => ""
         };
     }
@@ -14993,6 +15009,7 @@ public partial class MainWindowViewModel : ObservableObject
             "Avalonia.Controls.DataGrid" => "Real Avalonia DataGrid export",
             "CommunityToolkit.Mvvm" => IncludeCommunityToolkitAttributes ? "CommunityToolkit attributes requested" : "Generated DataGrid runtime ViewModel",
             "Microsoft.Data.SqlClient" => "SQL BindingSource runtime loader",
+            "Npgsql" => "PostgreSQL BindingSource runtime loader",
             _ => "Export dependency"
         };
     }
@@ -15146,8 +15163,12 @@ public partial class MainWindowViewModel : ObservableObject
         if (ShouldGenerateRuntimeDataBindingCode || IncludeCommunityToolkitAttributes)
             yield return "CommunityToolkit.Mvvm";
 
-        if (ShouldGenerateRuntimeDataBindingCode && BuildCrudGenerationContexts().Any(context => ShouldGenerateSqlRuntimeLoader(context.Source)))
+        if (ShouldGenerateRuntimeDataBindingCode && BuildCrudGenerationContexts().Any(context =>
+            DataSourceIdentity.IsSqlServer(context.Source.SourceKind) && ShouldGenerateSqlRuntimeLoader(context.Source)))
             yield return "Microsoft.Data.SqlClient";
+        if (ShouldGenerateRuntimeDataBindingCode && BuildCrudGenerationContexts().Any(context =>
+            DataSourceIdentity.IsPostgreSql(context.Source.SourceKind) && ShouldGenerateSqlRuntimeLoader(context.Source)))
+            yield return "Npgsql";
     }
 
     private IReadOnlyList<RequiredPackageModel> GetAllRequiredExportPackages()
@@ -15159,7 +15180,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     private static bool ShouldGenerateSqlRuntimeLoader(BindingSourceModel source)
     {
-        if (!IsSqlServerSource(source))
+        if (!IsDatabaseSource(source))
             return false;
 
         var hasCommandText = !string.IsNullOrWhiteSpace(source.SourceQuery)
@@ -15752,7 +15773,7 @@ public partial class MainWindowViewModel : ObservableObject
         }
 
         var textBoxControls = Controls.Where(control => control.Type == DesignerControlTypes.TextBox).ToList();
-        var buttonControls = Controls.Where(control => control.Type == DesignerControlTypes.Button).ToList();
+        var buttonControls = ButtonLogicSources().ToList();
         var sb = new StringBuilder();
         sb.AppendLine(ShouldGenerateDemoRuntimeCode
             ? "Нажмите кнопку «Применить привязки», чтобы автоматически назначить рекомендованные биндинги для текущей формы."
@@ -15865,7 +15886,7 @@ public partial class MainWindowViewModel : ObservableObject
             "using Avalonia.Controls;"
         };
 
-        if (hasRoutedInteractionHandlers)
+        if (hasRoutedInteractionHandlers || Controls.Any(c => StandardItemsProperties.IsMenuButton(c.Type)))
             usings.Add("using Avalonia.Interactivity;");
         if (hasShowMessageInteractions)
         {
@@ -15955,6 +15976,7 @@ public partial class MainWindowViewModel : ObservableObject
         if (hasInteractionHandlers)
             AppendGeneratedInteractionHandlers(sb, exportableInteractions, exportControlNames, formClassNames, currentFormId, skipButtonClickHandlers: false);
 
+        AppendStandardFlyoutHandlers(sb, exportControlNames);
         sb.AppendLine("}");
 
         return sb.ToString().TrimEnd();
@@ -15972,21 +15994,22 @@ public partial class MainWindowViewModel : ObservableObject
         var hasShowMessageInteractions = exportableInteractions.Any(item =>
             string.Equals(item.Interaction.ActionType, InteractionModel.ActionShowMessage, StringComparison.OrdinalIgnoreCase));
         var selectionInteractions = new List<(InteractionModel Interaction, DesignControlModel Source, DesignControlModel Target)>();
-        var buttonControls = Controls.Where(control => control.Type == DesignerControlTypes.Button).ToList();
+        var buttonControls = ButtonLogicSources().ToList();
         var textBoxControls = Controls.Where(control => control.Type == DesignerControlTypes.TextBox).ToList();
         var crudContexts = BuildCrudGenerationContexts();
         var runtimeDataModes = crudContexts.ToDictionary(
             context => context.Source.Id,
-            context => ResolveRuntimeDataModeForExport(context.Source),
+            context => ResolveItemsRuntimeMode(context.Source),
             StringComparer.OrdinalIgnoreCase);
         var sqlRuntimePlans = crudContexts
-            .Where(context => IsSqlServerSource(context.Source))
+            .Where(context => IsDatabaseSource(context.Source))
             .Select(context => BuildSqlRuntimeExportPlan(context, runtimeDataModes[context.Source.Id]))
             .ToDictionary(plan => plan.Context.Source.Id, StringComparer.OrdinalIgnoreCase);
         var sqlLoaderPlans = sqlRuntimePlans.Values
             .Where(plan => plan.ShouldGenerateLoader)
             .ToList();
         var hasSqlRuntimeLoaders = sqlLoaderPlans.Count > 0;
+        var hasPostgreSqlRuntimeLoaders = sqlLoaderPlans.Any(plan => plan.IsPostgreSql);
         var exportSeedRowsBySourceId = crudContexts.ToDictionary(
             context => context.Source.Id,
             context => BuildRuntimeSeedRows(context, runtimeDataModes[context.Source.Id]),
@@ -15995,7 +16018,7 @@ public partial class MainWindowViewModel : ObservableObject
         var sqlGridCount = Controls.Count(control =>
             IsDataBindingControl(control)
             && GetBindingSource(control.BindingSourceId) is { } source
-            && IsSqlServerSource(source));
+            && IsDatabaseSource(source));
         TraceDocumentDebug(
             "EXPORT_FORM_SQL_CONTEXT_START",
             $"form={ActiveDocumentName}:{currentFormId}; grids={sqlGridCount}; viewmodel={viewModelClassName}; isolated={_isGeneratingSecondaryFormExport}",
@@ -16100,7 +16123,7 @@ public partial class MainWindowViewModel : ObservableObject
                         $"form={ActiveDocumentName}:{currentFormId}; grid={gridNameText}; loader={sqlPlan.LoaderMethodName}; viewmodel={viewModelClassName}; autoCall={sqlPlan.ShouldCallLoader}",
                         toOutput: false);
                 }
-                if (!sqlPlan.HasConnectionString)
+                if (!sqlPlan.HasConnectionString && !sqlPlan.IsPostgreSql)
                 {
                     TraceDocumentDebug(
                         "EXPORT_FORM_SQL_CONNECTION_MISSING",
@@ -16163,8 +16186,15 @@ public partial class MainWindowViewModel : ObservableObject
 
             if (hasSqlRuntimeLoaders)
             {
-                usings.Add("using Microsoft.Data.SqlClient;");
+                if (sqlLoaderPlans.Any(plan => !plan.IsPostgreSql)) usings.Add("using Microsoft.Data.SqlClient;");
+                if (hasPostgreSqlRuntimeLoaders)
+                {
+                    usings.Add("using Npgsql;");
+                    usings.Add("using System.Threading;");
+                    usings.Add("using System.Threading.Tasks;");
+                }
                 usings.Add("using System.Data;");
+                usings.Add("using System.Data.Common;");
             }
         }
         if (hasShowMessageInteractions)
@@ -16208,6 +16238,8 @@ public partial class MainWindowViewModel : ObservableObject
 
         sb.AppendLine($"public partial class {windowClassName} : Window");
         sb.AppendLine("{");
+        if (hasPostgreSqlRuntimeLoaders)
+            sb.AppendLine("    private readonly CancellationTokenSource _postgreSqlLifetime = new();");
         if (hasAnchoredControls)
         {
             sb.AppendLine("    private readonly List<AnchorBinding> _anchorBindings = new();");
@@ -16242,6 +16274,7 @@ public partial class MainWindowViewModel : ObservableObject
             }
             if (autoLoadSqlContexts)
                 sb.AppendLine("        Opened += Window_Opened;");
+            if (hasPostgreSqlRuntimeLoaders) AppendPostgreSqlWindowLifecycle(sb, sqlLoaderPlans);
         }
         if (hasAnchoredControls)
         {
@@ -16469,6 +16502,7 @@ public partial class MainWindowViewModel : ObservableObject
         else if (hasShowMessageInteractions && !hasSelectionInteractions)
             AppendGeneratedInteractionHelpers(sb, includeShowMessageHelper: true);
 
+        AppendStandardFlyoutHandlers(sb, exportControlNames);
         sb.AppendLine("}");
 
         if (hasViewModel)
@@ -16512,11 +16546,17 @@ public partial class MainWindowViewModel : ObservableObject
 
             foreach (var plan in sqlLoaderPlans)
             {
-                sb.AppendLine($"    private const string {plan.ConnectionStringConstantName} = \"{EscapeCSharp(plan.ConnectionStringValue)}\";");
+                if (!plan.IsPostgreSql)
+                    sb.AppendLine($"    private const string {plan.ConnectionStringConstantName} = \"{EscapeCSharp(plan.ConnectionStringValue)}\";");
                 sb.AppendLine($"    private const string {plan.CommandTextConstantName} = {ToVerbatimCSharpString(plan.CommandText)};");
                 sb.AppendLine();
             }
 
+            if (hasPostgreSqlRuntimeLoaders)
+            {
+                sb.AppendLine("    [ObservableProperty] private string postgreSqlStatus = string.Empty;");
+                sb.AppendLine();
+            }
             sb.AppendLine($"    public {viewModelClassName}()");
             sb.AppendLine("    {");
             foreach (var context in crudContexts)
@@ -16525,7 +16565,8 @@ public partial class MainWindowViewModel : ObservableObject
                 {
                     if (sqlPlan.ShouldCallLoader)
                     {
-                        sb.AppendLine($"        {sqlPlan.LoaderMethodName}();");
+                        if (sqlPlan.IsPostgreSql) sb.AppendLine($"        Apply{context.ItemTypeName}Filter();");
+                        else sb.AppendLine($"        {sqlPlan.LoaderMethodName}();");
                     }
                     else
                     {
@@ -16636,43 +16677,48 @@ public partial class MainWindowViewModel : ObservableObject
                 if (sqlRuntimePlans.TryGetValue(context.Source.Id, out var sqlPlanForLoader)
                     && sqlPlanForLoader.ShouldGenerateLoader)
                 {
-                    if (sqlPlanForLoader.ShouldCallLoader)
-                        sb.AppendLine("    // SQL loader uses the connection string and query configured in the designer.");
+                    if (sqlPlanForLoader.IsPostgreSql)
+                        AppendPostgreSqlRuntimeLoader(sb, context, sqlPlanForLoader);
                     else
-                        sb.AppendLine($"    // SQL loader placeholder. Fill {sqlPlanForLoader.ConnectionStringConstantName} and call this method when you are ready to load real data.");
-                    sb.AppendLine($"    public void {sqlPlanForLoader.LoaderMethodName}()");
-                    sb.AppendLine("    {");
-                    sb.AppendLine($"        var items = new List<{context.ItemTypeName}>();");
-                    sb.AppendLine("        try");
-                    sb.AppendLine("        {");
-                    sb.AppendLine($"            using var connection = new SqlConnection({sqlPlanForLoader.ConnectionStringConstantName});");
-                    sb.AppendLine("            connection.Open();");
-                    sb.AppendLine();
-                    sb.AppendLine("            using var command = connection.CreateCommand();");
-                    sb.AppendLine($"            command.CommandText = {sqlPlanForLoader.CommandTextConstantName};");
-                    sb.AppendLine("            command.CommandType = CommandType.Text;");
-                    sb.AppendLine("            command.CommandTimeout = 30;");
-                    sb.AppendLine();
-                    sb.AppendLine("            using var reader = command.ExecuteReader();");
-                    sb.AppendLine("            while (reader.Read())");
-                    sb.AppendLine("            {");
-                    sb.AppendLine($"                items.Add(new {context.ItemTypeName}");
-                    sb.AppendLine("                {");
-                    AppendGeneratedSqlAssignments(sb, context, 5);
-                    sb.AppendLine("                });");
-                    sb.AppendLine("            }");
-                    sb.AppendLine("        }");
-                    sb.AppendLine("        catch (Exception ex)");
-                    sb.AppendLine("        {");
-                    sb.AppendLine($"            System.Diagnostics.Debug.WriteLine($\"RUNTIME_SQL_LOAD_FAILED source={EscapeCSharp(context.Source.Name)} method={sqlPlanForLoader.LoaderMethodName}; error={{ex.GetType().Name}}: {{ex.Message}}\");");
-                    sb.AppendLine("        }");
-                    sb.AppendLine();
-                    sb.AppendLine($"        ReplaceItems({context.CollectionPropertyName}, items);");
-                    sb.AppendLine($"        {context.SelectedItemPropertyName} = null;");
-                    sb.AppendLine($"        {context.CurrentItemPropertyName} = new {context.ItemTypeName}();");
-                    sb.AppendLine($"        Apply{context.ItemTypeName}Filter();");
-                    sb.AppendLine("    }");
-                    sb.AppendLine();
+                    {
+                        if (sqlPlanForLoader.ShouldCallLoader)
+                            sb.AppendLine("    // SQL loader uses the connection string and query configured in the designer.");
+                        else
+                            sb.AppendLine($"    // SQL loader placeholder. Fill {sqlPlanForLoader.ConnectionStringConstantName} and call this method when you are ready to load real data.");
+                        sb.AppendLine($"    public void {sqlPlanForLoader.LoaderMethodName}()");
+                        sb.AppendLine("    {");
+                        sb.AppendLine($"        var items = new List<{context.ItemTypeName}>();");
+                        sb.AppendLine("        try");
+                        sb.AppendLine("        {");
+                        sb.AppendLine($"            using var connection = new SqlConnection({sqlPlanForLoader.ConnectionStringConstantName});");
+                        sb.AppendLine("            connection.Open();");
+                        sb.AppendLine();
+                        sb.AppendLine("            using var command = connection.CreateCommand();");
+                        sb.AppendLine($"            command.CommandText = {sqlPlanForLoader.CommandTextConstantName};");
+                        sb.AppendLine("            command.CommandType = CommandType.Text;");
+                        sb.AppendLine("            command.CommandTimeout = 30;");
+                        sb.AppendLine();
+                        sb.AppendLine("            using var reader = command.ExecuteReader();");
+                        sb.AppendLine("            while (reader.Read())");
+                        sb.AppendLine("            {");
+                        sb.AppendLine($"                items.Add(new {context.ItemTypeName}");
+                        sb.AppendLine("                {");
+                        AppendGeneratedSqlAssignments(sb, context, 5);
+                        sb.AppendLine("                });");
+                        sb.AppendLine("            }");
+                        sb.AppendLine("        }");
+                        sb.AppendLine("        catch (Exception ex)");
+                        sb.AppendLine("        {");
+                        sb.AppendLine($"            System.Diagnostics.Debug.WriteLine($\"RUNTIME_SQL_LOAD_FAILED source={EscapeCSharp(context.Source.Name)} method={sqlPlanForLoader.LoaderMethodName}; error={{ex.GetType().Name}}: {{ex.Message}}\");");
+                        sb.AppendLine("        }");
+                        sb.AppendLine();
+                        sb.AppendLine($"        ReplaceItems({context.CollectionPropertyName}, items);");
+                        sb.AppendLine($"        {context.SelectedItemPropertyName} = null;");
+                        sb.AppendLine($"        {context.CurrentItemPropertyName} = new {context.ItemTypeName}();");
+                        sb.AppendLine($"        Apply{context.ItemTypeName}Filter();");
+                        sb.AppendLine("    }");
+                        sb.AppendLine();
+                    }
                 }
 
                 var seedRows = exportSeedRowsBySourceId.TryGetValue(context.Source.Id, out var rows)
@@ -16731,19 +16777,21 @@ public partial class MainWindowViewModel : ObservableObject
             if (hasSqlRuntimeLoaders)
             {
                 sb.AppendLine();
-                sb.AppendLine("    private static string ReadString(SqlDataReader reader, string columnName)");
+                sb.AppendLine("    private static string ReadString(DbDataReader reader, string columnName)");
                 sb.AppendLine("    {");
                 sb.AppendLine("        var value = reader[columnName];");
+                if (hasPostgreSqlRuntimeLoaders)
+                    sb.AppendLine("        if (value is Array values) return string.Join(\", \", values.Cast<object?>().Select(item => Convert.ToString(item, CultureInfo.InvariantCulture)));");
                 sb.AppendLine("        return value is null || value == DBNull.Value ? string.Empty : Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty;");
                 sb.AppendLine("    }");
                 sb.AppendLine();
-                sb.AppendLine("    private static byte[] ReadBytes(SqlDataReader reader, string columnName)");
+                sb.AppendLine("    private static byte[] ReadBytes(DbDataReader reader, string columnName)");
                 sb.AppendLine("    {");
                 sb.AppendLine("        var value = reader[columnName];");
                 sb.AppendLine("        return value is byte[] bytes ? bytes : Array.Empty<byte>();");
                 sb.AppendLine("    }");
                 sb.AppendLine();
-                sb.AppendLine("    private static T ReadValue<T>(SqlDataReader reader, string columnName)");
+                sb.AppendLine("    private static T ReadValue<T>(DbDataReader reader, string columnName)");
                 sb.AppendLine("    {");
                 sb.AppendLine("        var value = reader[columnName];");
                 sb.AppendLine("        if (value is null || value == DBNull.Value)");
@@ -17182,7 +17230,7 @@ public partial class MainWindowViewModel : ObservableObject
             existing.Path = IsDefaultBindingSourcePath(preservePath, preserveName) ? importedSource.Path : preservePath;
             existing.ItemTypeName = IsDefaultItemTypeName(preserveItemTypeName) ? importedSource.ItemTypeName : preserveItemTypeName;
             existing.Description = IsDefaultBindingSourceDescription(preserveDescription) ? importedSource.Description : preserveDescription;
-            existing.SourceKind = "SqlServer";
+            existing.SourceKind = importedSource.SourceKind;
             existing.SourceAssemblyPath = "";
             existing.SourceTypeFullName = importedSource.SourceTypeFullName;
             existing.SourceTableName = importedSource.SourceTableName;
@@ -17235,6 +17283,8 @@ public partial class MainWindowViewModel : ObservableObject
 
     public string ResolveSqlConnectionStringForSource(BindingSourceModel source)
     {
+        if (DataSourceIdentity.IsPostgreSql(source.SourceKind))
+            return ResolvePostgreSqlConnection(source);
         if (!string.IsNullOrWhiteSpace(source.SourceConnectionString))
             return source.SourceConnectionString.Trim();
 
@@ -17292,6 +17342,8 @@ public partial class MainWindowViewModel : ObservableObject
 
     private async Task<BindingSourceModel> CreateBindingSourceFromDatabaseAsync(BindingSourceModel template)
     {
+        if (DataSourceIdentity.IsPostgreSql(template.SourceKind))
+            return await CreatePostgreSqlBindingSourceAsync(template);
         var connectionString = ResolveSqlConnectionStringForSource(template);
         if (string.IsNullOrWhiteSpace(connectionString))
             throw new InvalidOperationException("SQL Server не настроен. Откройте Настройки → SQL Server и укажите Server name / Database name.");
@@ -17972,6 +18024,9 @@ public partial class MainWindowViewModel : ObservableObject
             {
                 [DesignerControlTypes.Group] = (builder, control, indent) => _owner.AppendGroupXaml(builder, control, indent),
                 [DesignerControlTypes.Button] = (builder, control, indent) => _owner.AppendButtonXaml(builder, control, indent),
+                [DesignerControlTypes.DropDownButton] = (builder, control, indent) => _owner.AppendStandardItemsXaml(builder, control, indent),
+                [DesignerControlTypes.SplitButton] = (builder, control, indent) => _owner.AppendStandardItemsXaml(builder, control, indent),
+                [DesignerControlTypes.ListBox] = (builder, control, indent) => _owner.AppendStandardItemsXaml(builder, control, indent),
                 [DesignerControlTypes.TextBox] = (builder, control, indent) => _owner.AppendTextBoxXaml(builder, control, indent),
                 [DesignerControlTypes.TextBlock] = (builder, control, indent) => _owner.AppendTextBlockXaml(builder, control, indent),
                 [DesignerControlTypes.CheckBox] = (builder, control, indent) => _owner.AppendCheckBoxXaml(builder, control, indent),
@@ -18023,6 +18078,14 @@ public partial class MainWindowViewModel : ObservableObject
             return _owner.GetCrudGenerationContext(source)?.ViewCollectionPropertyName
                    ?? string.Empty;
         }
+
+        public string GetFieldPath(BindingSourceMetadata? bindingSource, BindingFieldMetadata field)
+        {
+            var source = bindingSource is null ? null : _owner.GetBindingSource(bindingSource.Id);
+            if (source is null || !DataSourceIdentity.IsPostgreSql(source.SourceKind)) return field.Path;
+            var exported = _owner.GetCrudGenerationContext(source)?.Fields.FirstOrDefault(candidate => candidate.Path == field.Path);
+            return exported is null ? field.Path : GetGeneratedRowPropertyName(exported);
+        }
     }
 
     private static string EscapeXml(string value) => value.Replace("&", "&amp;").Replace("\"", "&quot;").Replace("<", "&lt;").Replace(">", "&gt;");
@@ -18072,6 +18135,7 @@ public partial class MainWindowViewModel : ObservableObject
     {
         DesignerControlTypes.Group
             or DesignerControlTypes.Button
+            or DesignerControlTypes.DropDownButton or DesignerControlTypes.SplitButton or DesignerControlTypes.ListBox
             or DesignerControlTypes.TextBox
             or DesignerControlTypes.TextBlock
             or DesignerControlTypes.CheckBox
@@ -18157,6 +18221,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     private static string GetGeneratedRowPropertyName(BindingFieldModel field)
     {
+        if (!string.IsNullOrEmpty(field.GeneratedPropertyName)) return field.GeneratedPropertyName;
         return SanitizeIdentifier(field.Path, SanitizeIdentifier(field.Header, "Field"));
     }
 
@@ -18272,7 +18337,7 @@ public partial class MainWindowViewModel : ObservableObject
         IEnumerable<DesignControlModel> controls,
         params string[] additionalReservedNames)
     {
-        var list = controls.ToList();
+        var list = StandardItemsProperties.WithMenuSources(controls).ToList();
         var used = new HashSet<string>(UnsafeGeneratedIdentifiers, StringComparer.OrdinalIgnoreCase);
         foreach (var reserved in additionalReservedNames.Where(name => !string.IsNullOrWhiteSpace(name)))
             used.Add(reserved);
@@ -18337,6 +18402,11 @@ public partial class MainWindowViewModel : ObservableObject
 
     private static string NormalizeCSharpType(string? typeName)
     {
+        if (typeName?.EndsWith("?", StringComparison.Ordinal) == true)
+        {
+            var underlying = NormalizeCSharpType(typeName[..^1]);
+            return underlying is "string" or "byte[]" ? underlying : underlying + "?";
+        }
         return typeName?.Trim() switch
         {
             "int" => "int",
@@ -18427,6 +18497,7 @@ public partial class MainWindowViewModel : ObservableObject
             var itemTypeName = projectItemTypeNames.TryGetValue(sourceKey, out var projectItemTypeName)
                 ? projectItemTypeName
                 : SanitizeIdentifier(source.ItemTypeName, "RowItem");
+            if (DataSourceIdentity.IsPostgreSql(source.SourceKind)) itemTypeName = PostgreSqlGeneratedIdentifier(itemTypeName);
             itemTypeName = EnsureUniqueGeneratedIdentifier(itemTypeName, usedItemTypeNames);
             var collectionPropertyName = EnsureUniqueGeneratedIdentifier(
                 SanitizeIdentifier(source.Path, SanitizeIdentifier(source.Name, "Items")),
@@ -18438,7 +18509,7 @@ public partial class MainWindowViewModel : ObservableObject
                     new() { Header = "Id", Path = "Id", SampleValue = "1", TypeName = "int" },
                     new() { Header = "Name", Path = "Name", SampleValue = "Новая запись", TypeName = "string" }
                 };
-            var fields = BuildUniqueCrudFields(rawFields, itemTypeName);
+            var fields = BuildUniqueCrudFields(rawFields, itemTypeName, DataSourceIdentity.IsPostgreSql(source.SourceKind));
 
             var searchFields = fields
                 .Where(field => string.Equals(field.TypeName, "string", StringComparison.OrdinalIgnoreCase))
@@ -18601,13 +18672,21 @@ public partial class MainWindowViewModel : ObservableObject
         return candidate;
     }
 
-    private List<BindingFieldModel> BuildUniqueCrudFields(IEnumerable<BindingFieldModel> fields, string itemTypeName)
+    private List<BindingFieldModel> BuildUniqueCrudFields(IEnumerable<BindingFieldModel> fields, string itemTypeName, bool postgres = false)
     {
         var result = new List<BindingFieldModel>();
         var usedProperties = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var postgresNames = postgres ? PostgreSqlExportNames.FieldPaths(fields.Select(field => field.Path), itemTypeName) : null;
 
         foreach (var field in fields)
         {
+            if (postgres)
+            {
+                var exportedField = field.Clone();
+                exportedField.GeneratedPropertyName = postgresNames![field.Path];
+                result.Add(exportedField);
+                continue;
+            }
             var propertyName = SanitizeIdentifier(field.Path, "Field");
             if (usedProperties.Add(propertyName))
             {
@@ -18697,7 +18776,7 @@ public partial class MainWindowViewModel : ObservableObject
         if (string.IsNullOrWhiteSpace(name))
             return null;
 
-        return Controls.FirstOrDefault(control => string.Equals(control.Name, name.Trim(), StringComparison.OrdinalIgnoreCase));
+        return StandardItemsProperties.WithMenuSources(Controls).FirstOrDefault(control => string.Equals(control.Name, name.Trim(), StringComparison.OrdinalIgnoreCase));
     }
 
     private static bool IsSelectionChangedSetPropertyInteraction(InteractionModel interaction)
@@ -18716,7 +18795,7 @@ public partial class MainWindowViewModel : ObservableObject
     {
         return source.Type switch
         {
-            DesignerControlTypes.Button => string.Equals(eventName, InteractionModel.EventButtonClick, StringComparison.OrdinalIgnoreCase),
+            DesignerControlTypes.Button or DesignerControlTypes.DropDownButton or DesignerControlTypes.SplitButton => string.Equals(eventName, InteractionModel.EventButtonClick, StringComparison.OrdinalIgnoreCase),
             DesignerControlTypes.TextBox => string.Equals(eventName, InteractionModel.EventTextBoxTextChanged, StringComparison.OrdinalIgnoreCase),
             DesignerControlTypes.CheckBox => string.Equals(eventName, InteractionModel.EventCheckBoxChecked, StringComparison.OrdinalIgnoreCase)
                 || string.Equals(eventName, InteractionModel.EventCheckBoxUnchecked, StringComparison.OrdinalIgnoreCase),
@@ -18822,15 +18901,15 @@ public partial class MainWindowViewModel : ObservableObject
         }));
     }
 
-    private static bool IsSqlServerSource(BindingSourceModel source)
+    private static bool IsDatabaseSource(BindingSourceModel source)
     {
-        return DataSourceIdentity.IsSqlServer(source.SourceKind);
+        return DataSourceIdentity.IsDatabase(source.SourceKind);
     }
 
     private static bool IsRuntimeGeneratedBindingSource(BindingSourceModel? source)
     {
         return source is not null
-            && (DataSourceIdentity.IsSqlServer(source.SourceKind)
+            && (DataSourceIdentity.IsDatabase(source.SourceKind)
                 || DataSourceIdentity.IsAssembly(source.SourceKind));
     }
 
@@ -18845,7 +18924,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     private bool IsDataBindingControl(DesignControlModel control)
     {
-        return control.Type == DesignerControlTypes.DataGrid
+        return control.Type is DesignerControlTypes.DataGrid or DesignerControlTypes.ListBox
             || (DescriptorDeclaresProperty(control, nameof(DesignControlModel.AutoGenerateColumns))
                 && DescriptorDeclaresProperty(control, nameof(DesignControlModel.BindingSourceId)));
     }
@@ -18859,7 +18938,7 @@ public partial class MainWindowViewModel : ObservableObject
     {
         return source is not null
             && HasVisibleBindingFields(source)
-            && (ShouldGenerateDemoRuntimeCode || ShouldExportRealDataGrid || IsRuntimeGeneratedBindingSource(source));
+            && (ShouldGenerateDemoRuntimeCode || ShouldExportRealDataGrid || IsRuntimeGeneratedBindingSource(source) || Controls.Any(c => c.Type == DesignerControlTypes.ListBox && c.BindingSourceId == source.Id));
     }
 
     private static string ToVerbatimCSharpString(string? value)
@@ -19389,6 +19468,8 @@ public partial class MainWindowViewModel : ObservableObject
         CrudGenerationContext context,
         DataGridRuntimeDataModeResolution runtimeDataMode)
     {
+        if (DataSourceIdentity.IsPostgreSql(context.Source.SourceKind))
+            return BuildPostgreSqlRuntimeExportPlan(context);
         var source = context.Source;
         var effectiveConnectionString = ResolveSqlConnectionStringForExport(source);
         var hasConnectionString = !string.IsNullOrWhiteSpace(effectiveConnectionString);
@@ -19435,7 +19516,11 @@ public partial class MainWindowViewModel : ObservableObject
 
     private DataGridRuntimeDataModeResolution ResolveRuntimeDataModeForExport(BindingSourceModel source)
     {
-        if (!IsSqlServerSource(source) || !string.IsNullOrWhiteSpace(source.SourceConnectionString))
+        if (DataSourceIdentity.IsPostgreSql(source.SourceKind))
+            return source.PreviewRowMode == BindingSourceModel.PreviewRowModeSchemaOnly || !source.UseRealPreviewRowsIfAvailable
+                ? new(DataGridRuntimeDataMode.Empty, "schema-only", false, false)
+                : new(DataGridRuntimeDataMode.Sql, "runtime-postgres-environment", true, false);
+        if (!IsDatabaseSource(source) || !string.IsNullOrWhiteSpace(source.SourceConnectionString))
             return DataGridRuntimeDataModeResolver.Resolve(source, IncludeSampleData);
 
         var effectiveConnectionString = ResolveSqlConnectionStringForExport(source);
@@ -19449,6 +19534,8 @@ public partial class MainWindowViewModel : ObservableObject
 
     private string ResolveSqlConnectionStringForExport(BindingSourceModel source)
     {
+        if (DataSourceIdentity.IsPostgreSql(source.SourceKind))
+            return PostgreSqlConnectionService.WithoutSecrets(ResolvePostgreSqlConnection(source));
         if (!string.IsNullOrWhiteSpace(source.SourceConnectionString))
             return source.SourceConnectionString.Trim();
 
@@ -19469,6 +19556,12 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void TraceSqlRuntimeExportPlan(SqlRuntimeExportPlan plan, string gridNameText)
     {
+        if (plan.IsPostgreSql)
+        {
+            TraceDocumentDebug("POSTGRES_EXPORT_GENERATED", $"provider=Npgsql; loader={plan.LoaderMethodName}; autoLoad={plan.ShouldCallLoader}; configuration=environment", toOutput: false);
+            TraceDocumentDebug("POSTGRES_RUNTIME_BINDING_CHECK", $"grid={gridNameText}; collection={plan.Context.ViewCollectionPropertyName}; columns={plan.Context.Fields.Count}", toOutput: false);
+            return;
+        }
         TraceDocumentDebug(
             "EXPORT_SQL_DATAGRID_RUNTIME_MODE",
             $"grid={gridNameText}; source={plan.Context.Source.Name}; mode={plan.RuntimeMode}; hasConnectionString={plan.HasConnectionString}; hasQuery={plan.HasCommandText}; provider=Microsoft.Data.SqlClient",
@@ -20424,7 +20517,9 @@ public partial class MainWindowViewModel : ObservableObject
             return sourceBindingPath;
         }
 
-        var generatedPropertyName = GetGeneratedRowPropertyName(field);
+        var generatedPropertyName = source is not null && DataSourceIdentity.IsPostgreSql(source.SourceKind)
+            ? GetGeneratedRowPropertyName(crudContext.Fields.FirstOrDefault(candidate => candidate.Path == field.Path) ?? field)
+            : GetGeneratedRowPropertyName(field);
         var propertyFound = crudContext.Fields.Any(contextField =>
             string.Equals(GetGeneratedRowPropertyName(contextField), generatedPropertyName, StringComparison.OrdinalIgnoreCase));
 
@@ -21129,7 +21224,9 @@ public partial class MainWindowViewModel : ObservableObject
             SourceTypeFullName = sourceFile.SourceTypeFullName,
             SourceTableName = sourceFile.SourceTableName,
             SourceConnectionString = sourceFile.SourceConnectionString,
-            SourceSchemaName = string.IsNullOrWhiteSpace(sourceFile.SourceSchemaName) ? "dbo" : sourceFile.SourceSchemaName,
+            SourceSchemaName = string.IsNullOrWhiteSpace(sourceFile.SourceSchemaName)
+                ? DataSourceIdentity.IsPostgreSql(sourceFile.SourceKind) ? "public" : "dbo"
+                : sourceFile.SourceSchemaName,
             SourceQuery = sourceFile.SourceQuery,
             PreviewRowMode = BindingSourceModel.NormalizePreviewRowMode(sourceFile.PreviewRowMode),
             PreviewTopN = Math.Max(1, sourceFile.PreviewTopN),
@@ -22236,6 +22333,11 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void RaiseBindingEditorProperties()
     {
+        OnPropertyChanged(nameof(IsPostgreSqlSourceSelected));
+        OnPropertyChanged(nameof(IsSqlServerSourceSelected));
+        OnPropertyChanged(nameof(SelectedDatabaseProviderLabel));
+        OnPropertyChanged(nameof(AvailableSelectedSourcePreviewRowModes));
+        OnPropertyChanged(nameof(AvailableControlPreviewRowModes));
         OnPropertyChanged(nameof(CanEditFieldBinding));
         OnPropertyChanged(nameof(CanEditBindingEditor));
         OnPropertyChanged(nameof(CanEditClassicBindingEditor));
@@ -23099,6 +23201,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     partial void OnSelectedBindingSourceChanged(BindingSourceModel? value)
     {
+        ResetPostgreSqlDiscovery();
         OnPropertyChanged(nameof(HasSelectedBindingSource));
         OnPropertyChanged(nameof(HasNoSelectedBindingSource));
         OnPropertyChanged(nameof(HasSelectedBindingSourceImportMetadata));
@@ -24260,7 +24363,9 @@ public partial class MainWindowViewModel : ObservableObject
         public string CommandText { get; init; } = "";
         public string SkipReason { get; init; } = "";
         public string ConnectionStringReason { get; init; } = "";
-        public string LoaderMethodName => $"Load{Context.ItemTypeName}FromSql";
+        public string PostgreSqlEnvironmentKey { get; init; } = "";
+        public bool IsPostgreSql => DataSourceIdentity.IsPostgreSql(Context.Source.SourceKind);
+        public string LoaderMethodName => IsPostgreSql ? $"Load{Context.ItemTypeName}FromPostgreSqlAsync" : $"Load{Context.ItemTypeName}FromSql";
         public string ConstantBase => SanitizeIdentifier($"{Context.ItemTypeName}Sql", "SqlSource");
         public string ConnectionStringConstantName => $"{ConstantBase}ConnectionString";
         public string CommandTextConstantName => $"{ConstantBase}CommandText";

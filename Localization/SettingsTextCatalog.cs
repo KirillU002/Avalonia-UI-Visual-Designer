@@ -215,7 +215,7 @@ public sealed class SettingsTextCatalog
         {
             [nameof(WindowTitle)] = "Настройки Avalonia Designer",
             [nameof(HeaderTitle)] = "Настройки Avalonia Designer",
-            [nameof(HeaderSubtitle)] = "Единое место для интерфейса, Preview, Export, NuGet, SQL Server и diagnostics.",
+            [nameof(HeaderSubtitle)] = "Единое место для интерфейса, Preview, Export, NuGet, SQL Server, PostgreSQL и diagnostics.",
             [nameof(Sections)] = "Разделы",
             [nameof(SettingsOverview)] = "Settings Center",
             [nameof(StatusUnsaved)] = "Есть несохранённые изменения",
@@ -345,7 +345,7 @@ public sealed class SettingsTextCatalog
         {
             [nameof(WindowTitle)] = "Avalonia Designer Settings",
             [nameof(HeaderTitle)] = "Avalonia Designer Settings",
-            [nameof(HeaderSubtitle)] = "One place for interface, Preview, Export, NuGet, SQL Server, and diagnostics.",
+            [nameof(HeaderSubtitle)] = "One place for interface, Preview, Export, NuGet, SQL Server, PostgreSQL, and diagnostics.",
             [nameof(Sections)] = "Sections",
             [nameof(SettingsOverview)] = "Settings Center",
             [nameof(StatusUnsaved)] = "Unsaved changes",

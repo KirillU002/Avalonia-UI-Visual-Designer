@@ -31,6 +31,14 @@ public static class DataGridRuntimeDataModeResolver
         if (!hasVisibleFields)
             return Empty("visible-columns-not-configured");
 
+        if (DataSourceIdentity.IsPostgreSql(source.SourceKind))
+        {
+            var configured = SqlPreviewDataLoader.CanLoad(source) && source.UseRealPreviewRowsIfAvailable;
+            return configured && BindingSourceModel.NormalizePreviewRowMode(source.PreviewRowMode) != BindingSourceModel.PreviewRowModeSchemaOnly
+                ? new(DataGridRuntimeDataMode.Sql, "postgres-source-configured", true, false)
+                : Empty("postgres-source-not-configured-or-schema-only");
+        }
+
         var explicitDemo = IsExplicitDemoEnabled(source, includeDemoData);
         if (explicitDemo)
             return new DataGridRuntimeDataModeResolution(DataGridRuntimeDataMode.Demo, "explicit-demo-enabled", false, true);
@@ -68,6 +76,14 @@ public static class DataGridRuntimeDataModeResolver
         if (!hasVisibleFields)
             return Empty("visible-columns-not-configured");
 
+        if (DataSourceIdentity.IsPostgreSql(source.SourceKind))
+        {
+            var configured = SqlPreviewDataLoader.CanLoad(source) && source.UseRealPreviewRowsIfAvailable;
+            return configured && BindingSourceModel.NormalizePreviewRowMode(source.PreviewRowMode) != BindingSourceModel.PreviewRowModeSchemaOnly
+                ? new(DataGridRuntimeDataMode.Sql, "postgres-source-configured", true, false)
+                : Empty("postgres-source-not-configured-or-schema-only");
+        }
+
         var explicitDemo = IsExplicitDemoEnabled(source, includeDemoData);
         if (explicitDemo)
             return new DataGridRuntimeDataModeResolution(DataGridRuntimeDataMode.Demo, "explicit-demo-enabled", false, true);
@@ -98,16 +114,16 @@ public static class DataGridRuntimeDataModeResolver
 
     public static bool IsExplicitDemoEnabled(BindingSourceModel source, bool includeDemoData = false)
     {
-        return includeDemoData
+        return !DataSourceIdentity.IsPostgreSql(source.SourceKind) && (includeDemoData
                || source.UseDemoData
-               || BindingSourceModel.NormalizePreviewRowMode(source.PreviewRowMode) == BindingSourceModel.PreviewRowModeSampleRows;
+               || BindingSourceModel.NormalizePreviewRowMode(source.PreviewRowMode) == BindingSourceModel.PreviewRowModeSampleRows);
     }
 
     public static bool IsExplicitDemoEnabled(BindingSourceFileModel source, bool includeDemoData = false)
     {
-        return includeDemoData
+        return !DataSourceIdentity.IsPostgreSql(source.SourceKind) && (includeDemoData
                || source.UseDemoData
-               || BindingSourceModel.NormalizePreviewRowMode(source.PreviewRowMode) == BindingSourceModel.PreviewRowModeSampleRows;
+               || BindingSourceModel.NormalizePreviewRowMode(source.PreviewRowMode) == BindingSourceModel.PreviewRowModeSampleRows);
     }
 
     private static DataGridRuntimeDataModeResolution Empty(string reason)

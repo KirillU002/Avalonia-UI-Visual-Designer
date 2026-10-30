@@ -286,7 +286,7 @@ internal static partial class Program
         var report = result.CapabilityReport.Structure!;
         var expanders = result.RoundTripDocument.SourceMap.Controls.Where(r => r.Element.LocalName == "Expander").ToArray();
         var combos = result.RoundTripDocument.SourceMap.Controls.Where(r => r.Element.LocalName == "ComboBox").ToArray();
-        RequireCapability(expanders.Length == 4 && combos.Length == 45 && report.ImportedElements >= 1439 && report.VisualElements == 1473
+        RequireCapability(expanders.Length == 4 && combos.Length == 47 && report.ImportedElements >= 1439 && report.VisualElements == 1490
             && report.OpaqueVisualElements <= 34 && report.SkippedSubtrees <= 34, "Real Phase 4 coverage regressed.");
         var editVm = CreateViewModel("Phase4RealEdit"); editVm.LoadAxamlImportedDocument(result, path);
         editVm.SelectSingleControl(editVm.Controls.Single(c => c.Id == expanders[0].ControlId));

@@ -42,11 +42,22 @@ public partial class BindingSourceModel : ObservableObject
     [ObservableProperty]
     private string sourceTableName = "";
 
-    [ObservableProperty]
     private string sourceConnectionString = "";
 
-    [ObservableProperty]
-    private string sourceSchemaName = "dbo";
+    public string SourceConnectionString
+    {
+        get => sourceConnectionString;
+        set => SetProperty(ref sourceConnectionString,
+            DesignerSystem.Binding.DataSourceIdentity.IsPostgreSql(SourceKind)
+                ? Services.PostgreSqlConnectionService.WithoutSecrets(value) : value);
+    }
+
+    private string? sourceSchemaName;
+    public string SourceSchemaName
+    {
+        get => sourceSchemaName ?? (DesignerSystem.Binding.DataSourceIdentity.IsPostgreSql(SourceKind) ? "public" : "dbo");
+        set => SetProperty(ref sourceSchemaName, value);
+    }
 
     [ObservableProperty]
     private string sourceQuery = "";
@@ -84,6 +95,13 @@ public partial class BindingSourceModel : ObservableObject
     /// Глубокая копия источника вместе с описанием колонок.
     /// Используется в сериализации документа, буфере обмена и истории.
     /// </summary>
+    partial void OnSourceKindChanged(string value)
+    {
+        OnPropertyChanged(nameof(SourceSchemaName));
+        if (DesignerSystem.Binding.DataSourceIdentity.IsPostgreSql(value))
+            SourceConnectionString = Services.PostgreSqlConnectionService.WithoutSecrets(SourceConnectionString);
+    }
+
     public BindingSourceModel Clone()
     {
         var clone = new BindingSourceModel

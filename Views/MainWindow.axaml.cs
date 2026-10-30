@@ -172,6 +172,7 @@ public partial class MainWindow : Window
         _documentBackupService = new DocumentBackupService(_hostServices.Paths.UserDataDirectory);
 
         InitializeComponent();
+        InitializeStandardItemsUi();
         DesignerSurface.HostServices = _hostServices;
         DataContextChanged += MainWindow_DataContextChanged;
         KeyDown += MainWindow_KeyDown;
@@ -1388,6 +1389,7 @@ public partial class MainWindow : Window
         _appSettings.Preview = VM.CapturePreviewSettings();
         _appSettings.BuildAndLogs = VM.CaptureBuildAndLogsSettings();
         _appSettings.SqlServer = VM.CaptureSqlServerSettings();
+        _appSettings.PostgreSql = VM.CapturePostgreSqlSettings();
         _appSettings.Advanced = VM.CaptureAdvancedSettings();
         _appSettings.ExportCache = VM.CaptureExportCache();
         _appSettings.Session = CaptureSessionState();
@@ -4649,6 +4651,9 @@ public partial class MainWindow : Window
             {
                 [DesignerControlTypes.Group] = _owner.CreateGroupPreview,
                 [DesignerControlTypes.Button] = _owner.CreateButtonPreview,
+                [DesignerControlTypes.DropDownButton] = _owner.CreateStandardItemsPreview,
+                [DesignerControlTypes.SplitButton] = _owner.CreateStandardItemsPreview,
+                [DesignerControlTypes.ListBox] = _owner.CreateStandardItemsPreview,
                 [DesignerControlTypes.TextBox] = _owner.CreateTextBoxPreview,
                 [DesignerControlTypes.TextBlock] = _owner.CreateTextBlockPreview,
                 [DesignerControlTypes.CheckBox] = _owner.CreateCheckBoxPreview,
@@ -6578,7 +6583,7 @@ public partial class MainWindow : Window
     private static List<Dictionary<string, string>> ClonePreviewRows(IReadOnlyList<Dictionary<string, string>> rows)
     {
         return rows
-            .Select(row => new Dictionary<string, string>(row, StringComparer.OrdinalIgnoreCase))
+            .Select(row => new Dictionary<string, string>(row, row.Comparer))
             .ToList();
     }
 
@@ -8462,7 +8467,7 @@ public partial class MainWindow : Window
                 $"sourceKey={sourceKey}; display={DataSourceIdentity.BuildDisplayName(source)}; rows={result.Rows.Count}; dataKind={result.DataKind}",
                 toOutput: false);
             if (!result.IsRealData
-                && DataSourceIdentity.IsSqlServer(source.SourceKind)
+                && DataSourceIdentity.IsDatabase(source.SourceKind)
                 && SqlPreviewDataLoader.CanLoad(source)
                 && source.UseRealPreviewRowsIfAvailable)
             {
@@ -8485,7 +8490,7 @@ public partial class MainWindow : Window
                 toOutput: false,
                 warning: true);
             VM.TraceDocumentDebug(
-                DataSourceIdentity.IsSqlServer(source.SourceKind) ? "PREVIEW_SQL_ROWS_LOAD_FAILED" : "DLL_TABLE_REAL_ROWS_LOAD_FAILED",
+                DataSourceIdentity.IsDatabase(source.SourceKind) ? "PREVIEW_SQL_ROWS_LOAD_FAILED" : "DLL_TABLE_REAL_ROWS_LOAD_FAILED",
                 $"sourceKey={sourceKey}; reason={ex.Message}",
                 toOutput: true,
                 warning: true);
@@ -8581,7 +8586,7 @@ public partial class MainWindow : Window
 
         var mode = usesLoadedRows
             ? string.Equals(source.PreviewRowsDataKind, "RealData", StringComparison.OrdinalIgnoreCase)
-                ? DataSourceIdentity.IsSqlServer(source.SourceKind)
+                ? DataSourceIdentity.IsDatabase(source.SourceKind)
                     ? PreviewRowsLoader.DataModeRealSqlData
                     : PreviewRowsLoader.DataModeRealDllData
                 : PreviewRowsLoader.DataModeDemoData
@@ -8610,7 +8615,7 @@ public partial class MainWindow : Window
             toOutput: false);
         if (!usesLoadedRows
             && !suppressed
-            && DataSourceIdentity.IsSqlServer(source.SourceKind)
+            && DataSourceIdentity.IsDatabase(source.SourceKind)
             && SqlPreviewDataLoader.CanLoad(source)
             && source.UseRealPreviewRowsIfAvailable)
         {
@@ -9736,6 +9741,16 @@ public partial class MainWindow : Window
     {
         if (sender is not Button { DataContext: PropertyGridRowViewModel row })
             return;
+
+        if (row.Key == "ListBox.Refresh")
+        {
+            _standardListBoxRows.Clear(); RenderDesigner(); return;
+        }
+        if (row.Key is "Items" or StandardItemsProperties.MenuKey)
+        {
+            OpenStandardItemsEditor();
+            return;
+        }
 
         if (string.Equals(row.Key, "Columns", StringComparison.OrdinalIgnoreCase))
         {

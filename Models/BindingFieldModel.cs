@@ -10,6 +10,9 @@ namespace FormDesigner.Models;
 /// </summary>
 public partial class BindingFieldModel : ObservableObject
 {
+    // Assigned only on export-context clones; original PostgreSQL identifiers remain in Path.
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string GeneratedPropertyName { get; set; } = "";
     public const string AlignmentLeft = "Left";
     public const string AlignmentCenter = "Center";
     public const string AlignmentRight = "Right";

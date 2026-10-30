@@ -114,7 +114,7 @@ internal static partial class Program
         var vm = CreateViewModel("CoverageReal"); vm.LoadAxamlImportedDocument(result, path);
         var surface = CreateMainWindowDesignerSurface(new SmokeContext(context.Scenario, vm, context.ProjectPath, context.Xaml, context.CSharp, context.GeneratedFiles, context.ChecklistText, context.DiagnosticsText));
         var report = result.CapabilityReport.Structure!;
-        RequireCapability(report.ImportedElements > 900 && report.VisualElements == 1473 && !result.CapabilityReport.DocumentReadOnly, "Real coverage did not increase safely.");
+        RequireCapability(report.ImportedElements > 900 && report.VisualElements == 1490 && !result.CapabilityReport.DocumentReadOnly, "Real coverage did not increase safely.");
         RequireCapability(vm.AxamlLayoutBounds.Values.Any(b => b.Width > 0 && b.Height > 0), "Real projection became empty.");
         var page = result.RoundTripDocument.SourceMap.Controls.First(r => r.Element.LocalName == "TabItem" && r.Capability.CanEditProperty("Header"));
         var model = vm.Controls.Single(c => c.Id == page.ControlId);

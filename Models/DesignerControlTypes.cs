@@ -4,6 +4,9 @@ public static class DesignerControlTypes
 {
     public const string Group = "Group";
     public const string Button = "Button";
+    public const string DropDownButton = "DropDownButton";
+    public const string SplitButton = "SplitButton";
+    public const string ListBox = "ListBox";
     public const string TextBox = "TextBox";
     public const string TextBlock = "TextBlock";
     public const string CheckBox = "CheckBox";

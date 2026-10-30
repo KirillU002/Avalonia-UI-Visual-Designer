@@ -107,6 +107,7 @@ public sealed class AxamlImportService
 
             var capability = new AxamlElementCapability(element, AxamlElementCapabilityMode.Editable);
             var control = CreateControl(controlType, element, knownControlIdsByName, diagnostics, capability);
+            if (StandardItemsProperties.IsMenuButton(controlType)) ImportStaticFlyout(control, element);
             if (hasTextContent)
             {
                 var literal = metadata.LiteralProperties.Single(p => p.Key == metadata.TextContentProperty);
@@ -247,6 +248,31 @@ public sealed class AxamlImportService
             if (property is not null)
                 capability.Properties[capability.Properties.IndexOf(property)] = property with { Mode = AxamlPropertyCapabilityMode.Preserved, Reason = "DefinitionElementsPreserved" };
         }
+    }
+
+    private static void ImportStaticFlyout(DesignControlModel model, AxamlElementSyntax element)
+    {
+        var flyout = element.Children.FirstOrDefault(c => c.LocalName == element.LocalName + ".Flyout");
+        if (flyout is null) return;
+        var items = new List<StandardMenuItem>();
+        var placement = flyout.Children.FirstOrDefault(c => c.LocalName is "Flyout" or "MenuFlyout")?.GetAttributeValue("Placement");
+        if (placement is not null && !placement.TrimStart().StartsWith('{')) StandardItemsProperties.Write(model, "Flyout.Placement", placement);
+        void Read(AxamlElementSyntax current)
+        {
+            if (!IsAvaloniaElement(current)) return;
+            if (current.LocalName is "Button" or "MenuItem")
+            {
+                var text = current.GetAttributeValue(current.LocalName == "Button" ? "Content" : "Header");
+                if (text is not null && !text.TrimStart().StartsWith('{'))
+                    items.Add(new StandardMenuItem { Id = "source_" + items.Count, Text = text,
+                        IsEnabled = !string.Equals(current.GetAttributeValue("IsEnabled"), "False", StringComparison.OrdinalIgnoreCase) });
+                return;
+            }
+            if (current.LocalName is "Flyout" or "MenuFlyout" or "StackPanel" or "Flyout.Content")
+                foreach (var child in current.Children) Read(child);
+        }
+        foreach (var child in flyout.Children) Read(child);
+        StandardItemsProperties.Write(model, StandardItemsProperties.MenuKey, items);
     }
 
     private static bool IsAvaloniaElement(AxamlElementSyntax element) =>
@@ -540,7 +566,7 @@ internal static class AxamlRoundTripPropertyMap
 
     private static IReadOnlyList<AxamlRoundTripProperty> StandardPropertiesFor(string controlType) => controlType switch
     {
-        DesignerControlTypes.Button => Button,
+        DesignerControlTypes.Button or DesignerControlTypes.DropDownButton or DesignerControlTypes.SplitButton => Button,
         DesignerControlTypes.TextBox => TextBox,
         DesignerControlTypes.TextBlock => TextBlock,
         DesignerControlTypes.CheckBox => CheckBox,
