@@ -2794,6 +2794,7 @@ public partial class MainWindow : Window
             VM.AxamlLayoutBounds = VM.ActiveAxamlSourceDocument is { } axaml
                 ? AxamlLayoutProjection.Arrange(axaml, VM.Controls, surfaceWidth, surfaceHeight)
                 : new Dictionary<string, Rect>();
+            if (VM.UsesNativeLayout) MeasureNativeDesignerLayout(surfaceWidth, surfaceHeight);
 
             if (!VM.IsUserPreviewMode && VM.Controls.Count == 0)
             {
@@ -2841,10 +2842,11 @@ public partial class MainWindow : Window
         if (children.Count == 0)
             return;
 
-        if (VM.IsAxamlRoundTripDocument)
+        if (VM.IsAxamlRoundTripDocument || VM.UsesNativeLayout)
         {
+            var layoutBounds = VM.UsesNativeLayout ? VM.NativeLayoutBounds : VM.AxamlLayoutBounds;
             foreach (var child in children)
-                if (VM.AxamlLayoutBounds.TryGetValue(child.Id, out var bounds))
+                if (layoutBounds.TryGetValue(child.Id, out var bounds))
                     if (bounds.Width > 0 && bounds.Height > 0) AddRenderedControl(host, child, bounds, useUserPreview);
             return;
         }
@@ -4185,8 +4187,14 @@ public partial class MainWindow : Window
         var isPrimary = VM.SelectedControl?.Id == model.Id;
         var isUserPreviewMode = VM.IsUserPreviewMode;
         var renderModel = CreateRenderModel(model, renderedWidth, renderedHeight);
-        var preview = VM.IsAxamlRoundTripDocument && VM.CanHostChildren(model)
-            ? CreateGroupPreview(renderModel) : CreatePreviewControl(renderModel);
+        var preview = VM.UsesNativeLayout && VM.CanHostChildren(model) ? CreateNativeContainerBackdrop(renderModel)
+            : VM.IsAxamlRoundTripDocument && VM.CanHostChildren(model) ? CreateGroupPreview(renderModel) : CreatePreviewControl(renderModel);
+        if (VM.UsesNativeLayout)
+        {
+            // The projection already applied margin/alignment. The shell only paints that frame.
+            preview.Margin = new Thickness(0);
+            preview.Width = renderedWidth; preview.Height = renderedHeight;
+        }
         if (VM.ActiveAxamlSourceDocument?.SourceMap.TryGet(model.Id, out var phase4Reference) == true
             && AxamlPhase4Projection.Create(phase4Reference, model) is { } nativePreview)
         {
@@ -4439,6 +4447,8 @@ public partial class MainWindow : Window
             Child = root,
             ContextMenu = isUserPreviewMode ? null : CreateControlContextMenu(model)
         };
+
+        if (VM.UsesNativeLayout) AddNativeSelectionFrame(root, wrapper, isSelected, renderedWidth, renderedHeight);
 
         if (!isUserPreviewMode)
         {
@@ -7649,6 +7659,14 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (VM.UsesNativeLayout && !VM.IsAbsoluteLayoutParent(model.ParentId))
+        {
+            VM.SelectSingleControl(model);
+            VM.StatusText = "Элемент выбран. В Phase 2 размещение в Grid меняется через Grid.Row/Grid.Column в Inspector.";
+            e.Handled = true;
+            return;
+        }
+
         _isDragging = true;
         _dragGestureSessionId = VM.DocumentSessionId;
 
@@ -7888,6 +7906,11 @@ public partial class MainWindow : Window
         _resizeStart = GetDesignCanvasPosition(e);
         _startWidth = model.Width;
         _startHeight = model.Height;
+        if (VM.UsesNativeLayout)
+        {
+            var measured = GetAbsoluteBounds(model);
+            _startWidth = measured.Width; _startHeight = measured.Height;
+        }
         if (VM.IsAxamlRoundTripDocument && VM.AxamlLayoutBounds.TryGetValue(model.Id, out var bounds))
         {
             _startWidth = bounds.Width;
@@ -7939,6 +7962,7 @@ public partial class MainWindow : Window
         var maxHeight = Math.Max(24, containerHeight - _resizingModel.Y);
 
         var keyModifiers = e.KeyModifiers;
+        if (VM.UsesNativeLayout) _resizingModel.WidthMode = _resizingModel.HeightMode = "Fixed";
         _resizingModel.Width = Math.Clamp(ApplyGridSnap(_startWidth + dx, keyModifiers), 40, maxWidth);
         _resizingModel.Height = Math.Clamp(ApplyGridSnap(_startHeight + dy, keyModifiers), 24, maxHeight);
 

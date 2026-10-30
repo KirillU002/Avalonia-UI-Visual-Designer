@@ -45,6 +45,7 @@ internal static partial class Program
         // Initialize the real UI dispatcher before any view model can create the
         // fallback dispatcher; IPC continuations must run on the actual UI thread.
         EnsureAvaloniaRuntimeInitialized();
+        if (args.Contains("--native-grid-checks")) return RunNativeGridChecks();
         if (args.Contains("--designer-pointer-checks")) return RunDesignerPointerChecks();
         if (args.Contains("--datagrid-preview-checks")) return RunDataGridPreviewChecks();
         if (args.Contains("--datagrid-preview-export-check")) return RunDataGridPreviewLiveExport();
@@ -64,6 +65,9 @@ internal static partial class Program
 
         var scenarios = new SmokeScenario[]
         {
+            new("NativeGridPhase2Export", ConfigureNativeGridExport, AssertNativeGridExport, RequiresRealDataGrid: true),
+            new("NativeGridPhase2MixedExport", ConfigureNativeGridMixedExport, AssertNativeGridMixedExport, RequiresRealDataGrid: true),
+            new("NativeGridPhase2EremexExport", ConfigureNativeGridEremexExport, AssertNativeGridEremexExport),
             new("ToolboxStandardItemsExport", ConfigureToolboxStandardItems, AssertToolboxStandardItems),
             new("ToolboxStandardListBindingExport", ConfigureToolboxListBinding, AssertToolboxListBinding),
             new("ToolboxStandardMultiFormExport", ConfigureToolboxStandardMultiForm, AssertToolboxStandardMultiForm),

@@ -1219,19 +1219,25 @@ public partial class PreviewWindow : Window
         {
             _isRenderingDocument = true;
 
-            // Предпросмотр строится из корневых контролов документа и затем рекурсивно добавляет детей.
-            PreviewCanvas.Children.Clear();
+            if (_document.LayoutSemanticsVersion == 2)
+                RenderNativeLayoutDocument();
+            else
+            {
+                if (!ReferenceEquals(PreviewSurfaceBorder.Child, PreviewCanvas)) PreviewSurfaceBorder.Child = PreviewCanvas;
+                // Предпросмотр строится из корневых контролов документа и затем рекурсивно добавляет детей.
+                PreviewCanvas.Children.Clear();
 
-            var actualRootWidth = PreviewCanvas.Bounds.Width > 0 ? PreviewCanvas.Bounds.Width : _document.DesignWidth;
-            var actualRootHeight = PreviewCanvas.Bounds.Height > 0 ? PreviewCanvas.Bounds.Height : _document.DesignHeight;
+                var actualRootWidth = PreviewCanvas.Bounds.Width > 0 ? PreviewCanvas.Bounds.Width : _document.DesignWidth;
+                var actualRootHeight = PreviewCanvas.Bounds.Height > 0 ? PreviewCanvas.Bounds.Height : _document.DesignHeight;
 
-            AddControlsToCanvas(
-                PreviewCanvas,
-                null,
-                _document.DesignWidth,
-                _document.DesignHeight,
-                actualRootWidth,
-                actualRootHeight);
+                AddControlsToCanvas(
+                    PreviewCanvas,
+                    null,
+                    _document.DesignWidth,
+                    _document.DesignHeight,
+                    actualRootWidth,
+                    actualRootHeight);
+            }
         }
         finally
         {
@@ -1247,6 +1253,7 @@ public partial class PreviewWindow : Window
 
     private void PreviewWindow_SizeChanged(object? sender, SizeChangedEventArgs e)
     {
+        if (_document.LayoutSemanticsVersion == 2) return; // The native root re-arranges without rebuilding runtime controls.
         Debug.WriteLine(
             $"PREVIEW_WINDOW_RESIZE old={e.PreviousSize.Width.ToString(CultureInfo.InvariantCulture)}x{e.PreviousSize.Height.ToString(CultureInfo.InvariantCulture)}; " +
             $"new={e.NewSize.Width.ToString(CultureInfo.InvariantCulture)}x{e.NewSize.Height.ToString(CultureInfo.InvariantCulture)}; " +
@@ -1435,6 +1442,7 @@ public partial class PreviewWindow : Window
             FontWeight = control.FontWeight,
             Opacity = control.Opacity,
             Padding = control.Padding,
+            ChildLayoutMode = control.ChildLayoutMode,
             LayoutOrientation = control.LayoutOrientation,
             LayoutSpacing = control.LayoutSpacing,
             IsVisible = control.IsVisible,
@@ -1443,6 +1451,8 @@ public partial class PreviewWindow : Window
             Y = control.Y,
             Width = renderedWidth,
             Height = renderedHeight,
+            WidthMode = control.WidthMode,
+            HeightMode = control.HeightMode,
             AnchorLeft = control.AnchorLeft,
             AnchorTop = control.AnchorTop,
             AnchorRight = control.AnchorRight,
@@ -1514,8 +1524,14 @@ public partial class PreviewWindow : Window
             FontWeight = control.FontWeight,
             Opacity = control.Opacity,
             Padding = control.Padding,
+            ChildLayoutMode = control.ChildLayoutMode,
             LayoutOrientation = control.LayoutOrientation,
             LayoutSpacing = control.LayoutSpacing,
+            GridRow = control.GridRow, GridColumn = control.GridColumn,
+            GridRowSpan = control.GridRowSpan, GridColumnSpan = control.GridColumnSpan,
+            GridRowDefinitions = control.GridRowDefinitions, GridColumnDefinitions = control.GridColumnDefinitions,
+            StackOrder = control.StackOrder, Margin = control.Margin,
+            HorizontalAlignment = control.HorizontalAlignment, VerticalAlignment = control.VerticalAlignment,
             IsVisible = control.IsVisible,
             IsLocked = control.IsLocked,
             Stretch = control.Stretch,
@@ -1523,6 +1539,8 @@ public partial class PreviewWindow : Window
             Y = control.Y,
             Width = control.Width,
             Height = control.Height,
+            WidthMode = control.WidthMode,
+            HeightMode = control.HeightMode,
             AnchorLeft = control.AnchorLeft,
             AnchorTop = control.AnchorTop,
             AnchorRight = control.AnchorRight,

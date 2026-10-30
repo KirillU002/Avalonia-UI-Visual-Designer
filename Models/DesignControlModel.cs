@@ -119,6 +119,12 @@ public partial class DesignControlModel : ObservableObject
     private double height = 36;
 
     [ObservableProperty]
+    private string widthMode = "Fixed";
+
+    [ObservableProperty]
+    private string heightMode = "Fixed";
+
+    [ObservableProperty]
     private bool anchorLeft = true;
 
     [ObservableProperty]
@@ -527,6 +533,8 @@ public partial class DesignControlModel : ObservableObject
             Y = Y,
             Width = Width,
             Height = Height,
+            WidthMode = WidthMode,
+            HeightMode = HeightMode,
             AnchorLeft = AnchorLeft,
             AnchorTop = AnchorTop,
             AnchorRight = AnchorRight,

@@ -6,6 +6,9 @@ public class DesignerDocumentFileModel
 {
     public string Version { get; set; } = "2.3";
 
+    // Missing in legacy files: retain the original Canvas/experimental layout behaviour.
+    public int LayoutSemanticsVersion { get; set; } = 1;
+
     public double DesignWidth { get; set; } = 1200;
 
     public double DesignHeight { get; set; } = 800;
@@ -108,6 +111,8 @@ public class DesignerControlFileModel
     public double Y { get; set; }
     public double Width { get; set; } = 140;
     public double Height { get; set; } = 36;
+    public string WidthMode { get; set; } = "Fixed";
+    public string HeightMode { get; set; } = "Fixed";
     public bool AnchorLeft { get; set; } = true;
     public bool AnchorTop { get; set; } = true;
     public bool AnchorRight { get; set; }

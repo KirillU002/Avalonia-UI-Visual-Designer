@@ -143,7 +143,13 @@ public sealed class EremexTextEditorDescriptor : IControlDescriptor, IDesignerCo
         AppendOptionalEnumAttribute(attributes, EditorModeProperty, control);
         AppendOptionalEnumAttribute(attributes, ErrorShowModeProperty, control);
 
-        var margin = control.GetString("Margin", "0");
+        var nativePlacement = control.GetString("NativeLayout.Placement");
+        if (!string.IsNullOrEmpty(nativePlacement))
+        {
+            attributes.RemoveAll(a => a.StartsWith("Width=") || a.StartsWith("Height=") || a.StartsWith("Canvas."));
+            attributes.Add(nativePlacement);
+        }
+        var margin = string.IsNullOrEmpty(nativePlacement) ? control.GetString("Margin", "0") : "0";
         if (!string.IsNullOrWhiteSpace(margin) && !string.Equals(margin.Trim(), "0", StringComparison.Ordinal))
             attributes.Add($"Margin=\"{EscapeXml(margin)}\"");
 

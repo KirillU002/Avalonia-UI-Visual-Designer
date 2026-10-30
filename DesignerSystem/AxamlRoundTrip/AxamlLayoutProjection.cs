@@ -13,7 +13,7 @@ using System.Linq;
 namespace FormDesigner.DesignerSystem.AxamlRoundTrip;
 
 /// <summary>Measures safe controls with Avalonia's layout engine. Never loads user XAML or changes source/model coordinates.</summary>
-public static class AxamlLayoutProjection
+public static partial class AxamlLayoutProjection
 {
     private sealed class MeasurementRoot : Decorator, Avalonia.LogicalTree.ILogicalRoot, Avalonia.Styling.IStyleHost
     {

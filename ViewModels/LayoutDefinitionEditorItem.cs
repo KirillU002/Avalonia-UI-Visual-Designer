@@ -7,11 +7,16 @@ namespace FormDesigner.ViewModels;
 public partial class LayoutDefinitionEditorItem : ObservableObject
 {
     private readonly Action? _changed;
+    private readonly bool _nativeSizes;
     private bool _isSyncing;
 
     public LayoutDefinitionEditorItem(int index, string sizeKind, double value, Action? changed)
+        : this(index, sizeKind, value, changed, false) { }
+
+    public LayoutDefinitionEditorItem(int index, string sizeKind, double value, Action? changed, bool nativeSizes)
     {
         _changed = changed;
+        _nativeSizes = nativeSizes;
         Index = index;
         SizeKind = NormalizeKind(sizeKind);
         Value = NormalizeValue(SizeKind, value);
@@ -29,10 +34,10 @@ public partial class LayoutDefinitionEditorItem : ObservableObject
     public string Preview => SizeKind switch
     {
         "Auto" => "Auto",
-        "Fixed" => Math.Max(1, Value).ToString("0.##", CultureInfo.InvariantCulture),
-        _ => Math.Abs(Value - 1) < 0.001
+        "Fixed" => NormalizeValue(SizeKind, Value).ToString(_nativeSizes ? "R" : "0.##", CultureInfo.InvariantCulture),
+        _ => (_nativeSizes ? Value == 1 : Math.Abs(Value - 1) < 0.001)
             ? "*"
-            : $"{Math.Max(1, Value).ToString("0.##", CultureInfo.InvariantCulture)}*"
+            : $"{NormalizeValue(SizeKind, Value).ToString(_nativeSizes ? "R" : "0.##", CultureInfo.InvariantCulture)}*"
     };
 
     public bool IsValueEditable => SizeKind is "Star" or "Fixed";
@@ -72,7 +77,7 @@ public partial class LayoutDefinitionEditorItem : ObservableObject
     partial void OnValueChanged(double value)
     {
         var normalized = NormalizeValue(SizeKind, value);
-        if (Math.Abs(value - normalized) > 0.001)
+        if (_nativeSizes ? !value.Equals(normalized) : Math.Abs(value - normalized) > 0.001)
         {
             Value = normalized;
             return;
@@ -98,8 +103,9 @@ public partial class LayoutDefinitionEditorItem : ObservableObject
         };
     }
 
-    private static double NormalizeValue(string kind, double value)
+    private double NormalizeValue(string kind, double value)
     {
-        return kind == "Auto" ? 1 : Math.Max(1, value);
+        if (!double.IsFinite(value)) return 1;
+        return kind == "Auto" ? 1 : Math.Max(_nativeSizes ? 0 : 1, value);
     }
 }

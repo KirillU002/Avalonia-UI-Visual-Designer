@@ -8,6 +8,9 @@ namespace FormDesigner.Services;
 public sealed class ProjectDocumentService
 {
     public DesignerFormDocument AddForm(DesignerProjectModel project, string baseName = "Form")
+        => AddForm(project, baseName, DesignerLayoutModes.Absolute);
+
+    public DesignerFormDocument AddForm(DesignerProjectModel project, string baseName, string rootLayout)
     {
         var name = GetUniqueName(project, baseName);
         var form = new DesignerFormDocument
@@ -16,6 +19,15 @@ public sealed class ProjectDocumentService
             Document = new DesignerDocumentFileModel()
         };
         form.Document.FormTitle = form.Name;
+        if (rootLayout == DesignerLayoutModes.Grid)
+        {
+            form.Document.Version = "2.4";
+            form.Document.LayoutSemanticsVersion = 2;
+            form.Document.SurfaceLayoutMode = DesignerLayoutModes.Grid;
+            form.Document.SurfaceLayoutRows = form.Document.SurfaceLayoutColumns = 1;
+            form.Document.SurfaceGridRowDefinitions = form.Document.SurfaceGridColumnDefinitions = "*";
+            form.Document.SurfaceLayoutSpacing = 0;
+        }
         form.RelativePath = $"Forms/{form.Name}.formdesigner.json";
         project.Forms.Add(form);
         return form;

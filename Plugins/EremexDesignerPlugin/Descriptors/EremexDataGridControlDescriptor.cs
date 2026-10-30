@@ -288,7 +288,13 @@ public sealed class EremexDataGridControlDescriptor : IControlDescriptor, IDesig
         if (!string.IsNullOrWhiteSpace(itemsSourcePath))
             attributes.Add($"ItemsSource=\"{{Binding {EscapeXml(itemsSourcePath)}}}\"");
 
-        var margin = control.GetString("Margin", "0");
+        var nativePlacement = control.GetString("NativeLayout.Placement");
+        if (!string.IsNullOrEmpty(nativePlacement))
+        {
+            attributes.RemoveAll(a => a.StartsWith("Width=") || a.StartsWith("Height=") || a.StartsWith("Canvas."));
+            attributes.Add(nativePlacement);
+        }
+        var margin = string.IsNullOrEmpty(nativePlacement) ? control.GetString("Margin", "0") : "0";
         if (!string.IsNullOrWhiteSpace(margin) && !string.Equals(margin.Trim(), "0", StringComparison.Ordinal))
             attributes.Add($"Margin=\"{EscapeXml(margin)}\"");
 

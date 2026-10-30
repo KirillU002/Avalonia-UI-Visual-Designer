@@ -1539,7 +1539,7 @@ public partial class MainWindowViewModel : ObservableObject
             ? $"{GetActiveLayoutOrientation()} · Spacing {GetActiveLayoutSpacing():0.#}"
             : "Canvas layout";
     public string ActiveGridDefinitionsPreview => IsActiveLayoutGrid
-        ? $"Rows {BuildGridDefinitions(GetActiveLayoutRows(), GetActiveGridRowDefinitions())}; Columns {BuildGridDefinitions(GetActiveLayoutColumns(), GetActiveGridColumnDefinitions())}"
+        ? $"Rows {ExportGridDefinitions(GetActiveLayoutRows(), GetActiveGridRowDefinitions())}; Columns {ExportGridDefinitions(GetActiveLayoutColumns(), GetActiveGridColumnDefinitions())}"
         : "";
     public bool HasLayoutGridRows => LayoutGridRows.Count > 0;
     public bool HasLayoutGridColumns => LayoutGridColumns.Count > 0;
@@ -5090,6 +5090,7 @@ public partial class MainWindowViewModel : ObservableObject
             nameof(DesignControlModel.ChildLayoutMode) => CanHostChildren(control),
             nameof(DesignControlModel.LayoutOrientation) => SupportsFlowLayout(control),
             nameof(DesignControlModel.LayoutSpacing) => SupportsFlowLayout(control) || SupportsGridLayout(control),
+            nameof(DesignControlModel.WidthMode) or nameof(DesignControlModel.HeightMode) => UsesNativeLayout && control is not null,
             nameof(DesignControlModel.Margin) => control is not null,
             nameof(DesignControlModel.HorizontalAlignment) => control is not null,
             nameof(DesignControlModel.VerticalAlignment) => control is not null,
@@ -5237,6 +5238,8 @@ public partial class MainWindowViewModel : ObservableObject
     {
         var normalized = DesignerLayoutModes.NormalizeMode(layoutMode);
         var host = GetActiveLayoutHost();
+        if (UsesNativeLayout && host is null && normalized != DesignerLayoutModes.Grid)
+        { StatusText = "Phase 2: корневой Grid сохраняется. Для свободного размещения создайте Canvas-форму."; return; }
 
         BeginUndoBatch();
         try
@@ -6594,14 +6597,14 @@ public partial class MainWindowViewModel : ObservableObject
 
     public (double X, double Y) GetAbsolutePosition(DesignControlModel control)
     {
-        var bounds = IsAxamlRoundTripDocument && AxamlLayoutBounds.TryGetValue(control.Id, out var frame) ? frame : new Avalonia.Rect(control.X, control.Y, control.Width, control.Height);
+        var bounds = (IsAxamlRoundTripDocument || UsesNativeLayout) && DesignerLayoutBounds.TryGetValue(control.Id, out var frame) ? frame : new Avalonia.Rect(control.X, control.Y, control.Width, control.Height);
         var x = bounds.X;
         var y = bounds.Y;
         var currentParent = GetControl(control.ParentId);
 
         while (currentParent is not null)
         {
-            var parentBounds = IsAxamlRoundTripDocument && AxamlLayoutBounds.TryGetValue(currentParent.Id, out var parentFrame)
+            var parentBounds = (IsAxamlRoundTripDocument || UsesNativeLayout) && DesignerLayoutBounds.TryGetValue(currentParent.Id, out var parentFrame)
                 ? parentFrame : new Avalonia.Rect(currentParent.X, currentParent.Y, currentParent.Width, currentParent.Height);
             x += parentBounds.X;
             y += parentBounds.Y;
@@ -6619,10 +6622,11 @@ public partial class MainWindowViewModel : ObservableObject
         foreach (var control in Controls.Where(CanHostChildren).Where(control => !control.IsLocked))
         {
             var position = GetAbsolutePosition(control);
-            var inside = absoluteX >= position.X
-                && absoluteX <= position.X + control.Width
+            var size = UsesNativeLayout && NativeLayoutBounds.TryGetValue(control.Id, out var actual) ? actual.Size : new Avalonia.Size(control.Width, control.Height);
+            var inside = (!UsesNativeLayout || control.IsVisible) && absoluteX >= position.X
+                && absoluteX <= position.X + size.Width
                 && absoluteY >= position.Y
-                && absoluteY <= position.Y + control.Height;
+                && absoluteY <= position.Y + size.Height;
 
             if (!inside)
                 continue;
@@ -6686,6 +6690,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void ApplyGridDropPlacement(DesignControlModel control, string? parentId, double absoluteX, double absoluteY)
     {
+        if (UsesNativeLayout) { PlaceInNativeGrid(control); return; }
         var parent = GetControl(parentId);
         var columns = Math.Max(1, parent?.Columns ?? SurfaceLayoutColumns);
         var rows = Math.Max(1, parent?.Rows ?? SurfaceLayoutRows);
@@ -6735,6 +6740,11 @@ public partial class MainWindowViewModel : ObservableObject
     {
         // Source layout can legitimately overflow, use Auto, or have negative Canvas offsets.
         if (IsAxamlRoundTripDocument) return;
+        if (UsesNativeLayout)
+        {
+            if (!IsAbsoluteLayoutParent(model.ParentId)) model.X = model.Y = 0;
+            return;
+        }
         var container = GetControl(model.ParentId);
         var containerWidth = container?.Width ?? PreviewFormWidth;
         var containerHeight = container?.Height ?? PreviewFormHeight;
@@ -8101,12 +8111,14 @@ public partial class MainWindowViewModel : ObservableObject
         return result;
     }
 
-    public DesignerFormDocument CreateNewForm()
+    public DesignerFormDocument CreateNewForm() => CreateNewForm(DesignerLayoutModes.Absolute);
+
+    public DesignerFormDocument CreateNewForm(string rootLayout)
     {
         DumpInteractionState("BeforeAddForm");
         TraceDocumentStateSnapshot("BeforeCreateNewForm", toOutput: false);
         SaveActiveFormState("CreateNewForm");
-        var form = _projectDocumentService.AddForm(CurrentProject, "Form");
+        var form = _projectDocumentService.AddForm(CurrentProject, "Form", rootLayout);
         Workspace.Session.OpenDocumentIds.RemoveAll(id => string.Equals(id, form.Id, StringComparison.OrdinalIgnoreCase));
         Workspace.Session.OpenDocumentIds.Add(form.Id);
         form.SavedSnapshot = "";
@@ -8980,7 +8992,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void AddForm()
     {
-        CreateNewForm();
+        CreateNewForm(NewFormLayoutChoice == NewFormGridChoice ? DesignerLayoutModes.Grid : DesignerLayoutModes.Absolute);
     }
 
     private void AddResource()
@@ -10543,6 +10555,12 @@ public partial class MainWindowViewModel : ObservableObject
             yield return CreateNumberRow(layoutOnly ? PropertyGridCategoryLayout : PropertyGridCategoryCommon, nameof(DesignWidth), "Width", DesignWidth, "Form width.", value => DesignWidth = Math.Max(300, value));
             yield return CreateNumberRow(layoutOnly ? PropertyGridCategoryLayout : PropertyGridCategoryCommon, nameof(DesignHeight), "Height", DesignHeight, "Form height.", value => DesignHeight = Math.Max(200, value));
 
+            if (UsesNativeLayout && !layoutOnly)
+            {
+                yield return CreateReadOnlyRow(PropertyGridCategoryLayout, "RootLayout", "Layout Root", SurfaceLayoutMode, "Реальный корневой Grid формы.");
+                yield return CreateTextRow(PropertyGridCategoryLayout, nameof(SurfaceGridRowDefinitions), "RowDefinitions", SurfaceGridRowDefinitions, "Auto, *, 2*, 120. Редактор строк/колонок также доступен через Grid toolbar.", v => SetNativeDefinitions(true, v));
+                yield return CreateTextRow(PropertyGridCategoryLayout, nameof(SurfaceGridColumnDefinitions), "ColumnDefinitions", SurfaceGridColumnDefinitions, "Auto, *, 2*, 120.", v => SetNativeDefinitions(false, v));
+            }
             if (!layoutOnly)
             {
                 yield return CreateColorRow(PropertyGridCategoryAppearance, nameof(SurfaceBackground), "Background", SurfaceBackground, "Form background color.", value => SurfaceBackground = value);
@@ -10551,7 +10569,8 @@ public partial class MainWindowViewModel : ObservableObject
                 yield break;
             }
 
-            yield return CreateEnumRow(PropertyGridCategoryLayout, nameof(SurfaceLayoutMode), "Layout Type", SurfaceLayoutMode, AvailableLayoutModes, "Root form layout mode.", value => SurfaceLayoutMode = value);
+            if (UsesNativeLayout) yield return CreateReadOnlyRow(PropertyGridCategoryLayout, "RootLayout", "Layout Root", "Grid", "Для Canvas создайте отдельную Canvas-форму.");
+            else yield return CreateEnumRow(PropertyGridCategoryLayout, nameof(SurfaceLayoutMode), "Layout Type", SurfaceLayoutMode, AvailableLayoutModes, "Root form layout mode.", value => SurfaceLayoutMode = value);
             if (DesignerLayoutModes.IsFlow(SurfaceLayoutMode))
             {
                 yield return CreateEnumRow(PropertyGridCategoryLayout, nameof(SurfaceLayoutOrientation), "Orientation", SurfaceLayoutOrientation, AvailableLayoutOrientations, "Root StackPanel/WrapPanel orientation.", value => SurfaceLayoutOrientation = value);
@@ -10559,15 +10578,16 @@ public partial class MainWindowViewModel : ObservableObject
             }
             if (DesignerLayoutModes.NormalizeMode(SurfaceLayoutMode) == DesignerLayoutModes.Grid)
             {
-                yield return CreateNumberRow(PropertyGridCategoryLayout, nameof(SurfaceLayoutColumns), "Columns", SurfaceLayoutColumns, "Root Grid column count.", value => SurfaceLayoutColumns = Math.Max(1, (int)Math.Round(value)));
-                yield return CreateNumberRow(PropertyGridCategoryLayout, nameof(SurfaceLayoutRows), "Rows", SurfaceLayoutRows, "Root Grid row count.", value => SurfaceLayoutRows = Math.Max(1, (int)Math.Round(value)));
-                yield return CreateTextRow(PropertyGridCategoryLayout, nameof(SurfaceGridColumnDefinitions), "ColumnDefinitions", SurfaceGridColumnDefinitions, "Comma-separated Grid column sizes: Auto, *, 2*, 160.", value => SurfaceGridColumnDefinitions = value);
-                yield return CreateTextRow(PropertyGridCategoryLayout, nameof(SurfaceGridRowDefinitions), "RowDefinitions", SurfaceGridRowDefinitions, "Comma-separated Grid row sizes: Auto, *, 120.", value => SurfaceGridRowDefinitions = value);
+                yield return CreateNumberRow(PropertyGridCategoryLayout, nameof(SurfaceLayoutColumns), "Columns", SurfaceLayoutColumns, "Root Grid column count.", value => { if (UsesNativeLayout) SetNativeGridCount(false, (int)Math.Round(value)); else SurfaceLayoutColumns = Math.Max(1, (int)Math.Round(value)); });
+                yield return CreateNumberRow(PropertyGridCategoryLayout, nameof(SurfaceLayoutRows), "Rows", SurfaceLayoutRows, "Root Grid row count.", value => { if (UsesNativeLayout) SetNativeGridCount(true, (int)Math.Round(value)); else SurfaceLayoutRows = Math.Max(1, (int)Math.Round(value)); });
+                yield return CreateTextRow(PropertyGridCategoryLayout, nameof(SurfaceGridColumnDefinitions), "ColumnDefinitions", SurfaceGridColumnDefinitions, "Comma-separated Grid column sizes: Auto, *, 2*, 160.", value => { if (UsesNativeLayout) SetNativeDefinitions(false, value); else SurfaceGridColumnDefinitions = value; });
+                yield return CreateTextRow(PropertyGridCategoryLayout, nameof(SurfaceGridRowDefinitions), "RowDefinitions", SurfaceGridRowDefinitions, "Comma-separated Grid row sizes: Auto, *, 120.", value => { if (UsesNativeLayout) SetNativeDefinitions(true, value); else SurfaceGridRowDefinitions = value; });
             }
             yield break;
         }
 
         var control = SelectedControl;
+        if (UsesNativeLayout) foreach (var row in NativePlacementRows(control)) yield return row;
         var parentLayoutMode = GetLayoutModeForParent(control.ParentId);
         yield return CreateTextRow(PropertyGridCategoryCommon, nameof(DesignControlModel.Name), "Name", control.Name, "Element name used by export and interactions.", value => control.Name = value);
         if (control.Type == DesignerControlTypes.DataGrid)
@@ -10581,13 +10601,13 @@ public partial class MainWindowViewModel : ObservableObject
 
         if (!layoutOnly)
         {
-            yield return CreateNumberRow(PropertyGridCategoryCommon, nameof(DesignControlModel.Width), "Width", control.Width, "Element width.", value => { control.Width = value; ClampControlToSurface(control); });
-            yield return CreateNumberRow(PropertyGridCategoryCommon, nameof(DesignControlModel.Height), "Height", control.Height, "Element height.", value => { control.Height = value; ClampControlToSurface(control); });
+            yield return CreateNumberRow(PropertyGridCategoryCommon, nameof(DesignControlModel.Width), "Width", control.Width, "Element width.", value => { if (UsesNativeLayout) control.WidthMode = "Fixed"; control.Width = value; ClampControlToSurface(control); });
+            yield return CreateNumberRow(PropertyGridCategoryCommon, nameof(DesignControlModel.Height), "Height", control.Height, "Element height.", value => { if (UsesNativeLayout) control.HeightMode = "Fixed"; control.Height = value; ClampControlToSurface(control); });
             yield return CreateBoolRow(PropertyGridCategoryCommon, nameof(DesignControlModel.IsVisible), "IsVisible", control.IsVisible, "Show element on canvas/export.", value => control.IsVisible = value);
             yield return CreateBoolRow(PropertyGridCategoryCommon, nameof(DesignControlModel.IsLocked), "IsLocked", control.IsLocked, "Lock move/resize on canvas.", value => control.IsLocked = value);
-            yield return CreateNumberRow(PropertyGridCategoryLayout, nameof(DesignControlModel.X), "X", control.X, "Left position on canvas.", value => { control.X = Math.Max(0, value); ClampControlToSurface(control); });
-            yield return CreateNumberRow(PropertyGridCategoryLayout, nameof(DesignControlModel.Y), "Y", control.Y, "Top position on canvas.", value => { control.Y = Math.Max(0, value); ClampControlToSurface(control); });
-            yield return CreateTextRow(PropertyGridCategoryLayout, nameof(DesignControlModel.Margin), "Margin", control.Margin, "Avalonia Thickness used by Grid/StackPanel export.", value => control.Margin = value);
+            if (!UsesNativeLayout || IsAbsoluteLayoutParent(control.ParentId)) yield return CreateNumberRow(PropertyGridCategoryLayout, nameof(DesignControlModel.X), "X", control.X, "Left position on canvas.", value => { control.X = Math.Max(0, value); ClampControlToSurface(control); });
+            if (!UsesNativeLayout || IsAbsoluteLayoutParent(control.ParentId)) yield return CreateNumberRow(PropertyGridCategoryLayout, nameof(DesignControlModel.Y), "Y", control.Y, "Top position on canvas.", value => { control.Y = Math.Max(0, value); ClampControlToSurface(control); });
+            yield return CreateTextRow(PropertyGridCategoryLayout, nameof(DesignControlModel.Margin), "Margin", control.Margin, "Avalonia Thickness used by Grid/StackPanel export.", value => SetNativeMargin(control, value));
             yield return CreateEnumRow(PropertyGridCategoryLayout, nameof(DesignControlModel.HorizontalAlignment), "HorizontalAlignment", control.HorizontalAlignment, AvailableHorizontalAlignments, "Horizontal alignment in layout containers.", value => control.HorizontalAlignment = value);
             yield return CreateEnumRow(PropertyGridCategoryLayout, nameof(DesignControlModel.VerticalAlignment), "VerticalAlignment", control.VerticalAlignment, AvailableVerticalAlignments, "Vertical alignment in layout containers.", value => control.VerticalAlignment = value);
             TraceDocumentDebug(
@@ -10598,11 +10618,11 @@ public partial class MainWindowViewModel : ObservableObject
 
         if (layoutOnly)
         {
-        yield return CreateNumberRow(PropertyGridCategoryLayout, nameof(DesignControlModel.X), "X", control.X, "Left position on canvas.", value => { control.X = Math.Max(0, value); ClampControlToSurface(control); });
-        yield return CreateNumberRow(PropertyGridCategoryLayout, nameof(DesignControlModel.Y), "Y", control.Y, "Top position on canvas.", value => { control.Y = Math.Max(0, value); ClampControlToSurface(control); });
-        yield return CreateNumberRow(PropertyGridCategoryLayout, nameof(DesignControlModel.Width), "Width", control.Width, "Element width.", value => { control.Width = value; ClampControlToSurface(control); });
-        yield return CreateNumberRow(PropertyGridCategoryLayout, nameof(DesignControlModel.Height), "Height", control.Height, "Element height.", value => { control.Height = value; ClampControlToSurface(control); });
-        yield return CreateTextRow(PropertyGridCategoryLayout, nameof(DesignControlModel.Margin), "Margin", control.Margin, "Avalonia Thickness used by Grid/StackPanel export.", value => control.Margin = value);
+        if (!UsesNativeLayout || IsAbsoluteLayoutParent(control.ParentId)) yield return CreateNumberRow(PropertyGridCategoryLayout, nameof(DesignControlModel.X), "X", control.X, "Left position on canvas.", value => { control.X = Math.Max(0, value); ClampControlToSurface(control); });
+        if (!UsesNativeLayout || IsAbsoluteLayoutParent(control.ParentId)) yield return CreateNumberRow(PropertyGridCategoryLayout, nameof(DesignControlModel.Y), "Y", control.Y, "Top position on canvas.", value => { control.Y = Math.Max(0, value); ClampControlToSurface(control); });
+        yield return CreateNumberRow(PropertyGridCategoryLayout, nameof(DesignControlModel.Width), "Width", control.Width, "Element width.", value => { if (UsesNativeLayout) control.WidthMode = "Fixed"; control.Width = value; ClampControlToSurface(control); });
+        yield return CreateNumberRow(PropertyGridCategoryLayout, nameof(DesignControlModel.Height), "Height", control.Height, "Element height.", value => { if (UsesNativeLayout) control.HeightMode = "Fixed"; control.Height = value; ClampControlToSurface(control); });
+        yield return CreateTextRow(PropertyGridCategoryLayout, nameof(DesignControlModel.Margin), "Margin", control.Margin, "Avalonia Thickness used by Grid/StackPanel export.", value => SetNativeMargin(control, value));
         yield return CreateEnumRow(PropertyGridCategoryLayout, nameof(DesignControlModel.HorizontalAlignment), "HorizontalAlignment", control.HorizontalAlignment, AvailableHorizontalAlignments, "Horizontal alignment in layout containers.", value => control.HorizontalAlignment = value);
         yield return CreateEnumRow(PropertyGridCategoryLayout, nameof(DesignControlModel.VerticalAlignment), "VerticalAlignment", control.VerticalAlignment, AvailableVerticalAlignments, "Vertical alignment in layout containers.", value => control.VerticalAlignment = value);
 
@@ -12206,6 +12226,7 @@ public partial class MainWindowViewModel : ObservableObject
     private void SetActiveLayoutToGrid()
     {
         SetActiveLayoutMode(DesignerLayoutModes.Grid);
+        if (UsesNativeLayout) { EnableExperimentalLayoutTab = true; WorkspaceMode = WorkspaceModeLayout; }
     }
 
     [RelayCommand]
@@ -12360,7 +12381,7 @@ public partial class MainWindowViewModel : ObservableObject
         {
             var count = isRows ? GetActiveLayoutRows() : GetActiveLayoutColumns();
             var raw = isRows ? GetActiveGridRowDefinitions() : GetActiveGridColumnDefinitions();
-            var definitions = ParseLayoutDefinitions(raw, count);
+            var definitions = ParseLayoutDefinitions(raw, count, UsesNativeLayout);
             definitions = mutate(definitions);
             ApplyActiveGridDefinitions(isRows, definitions);
             RebuildLayoutDefinitionEditor();
@@ -12378,7 +12399,7 @@ public partial class MainWindowViewModel : ObservableObject
         var normalized = definitions.Count == 0
             ? new List<LayoutDefinitionToken> { LayoutDefinitionToken.Star(1) }
             : definitions.ToList();
-        var text = string.Join(",", normalized.Select(definition => definition.ToXaml()));
+        var text = string.Join(",", normalized.Select(definition => definition.ToXaml(UsesNativeLayout)));
         var host = GetActiveLayoutHost();
 
         if (host is null)
@@ -14274,7 +14295,8 @@ public partial class MainWindowViewModel : ObservableObject
             var runtimePreviewAxaml = GeneratedAxamlService.Create(
                 exportAxaml.Axaml,
                 AxamlGenerationMode.RuntimePreview,
-                preserveRuntimeNames: exportViewModel.Controls.Any(control => control.Type == DesignerControlTypes.DataGrid || StandardItemsProperties.IsStandardItemsControl(control.Type)));
+                preserveRuntimeNames: exportViewModel.Controls.Any(control => control.Type == DesignerControlTypes.DataGrid || StandardItemsProperties.IsStandardItemsControl(control.Type)),
+                stretchRuntimeRoot: exportViewModel.UsesNativeLayout);
             stopwatch.Stop();
 
             foreach (var propertyName in runtimePreviewAxaml.RemovedRootProperties)
@@ -14461,6 +14483,8 @@ public partial class MainWindowViewModel : ObservableObject
             SurfaceBackground = string.IsNullOrWhiteSpace(document.SurfaceBackground) ? palette.SurfaceBackground : document.SurfaceBackground;
             SurfaceGridMinorColor = string.IsNullOrWhiteSpace(document.SurfaceGridMinorColor) ? palette.SurfaceGridMinorColor : document.SurfaceGridMinorColor;
             SurfaceGridMajorColor = string.IsNullOrWhiteSpace(document.SurfaceGridMajorColor) ? palette.SurfaceGridMajorColor : document.SurfaceGridMajorColor;
+            LayoutSemanticsVersion = document.LayoutSemanticsVersion;
+            NativeLayoutBounds = new Dictionary<string, Avalonia.Rect>();
             SurfaceLayoutMode = DesignerLayoutModes.NormalizeMode(document.SurfaceLayoutMode);
             SurfaceLayoutOrientation = DesignerLayoutModes.NormalizeOrientation(document.SurfaceLayoutOrientation);
             SurfaceLayoutSpacing = Math.Max(0, document.SurfaceLayoutSpacing);
@@ -15321,6 +15345,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     private LayoutExportPlan BuildLayoutExportPlan()
     {
+        if (UsesNativeLayout) return new LayoutExportPlan(NormalizeLayoutExportMode(LayoutExportMode), SurfaceLayoutMode, false, false, 0, "", "Grid", "Layout: native Grid", "Native Grid", "Экспортируется сохранённый Grid без responsive-преобразования.", ExportChecklistSeverity.Ok);
         var requested = NormalizeLayoutExportMode(LayoutExportMode);
         if (!string.Equals(requested, LayoutExportModeResponsive, StringComparison.Ordinal))
         {
@@ -16870,7 +16895,7 @@ public partial class MainWindowViewModel : ObservableObject
         model.DescriptorId = string.IsNullOrWhiteSpace(model.DescriptorId) ? descriptor.TypeKey : model.DescriptorId;
         model.PluginId = string.IsNullOrWhiteSpace(model.PluginId) ? definition.PluginId : model.PluginId;
         model.PluginVersion = string.IsNullOrWhiteSpace(model.PluginVersion) ? definition.PluginVersion : model.PluginVersion;
-
+        ConfigureNativeControl(model);
         return model;
     }
 
@@ -17997,6 +18022,8 @@ public partial class MainWindowViewModel : ObservableObject
         try
         {
             var descriptor = _registry.GetRequiredControl(controlNode.TypeKey);
+            if (UsesNativeLayout && controlNode is DesignControlNodeAdapter nativeNode && IsPluginRuntimeControl(nativeNode.Model))
+                controlNode = new NativeLayoutExportNode(controlNode, NativePlacementAttributes(nativeNode.Model));
             descriptor.AppendXaml(writer, controlNode, indentLevel, context);
             return true;
         }
@@ -19691,11 +19718,11 @@ public partial class MainWindowViewModel : ObservableObject
 
             if (IsActiveLayoutGrid)
             {
-                foreach (var (definition, index) in ParseLayoutDefinitions(GetActiveGridRowDefinitions(), GetActiveLayoutRows()).Select((definition, index) => (definition, index)))
-                    LayoutGridRows.Add(new LayoutDefinitionEditorItem(index, definition.Kind, definition.Value, ApplyLayoutDefinitionEditorToActiveGrid));
+                foreach (var (definition, index) in ParseLayoutDefinitions(GetActiveGridRowDefinitions(), GetActiveLayoutRows(), UsesNativeLayout).Select((definition, index) => (definition, index)))
+                    LayoutGridRows.Add(new LayoutDefinitionEditorItem(index, definition.Kind, definition.Value, ApplyLayoutDefinitionEditorToActiveGrid, UsesNativeLayout));
 
-                foreach (var (definition, index) in ParseLayoutDefinitions(GetActiveGridColumnDefinitions(), GetActiveLayoutColumns()).Select((definition, index) => (definition, index)))
-                    LayoutGridColumns.Add(new LayoutDefinitionEditorItem(index, definition.Kind, definition.Value, ApplyLayoutDefinitionEditorToActiveGrid));
+                foreach (var (definition, index) in ParseLayoutDefinitions(GetActiveGridColumnDefinitions(), GetActiveLayoutColumns(), UsesNativeLayout).Select((definition, index) => (definition, index)))
+                    LayoutGridColumns.Add(new LayoutDefinitionEditorItem(index, definition.Kind, definition.Value, ApplyLayoutDefinitionEditorToActiveGrid, UsesNativeLayout));
 
                 SelectedLayoutGridRow = LayoutGridRows.FirstOrDefault();
                 SelectedLayoutGridColumn = LayoutGridColumns.FirstOrDefault();
@@ -19758,12 +19785,12 @@ public partial class MainWindowViewModel : ObservableObject
         return parts.Count > 0 ? parts.Count : Math.Max(1, count);
     }
 
-    private static List<LayoutDefinitionToken> ParseLayoutDefinitions(string? explicitDefinitions, int fallbackCount)
+    private static List<LayoutDefinitionToken> ParseLayoutDefinitions(string? explicitDefinitions, int fallbackCount, bool nativeSizes = false)
     {
         var parts = (explicitDefinitions ?? "")
             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Where(part => !string.IsNullOrWhiteSpace(part))
-            .Select(LayoutDefinitionToken.Parse)
+            .Select(value => LayoutDefinitionToken.Parse(value, nativeSizes))
             .ToList();
 
         if (parts.Count == 0)
@@ -19781,7 +19808,7 @@ public partial class MainWindowViewModel : ObservableObject
             return new LayoutDefinitionToken(item.SizeKind, item.Value);
         }
 
-        public static LayoutDefinitionToken Parse(string value)
+        public static LayoutDefinitionToken Parse(string value, bool nativeSizes = false)
         {
             var normalized = value.Trim();
             if (normalized.Equals("Auto", StringComparison.OrdinalIgnoreCase))
@@ -19794,23 +19821,23 @@ public partial class MainWindowViewModel : ObservableObject
                     "Star",
                     string.IsNullOrWhiteSpace(starValue) || !double.TryParse(starValue, NumberStyles.Any, CultureInfo.InvariantCulture, out var parsed)
                         ? 1
-                        : Math.Max(1, parsed));
+                        : Math.Max(nativeSizes ? 0 : 1, parsed));
             }
 
             return double.TryParse(normalized, NumberStyles.Any, CultureInfo.InvariantCulture, out var fixedValue)
-                ? new LayoutDefinitionToken("Fixed", Math.Max(1, fixedValue))
+                ? new LayoutDefinitionToken("Fixed", Math.Max(nativeSizes ? 0 : 1, fixedValue))
                 : Star(1);
         }
 
-        public string ToXaml()
+        public string ToXaml(bool nativeSizes = false)
         {
             return Kind switch
             {
                 "Auto" => "Auto",
-                "Fixed" => Math.Max(1, Value).ToString("0.##", CultureInfo.InvariantCulture),
-                _ => Math.Abs(Value - 1) < 0.001
+                "Fixed" => Math.Max(nativeSizes ? 0 : 1, Value).ToString(nativeSizes ? "R" : "0.##", CultureInfo.InvariantCulture),
+                _ => (nativeSizes ? Value == 1 : Math.Abs(Value - 1) < 0.001)
                     ? "*"
-                    : $"{Math.Max(1, Value).ToString("0.##", CultureInfo.InvariantCulture)}*"
+                    : $"{Math.Max(nativeSizes ? 0 : 1, Value).ToString(nativeSizes ? "R" : "0.##", CultureInfo.InvariantCulture)}*"
             };
         }
     }
@@ -19872,6 +19899,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     private string PlacementAttributes(DesignControlModel control)
     {
+        if (UsesNativeLayout) return NativePlacementAttributes(control);
         var parentLayoutMode = DesignerLayoutModes.NormalizeMode(GetExportLayoutModeForParent(control.ParentId));
         if (DesignerLayoutModes.IsAbsolute(parentLayoutMode))
             return CanvasLayoutAttributes(control);
@@ -19920,7 +19948,7 @@ public partial class MainWindowViewModel : ObservableObject
     private void AppendRootContainerOpening(StringBuilder sb, bool usesManagedWindowLayout, double resolvedWidth, double resolvedHeight)
     {
         var layoutMode = DesignerLayoutModes.NormalizeMode(_activeLayoutExportPlan?.EffectiveRootLayoutMode ?? SurfaceLayoutMode);
-        var sizeAttributes = usesManagedWindowLayout
+        var sizeAttributes = usesManagedWindowLayout || UsesNativeLayout
             ? " HorizontalAlignment=\"Stretch\" VerticalAlignment=\"Stretch\""
             : $" {SizeAttributes(resolvedWidth, resolvedHeight)}";
         var rootMargin = !string.IsNullOrWhiteSpace(_activeLayoutExportPlan?.RootMargin)
@@ -19937,8 +19965,8 @@ public partial class MainWindowViewModel : ObservableObject
                 sb.AppendLine($"  <StackPanel x:Name=\"RootLayout\" Orientation=\"{ToAvaloniaOrientation(orientation)}\" Spacing=\"{ToInvariant(spacing)}\"{rootMargin}{sizeAttributes}>");
                 break;
             case DesignerLayoutModes.Grid:
-                var rowDefinitions = BuildGridDefinitions(SurfaceLayoutRows, SurfaceGridRowDefinitions);
-                var columnDefinitions = BuildGridDefinitions(SurfaceLayoutColumns, SurfaceGridColumnDefinitions);
+                var rowDefinitions = ExportGridDefinitions(SurfaceLayoutRows, SurfaceGridRowDefinitions);
+                var columnDefinitions = ExportGridDefinitions(SurfaceLayoutColumns, SurfaceGridColumnDefinitions);
                 sb.AppendLine($"  <Grid x:Name=\"RootLayout\" RowDefinitions=\"{EscapeXml(rowDefinitions)}\" ColumnDefinitions=\"{EscapeXml(columnDefinitions)}\"{rootMargin}{sizeAttributes}>");
                 break;
             case DesignerLayoutModes.Flex:
@@ -20018,8 +20046,8 @@ public partial class MainWindowViewModel : ObservableObject
                 sb.AppendLine($"{Indent(indentLevel)}<StackPanel{nameAttribute} {placementAttributes} Orientation=\"{ToAvaloniaOrientation(control.LayoutOrientation)}\" Spacing=\"{ToInvariant(control.LayoutSpacing)}\"{visibilityAttributes}>");
                 break;
             case DesignerLayoutModes.Grid:
-                var rowDefinitions = BuildGridDefinitions(control.Rows, control.GridRowDefinitions);
-                var columnDefinitions = BuildGridDefinitions(control.Columns, control.GridColumnDefinitions);
+                var rowDefinitions = ExportGridDefinitions(control.Rows, control.GridRowDefinitions);
+                var columnDefinitions = ExportGridDefinitions(control.Columns, control.GridColumnDefinitions);
                 sb.AppendLine($"{Indent(indentLevel)}<Grid{nameAttribute} {placementAttributes} RowDefinitions=\"{EscapeXml(rowDefinitions)}\" ColumnDefinitions=\"{EscapeXml(columnDefinitions)}\"{visibilityAttributes}>");
                 break;
             case DesignerLayoutModes.Flex:
@@ -20041,8 +20069,8 @@ public partial class MainWindowViewModel : ObservableObject
                 sb.AppendLine($"{Indent(indentLevel)}<StackPanel Orientation=\"{ToAvaloniaOrientation(control.LayoutOrientation)}\" Spacing=\"{ToInvariant(control.LayoutSpacing)}\">");
                 break;
             case DesignerLayoutModes.Grid:
-                var rowDefinitions = BuildGridDefinitions(control.Rows, control.GridRowDefinitions);
-                var columnDefinitions = BuildGridDefinitions(control.Columns, control.GridColumnDefinitions);
+                var rowDefinitions = ExportGridDefinitions(control.Rows, control.GridRowDefinitions);
+                var columnDefinitions = ExportGridDefinitions(control.Columns, control.GridColumnDefinitions);
                 sb.AppendLine($"{Indent(indentLevel)}<Grid RowDefinitions=\"{EscapeXml(rowDefinitions)}\" ColumnDefinitions=\"{EscapeXml(columnDefinitions)}\">");
                 break;
             case DesignerLayoutModes.Flex:
@@ -20940,6 +20968,8 @@ public partial class MainWindowViewModel : ObservableObject
     {
         return new DesignerDocumentFileModel
         {
+            Version = UsesNativeLayout ? "2.4" : "2.3",
+            LayoutSemanticsVersion = LayoutSemanticsVersion,
             DesignWidth = DesignWidth,
             DesignHeight = DesignHeight,
             SnapStep = SnapStep,
@@ -21059,6 +21089,8 @@ public partial class MainWindowViewModel : ObservableObject
             Y = control.Y,
             Width = control.Width,
             Height = control.Height,
+            WidthMode = control.WidthMode,
+            HeightMode = control.HeightMode,
             AnchorLeft = control.AnchorLeft,
             AnchorTop = control.AnchorTop,
             AnchorRight = control.AnchorRight,
@@ -21287,6 +21319,8 @@ public partial class MainWindowViewModel : ObservableObject
             Y = controlFile.Y,
             Width = controlFile.Width,
             Height = controlFile.Height,
+            WidthMode = controlFile.WidthMode,
+            HeightMode = controlFile.HeightMode,
             AnchorLeft = controlFile.AnchorLeft,
             AnchorTop = controlFile.AnchorTop,
             AnchorRight = controlFile.AnchorRight,
@@ -21423,6 +21457,7 @@ public partial class MainWindowViewModel : ObservableObject
         bool refreshEditorSurfaces = true,
         [CallerMemberName] string caller = "")
     {
+        ValidateNativeDocument(document);
         if (_isExportPipelineRunning || _isGeneratingSecondaryFormExport)
         {
             var stack = TrimStackTrace(new StackTrace(skipFrames: 1, fNeedFileInfo: false).ToString());
@@ -21517,6 +21552,8 @@ public partial class MainWindowViewModel : ObservableObject
             SurfaceBackground = string.IsNullOrWhiteSpace(document.SurfaceBackground) ? palette.SurfaceBackground : document.SurfaceBackground;
             SurfaceGridMinorColor = string.IsNullOrWhiteSpace(document.SurfaceGridMinorColor) ? palette.SurfaceGridMinorColor : document.SurfaceGridMinorColor;
             SurfaceGridMajorColor = string.IsNullOrWhiteSpace(document.SurfaceGridMajorColor) ? palette.SurfaceGridMajorColor : document.SurfaceGridMajorColor;
+            LayoutSemanticsVersion = document.LayoutSemanticsVersion;
+            NativeLayoutBounds = new Dictionary<string, Avalonia.Rect>();
             SurfaceLayoutMode = DesignerLayoutModes.NormalizeMode(document.SurfaceLayoutMode);
             SurfaceLayoutOrientation = DesignerLayoutModes.NormalizeOrientation(document.SurfaceLayoutOrientation);
             SurfaceLayoutSpacing = Math.Max(0, document.SurfaceLayoutSpacing);
@@ -22745,6 +22782,11 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void Control_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (UsesNativeLayout && sender is DesignControlModel sized && !_isApplyingDocument)
+        {
+            if (e.PropertyName == nameof(sized.Width)) sized.WidthMode = "Fixed";
+            if (e.PropertyName == nameof(sized.Height)) sized.HeightMode = "Fixed";
+        }
         if (sender == SelectedControl)
         {
             if (_isPropertyGridLiveGesture && IsLiveLayoutProperty(e.PropertyName))
@@ -23458,6 +23500,12 @@ public partial class MainWindowViewModel : ObservableObject
     partial void OnSurfaceLayoutModeChanged(string value)
     {
         var normalized = DesignerLayoutModes.NormalizeMode(value);
+        if (UsesNativeLayout && normalized != DesignerLayoutModes.Grid)
+        {
+            SurfaceLayoutMode = DesignerLayoutModes.Grid;
+            StatusText = "Phase 2: Grid Root не конвертируется автоматически. Создайте Canvas-форму для свободного размещения.";
+            return;
+        }
         if (!string.Equals(value, normalized, StringComparison.Ordinal))
         {
             SurfaceLayoutMode = normalized;

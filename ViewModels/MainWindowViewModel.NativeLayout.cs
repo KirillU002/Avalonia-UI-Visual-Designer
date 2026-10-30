@@ -1,0 +1,134 @@
+using Avalonia;
+using Avalonia.Controls;
+using CommunityToolkit.Mvvm.ComponentModel;
+using FormDesigner.DesignerSystem.AxamlRoundTrip;
+using FormDesigner.Models;
+using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Linq;
+using System.Text;
+
+namespace FormDesigner.ViewModels;
+
+public partial class MainWindowViewModel
+{
+    public const string NewFormCanvasChoice = "Canvas — свободное размещение";
+    public const string NewFormGridChoice = "Grid — адаптивный";
+    public ObservableCollection<string> NewFormLayoutChoices { get; } = new() { NewFormCanvasChoice, NewFormGridChoice };
+    public ObservableCollection<string> AvailableSizeModes { get; } = new() { "Fixed", "Auto" };
+    [ObservableProperty] private string newFormLayoutChoice = NewFormCanvasChoice;
+    [ObservableProperty] private int layoutSemanticsVersion = 1;
+    public bool UsesNativeLayout => !IsAxamlRoundTripDocument && LayoutSemanticsVersion == 2;
+    public IReadOnlyDictionary<string, Rect> NativeLayoutBounds { get; set; } = new Dictionary<string, Rect>();
+    private IReadOnlyDictionary<string, Rect> DesignerLayoutBounds => UsesNativeLayout ? NativeLayoutBounds : AxamlLayoutBounds;
+    public AxamlLayoutProjection.JsonLayoutTree BuildNativeLayout(Func<DesignControlModel, Control> leafFactory, bool includeHidden = false)
+        => AxamlLayoutProjection.BuildJson(CreateDocumentFileModel(), Controls.ToArray(), leafFactory, includeHidden);
+
+    private void ConfigureNativeControl(DesignControlModel model)
+    {
+        if (!UsesNativeLayout) return;
+        model.WidthMode = model.HeightMode = "Auto";
+        if (CanHostChildren(model) || model.Type == DesignerControlTypes.DataGrid || !string.IsNullOrEmpty(model.PluginId))
+            model.VerticalAlignment = "Stretch";
+        if (CanHostChildren(model)) model.LayoutSpacing = 0;
+    }
+
+    private void PlaceInNativeGrid(DesignControlModel control)
+    {
+        control.GridRow = control.GridColumn = 0;
+        control.GridRowSpan = control.GridColumnSpan = 1;
+        control.X = control.Y = 0;
+        StatusText = "Элемент добавлен в Grid: строка 0, столбец 0. Размещение и spans настраиваются в Inspector.";
+    }
+
+    private IEnumerable<PropertyGridRowViewModel> NativePlacementRows(DesignControlModel control)
+    {
+        yield return CreateEnumRow(PropertyGridCategoryLayout, nameof(control.WidthMode), "Width mode", control.WidthMode, AvailableSizeModes, "Auto — размер определяет Avalonia layout; Fixed — поле Width.", v => control.WidthMode = v);
+        yield return CreateEnumRow(PropertyGridCategoryLayout, nameof(control.HeightMode), "Height mode", control.HeightMode, AvailableSizeModes, "Auto — размер определяет Avalonia layout; Fixed — поле Height.", v => control.HeightMode = v);
+        if (GetLayoutModeForParent(control.ParentId) != DesignerLayoutModes.Grid) yield break;
+        yield return CreateNumberRow(PropertyGridCategoryLayout, nameof(control.GridRow), "Grid.Row", control.GridRow, "Индекс строки родительского Grid.", v => control.GridRow = Math.Max(0, (int)v));
+        yield return CreateNumberRow(PropertyGridCategoryLayout, nameof(control.GridColumn), "Grid.Column", control.GridColumn, "Индекс столбца родительского Grid.", v => control.GridColumn = Math.Max(0, (int)v));
+        yield return CreateNumberRow(PropertyGridCategoryLayout, nameof(control.GridRowSpan), "Grid.RowSpan", control.GridRowSpan, "Число занимаемых строк.", v => control.GridRowSpan = Math.Max(1, (int)v));
+        yield return CreateNumberRow(PropertyGridCategoryLayout, nameof(control.GridColumnSpan), "Grid.ColumnSpan", control.GridColumnSpan, "Число занимаемых столбцов.", v => control.GridColumnSpan = Math.Max(1, (int)v));
+    }
+
+    private void SetNativeDefinitions(bool rows, string value)
+    {
+        try
+        {
+            var count = rows ? RowDefinitions.Parse(value).Count : ColumnDefinitions.Parse(value).Count;
+            if (count == 0) throw new FormatException();
+            if (rows) { SurfaceGridRowDefinitions = value; SurfaceLayoutRows = count; }
+            else { SurfaceGridColumnDefinitions = value; SurfaceLayoutColumns = count; }
+            RebuildLayoutDefinitionEditor();
+        }
+        catch (Exception ex) when (ex is FormatException or ArgumentException)
+        { StatusText = "Некорректные определения Grid. Используйте Auto, *, 2* или размер в пикселях."; }
+    }
+
+    private void SetNativeGridCount(bool rows, int count)
+    {
+        var text = rows ? SurfaceGridRowDefinitions : SurfaceGridColumnDefinitions;
+        var parts = AxamlLayoutProjection.Definitions(text, rows ? SurfaceLayoutRows : SurfaceLayoutColumns).Split(',').ToList();
+        count = Math.Max(1, count);
+        while (parts.Count < count) parts.Add("*");
+        if (parts.Count > count) parts.RemoveRange(count, parts.Count - count);
+        SetNativeDefinitions(rows, string.Join(",", parts));
+    }
+
+    private void SetNativeMargin(DesignControlModel control, string value)
+    {
+        if (!UsesNativeLayout) { control.Margin = value; return; }
+        try { _ = Thickness.Parse(value); control.Margin = value; }
+        catch (Exception ex) when (ex is FormatException or ArgumentException)
+        { StatusText = "Некорректный Margin. Используйте одно, два или четыре числовых значения."; }
+    }
+
+    private string NativeSizeAttributes(DesignControlModel control)
+    {
+        return (control.WidthMode == "Auto" ? "" : $" Width=\"{ToInvariant(control.Width)}\"")
+            + (control.HeightMode == "Auto" ? "" : $" Height=\"{ToInvariant(control.Height)}\"");
+    }
+
+    private string NativePlacementAttributes(DesignControlModel control)
+    {
+        var result = new StringBuilder(NativeSizeAttributes(control));
+        var mode = GetLayoutModeForParent(control.ParentId);
+        if (mode == DesignerLayoutModes.Grid)
+            result.Append($" Grid.Row=\"{control.GridRow}\" Grid.Column=\"{control.GridColumn}\" Grid.RowSpan=\"{control.GridRowSpan}\" Grid.ColumnSpan=\"{control.GridColumnSpan}\"");
+        else if (mode == DesignerLayoutModes.Absolute)
+            result.Append($" Canvas.Left=\"{ToInvariant(control.X)}\" Canvas.Top=\"{ToInvariant(control.Y)}\"");
+        result.Append(AlignmentAttributes(control));
+        result.Append($" Margin=\"{EscapeXml(control.Margin)}\"");
+        return result.ToString();
+    }
+
+    private string ExportGridDefinitions(int count, string value) => UsesNativeLayout
+        ? AxamlLayoutProjection.Definitions(value, count) : BuildGridDefinitions(count, value);
+
+    private static void ValidateNativeDocument(DesignerDocumentFileModel document)
+    {
+        if (document.LayoutSemanticsVersion is < 1 or > 2)
+            throw new InvalidOperationException("Версия layout документа не поддерживается. Файл не изменён.");
+        if (document.LayoutSemanticsVersion != 2) return;
+        if (document.SurfaceLayoutMode != DesignerLayoutModes.Grid)
+            throw new InvalidOperationException("Phase 2 поддерживает native layout с корневым Grid.");
+        _ = RowDefinitions.Parse(AxamlLayoutProjection.Definitions(document.SurfaceGridRowDefinitions, document.SurfaceLayoutRows));
+        _ = ColumnDefinitions.Parse(AxamlLayoutProjection.Definitions(document.SurfaceGridColumnDefinitions, document.SurfaceLayoutColumns));
+        var ids = document.Controls.ToDictionary(c => c.Id);
+        foreach (var control in document.Controls)
+        {
+            if (control.WidthMode is not ("Auto" or "Fixed") || control.HeightMode is not ("Auto" or "Fixed"))
+                throw new InvalidOperationException("Неизвестный режим размера элемента: " + control.Name);
+            var seen = new HashSet<string> { control.Id };
+            var parent = control.ParentId;
+            while (!string.IsNullOrEmpty(parent))
+            {
+                if (!seen.Add(parent) || !ids.TryGetValue(parent, out var node))
+                    throw new InvalidOperationException("Некорректное дерево ParentId: " + control.Name);
+                parent = node.ParentId;
+            }
+        }
+    }
+}

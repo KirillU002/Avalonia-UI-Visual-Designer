@@ -62,6 +62,9 @@ public static class GeneratedAxamlService
     public static GeneratedAxamlDocument Create(string exportAxaml, AxamlGenerationMode mode) => Create(exportAxaml, mode, false);
 
     public static GeneratedAxamlDocument Create(string exportAxaml, AxamlGenerationMode mode, bool preserveRuntimeNames)
+        => Create(exportAxaml, mode, preserveRuntimeNames, false);
+
+    public static GeneratedAxamlDocument Create(string exportAxaml, AxamlGenerationMode mode, bool preserveRuntimeNames, bool stretchRuntimeRoot)
     {
         if (string.IsNullOrWhiteSpace(exportAxaml))
             throw new InvalidOperationException("Generated AXAML is empty.");
@@ -88,6 +91,11 @@ public static class GeneratedAxamlService
         xClassAttribute?.Remove();
 
         var removedRootProperties = new List<string>();
+        if (stretchRuntimeRoot)
+        {
+            foreach (var size in new[] { "Width", "Height" })
+                if (root.Attribute(size) is { } attribute) { attribute.Remove(); removedRootProperties.Add(size); }
+        }
         var normalizedRootPropertyElementCount = 0;
         if (string.Equals(root.Name.LocalName, "Window", StringComparison.Ordinal))
         {
