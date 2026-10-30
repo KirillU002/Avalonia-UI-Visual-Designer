@@ -173,6 +173,7 @@ public partial class MainWindow : Window
 
         InitializeComponent();
         InitializeStandardItemsUi();
+        InitializeDesignerInteraction();
         DesignerSurface.HostServices = _hostServices;
         DataContextChanged += MainWindow_DataContextChanged;
         KeyDown += MainWindow_KeyDown;
@@ -1138,6 +1139,7 @@ public partial class MainWindow : Window
 
     private void ResetDocumentVisualState(string sessionId)
     {
+        CancelDesignerInteraction("document-changed", false);
         _designerRenderTimer.Stop();
         _isDesignerRenderScheduled = false;
         _scheduledDesignerRenderSessionId = sessionId;
@@ -1246,9 +1248,7 @@ public partial class MainWindow : Window
             return;
 
         TraceInspectorInput("RIGHT_INSPECTOR_POINTER_PRESSED_STOP_BUBBLE", sender, e);
-        _isMarqueeSelecting = false;
-        _isMarqueeAdditive = false;
-        _isMarqueeToggle = false;
+        CancelDesignerInteraction("inspector-press");
         e.Handled = true;
     }
 
@@ -1263,6 +1263,7 @@ public partial class MainWindow : Window
 
     private void ResetInteractionState(string reason)
     {
+        CancelDesignerInteraction(reason, false);
         DumpInteractionState($"BeforeResetInteractionState:{reason}");
 
         _designerRenderTimer.Stop();
@@ -2100,6 +2101,7 @@ public partial class MainWindow : Window
 
     private void StartViewportPan(PointerEventArgs e, bool isSpacePanGesture)
     {
+        CancelDesignerInteraction("viewport-pan", false);
         _isPanningViewport = true;
         _isSpacePanGesture = isSpacePanGesture;
         _panStartViewportPosition = e.GetPosition(DesignerViewportScrollViewer);
@@ -2282,6 +2284,14 @@ public partial class MainWindow : Window
         {
             _isSpacePressed = true;
             UpdateDesignerViewportCursor();
+        }
+
+        if (e.Key == Key.Escape && _designerInteractionMode != DesignerInteractionMode.None)
+        {
+            CancelDesignerInteraction("escape");
+            RenderDesigner();
+            e.Handled = true;
+            return;
         }
 
         if (e.Key == Key.Escape && _inlineCanvasEditor is not null)
@@ -2576,146 +2586,91 @@ public partial class MainWindow : Window
 
     private async void ToolboxItem_PointerPressed(object? sender, PointerPressedEventArgs e)
     {
-        if (DataContext is MainWindowViewModel viewModel && viewModel.IsUserPreviewMode)
-            return;
-
-        if (sender is not Border border || border.DataContext is not ToolboxItem item)
-            return;
-
-        // В drag-and-drop передаем только тип контрола.
-        // Конкретная модель будет создана уже в момент drop на поверхности.
+        if (DataContext is not MainWindowViewModel || VM.IsUserPreviewMode) return;
+        if (sender is not Border border || border.DataContext is not ToolboxItem item || !e.GetCurrentPoint(border).Properties.IsLeftButtonPressed) return;
+        TraceDesignerInteraction("DESIGNER_POINTER_PRESSED", e, "toolbox");
+        BeginToolboxInteraction(e);
         var data = new DataObject();
         data.Set(ControlTypeDataFormat, item.Type);
-        if (DataContext is MainWindowViewModel viewModelForDrag)
-            data.Set(ControlSourceDocumentDataFormat, viewModelForDrag.ActiveDocumentId);
-
-        await DragDrop.DoDragDrop(e, data, DragDropEffects.Copy);
+        data.Set(ControlSourceDocumentDataFormat, VM.ActiveDocumentId);
+        try { await DragDrop.DoDragDrop(e, data, DragDropEffects.Copy); }
+        finally { FinishToolboxInteraction("toolbox-drag-completed"); }
     }
 
     private void DesignerCanvas_PointerPressed(object? sender, PointerPressedEventArgs e)
     {
-        TraceInspectorInput("DESIGNER_CANVAS_POINTER_PRESSED", sender, e);
-        if (IsInsideRightInspector(e.Source))
-        {
-            TraceInspectorInput("DESIGNER_CANVAS_POINTER_IGNORED_INSPECTOR", sender, e);
-            return;
-        }
-
-        if (_isDragging || _isResizing || _isResizingDesignSurface || _isPanningViewport || DataContext is not MainWindowViewModel)
-            return;
-
-        if (VM.IsUserPreviewMode)
-            return;
-
-        if (_inlineCanvasEditor is not null)
-        {
-            CloseInlineCanvasEditor(commitChanges: true);
-            e.Handled = true;
-            return;
-        }
-
-        _pendingContextMenuControlId = string.Empty;
+        if (DataContext is not MainWindowViewModel || VM.IsUserPreviewMode || IsInsideRightInspector(e.Source)) return;
+        if (_designerInteractionMode != DesignerInteractionMode.None || _isDragging || _isResizing || _isResizingDesignSurface || _isResizingGridColumn || _isPanningViewport) return;
+        if (!IsEmptyDesignerCanvasPress(e)) return;
+        if (_inlineCanvasEditor is not null) { CloseInlineCanvasEditor(commitChanges: true); e.Handled = true; return; }
+        _pendingContextMenuControlId = "";
         _isMarqueeSelecting = true;
         _isMarqueeToggle = e.KeyModifiers.HasFlag(KeyModifiers.Control);
         _isMarqueeAdditive = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
-        _marqueeBaseSelection.Clear();
-        _marqueeBaseSelection.AddRange(VM.GetSelectedControls());
-        _marqueeStart = GetDesignCanvasPosition(e);
-        _marqueeCurrent = _marqueeStart;
+        _marqueeBaseSelection.Clear(); _marqueeBaseSelection.AddRange(VM.GetSelectedControls());
+        _marqueeStart = _marqueeCurrent = GetDesignCanvasPosition(e);
         ClearGuideOverlay();
-        ClearSelectionOverlay();
-
-        if (sender is InputElement element)
-            e.Pointer.Capture(element);
-
+        CaptureDesignerInteraction(DesignerInteractionMode.Selecting, e, DesignerCanvas);
         e.Handled = true;
     }
 
     private void DesignerCanvas_PointerMoved(object? sender, PointerEventArgs e)
     {
-        if (VM.IsUserPreviewMode || _isPanningViewport)
-            return;
-
-        if (!_isMarqueeSelecting)
-            return;
-
+        if (!_isMarqueeSelecting || _isPanningViewport || VM.IsUserPreviewMode) return;
+        if (!DesignerPointerCanContinue(e)) return;
         _marqueeCurrent = GetDesignCanvasPosition(e);
         var selectionRect = CreateSelectionRect(_marqueeStart, _marqueeCurrent);
-
         if (selectionRect.Width >= MarqueeActivationThreshold || selectionRect.Height >= MarqueeActivationThreshold)
+        {
+            if (_designerInteractionMode == DesignerInteractionMode.Selecting)
+            {
+                _designerInteractionMode = DesignerInteractionMode.MarqueeSelecting;
+                ClearSelectionOverlay();
+                TraceDesignerInteraction("MARQUEE_STARTED", e);
+            }
             RenderSelectionMarquee(selectionRect);
-        else
-            ClearGuideOverlay();
-
+        }
+        else ClearGuideOverlay();
         e.Handled = true;
     }
 
     private void DesignerCanvas_PointerReleased(object? sender, PointerReleasedEventArgs e)
     {
-        if (IsInsideRightInspector(e.Source))
+        if (!_isMarqueeSelecting || !ReferenceEquals(e.Pointer, _designerPointer)) return;
+        if (e.GetCurrentPoint(DesignerCanvas).Properties.IsLeftButtonPressed) return;
+        if (_designerInteractionSession != VM.DocumentSessionId) { CancelDesignerInteraction("release-session-changed"); return; }
+        RememberDesignerPointer(e);
+        _marqueeCurrent = GetDesignCanvasPosition(e);
+        var rectangle = CreateSelectionRect(_marqueeStart, _marqueeCurrent);
+        var hasArea = _designerInteractionMode == DesignerInteractionMode.MarqueeSelecting;
+        var toggle = _isMarqueeToggle; var additive = _isMarqueeAdditive;
+        var selected = _marqueeBaseSelection.ToList();
+        if (hasArea) TraceDesignerInteraction("MARQUEE_COMPLETED", e);
+        FinishDesignerInteraction("released", e);
+        _isMarqueeSelecting = _isMarqueeAdditive = _isMarqueeToggle = false;
+        _marqueeBaseSelection.Clear();
+        if (!hasArea)
         {
-            TraceInspectorInput("DESIGNER_CANVAS_RELEASE_IGNORED_INSPECTOR", sender, e);
-            return;
-        }
-
-        if (VM.IsUserPreviewMode || _isPanningViewport)
-            return;
-
-        if (!_isMarqueeSelecting)
-            return;
-
-        _isMarqueeSelecting = false;
-        _isMarqueeToggle = false;
-        e.Pointer.Capture(null);
-
-        var selectionRect = CreateSelectionRect(_marqueeStart, _marqueeCurrent);
-        var hasSelectionArea = selectionRect.Width >= MarqueeActivationThreshold || selectionRect.Height >= MarqueeActivationThreshold;
-
-        if (!hasSelectionArea)
-        {
-            if (!_isMarqueeAdditive && !_isMarqueeToggle)
-                VM.ClearSelection();
-
-            ClearGuideOverlay();
-            _marqueeBaseSelection.Clear();
-            RenderDesigner();
-            e.Handled = true;
-            return;
-        }
-
-        var hitControls = GetControlsInSelection(selectionRect);
-
-        if (_isMarqueeToggle)
-        {
-            var toggled = _marqueeBaseSelection.ToList();
-            foreach (var control in hitControls)
-            {
-                if (toggled.Any(selected => selected.Id == control.Id))
-                    toggled.RemoveAll(selected => selected.Id == control.Id);
-                else
-                    toggled.Add(control);
-            }
-
-            VM.SelectControls(toggled, hitControls.LastOrDefault() ?? toggled.LastOrDefault());
-        }
-        else if (_isMarqueeAdditive)
-        {
-            var merged = _marqueeBaseSelection.ToList();
-            foreach (var control in hitControls.Where(control => merged.All(selected => selected.Id != control.Id)))
-                merged.Add(control);
-
-            VM.SelectControls(merged, hitControls.LastOrDefault() ?? VM.SelectedControl);
+            if (!additive && !toggle) VM.ClearSelection();
         }
         else
         {
-            VM.SelectControls(hitControls, hitControls.LastOrDefault());
+            var hits = GetControlsInSelection(rectangle);
+            if (toggle)
+            {
+                foreach (var control in hits)
+                    if (selected.Any(item => item.Id == control.Id)) selected.RemoveAll(item => item.Id == control.Id);
+                    else selected.Add(control);
+                VM.SelectControls(selected, hits.LastOrDefault(c => selected.Contains(c)) ?? selected.LastOrDefault());
+            }
+            else if (additive)
+            {
+                foreach (var control in hits.Where(c => selected.All(item => item.Id != c.Id))) selected.Add(control);
+                VM.SelectControls(selected, hits.LastOrDefault() ?? selected.LastOrDefault());
+            }
+            else VM.SelectControls(hits, hits.LastOrDefault());
         }
-
-        ClearGuideOverlay();
-        ClearSelectionOverlay();
-        _marqueeBaseSelection.Clear();
-        RenderDesigner();
-        e.Handled = true;
+        ClearGuideOverlay(); ClearSelectionOverlay(); RenderDesigner(); e.Handled = true;
     }
 
     private void DesignerCanvas_DragOver(object? sender, DragEventArgs e)
@@ -2726,6 +2681,8 @@ public partial class MainWindow : Window
             ClearGuideOverlay();
             return;
         }
+
+        if (e.Data.Contains(ControlTypeDataFormat)) BeginToolboxInteraction();
 
         e.DragEffects = e.Data.Contains(ControlTypeDataFormat)
             ? DragDropEffects.Copy
@@ -2751,33 +2708,40 @@ public partial class MainWindow : Window
         if (!e.Data.Contains(ControlTypeDataFormat))
             return;
 
-        var type = e.Data.Get(ControlTypeDataFormat) as string;
-        if (string.IsNullOrWhiteSpace(type))
-            return;
-
-        var targetDocumentId = e.Data.Contains(ControlSourceDocumentDataFormat)
-            ? e.Data.Get(ControlSourceDocumentDataFormat) as string ?? VM.ActiveDocumentId
-            : VM.ActiveDocumentId;
-
-        // При drop ищем самый глубокий контейнер под курсором и уже в его локальных координатах
-        // создаем новый контрол. Благодаря этому drag работает и для вложенных Border/Grid.
-        var position = GetDesignCanvasPosition(e);
-        var targetContainer = VM.FindDeepestContainerAt(position.X, position.Y);
-        var created = VM.TryCreateControlFromToolboxDrop(
-            type,
-            position.X,
-            position.Y,
-            targetContainer?.Id,
-            IsSnapBypassed(e.KeyModifiers),
-            targetDocumentId);
-        if (created is null)
+        BeginToolboxInteraction();
+        try
         {
-            e.DragEffects = DragDropEffects.None;
-            ClearGuideOverlay();
-            return;
-        }
+            var type = e.Data.Get(ControlTypeDataFormat) as string;
+            if (string.IsNullOrWhiteSpace(type))
+                return;
 
-        ClearGuideOverlay();
+            var targetDocumentId = e.Data.Contains(ControlSourceDocumentDataFormat)
+                ? e.Data.Get(ControlSourceDocumentDataFormat) as string ?? VM.ActiveDocumentId
+                : VM.ActiveDocumentId;
+
+            // При drop ищем самый глубокий контейнер под курсором и уже в его локальных координатах
+            // создаем новый контрол. Благодаря этому drag работает и для вложенных Border/Grid.
+            var position = GetDesignCanvasPosition(e);
+            var targetContainer = VM.FindDeepestContainerAt(position.X, position.Y);
+            var created = VM.TryCreateControlFromToolboxDrop(
+                type,
+                position.X,
+                position.Y,
+                targetContainer?.Id,
+                IsSnapBypassed(e.KeyModifiers),
+                targetDocumentId);
+            if (created is null)
+            {
+                e.DragEffects = DragDropEffects.None;
+                ClearGuideOverlay();
+                return;
+            }
+
+            _designerInteractionControlId = created.Id;
+            ClearGuideOverlay();
+            e.Handled = true;
+        }
+        finally { FinishToolboxInteraction("toolbox-drop"); }
     }
 
     private void RenderDesigner()
@@ -3483,6 +3447,7 @@ public partial class MainWindow : Window
             Stroke = new SolidColorBrush(Color.Parse("#2563EB")),
             StrokeThickness = 2,
             StrokeDashArray = new AvaloniaList<double> { 5, 3 },
+            Name = "DesignerSelectionMarquee",
             Fill = new SolidColorBrush(Color.FromArgb(36, 37, 99, 235)),
             IsHitTestVisible = false
         };
@@ -7620,6 +7585,8 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (_designerInteractionMode != DesignerInteractionMode.None || e.Handled) return;
+
         var pointerProperties = e.GetCurrentPoint(border).Properties;
         var wrapperKnown = _wrapperByControlId.ContainsKey(model.Id);
         VM.TraceDocumentDebug(
@@ -7722,7 +7689,7 @@ public partial class MainWindow : Window
         VM.BeginUndoBatch();
         VM.BeginPropertyGridLiveGesture();
 
-        e.Pointer.Capture(border);
+        CaptureDesignerInteraction(DesignerInteractionMode.MovingControl, e, border, model.Id);
         VM.TraceDocumentDebug(
             "DRAG_START_ACCEPTED",
             $"control={model.Name}:{model.Id}; roots={_dragSelectionRoots.Count}; activeDocument={VM.ActiveDocumentId}; canvas={VM.CanvasRenderedDocumentId}; session={_dragGestureSessionId}",
@@ -7738,6 +7705,7 @@ public partial class MainWindow : Window
 
         if (!_isDragging || _draggedBorder is null || _draggedModel is null || _dragSelectionRoots.Count == 0)
             return;
+        if (!DesignerPointerCanContinue(e)) return;
         if (!string.Equals(_dragGestureSessionId, VM.DocumentSessionId, StringComparison.Ordinal))
         {
             VM.TraceDocumentDebug("Drag rejected", $"reason=sessionMismatch; dragSession={_dragGestureSessionId}; currentSession={VM.DocumentSessionId}", toOutput: true, warning: true);
@@ -7844,8 +7812,10 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (!_isDragging || !ReferenceEquals(sender, _draggedBorder) || !ReferenceEquals(e.Pointer, _designerPointer)) return;
+        if (e.GetCurrentPoint(DesignerCanvas).Properties.IsLeftButtonPressed) return;
         _pendingContextMenuControlId = string.Empty;
-        e.Pointer.Capture(null);
+        FinishDesignerInteraction("released", e);
 
         if (!string.Equals(_dragGestureSessionId, VM.DocumentSessionId, StringComparison.Ordinal))
         {
@@ -7894,6 +7864,7 @@ public partial class MainWindow : Window
         VM.CommitUndoBatch();
         VM.TraceDocumentDebug("Drag committed", $"roots={committedRootCount}; session={VM.DocumentSessionId}", toOutput: false);
         RenderDesigner();
+        e.Handled = true;
     }
 
     private void ResizeHandle_PointerPressed(object? sender, PointerPressedEventArgs e)
@@ -7903,6 +7874,8 @@ public partial class MainWindow : Window
 
         if (sender is not Border border || border.Tag is not DesignControlModel model)
             return;
+
+        if (e.Handled || _designerInteractionMode != DesignerInteractionMode.None || !e.GetCurrentPoint(border).Properties.IsLeftButtonPressed) return;
 
         if (model.IsLocked || !VM.CanResizeAxamlControl(model))
             return;
@@ -7925,7 +7898,7 @@ public partial class MainWindow : Window
         VM.BeginUndoBatch();
         VM.BeginPropertyGridLiveGesture();
 
-        e.Pointer.Capture(border);
+        CaptureDesignerInteraction(DesignerInteractionMode.ResizingControl, e, border, model.Id);
         e.Handled = true;
     }
 
@@ -7936,6 +7909,7 @@ public partial class MainWindow : Window
 
         if (!_isResizing || _resizingModel is null)
             return;
+        if (!DesignerPointerCanContinue(e)) return;
         if (!string.Equals(_resizeGestureSessionId, VM.DocumentSessionId, StringComparison.Ordinal))
         {
             _isResizing = false;
@@ -7983,6 +7957,9 @@ public partial class MainWindow : Window
         if (VM.IsUserPreviewMode || _isPanningViewport)
             return;
 
+        if (!_isResizing || !ReferenceEquals(e.Pointer, _designerPointer)) return;
+        if (e.GetCurrentPoint(DesignerCanvas).Properties.IsLeftButtonPressed) return;
+        FinishDesignerInteraction("released", e);
         if (!string.Equals(_resizeGestureSessionId, VM.DocumentSessionId, StringComparison.Ordinal))
         {
             _isResizing = false;
@@ -8022,6 +7999,7 @@ public partial class MainWindow : Window
         if (VM.IsUserPreviewMode || _isPanningViewport)
             return;
 
+        if (e.Handled || _designerInteractionMode != DesignerInteractionMode.None || !e.GetCurrentPoint(DesignResizeHandle).Properties.IsLeftButtonPressed) return;
         _isResizingDesignSurface = true;
         _resizeGestureSessionId = VM.DocumentSessionId;
         _designResizeStart = GetDesignHostPosition(e);
@@ -8029,8 +8007,7 @@ public partial class MainWindow : Window
         _designStartHeight = VM.DesignHeight;
         VM.BeginUndoBatch();
 
-        if (sender is InputElement element)
-            e.Pointer.Capture(element);
+        CaptureDesignerInteraction(DesignerInteractionMode.ResizingSurface, e, DesignResizeHandle);
 
         e.Handled = true;
     }
@@ -8042,6 +8019,7 @@ public partial class MainWindow : Window
 
         if (!_isResizingDesignSurface)
             return;
+        if (!DesignerPointerCanContinue(e)) return;
         if (!string.Equals(_resizeGestureSessionId, VM.DocumentSessionId, StringComparison.Ordinal))
         {
             _isResizingDesignSurface = false;
@@ -8062,6 +8040,9 @@ public partial class MainWindow : Window
         if (VM.IsUserPreviewMode || _isPanningViewport)
             return;
 
+        if (!_isResizingDesignSurface || !ReferenceEquals(e.Pointer, _designerPointer)) return;
+        if (e.GetCurrentPoint(DesignerCanvas).Properties.IsLeftButtonPressed) return;
+        FinishDesignerInteraction("released", e);
         if (!string.Equals(_resizeGestureSessionId, VM.DocumentSessionId, StringComparison.Ordinal))
         {
             _isResizingDesignSurface = false;

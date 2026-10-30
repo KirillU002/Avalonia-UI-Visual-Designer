@@ -8158,6 +8158,9 @@ public partial class MainWindowViewModel : ObservableObject
         if (_isEditingPropertyGrid)
             EndPropertyGridTextEdit();
 
+        // A pointer gesture from the previous form must not suppress edits in the new session.
+        _undoBatchDepth = 0;
+        _undoBatchTrackHistory = false;
         _isPropertyGridLiveGesture = false;
         _hasPendingPropertyGridLiveRefresh = false;
         _propertyGridLiveGestureSessionId = "";
