@@ -44,6 +44,7 @@ public partial class MainWindowViewModel
 
     private IEnumerable<PropertyGridRowViewModel> NativePlacementRows(DesignControlModel control)
     {
+        yield return CreateReadOnlyRow(PropertyGridCategoryLayout, nameof(control.ParentId), "ParentId", string.IsNullOrEmpty(control.ParentId) ? "(корень)" : control.ParentId, "Id родительского контейнера. Пустой ParentId означает корневой Grid формы.");
         yield return CreateEnumRow(PropertyGridCategoryLayout, nameof(control.WidthMode), "Width mode", control.WidthMode, AvailableSizeModes, "Auto — размер определяет Avalonia layout; Fixed — поле Width.", v => control.WidthMode = v);
         yield return CreateEnumRow(PropertyGridCategoryLayout, nameof(control.HeightMode), "Height mode", control.HeightMode, AvailableSizeModes, "Auto — размер определяет Avalonia layout; Fixed — поле Height.", v => control.HeightMode = v);
         if (GetLayoutModeForParent(control.ParentId) != DesignerLayoutModes.Grid) yield break;

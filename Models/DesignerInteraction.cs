@@ -3,7 +3,8 @@ namespace FormDesigner.Models;
 public enum DesignerInteractionMode
 {
     None, Selecting, MarqueeSelecting, MovingControl, ResizingControl, ResizingSurface, ToolboxDragDrop,
-    SelectingGridRow, SelectingGridColumn, ResizingGridRow, ResizingGridColumn
+    SelectingGridRow, SelectingGridColumn, ResizingGridRow, ResizingGridColumn,
+    GridControlPending, MovingGridControl
 }
 
 public sealed record DesignerPointerDiagnostic(string Event, string ControlId, string PointerPosition,

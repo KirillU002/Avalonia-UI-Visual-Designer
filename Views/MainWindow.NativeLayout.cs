@@ -19,10 +19,12 @@ public partial class MainWindow
             VM.ApplyGridTrackResizePreview(tree);
             VM.NativeLayoutBounds = tree.Measure(width, height);
             VM.NativeGridMeasurements = tree.MeasuredGrids;
+            VM.NativeGridMeasurementKey = VM.GridDropLayoutKey;
         }
         catch (Exception ex) when (ex is FormatException or ArgumentException or InvalidOperationException)
         {
             VM.NativeLayoutBounds = new Dictionary<string, Rect>();
+            VM.NativeGridMeasurementKey = "";
             VM.NativeGridMeasurements = new Dictionary<string, FormDesigner.DesignerSystem.AxamlRoundTrip.AxamlLayoutProjection.GridMeasurement>();
             VM.StatusText = "Не удалось построить Grid Layout: " + ex.Message;
         }

@@ -45,6 +45,7 @@ internal static partial class Program
         // Initialize the real UI dispatcher before any view model can create the
         // fallback dispatcher; IPC continuations must run on the actual UI thread.
         EnsureAvaloniaRuntimeInitialized();
+        if (args.Contains("--grid-drop-checks")) return RunGridDropChecks();
         if (args.Contains("--grid-editor-checks")) return RunGridEditorChecks();
         if (args.Contains("--native-grid-checks")) return RunNativeGridChecks();
         if (args.Contains("--designer-pointer-checks")) return RunDesignerPointerChecks();
@@ -68,6 +69,8 @@ internal static partial class Program
         {
             new("NativeGridPhase2Export", ConfigureNativeGridExport, AssertNativeGridExport, RequiresRealDataGrid: true),
             new("GridEditorPhase3Export", ConfigureGridEditorPhase3Export, AssertNativeGridExport, RequiresRealDataGrid: true),
+            new("GridDropPhase4Export", ConfigureGridDropPhase4Export, AssertNativeGridExport, RequiresRealDataGrid: true),
+            new("GridDropPhase4EremexExport", ConfigureGridDropPhase4EremexExport, AssertGridDropEremexExport),
             new("NativeGridPhase2MixedExport", ConfigureNativeGridMixedExport, AssertNativeGridMixedExport, RequiresRealDataGrid: true),
             new("NativeGridPhase2EremexExport", ConfigureNativeGridEremexExport, AssertNativeGridEremexExport),
             new("ToolboxStandardItemsExport", ConfigureToolboxStandardItems, AssertToolboxStandardItems),
@@ -7510,7 +7513,12 @@ internal static partial class Program
         vm.BindingSources.Add(source);
 
         var form = vm.ActiveFormDocument ?? throw new InvalidOperationException("Eremex DataGrid smoke form is missing.");
-        var grid = vm.TryCreateControlFromToolboxDrop("Eremex.DataGridControl", 64, 72, null, false, form.Id)
+        // Export-only native fixtures are authored without a rendered Designer. Visual Grid drops
+        // require fresh measured geometry and are covered separately by routed GridDrop checks.
+        DesignControlModel? AddGrid(double x, double y) => vm.UsesNativeLayout
+            ? vm.CreateControl("Eremex.DataGridControl", 0, 0)
+            : vm.TryCreateControlFromToolboxDrop("Eremex.DataGridControl", x, y, null, false, form.Id);
+        var grid = AddGrid(64, 72)
             ?? throw new InvalidOperationException("Eremex DataGridControl was not created from Toolbox.");
         grid.Name = "EremexDataGrid1";
         grid.Width = 700;
@@ -7522,7 +7530,7 @@ internal static partial class Program
         SetCustomProperty(grid, "AllowSorting", true);
         SetCustomProperty(grid, "RowMinHeight", 30d);
 
-        var emptyGrid = vm.TryCreateControlFromToolboxDrop("Eremex.DataGridControl", 64, 486, null, false, form.Id)
+        var emptyGrid = AddGrid(64, 486)
             ?? throw new InvalidOperationException("Empty Eremex DataGridControl was not created from Toolbox.");
         emptyGrid.Name = "EremexDataGridEmpty";
         emptyGrid.Width = 700;
@@ -7530,7 +7538,7 @@ internal static partial class Program
         emptyGrid.BindingSourceId = "";
         emptyGrid.AutoGenerateColumns = true;
 
-        var manualColumnsGrid = vm.TryCreateControlFromToolboxDrop("Eremex.DataGridControl", 792, 72, null, false, form.Id)
+        var manualColumnsGrid = AddGrid(792, 72)
             ?? throw new InvalidOperationException("Manual-column Eremex DataGridControl was not created from Toolbox.");
         manualColumnsGrid.Name = "EremexDataGridManualColumns";
         manualColumnsGrid.Width = 420;

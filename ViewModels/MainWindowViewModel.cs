@@ -6657,6 +6657,13 @@ public partial class MainWindowViewModel : ObservableObject
     public void ReparentControl(DesignControlModel control, string? newParentId, double absoluteX, double absoluteY)
     {
         var normalizedParentId = NormalizeId(newParentId);
+        if (UsesNativeLayout && GetLayoutModeForParent(normalizedParentId) == DesignerLayoutModes.Grid)
+        {
+            var point = new Avalonia.Point(absoluteX, absoluteY);
+            var target = ResolveGridDropTarget(point, control);
+            if (target.ParentId == normalizedParentId) CommitGridControlDrop(control, target, point);
+            return;
+        }
 
         if (normalizedParentId == control.Id || IsDescendant(normalizedParentId, control.Id))
             return;
@@ -6859,6 +6866,13 @@ public partial class MainWindowViewModel : ObservableObject
             return null;
         }
 
+        if (UsesNativeLayout && GetLayoutModeForParent(parentId) == DesignerLayoutModes.Grid)
+        {
+            var point = new Avalonia.Point(x, y);
+            var target = ResolveGridDropTarget(point, CreateDefaultControl(type));
+            if (target.ParentId != NormalizeId(parentId)) return null;
+            return CommitGridToolboxDrop(type, target, point, targetDocumentId);
+        }
         return CreateControlCore(type, x, y, parentId, bypassGridSnap, activeDocumentId, "ToolboxDrop");
     }
 
@@ -6867,7 +6881,7 @@ public partial class MainWindowViewModel : ObservableObject
         return CreateControlCore(type, x, y, parentId, bypassGridSnap, ActiveDocumentId, "CreateControl");
     }
 
-    private DesignControlModel CreateControlCore(string type, double x, double y, string? parentId, bool bypassGridSnap, string documentId, string reason)
+    private DesignControlModel CreateControlCore(string type, double x, double y, string? parentId, bool bypassGridSnap, string documentId, string reason, GridDropTarget? gridTarget = null)
     {
         // Контрол всегда создается из стартового шаблона,
         // а координаты сразу привязываются к сетке и границам контейнера.
@@ -6876,7 +6890,11 @@ public partial class MainWindowViewModel : ObservableObject
         model.ParentId = NormalizeId(parentId);
         var parentLayoutMode = GetLayoutModeForParent(model.ParentId);
 
-        if (DesignerLayoutModes.IsAbsolute(parentLayoutMode))
+        if (gridTarget is not null)
+        {
+            ApplyGridDropPlacement(model, gridTarget);
+        }
+        else if (DesignerLayoutModes.IsAbsolute(parentLayoutMode))
         {
             var local = ToLocalPosition(model.ParentId, x, y);
             model.X = bypassGridSnap ? local.X : Snap(local.X);

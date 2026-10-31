@@ -2597,6 +2597,7 @@ public partial class MainWindow : Window
         var data = new DataObject();
         data.Set(ControlTypeDataFormat, item.Type);
         data.Set(ControlSourceDocumentDataFormat, VM.ActiveDocumentId);
+        data.Set(ToolboxGestureDataFormat, Guid.NewGuid().ToString("N"));
         try { await DragDrop.DoDragDrop(e, data, DragDropEffects.Copy); }
         finally { FinishToolboxInteraction("toolbox-drag-completed"); }
     }
@@ -2620,6 +2621,7 @@ public partial class MainWindow : Window
 
     private void DesignerCanvas_PointerMoved(object? sender, PointerEventArgs e)
     {
+        if (IsGridControlInteraction) { GridControl_PointerMoved(e); return; }
         if (!_isMarqueeSelecting || _isPanningViewport || VM.IsUserPreviewMode) return;
         if (!DesignerPointerCanContinue(e)) return;
         _marqueeCurrent = GetDesignCanvasPosition(e);
@@ -2640,6 +2642,7 @@ public partial class MainWindow : Window
 
     private void DesignerCanvas_PointerReleased(object? sender, PointerReleasedEventArgs e)
     {
+        if (IsGridControlInteraction) { GridControl_PointerReleased(e); return; }
         if (!_isMarqueeSelecting || !ReferenceEquals(e.Pointer, _designerPointer)) return;
         if (e.GetCurrentPoint(DesignerCanvas).Properties.IsLeftButtonPressed) return;
         if (_designerInteractionSession != VM.DocumentSessionId) { CancelDesignerInteraction("release-session-changed"); return; }
@@ -2686,6 +2689,9 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (TryNativeGridToolboxPreview(e)) return;
+        if (IsSourceGridDropBlocked(GetDesignCanvasPosition(e)))
+        { e.DragEffects = DragDropEffects.None; e.Handled = true; VM.StatusText = "Перенос в ячейки импортированного AXAML недоступен. Исходная разметка сохранена."; ClearGuideOverlay(); return; }
         if (e.Data.Contains(ControlTypeDataFormat)) BeginToolboxInteraction();
 
         e.DragEffects = e.Data.Contains(ControlTypeDataFormat)
@@ -2712,6 +2718,9 @@ public partial class MainWindow : Window
         if (!e.Data.Contains(ControlTypeDataFormat))
             return;
 
+        if (IsSourceGridDropBlocked(GetDesignCanvasPosition(e)))
+        { e.DragEffects = DragDropEffects.None; e.Handled = true; VM.StatusText = "Перенос в ячейки импортированного AXAML недоступен. Исходная разметка сохранена."; return; }
+        if (TryNativeGridToolboxDrop(e)) return;
         BeginToolboxInteraction();
         try
         {
@@ -2816,6 +2825,7 @@ public partial class MainWindow : Window
 
             RenderIdleSelectionOverlay();
             RenderNativeGridEditorOverlay();
+            RestoreNativeGridDropOverlay();
             RenderMiniMap();
             VM.MarkCanvasRenderedDocument(
                 "RenderDesigner",
@@ -3247,6 +3257,11 @@ public partial class MainWindow : Window
 
     private void RenderGridCellDropHint(DesignControlModel? host, Rect bounds, Point pointerPosition)
     {
+        if (VM.UsesNativeLayout)
+        {
+            UpdateNativeGridDropPreview(pointerPosition, _draggedModel ?? VM.CreateGridDropPrototype(DesignerControlTypes.Button));
+            return;
+        }
         var columns = Math.Max(1, host?.Columns ?? VM.SurfaceLayoutColumns);
         var rows = Math.Max(1, host?.Rows ?? VM.SurfaceLayoutRows);
         var cellWidth = Math.Max(1, bounds.Width / columns);
@@ -7668,8 +7683,8 @@ public partial class MainWindow : Window
 
         if (VM.UsesNativeLayout && !VM.IsAbsoluteLayoutParent(model.ParentId))
         {
-            VM.SelectSingleControl(model);
-            VM.StatusText = "Элемент выбран. В Phase 2 размещение в Grid меняется через Grid.Row/Grid.Column в Inspector.";
+            if (VM.GetLayoutModeForParent(model.ParentId) == DesignerLayoutModes.Grid) BeginGridControlInteraction(model, e);
+            else { VM.SelectSingleControl(model); VM.StatusText = "В этой фазе перенос реализован между Grid. Для других layout используйте Inspector."; }
             e.Handled = true;
             return;
         }

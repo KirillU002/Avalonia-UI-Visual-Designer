@@ -1,4 +1,4 @@
-param([Parameter(Mandatory=$true)][string]$ProjectPath)
+param([Parameter(Mandatory=$true)][string]$ProjectPath, [switch]$VerifyGridDropPlacement)
 $ErrorActionPreference = 'Stop'
 $probeRoot = (Resolve-Path -LiteralPath $ProjectPath).Path
 $programPath = Join-Path $probeRoot 'Program.cs'
@@ -35,6 +35,7 @@ public static class GeneratedLayoutProbe
             var grid = window.GetVisualDescendants().OfType<DataGrid>().Single();
             if (!window.GetVisualDescendants().OfType<TextBox>().Any() || !window.GetVisualDescendants().OfType<Button>().Any()) throw new Exception("Generated controls were lost.");
             var before = grid.Bounds.Size;
+            // VERIFY_GRID_DROP
             window.Width += 240; window.Height += 120; window.UpdateLayout(); Pump(200);
             var after = grid.Bounds.Size;
             if (after.Width < before.Width + 220 || after.Height < before.Height + 100) throw new Exception("Generated Grid did not resize: " + before + " -> " + after);
@@ -51,6 +52,14 @@ public static class GeneratedLayoutProbe
     }
 }
 '@
+if ($VerifyGridDropPlacement) {
+    $probe = $probe.Replace('// VERIFY_GRID_DROP', @'
+            var moved = window.GetVisualDescendants().OfType<Button>().Single(b => b.Name == "NativeButton");
+            if (moved.Parent != root || Grid.GetRow(moved) != 1 || Grid.GetColumn(moved) != 1 || moved.Bounds.X <= 0 || moved.Bounds.Y <= 0)
+                throw new Exception("The dropped/moved Button did not reach Grid[1,1] in the generated application.");
+            Console.WriteLine("GRID_DROP_RUNTIME_OK id=" + moved.Name + " row=" + Grid.GetRow(moved) + " column=" + Grid.GetColumn(moved) + " bounds=" + moved.Bounds);
+'@)
+}
 try {
     [System.IO.File]::WriteAllText($programPath, $original.Replace($marker, 'global::GeneratedLayoutProbe.Start(BuildAvaloniaApp(), args)'), [System.Text.UTF8Encoding]::new($false))
     [System.IO.File]::WriteAllText($probePath, $probe, [System.Text.UTF8Encoding]::new($false))

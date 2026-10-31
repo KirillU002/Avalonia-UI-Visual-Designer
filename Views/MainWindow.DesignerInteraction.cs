@@ -33,7 +33,12 @@ public partial class MainWindow
         DesignerCanvas.AddHandler(InputElement.PointerReleasedEvent, TraceDesignerReleased, RoutingStrategies.Tunnel, true);
         DesignResizeHandle.AddHandler(InputElement.PointerPressedEvent, TraceDesignerPressed, RoutingStrategies.Tunnel, true);
         DesignResizeHandle.AddHandler(InputElement.PointerReleasedEvent, TraceDesignerReleased, RoutingStrategies.Tunnel, true);
-        DesignerCanvas.AddHandler(DragDrop.DragLeaveEvent, (_, _) => FinishToolboxInteraction("toolbox-leave"), RoutingStrategies.Bubble, true);
+        DesignerCanvas.AddHandler(DragDrop.DragLeaveEvent, (_, e) =>
+        {
+            var p = GetDesignCanvasPosition(e);
+            if (!VM.UsesNativeLayout || p.X < 0 || p.Y < 0 || p.X >= VM.PreviewFormWidth || p.Y >= VM.PreviewFormHeight)
+                FinishToolboxInteraction("toolbox-leave");
+        }, RoutingStrategies.Bubble, true);
         Closing += (_, _) => CancelDesignerInteraction("window-closing", false);
         Closed += (_, _) => CancelDesignerInteraction("window-closed", false);
     }
@@ -106,6 +111,7 @@ public partial class MainWindow
         if (_designerInteractionMode == DesignerInteractionMode.None) return;
         var mode = _designerInteractionMode;
         var sameSession = DataContext is MainWindowViewModel && _designerInteractionSession == VM.DocumentSessionId;
+        if (IsGridControlInteraction || mode == DesignerInteractionMode.ToolboxDragDrop) CancelNativeGridDrag(reason);
         if (IsGridEditorPointerInteraction)
         {
             _attachedViewModel?.FinishGridTrackResize(false);
@@ -155,6 +161,7 @@ public partial class MainWindow
     private void FinishToolboxInteraction(string reason)
     {
         if (_designerInteractionMode != DesignerInteractionMode.ToolboxDragDrop) return;
+        CancelNativeGridDrag(reason);
         _lastDesignerLeftPressed = false;
         FinishDesignerInteraction(reason);
         ClearGuideOverlay();
