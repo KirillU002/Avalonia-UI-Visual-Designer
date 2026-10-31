@@ -45,6 +45,7 @@ internal static partial class Program
         // Initialize the real UI dispatcher before any view model can create the
         // fallback dispatcher; IPC continuations must run on the actual UI thread.
         EnsureAvaloniaRuntimeInitialized();
+        if (args.Contains("--nested-layout-checks")) return RunNestedLayoutChecks();
         if (args.Contains("--preview-memory-dump")) return RunPreviewMemoryDump();
         if (args.Contains("--preview-memory-checks")) return RunPreviewMemoryChecks();
         if (args.Contains("--stabilization-checks")) return RunStabilizationChecks();
@@ -73,6 +74,9 @@ internal static partial class Program
             new("NativeGridPhase2Export", ConfigureNativeGridExport, AssertNativeGridExport, RequiresRealDataGrid: true),
             new("GridEditorPhase3Export", ConfigureGridEditorPhase3Export, AssertNativeGridExport, RequiresRealDataGrid: true),
             new("GridDropPhase4Export", ConfigureGridDropPhase4Export, AssertNativeGridExport, RequiresRealDataGrid: true),
+            new("NestedLayoutPhase5Export", ConfigureNestedPhase5Export, AssertNestedPhase5Export, RequiresRealDataGrid: true),
+            new("NestedLayoutPhase5EremexExport", ConfigureNestedPhase5EremexExport, AssertNestedPhase5EremexExport, RequiresRealDataGrid: true),
+            new("NestedLayoutPhase5MultiFormExport", ConfigureNestedPhase5MultiFormExport, AssertNestedPhase5MultiFormExport, RequiresRealDataGrid: true),
             new("GridDropPhase4EremexExport", ConfigureGridDropPhase4EremexExport, AssertGridDropEremexExport),
             new("NativeGridPhase2MixedExport", ConfigureNativeGridMixedExport, AssertNativeGridMixedExport, RequiresRealDataGrid: true),
             new("NativeGridPhase2EremexExport", ConfigureNativeGridEremexExport, AssertNativeGridEremexExport),

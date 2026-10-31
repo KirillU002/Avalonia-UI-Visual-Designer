@@ -31,7 +31,14 @@ public partial class MainWindowViewModel
         model.WidthMode = model.HeightMode = "Auto";
         if (CanHostChildren(model) || model.Type == DesignerControlTypes.DataGrid || !string.IsNullOrEmpty(model.PluginId))
             model.VerticalAlignment = "Stretch";
-        if (CanHostChildren(model)) model.LayoutSpacing = 0;
+        if (CanHostChildren(model))
+        {
+            model.LayoutSpacing = 0;
+            // Real authored minimums keep a new empty Auto panel targetable inside flow.
+            // They grow with content and are exported; no fake designer coordinates/sizes.
+            if (!model.CustomProperties.Any(p => p.Key == LayoutPlacementProperties.MinWidthKey)) LayoutPlacementProperties.SetLiteral(model, LayoutPlacementProperties.MinWidthKey, 48d);
+            if (!model.CustomProperties.Any(p => p.Key == LayoutPlacementProperties.MinHeightKey)) LayoutPlacementProperties.SetLiteral(model, LayoutPlacementProperties.MinHeightKey, 32d);
+        }
     }
 
     private void PlaceInNativeGrid(DesignControlModel control)
@@ -42,11 +49,12 @@ public partial class MainWindowViewModel
         StatusText = "Элемент добавлен в Grid: строка 0, столбец 0. Размещение и spans настраиваются в Inspector.";
     }
 
-    private IEnumerable<PropertyGridRowViewModel> NativePlacementRows(DesignControlModel control)
+    private IEnumerable<PropertyGridRowViewModel> NativePlacementRows(DesignControlModel control, bool layoutOnly)
     {
         yield return CreateReadOnlyRow(PropertyGridCategoryLayout, nameof(control.ParentId), "ParentId", string.IsNullOrEmpty(control.ParentId) ? "(корень)" : control.ParentId, "Id родительского контейнера. Пустой ParentId означает корневой Grid формы.");
         yield return CreateEnumRow(PropertyGridCategoryLayout, nameof(control.WidthMode), "Width mode", control.WidthMode, AvailableSizeModes, "Auto — размер определяет Avalonia layout; Fixed — поле Width.", v => control.WidthMode = v);
         yield return CreateEnumRow(PropertyGridCategoryLayout, nameof(control.HeightMode), "Height mode", control.HeightMode, AvailableSizeModes, "Auto — размер определяет Avalonia layout; Fixed — поле Height.", v => control.HeightMode = v);
+        foreach (var row in NativeContainerRows(control, layoutOnly)) yield return row;
         if (GetLayoutModeForParent(control.ParentId) != DesignerLayoutModes.Grid) yield break;
         yield return CreateNumberRow(PropertyGridCategoryLayout, nameof(control.GridRow), "Grid.Row", control.GridRow, "Индекс строки родительского Grid.", v => control.GridRow = Math.Max(0, (int)v));
         yield return CreateNumberRow(PropertyGridCategoryLayout, nameof(control.GridColumn), "Grid.Column", control.GridColumn, "Индекс столбца родительского Grid.", v => control.GridColumn = Math.Max(0, (int)v));
@@ -80,7 +88,10 @@ public partial class MainWindowViewModel
     private string NativeSizeAttributes(DesignControlModel control)
     {
         return (control.WidthMode == "Auto" ? "" : $" Width=\"{ToInvariant(control.Width)}\"")
-            + (control.HeightMode == "Auto" ? "" : $" Height=\"{ToInvariant(control.Height)}\"");
+            + (control.HeightMode == "Auto" ? "" : $" Height=\"{ToInvariant(control.Height)}\"")
+            + string.Concat(new[] { LayoutPlacementProperties.MinWidthKey, LayoutPlacementProperties.MinHeightKey }
+                .Where(key => control.CustomProperties.Any(p => p.Key == key))
+                .Select(key => $" {key}=\"{EscapeXml(LayoutPlacementProperties.ReadString(control, key) ?? ToInvariant(LayoutPlacementProperties.Minimum(control, key)))}\""));
     }
 
     private string NativePlacementAttributes(DesignControlModel control)
@@ -91,6 +102,8 @@ public partial class MainWindowViewModel
             result.Append($" Grid.Row=\"{control.GridRow}\" Grid.Column=\"{control.GridColumn}\" Grid.RowSpan=\"{control.GridRowSpan}\" Grid.ColumnSpan=\"{control.GridColumnSpan}\"");
         else if (mode == DesignerLayoutModes.Absolute)
             result.Append($" Canvas.Left=\"{ToInvariant(control.X)}\" Canvas.Top=\"{ToInvariant(control.Y)}\"");
+        else if (mode == DesignerLayoutModes.Dock)
+            result.Append($" DockPanel.Dock=\"{EscapeXml(LayoutPlacementProperties.ReadString(control, LayoutPlacementProperties.DockKey) ?? "Left")}\"");
         result.Append(AlignmentAttributes(control));
         result.Append($" Margin=\"{EscapeXml(control.Margin)}\"");
         return result.ToString();

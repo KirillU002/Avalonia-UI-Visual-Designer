@@ -40,6 +40,9 @@ public partial class MainWindowViewModel
         CancelGridTrackRemoval(); FinishGridTrackResize(false); _gridEditorContext = "";
         NativeGridMeasurements = new Dictionary<string, AxamlLayoutProjection.GridMeasurement>();
         NativeGridMeasurementKey = "";
+        NativeContainerMeasurements = new Dictionary<string, AxamlLayoutProjection.ContainerMeasurement>();
+        NativeVisualHits = Array.Empty<AxamlLayoutProjection.LayoutVisualHit>();
+        _nativeContainerGeometry = new Dictionary<string, string>();
     }
 
     private void BeginGridEditorUndoBatch()

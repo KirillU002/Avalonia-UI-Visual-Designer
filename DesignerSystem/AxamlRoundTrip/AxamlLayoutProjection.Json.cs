@@ -15,7 +15,7 @@ public static partial class AxamlLayoutProjection
     public sealed record GridMeasurement(Rect Bounds, IReadOnlyList<GridTrackMeasurement> Rows, IReadOnlyList<GridTrackMeasurement> Columns);
     // JSON v2 uses the same native panels and measurement root as source projection.
     // This is a tree adapter, not an arithmetic implementation of Avalonia layout.
-    public sealed record JsonLayoutTree(Panel Root, IReadOnlyDictionary<string, Control> Controls,
+    public sealed partial record JsonLayoutTree(Panel Root, IReadOnlyDictionary<string, Control> Controls,
         IReadOnlyDictionary<string, string> Parents)
     {
         public IReadOnlyDictionary<string, Grid> GridPanels { get; init; } = new Dictionary<string, Grid>();
@@ -35,6 +35,7 @@ public static partial class AxamlLayoutProjection
                         grid.RowDefinitions.Select(row => new GridTrackMeasurement(row.ActualHeight, row.Height.ToString())).ToArray(),
                         grid.ColumnDefinitions.Select(column => new GridTrackMeasurement(column.ActualWidth, column.Width.ToString())).ToArray());
                 });
+                CaptureDropGeometry();
                 return Controls.ToDictionary(pair => pair.Key, pair =>
                 {
                     var parent = Parents[pair.Key];
@@ -55,6 +56,7 @@ public static partial class AxamlLayoutProjection
         var byId = models.ToDictionary(c => c.Id, StringComparer.Ordinal);
         var views = new Dictionary<string, Control>(StringComparer.Ordinal);
         var grids = new Dictionary<string, Grid>(StringComparer.Ordinal);
+        var panels = new Dictionary<string, Panel>(StringComparer.Ordinal);
         var visiting = new HashSet<string>(StringComparer.Ordinal);
         foreach (var model in models)
             if (!string.IsNullOrEmpty(model.ParentId) && !byId.ContainsKey(model.ParentId))
@@ -78,6 +80,7 @@ public static partial class AxamlLayoutProjection
                 {
                     Orientation = orientation == "Horizontal" ? Orientation.Horizontal : Orientation.Vertical
                 },
+                DesignerLayoutModes.Dock => new DockPanel(),
                 _ => new Canvas()
             };
         }
@@ -94,6 +97,8 @@ public static partial class AxamlLayoutProjection
                 var mode = string.IsNullOrEmpty(model.ChildLayoutMode) ? DesignerLayoutModes.GetModeForControlType(model.Type) : model.ChildLayoutMode;
                 var panel = PanelFor(mode, model.GridRowDefinitions, model.GridColumnDefinitions, model.Rows, model.Columns, model.LayoutOrientation, model.LayoutSpacing);
                 if (panel is Grid grid) grids[model.Id] = grid;
+                if (panel is DockPanel dock) dock.LastChildFill = LayoutPlacementProperties.LastChildFill(model);
+                panels[model.Id] = panel;
                 AddChildren(panel, children);
                 view = model.Type == DesignerControlTypes.Group ? panel : new Border
                 {
@@ -115,13 +120,14 @@ public static partial class AxamlLayoutProjection
 
         void AddChildren(Panel panel, IEnumerable<DesignControlModel> children)
         {
-            if (panel is StackPanel) children = children.OrderBy(c => c.StackOrder);
+            if (panel is StackPanel or WrapPanel or DockPanel) children = children.OrderBy(c => c.StackOrder);
             foreach (var child in children)
             {
                 var view = Build(child);
                 Grid.SetRow(view, Math.Max(0, child.GridRow)); Grid.SetColumn(view, Math.Max(0, child.GridColumn));
                 Grid.SetRowSpan(view, Math.Max(1, child.GridRowSpan)); Grid.SetColumnSpan(view, Math.Max(1, child.GridColumnSpan));
                 if (panel is Canvas) { Canvas.SetLeft(view, child.X); Canvas.SetTop(view, child.Y); }
+                if (panel is DockPanel) DockPanel.SetDock(view, LayoutPlacementProperties.GetDock(child));
                 panel.Children.Add(view);
             }
         }
@@ -130,9 +136,14 @@ public static partial class AxamlLayoutProjection
             document.SurfaceLayoutRows, document.SurfaceLayoutColumns, document.SurfaceLayoutOrientation, document.SurfaceLayoutSpacing);
         root.Name = document.SurfaceLayoutMode == DesignerLayoutModes.Absolute ? "RootCanvas" : "RootLayout";
         if (root is Grid rootGrid) grids[""] = rootGrid;
+        panels[""] = root;
         AddChildren(root, models.Where(c => string.IsNullOrEmpty(c.ParentId)));
         if (views.Count != models.Count) throw new InvalidOperationException("Layout: дерево содержит недоступные или циклические элементы.");
-        return new JsonLayoutTree(root, views, models.ToDictionary(c => c.Id, c => c.ParentId)) { GridPanels = grids };
+        return new JsonLayoutTree(root, views, models.ToDictionary(c => c.Id, c => c.ParentId))
+        {
+            GridPanels = grids, ContainerPanels = panels,
+            ModelVisibility = models.ToDictionary(c => c.Id, c => c.IsVisible && c.Opacity > 0.001)
+        };
     }
 
     public static string Definitions(string text, int count) => string.IsNullOrWhiteSpace(text)
@@ -140,6 +151,8 @@ public static partial class AxamlLayoutProjection
 
     public static void ApplyJsonLayout(DesignControlModel model, Control view, bool includeHidden = false)
     {
+        if (model.CustomProperties.Any(p => p.Key == LayoutPlacementProperties.MinWidthKey)) view.MinWidth = LayoutPlacementProperties.Minimum(model, LayoutPlacementProperties.MinWidthKey);
+        if (model.CustomProperties.Any(p => p.Key == LayoutPlacementProperties.MinHeightKey)) view.MinHeight = LayoutPlacementProperties.Minimum(model, LayoutPlacementProperties.MinHeightKey);
         if (model.WidthMode == "Auto") view.ClearValue(Control.WidthProperty); else view.Width = model.Width;
         if (model.HeightMode == "Auto") view.ClearValue(Control.HeightProperty); else view.Height = model.Height;
         // The existing runtime DataGrid factory returns Border -> Grid -> DataGrid.

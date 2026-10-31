@@ -3198,6 +3198,7 @@ public partial class MainWindow : Window
     {
         _highlightedContainerId = "";
         GuideOverlayCanvas.Children.Clear();
+        GuideOverlayCanvas.ClearValue(Visual.ZIndexProperty);
     }
 
     private void ClearSelectionOverlay()
@@ -7681,10 +7682,9 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (VM.UsesNativeLayout && !VM.IsAbsoluteLayoutParent(model.ParentId))
+        if (VM.UsesNativeLayout && !(VM.IsAbsoluteLayoutParent(model.ParentId) && VM.HasMultipleSelection && VM.IsControlSelected(model)))
         {
-            if (VM.GetLayoutModeForParent(model.ParentId) == DesignerLayoutModes.Grid) BeginGridControlInteraction(model, e);
-            else { VM.SelectSingleControl(model); VM.StatusText = "В этой фазе перенос реализован между Grid. Для других layout используйте Inspector."; }
+            BeginGridControlInteraction(model, e);
             e.Handled = true;
             return;
         }

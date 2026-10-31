@@ -10,6 +10,7 @@ public static class DesignerLayoutModes
     public const string Stack = "Stack";
     public const string Grid = "Grid";
     public const string Flex = "Flex";
+    public const string Dock = "Dock";
 
     public const string Vertical = "Vertical";
     public const string Horizontal = "Horizontal";
@@ -28,6 +29,7 @@ public static class DesignerLayoutModes
             Grid => Grid,
             Flex => Flex,
             Stack => Stack,
+            Dock => Dock,
             _ => Absolute
         };
     }
@@ -72,6 +74,8 @@ public static class DesignerLayoutModes
     {
         return NormalizeMode(value) is Stack or Flex;
     }
+
+    public static bool IsOrdered(string? value) => NormalizeMode(value) is Stack or Flex or Dock;
 
     public static string GetModeForControlType(string? controlType)
     {

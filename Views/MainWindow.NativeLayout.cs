@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Shapes;
+using Avalonia.Input;
 using Avalonia.Media;
 using FormDesigner.Models;
 using FormDesigner.ViewModels;
@@ -17,9 +18,7 @@ public partial class MainWindow
         {
             var tree = VM.BuildNativeLayout(CreatePreviewControl, includeHidden: !VM.IsUserPreviewMode);
             VM.ApplyGridTrackResizePreview(tree);
-            VM.NativeLayoutBounds = tree.Measure(width, height);
-            VM.NativeGridMeasurements = tree.MeasuredGrids;
-            VM.NativeGridMeasurementKey = VM.GridDropLayoutKey;
+            VM.UpdateNativeLayoutMeasurements(tree, width, height);
         }
         catch (Exception ex) when (ex is FormatException or ArgumentException or InvalidOperationException)
         {
@@ -49,5 +48,25 @@ public partial class MainWindow
             Fill = Brushes.Transparent, IsHitTestVisible = false
         });
         wrapper.BorderThickness = new Thickness(0);
+        if (!VM.IsUserPreviewMode && wrapper.Tag is DesignControlModel model
+            && model.Type is DesignerControlTypes.DataGrid or "Eremex.DataGridControl")
+        {
+            void Edge(double x, double y, double w, double h)
+            {
+                if (w <= 0 || h <= 0) return;
+                var edge = new Border { Name = "NativeGridDragFrame", Width = w, Height = h, Background = Brushes.Transparent,
+                    Tag = model, Cursor = new Cursor(StandardCursorType.SizeAll) };
+                edge.PointerPressed += (_, args) =>
+                {
+                    if (args.GetCurrentPoint(edge).Properties.IsLeftButtonPressed) Control_PointerPressed(wrapper, args);
+                };
+                Canvas.SetLeft(edge, x); Canvas.SetTop(edge, y); root.Children.Add(edge);
+            }
+            // Only the outer 4 DIP are designer interaction chrome. Preserve the bottom-right
+            // resize hit area and the grid's native header/cell gestures in its interior.
+            Edge(0, 0, width, 4); Edge(0, 4, 4, Math.Max(0, height - 4));
+            Edge(Math.Max(0, width - 4), 4, 4, Math.Max(0, height - 22));
+            Edge(4, Math.Max(0, height - 4), Math.Max(0, width - 22), 4);
+        }
     }
 }

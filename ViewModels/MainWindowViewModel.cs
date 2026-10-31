@@ -4406,7 +4406,7 @@ public partial class MainWindowViewModel : ObservableObject
     {
         var children = GetChildControls(parentId).ToList();
         var normalizedLayoutMode = DesignerLayoutModes.NormalizeMode(layoutMode);
-        if (DesignerLayoutModes.NormalizeMode(normalizedLayoutMode) == DesignerLayoutModes.Stack)
+        if (normalizedLayoutMode == DesignerLayoutModes.Stack || (UsesNativeLayout && DesignerLayoutModes.IsOrdered(normalizedLayoutMode)))
         {
             return children
                 .Select((control, index) => new { Control = control, Index = index })
@@ -4416,7 +4416,7 @@ public partial class MainWindowViewModel : ObservableObject
                 .ToList();
         }
 
-        if (!DesignerLayoutModes.IsAbsolute(normalizedLayoutMode))
+        if (!DesignerLayoutModes.IsAbsolute(normalizedLayoutMode) || UsesNativeLayout)
             return children;
 
         return children
@@ -6658,10 +6658,10 @@ public partial class MainWindowViewModel : ObservableObject
     public void ReparentControl(DesignControlModel control, string? newParentId, double absoluteX, double absoluteY)
     {
         var normalizedParentId = NormalizeId(newParentId);
-        if (UsesNativeLayout && GetLayoutModeForParent(normalizedParentId) == DesignerLayoutModes.Grid)
+        if (UsesNativeLayout)
         {
             var point = new Avalonia.Point(absoluteX, absoluteY);
-            var target = ResolveGridDropTarget(point, control);
+            var target = ResolveLayoutDropTarget(point, control);
             if (target.ParentId == normalizedParentId) CommitGridControlDrop(control, target, point);
             return;
         }
@@ -6867,10 +6867,10 @@ public partial class MainWindowViewModel : ObservableObject
             return null;
         }
 
-        if (UsesNativeLayout && GetLayoutModeForParent(parentId) == DesignerLayoutModes.Grid)
+        if (UsesNativeLayout)
         {
             var point = new Avalonia.Point(x, y);
-            var target = ResolveGridDropTarget(point, CreateDefaultControl(type));
+            var target = ResolveLayoutDropTarget(point, CreateDefaultControl(type), bypassSnap: bypassGridSnap);
             if (target.ParentId != NormalizeId(parentId)) return null;
             return CommitGridToolboxDrop(type, target, point, targetDocumentId);
         }
@@ -6893,7 +6893,7 @@ public partial class MainWindowViewModel : ObservableObject
 
         if (gridTarget is not null)
         {
-            ApplyGridDropPlacement(model, gridTarget);
+            ApplyNativeDropPlacement(model, gridTarget, Controls);
         }
         else if (DesignerLayoutModes.IsAbsolute(parentLayoutMode))
         {
@@ -10609,7 +10609,7 @@ public partial class MainWindowViewModel : ObservableObject
         }
 
         var control = SelectedControl;
-        if (UsesNativeLayout) foreach (var row in NativePlacementRows(control)) yield return row;
+        if (UsesNativeLayout) foreach (var row in NativePlacementRows(control, layoutOnly)) yield return row;
         var parentLayoutMode = GetLayoutModeForParent(control.ParentId);
         yield return CreateTextRow(PropertyGridCategoryCommon, nameof(DesignControlModel.Name), "Name", control.Name, "Element name used by export and interactions.", value => control.Name = value);
         if (control.Type == DesignerControlTypes.DataGrid)
@@ -10656,7 +10656,7 @@ public partial class MainWindowViewModel : ObservableObject
             yield return CreateBoolRow(PropertyGridCategoryLayout, nameof(DesignControlModel.AnchorBottom), "AnchorBottom", control.AnchorBottom, "Anchor to bottom edge.", value => control.AnchorBottom = value);
         }
 
-        if (DesignerLayoutModes.NormalizeMode(parentLayoutMode) == DesignerLayoutModes.Grid)
+        if (!UsesNativeLayout && DesignerLayoutModes.NormalizeMode(parentLayoutMode) == DesignerLayoutModes.Grid)
         {
             yield return CreateNumberRow(PropertyGridCategoryLayout, nameof(DesignControlModel.GridRow), "Grid.Row", control.GridRow, "Row index in parent Grid.", value => control.GridRow = Math.Max(0, (int)Math.Round(value)));
             yield return CreateNumberRow(PropertyGridCategoryLayout, nameof(DesignControlModel.GridColumn), "Grid.Column", control.GridColumn, "Column index in parent Grid.", value => control.GridColumn = Math.Max(0, (int)Math.Round(value)));
@@ -10664,12 +10664,12 @@ public partial class MainWindowViewModel : ObservableObject
             yield return CreateNumberRow(PropertyGridCategoryLayout, nameof(DesignControlModel.GridColumnSpan), "ColumnSpan", control.GridColumnSpan, "Number of Grid columns occupied.", value => control.GridColumnSpan = Math.Max(1, (int)Math.Round(value)));
         }
 
-        if (DesignerLayoutModes.NormalizeMode(parentLayoutMode) == DesignerLayoutModes.Stack)
-            yield return CreateNumberRow(PropertyGridCategoryLayout, nameof(DesignControlModel.StackOrder), "StackPanel.Order", control.StackOrder, "Order inside parent StackPanel.", value => control.StackOrder = Math.Max(0, (int)Math.Round(value)));
+        if (DesignerLayoutModes.NormalizeMode(parentLayoutMode) == DesignerLayoutModes.Stack || (UsesNativeLayout && DesignerLayoutModes.IsOrdered(parentLayoutMode)))
+            yield return CreateNumberRow(PropertyGridCategoryLayout, nameof(DesignControlModel.StackOrder), UsesNativeLayout ? "Children order" : "StackPanel.Order", control.StackOrder, "Порядок среди дочерних элементов текущего контейнера.", value => control.StackOrder = Math.Max(0, (int)Math.Round(value)));
 
         if (CanHostChildren(control))
         {
-            yield return CreateEnumRow(PropertyGridCategoryLayout, nameof(DesignControlModel.ChildLayoutMode), "Children Layout", GetLayoutModeForControl(control), AvailableLayoutModes, "Layout mode used by children of this container.", value => control.ChildLayoutMode = value);
+            yield return CreateEnumRow(PropertyGridCategoryLayout, nameof(DesignControlModel.ChildLayoutMode), "Children Layout", GetLayoutModeForControl(control), UsesNativeLayout ? NativeContainerModes : AvailableLayoutModes, "Layout mode used by children of this container.", value => { if (UsesNativeLayout) SetNativeContainerMode(control, value); else control.ChildLayoutMode = value; });
             yield return CreateEnumRow(PropertyGridCategoryLayout, nameof(DesignControlModel.LayoutOrientation), "Orientation", control.LayoutOrientation, AvailableLayoutOrientations, "Child layout orientation.", value => control.LayoutOrientation = value);
             yield return CreateNumberRow(PropertyGridCategoryLayout, nameof(DesignControlModel.LayoutSpacing), "Spacing", control.LayoutSpacing, "Spacing between child elements.", value => control.LayoutSpacing = Math.Max(0, value));
             if (GetLayoutModeForControl(control) == DesignerLayoutModes.Grid)
@@ -10772,6 +10772,8 @@ public partial class MainWindowViewModel : ObservableObject
         }
         foreach (var customProperty in control.CustomProperties.Where(property =>
                      !descriptorKeys.Contains(property.Key)
+                     && (!UsesNativeLayout || property.Key is not (LayoutPlacementProperties.DockKey or LayoutPlacementProperties.LastChildFillKey))
+                     && (!UsesNativeLayout || !CanHostChildren(control) || property.Key is not (LayoutPlacementProperties.MinWidthKey or LayoutPlacementProperties.MinHeightKey))
                      && !IsInternalPluginDependencyMetadata(property.Key)))
         {
             yield return CreateTextRow(
@@ -17946,9 +17948,11 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void AppendChildControlXaml(StringBuilder sb, DesignControlModel child, int indentLevel)
     {
-        if (_activeXamlWriter is not null && _activeXamlExportContext is not null && _activeXamlControlNodes is not null)
+        if (_activeXamlExportContext is not null && _activeXamlControlNodes?.TryGetValue(child.Id, out var node) == true)
         {
-            AppendControlXaml(child, indentLevel);
+            // The parent descriptor is still building its local buffer. Writing children
+            // to the global writer here emits them before/outside their parent element.
+            TryAppendControlXamlViaDescriptor(node, indentLevel, new StringBuilderXamlWriter(sb), _activeXamlExportContext);
             return;
         }
 
@@ -19994,6 +19998,9 @@ public partial class MainWindowViewModel : ObservableObject
         var layoutMode = GetLayoutModeForControl(control);
         switch (layoutMode)
         {
+            case DesignerLayoutModes.Dock:
+                sb.AppendLine($"{Indent(indentLevel)}<DockPanel{nameAttribute} {placementAttributes} LastChildFill=\"{EscapeXml(NativeDockFillAttribute(control))}\"{visibilityAttributes}>");
+                break;
             case DesignerLayoutModes.Stack:
                 sb.AppendLine($"{Indent(indentLevel)}<StackPanel{nameAttribute} {placementAttributes} Orientation=\"{ToAvaloniaOrientation(control.LayoutOrientation)}\" Spacing=\"{ToInvariant(control.LayoutSpacing)}\"{visibilityAttributes}>");
                 break;
@@ -20017,6 +20024,9 @@ public partial class MainWindowViewModel : ObservableObject
         var layoutMode = GetLayoutModeForControl(control);
         switch (layoutMode)
         {
+            case DesignerLayoutModes.Dock:
+                sb.AppendLine($"{Indent(indentLevel)}<DockPanel LastChildFill=\"{EscapeXml(NativeDockFillAttribute(control))}\">");
+                break;
             case DesignerLayoutModes.Stack:
                 sb.AppendLine($"{Indent(indentLevel)}<StackPanel Orientation=\"{ToAvaloniaOrientation(control.LayoutOrientation)}\" Spacing=\"{ToInvariant(control.LayoutSpacing)}\">");
                 break;
@@ -20038,6 +20048,7 @@ public partial class MainWindowViewModel : ObservableObject
     {
         return GetLayoutModeForControl(control) switch
         {
+            DesignerLayoutModes.Dock => "DockPanel",
             DesignerLayoutModes.Stack => "StackPanel",
             DesignerLayoutModes.Grid => "Grid",
             DesignerLayoutModes.Flex => "WrapPanel",
@@ -20170,12 +20181,12 @@ public partial class MainWindowViewModel : ObservableObject
         var exportName = GetExportControlName(control);
         var children = GetChildControlsForExport(control.Id);
         sb.AppendLine($"{Indent(indentLevel)}<Border x:Name=\"{EscapeXml(exportName)}\" {PlacementAttributes(control)}{BackgroundAttribute(control)}{BorderStyleAttributes(control)} CornerRadius=\"{ToInvariant(control.CornerRadius)}\" Padding=\"{ToInvariant(control.Padding)}\"{CommonVisibilityAttributes(control)}>");
-        sb.AppendLine($"{Indent(indentLevel + 1)}<WrapPanel Orientation=\"{ToAvaloniaOrientation(control.LayoutOrientation)}\">");
+        AppendInnerLayoutHostOpening(sb, control, indentLevel + 1);
 
         foreach (var child in children)
             AppendChildControlXaml(sb, child, indentLevel + 2);
 
-        sb.AppendLine($"{Indent(indentLevel + 1)}</WrapPanel>");
+        sb.AppendLine($"{Indent(indentLevel + 1)}</{GetLayoutHostClosingTag(control)}>");
         sb.AppendLine($"{Indent(indentLevel)}</Border>");
     }
 
@@ -22736,6 +22747,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void Control_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (UsesNativeLayout) NativeGridMeasurementKey = "";
         if (UsesNativeLayout && sender is DesignControlModel sized && !_isApplyingDocument)
         {
             if (e.PropertyName == nameof(sized.Width)) sized.WidthMode = "Fixed";
@@ -22875,6 +22887,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void BindingSource_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (UsesNativeLayout) NativeGridMeasurementKey = "";
         if (_isApplyingDocument)
             return;
 
@@ -22927,6 +22940,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void BindingField_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (UsesNativeLayout) NativeGridMeasurementKey = "";
         if (_isApplyingDocument)
             return;
 
