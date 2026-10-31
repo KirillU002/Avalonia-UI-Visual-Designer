@@ -522,7 +522,7 @@ public partial class MainWindow : Window
         if (!_hasCheckedRecoveryOnStartup || _suppressRecoverySessionChangeHandling)
             return;
 
-        if (!viewModel.HasUnsavedChanges)
+        if (!viewModel.HasUnsavedWorkspaceChanges)
         {
             _autosaveRecoveryService.TryDeleteDraft();
             viewModel.AutosaveStatusText = "Черновик очищен для новой сессии.";
@@ -1482,7 +1482,7 @@ public partial class MainWindow : Window
     {
         if (UsesHostDocumentBuffer || VM.IsAxamlRoundTripDocument || _isAutosaveRunning
             || DataContext is not MainWindowViewModel
-            || !VM.HasUnsavedChanges
+            || !VM.HasUnsavedWorkspaceChanges
             || VM.IsBusy
             || _isDragging
             || _isMarqueeSelecting
@@ -8436,6 +8436,8 @@ public partial class MainWindow : Window
             previewWindow.DataGridDiagnosticEmitted += (_, diagnostic) => VM.LogWorkspace(
                 diagnostic.Event.EndsWith("FAILED", StringComparison.Ordinal) ? WorkspaceLogLevel.Error : WorkspaceLogLevel.Info,
                 "DataGrid Preview", diagnostic.Event, System.Text.Json.JsonSerializer.Serialize(diagnostic));
+            foreach (var diagnostic in previewWindow.LifecycleDiagnostics) LogPreviewLifecycleDiagnostic(previewWindow, diagnostic);
+            previewWindow.LifecycleDiagnosticEmitted += LogPreviewLifecycleDiagnostic;
             previewWindow.Closed += LaunchPreviewWindow_Closed;
             _launchPreviewWindow = previewWindow;
             previewWindow.Show();
@@ -8664,6 +8666,13 @@ public partial class MainWindow : Window
 
         if (ReferenceEquals(_launchPreviewWindow, sender))
             _launchPreviewWindow = null;
+    }
+
+    private void LogPreviewLifecycleDiagnostic(object? sender, PreviewLifecycleDiagnostic diagnostic)
+    {
+        VM.LogWorkspace(WorkspaceLogLevel.Info, "Preview lifecycle", diagnostic.Event, System.Text.Json.JsonSerializer.Serialize(diagnostic));
+        if (diagnostic.Event == "PREVIEW_LIFECYCLE_DISPOSED" && sender is PreviewWindow preview)
+            preview.LifecycleDiagnosticEmitted -= LogPreviewLifecycleDiagnostic;
     }
 
     private void HelpWindow_Closed(object? sender, EventArgs e)
@@ -10368,18 +10377,20 @@ public partial class MainWindow : Window
 
     private async Task<bool> EnsureUnsavedChangesHandledAsync()
     {
-        if (DataContext is not MainWindowViewModel || !VM.HasUnsavedChanges)
+        if (DataContext is not MainWindowViewModel || !VM.HasUnsavedWorkspaceChanges)
             return true;
 
+        var scope = CaptureDocumentSaveScope();
         VM.LogWorkspace(WorkspaceLogLevel.Info, MainWindowViewModel.OutputCategoryDiagnostics, "HOST_DIALOG_REQUEST", "kind=UnsavedChanges");
         var decision = await _hostServices.Dialogs.ShowAsync(new DesignerDialogRequest(
             DesignerDialogKind.UnsavedChanges,
             "Несохраненные изменения",
             VM.CurrentDocumentDisplayName));
         VM.LogWorkspace(WorkspaceLogLevel.Info, MainWindowViewModel.OutputCategoryDiagnostics, "HOST_DIALOG_RESULT", $"kind=UnsavedChanges; result={decision}");
+        if (!IsSaveWorkspaceCurrent(scope)) return false;
         return decision switch
         {
-            DesignerDialogResult.Save => await SaveCurrentDocumentAsync(),
+            DesignerDialogResult.Save => await SaveCurrentDocumentAsync() && IsSaveWorkspaceCurrent(scope) && !VM.HasUnsavedWorkspaceChanges,
             DesignerDialogResult.Discard => true,
             _ => false
         };
@@ -10468,12 +10479,19 @@ public partial class MainWindow : Window
 
     private async Task<bool> SaveAxamlDocumentToPathAsync(string path)
     {
+        if (!BeginDocumentSave()) return false;
         try
         {
+            var scope = CaptureDocumentSaveScope();
+            var document = VM.CreatePreviewDocumentSnapshot();
+            var snapshot = VM.ActiveSession.CurrentSnapshot;
+            var encoding = VM.GetActiveAxamlTextEncoding();
             var currentText = _hostServices.FileSystem.FileExists(path)
                 ? await _hostServices.FileSystem.ReadAllTextAsync(path)
                 : null;
-            var patch = VM.CreateActiveAxamlPatch(currentText);
+            if (!IsSaveDocumentCurrent(scope))
+            { VM.StatusText = "Документ изменился во время чтения AXAML. Сохранение отменено; файл не изменён."; return false; }
+            var patch = new AxamlPatchWriter().CreatePatch(scope.Axaml!, document, currentText);
             if (patch.ExternalChangeDetected)
             {
                 VM.StatusText = "AXAML был изменён вне Designer. Сохранение отменено: перезагрузите файл или сравните изменения.";
@@ -10485,10 +10503,15 @@ public partial class MainWindow : Window
                 throw new InvalidOperationException("Designer не может безопасно применить AXAML patch.");
 
             var backup = await _documentBackupService.TryCreateBackupAsync(path);
-            await _hostServices.FileSystem.WriteAllTextAtomicallyAsync(path, patch.PatchedText, VM.GetActiveAxamlTextEncoding());
-            VM.MarkAxamlRoundTripSaved(path, patch.PatchedText);
-            _autosaveRecoveryService.TryDeleteDraft();
-            VM.AutosaveStatusText = backup is null ? "Черновик очищен после AXAML save." : $"Черновик очищен. Backup: {backup.DisplayName}";
+            if (!IsSaveDocumentCurrent(scope))
+            { VM.StatusText = "Активный AXAML изменился. Сохранение отменено; исходный файл не изменён."; return false; }
+            await _hostServices.FileSystem.WriteAllTextAtomicallyAsync(path, patch.PatchedText, encoding);
+            if (IsSaveDocumentCurrent(scope))
+            {
+                VM.MarkAxamlRoundTripSaved(path, patch.PatchedText, snapshot);
+                if (CanClearSavedDraft()) _autosaveRecoveryService.TryDeleteDraft();
+                VM.AutosaveStatusText = backup is null ? "Записана выбранная ревизия AXAML." : $"AXAML сохранён. Backup: {backup.DisplayName}";
+            }
             VM.LogWorkspace(WorkspaceLogLevel.Success, MainWindowViewModel.OutputCategoryDiagnostics, "AXAML_PATCH_APPLIED", $"path={path}; edits={patch.Edits.Count}");
             VM.ShowWorkspaceToast(WorkspaceToastLevel.Success, "AXAML saved", System.IO.Path.GetFileName(path));
             await SaveAppSettingsNowAsync();
@@ -10501,6 +10524,7 @@ public partial class MainWindow : Window
             VM.ShowWorkspaceToast(WorkspaceToastLevel.Error, "AXAML save failed", ex.Message, isPersistent: true);
             return false;
         }
+        finally { _documentSaveInProgress = false; }
     }
 
     private async Task<bool> SaveAxamlDocumentToHostFileAsync(IDesignerHostFile file)
@@ -10508,9 +10532,13 @@ public partial class MainWindow : Window
         if (!string.IsNullOrWhiteSpace(file.LocalPath))
             return await SaveAxamlDocumentToPathAsync(file.LocalPath);
 
+        if (!BeginDocumentSave()) return false;
         try
         {
+            var scope = CaptureDocumentSaveScope();
+            var encoding = VM.GetActiveAxamlTextEncoding();
             var patch = VM.CreateActiveAxamlPatch();
+            var snapshot = VM.ActiveSession.CurrentSnapshot;
             if (!patch.CanApply)
                 throw new InvalidOperationException("Designer не может безопасно применить AXAML patch.");
 
@@ -10521,10 +10549,10 @@ public partial class MainWindow : Window
                 stream.Seek(0, SeekOrigin.Begin);
             }
 
-            await using var writer = new StreamWriter(stream, VM.GetActiveAxamlTextEncoding(), leaveOpen: false);
+            await using var writer = new StreamWriter(stream, encoding, leaveOpen: false);
             await writer.WriteAsync(patch.PatchedText);
             await writer.FlushAsync();
-            VM.MarkAxamlRoundTripSaved(file.Name, patch.PatchedText);
+            if (IsSaveDocumentCurrent(scope)) VM.MarkAxamlRoundTripSaved(file.Name, patch.PatchedText, snapshot);
             VM.ShowWorkspaceToast(WorkspaceToastLevel.Success, "AXAML saved", file.Name);
             return true;
         }
@@ -10534,6 +10562,7 @@ public partial class MainWindow : Window
             VM.LogWorkspace(WorkspaceLogLevel.Error, MainWindowViewModel.OutputCategoryDiagnostics, "AXAML_SAVE_FAILED", ex.ToString());
             return false;
         }
+        finally { _documentSaveInProgress = false; }
     }
 
     private static async Task<(string Text, Encoding Encoding)> ReadAxamlSourceAsync(IDesignerHostFile file)
@@ -10546,17 +10575,20 @@ public partial class MainWindow : Window
 
     private async Task<bool> SaveDocumentToPathAsync(string path)
     {
+        if (!BeginDocumentSave()) return false;
         try
         {
+            var scope = CaptureDocumentSaveScope();
             var json = VM.ExportDocumentJson();
             var backup = await _documentBackupService.TryCreateBackupAsync(path);
             await _hostServices.FileSystem.WriteAllTextAtomicallyAsync(path, json);
-            VM.MarkDocumentSaved(path);
-            VM.AddOrUpdateRecentFile(path);
-            _autosaveRecoveryService.TryDeleteDraft();
-            VM.AutosaveStatusText = backup is null
-                ? "Черновик очищен после сохранения."
-                : $"Черновик очищен. Backup: {backup.DisplayName}";
+            if (IsSaveWorkspaceCurrent(scope))
+            {
+                VM.MarkWorkspaceSaved(path, json);
+                VM.AddOrUpdateRecentFile(path);
+                if (CanClearSavedDraft()) _autosaveRecoveryService.TryDeleteDraft();
+                VM.AutosaveStatusText = backup is null ? "Записана выбранная ревизия проекта." : $"Проект сохранён. Backup: {backup.DisplayName}";
+            }
             VM.LogWorkspace(WorkspaceLogLevel.Success, MainWindowViewModel.OutputCategoryGeneral, "File saved.", path);
             VM.ShowWorkspaceToast(WorkspaceToastLevel.Success, "File saved", System.IO.Path.GetFileName(path));
             await SaveAppSettingsNowAsync();
@@ -10569,16 +10601,16 @@ public partial class MainWindow : Window
             VM.ShowWorkspaceToast(WorkspaceToastLevel.Error, "Save failed", ex.Message, isPersistent: true);
             return false;
         }
+        finally { _documentSaveInProgress = false; }
     }
 
     private async Task<bool> SaveDocumentToHostFileAsync(IDesignerHostFile file)
     {
+        if (!string.IsNullOrWhiteSpace(file.LocalPath)) return await SaveDocumentToPathAsync(file.LocalPath);
+        if (!BeginDocumentSave()) return false;
         try
         {
-            var localPath = file.LocalPath;
-            if (!string.IsNullOrWhiteSpace(localPath))
-                return await SaveDocumentToPathAsync(localPath);
-
+            var scope = CaptureDocumentSaveScope();
             var json = VM.ExportDocumentJson();
 
             await using var stream = await file.OpenWriteAsync();
@@ -10592,9 +10624,12 @@ public partial class MainWindow : Window
             await writer.WriteAsync(json);
             await writer.FlushAsync();
 
-            VM.MarkDocumentSaved(file.Name);
-            _autosaveRecoveryService.TryDeleteDraft();
-            VM.AutosaveStatusText = "Черновик очищен после сохранения.";
+            if (IsSaveWorkspaceCurrent(scope))
+            {
+                VM.MarkWorkspaceSaved(file.Name, json);
+                if (CanClearSavedDraft()) _autosaveRecoveryService.TryDeleteDraft();
+                VM.AutosaveStatusText = "Записана выбранная ревизия проекта.";
+            }
             VM.LogWorkspace(WorkspaceLogLevel.Success, MainWindowViewModel.OutputCategoryGeneral, "File saved.", file.Name);
             VM.ShowWorkspaceToast(WorkspaceToastLevel.Success, "File saved", file.Name);
             await SaveAppSettingsNowAsync();
@@ -10607,6 +10642,7 @@ public partial class MainWindow : Window
             VM.ShowWorkspaceToast(WorkspaceToastLevel.Error, "Save failed", ex.Message, isPersistent: true);
             return false;
         }
+        finally { _documentSaveInProgress = false; }
     }
 
     private async void BrowseImageButton_Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)

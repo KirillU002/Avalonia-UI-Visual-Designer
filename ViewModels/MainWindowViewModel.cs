@@ -1387,8 +1387,9 @@ public partial class MainWindowViewModel : ObservableObject
         ? "История пока пуста. Сделайте изменение на форме, и оно появится здесь."
         : $"Шаг {UndoRedoHistoryCurrentIndex + 1} из {UndoRedoHistoryTotalCount}. Undo: {_undoStack.Count}, Redo: {_redoStack.Count}.";
     public bool HasUnsavedChanges => _currentSnapshot != _savedSnapshot;
+    public bool HasUnsavedWorkspaceChanges => HasUnsavedChanges || CurrentProject.Forms.Any(form => form.IsDirty);
     public string DirtyStateText => HasUnsavedChanges ? "Есть несохранённые изменения" : "Все изменения сохранены";
-    public string WorkspaceDirtyStatusText => HasUnsavedChanges ? "Unsaved" : "Saved";
+    public string WorkspaceDirtyStatusText => HasUnsavedWorkspaceChanges ? "Unsaved" : "Saved";
     public string WorkspaceDocumentStatusText => string.IsNullOrWhiteSpace(CurrentDocumentPath)
         ? "Untitled"
         : Path.GetFileName(CurrentDocumentPath);
@@ -8051,11 +8052,13 @@ public partial class MainWindowViewModel : ObservableObject
         SetActiveForm(form.Id, "InitializeWorkspace", persistCurrent: false);
     }
 
-    private void ApplyWorkspace(WorkspaceModel workspace, string? sourcePath, bool markAsSaved)
+    private void ApplyWorkspace(WorkspaceModel workspace, string? sourcePath, bool markAsSaved, bool clearAxamlContext = false)
     {
+        _projectWorkspaceService.EnsureWorkspaceDefaults(workspace);
+        ValidateWorkspaceDocuments(workspace);
+        if (clearAxamlContext) ClearAxamlRoundTripContext();
         PersistActiveFormDocumentState(refreshProjectViews: false);
         DisposeAllDocumentSessions("ApplyWorkspace");
-        _projectWorkspaceService.EnsureWorkspaceDefaults(workspace);
 
         foreach (var form in workspace.Project.Forms)
         {
@@ -9352,16 +9355,14 @@ public partial class MainWindowViewModel : ObservableObject
                 FormDesigner.DesignerSystem.DesignerDocumentFormat.ForPath(sourcePath), nameof(LoadDocumentJson));
         if (_projectWorkspaceService.TryDeserializeWorkspace(json, out var workspace))
         {
-            ClearAxamlRoundTripContext();
-            ApplyWorkspace(workspace, sourcePath, markAsSaved);
+            ApplyWorkspace(workspace, sourcePath, markAsSaved, clearAxamlContext: true);
             return;
         }
 
         var document = JsonSerializer.Deserialize<DesignerDocumentFileModel>(json, JsonOptions)
             ?? throw new InvalidOperationException("Не удалось прочитать документ конструктора.");
 
-        ClearAxamlRoundTripContext();
-        ApplyWorkspace(_projectWorkspaceService.WrapSingleDocument(document, sourcePath), sourcePath, markAsSaved);
+        ApplyWorkspace(_projectWorkspaceService.WrapSingleDocument(document, sourcePath), sourcePath, markAsSaved, clearAxamlContext: true);
     }
 
     /// <summary>
@@ -22213,6 +22214,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void RaiseProjectWorkspaceProperties()
     {
+        OnPropertyChanged(nameof(HasUnsavedWorkspaceChanges));
         OnPropertyChanged(nameof(Workspace));
         OnPropertyChanged(nameof(CurrentProject));
         OnPropertyChanged(nameof(CurrentProjectPath));

@@ -2,6 +2,7 @@ using FormDesigner.Models;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
 
@@ -30,14 +31,14 @@ public sealed class DocumentBackupService
             var backupDirectory = GetBackupDirectory(documentPath);
             Directory.CreateDirectory(backupDirectory);
 
-            var sourceFileName = Path.GetFileNameWithoutExtension(documentPath);
-            var timestamp = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
+            var sourceFileName = Path.GetFileName(documentPath);
+            var timestamp = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss.fffffff", CultureInfo.InvariantCulture);
             var backupPath = Path.Combine(
                 backupDirectory,
-                $"{sourceFileName}.{timestamp}.backup.formdesigner.json");
+                $"{sourceFileName}.{timestamp}.{Guid.NewGuid():N}.backup.formdesigner.json");
 
             await using (var source = File.Open(documentPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
-            await using (var target = File.Create(backupPath))
+            await using (var target = new FileStream(backupPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
             {
                 await source.CopyToAsync(target).ConfigureAwait(false);
             }
@@ -62,10 +63,9 @@ public sealed class DocumentBackupService
             if (!Directory.Exists(backupDirectory))
                 return Array.Empty<BackupFileModel>();
 
-            var prefix = Path.GetFileNameWithoutExtension(documentPath) + ".";
             return Directory
                 .EnumerateFiles(backupDirectory, "*.backup.formdesigner.json")
-                .Where(path => Path.GetFileName(path).StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                .Where(path => IsBackupForDocument(path, documentPath))
                 .Select(ToBackupFileModel)
                 .OrderByDescending(item => item.CreatedUtc)
                 .ToList();
@@ -74,6 +74,24 @@ public sealed class DocumentBackupService
         {
             return Array.Empty<BackupFileModel>();
         }
+    }
+
+    private static bool IsBackupForDocument(string backupPath, string documentPath)
+    {
+        const string suffix = ".backup.formdesigner.json";
+        var name = Path.GetFileName(backupPath);
+        if (!name.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)) return false;
+        foreach (var prefix in new[] { Path.GetFileName(documentPath) + ".", Path.GetFileNameWithoutExtension(documentPath) + "." })
+        {
+            if (!name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) || name.Length <= prefix.Length + suffix.Length) continue;
+            var stamp = name.Substring(prefix.Length, name.Length - prefix.Length - suffix.Length);
+            // Recognize the complete suffix, never another document with a shared name prefix.
+            if (DateTime.TryParseExact(stamp, "yyyy-MM-dd_HH-mm-ss", CultureInfo.InvariantCulture, DateTimeStyles.None, out _)) return true;
+            var parts = stamp.Split('.');
+            if (parts.Length == 3 && Guid.TryParseExact(parts[2], "N", out _)
+                && DateTime.TryParseExact(parts[0] + "." + parts[1], "yyyy-MM-dd_HH-mm-ss.fffffff", CultureInfo.InvariantCulture, DateTimeStyles.None, out _)) return true;
+        }
+        return false;
     }
 
     private string GetBackupDirectory(string documentPath)

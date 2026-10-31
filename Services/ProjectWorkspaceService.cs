@@ -53,21 +53,21 @@ public sealed class ProjectWorkspaceService
     public bool TryDeserializeWorkspace(string json, out WorkspaceModel workspace)
     {
         workspace = new WorkspaceModel();
-        try
-        {
-            using var document = JsonDocument.Parse(json);
-            if (!document.RootElement.TryGetProperty("Project", out _))
-                return false;
-
-            workspace = JsonSerializer.Deserialize<WorkspaceModel>(json, JsonOptions) ?? new WorkspaceModel();
-            EnsureWorkspaceDefaults(workspace);
-            return true;
-        }
-        catch
-        {
-            workspace = new WorkspaceModel();
+        using var document = JsonDocument.Parse(json);
+        if (document.RootElement.ValueKind != JsonValueKind.Object
+            || !document.RootElement.EnumerateObject().Any(p => string.Equals(p.Name, "Project", StringComparison.OrdinalIgnoreCase)))
             return false;
-        }
+
+        // A recognized but malformed workspace must never fall back to a blank single form.
+        workspace = JsonSerializer.Deserialize<WorkspaceModel>(json, JsonOptions)
+            ?? throw new JsonException("Не удалось прочитать workspace.");
+        if (workspace.Project is null || workspace.Session is null || workspace.Project.Forms is null
+            || workspace.Project.ExportProfiles is null || workspace.Project.ViewModels is null
+            || workspace.Project.Assets is null || workspace.Project.Resources is null || workspace.Project.Settings is null
+            || workspace.Session.OpenDocumentIds is null || workspace.Project.Forms.Any(f => f is null))
+            throw new JsonException("Некорректная структура workspace. Текущий проект не изменён.");
+        EnsureWorkspaceDefaults(workspace);
+        return true;
     }
 
     public string SerializeWorkspace(WorkspaceModel workspace)

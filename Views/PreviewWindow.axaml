@@ -79,7 +79,7 @@
                        Foreground="#CBD5E1"
                        TextWrapping="Wrap"
                        TextAlignment="Center"/>
-            <ProgressBar IsIndeterminate="True"
+            <ProgressBar x:Name="LoadingProgress" IsIndeterminate="False"
                          Height="10"
                          Foreground="#60A5FA"
                          Background="#1E293B"/>

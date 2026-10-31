@@ -45,6 +45,9 @@ internal static partial class Program
         // Initialize the real UI dispatcher before any view model can create the
         // fallback dispatcher; IPC continuations must run on the actual UI thread.
         EnsureAvaloniaRuntimeInitialized();
+        if (args.Contains("--preview-memory-dump")) return RunPreviewMemoryDump();
+        if (args.Contains("--preview-memory-checks")) return RunPreviewMemoryChecks();
+        if (args.Contains("--stabilization-checks")) return RunStabilizationChecks();
         if (args.Contains("--grid-drop-checks")) return RunGridDropChecks();
         if (args.Contains("--grid-editor-checks")) return RunGridEditorChecks();
         if (args.Contains("--native-grid-checks")) return RunNativeGridChecks();
@@ -9235,14 +9238,14 @@ Diagnostics:
 
     private sealed class TestDesignerHostServices : IDesignerHostServices
     {
-        public TestDesignerHostServices(bool useUiScheduler = false)
+        public TestDesignerHostServices(bool useUiScheduler = false, IDesignerFileSystem? fileSystem = null)
         {
             Clipboard = new TestDesignerClipboard();
             Dialogs = new TestDesignerDialogService();
             FilePicker = new TestDesignerFilePickerService();
             Notifications = new TestDesignerNotificationService();
             Paths = new TestDesignerPathService();
-            FileSystem = new PhysicalDesignerFileSystem();
+            FileSystem = fileSystem ?? new PhysicalDesignerFileSystem();
             Scheduler = useUiScheduler ? new AvaloniaDesignerScheduler() : new TestDesignerScheduler();
             ExternalLauncher = new TestDesignerExternalLauncher();
             Commands = new TestDesignerHostCommandService();
@@ -9292,6 +9295,7 @@ Diagnostics:
         public List<DesignerOpenFilePickerOptions> OpenRequests { get; } = new();
         public List<DesignerSaveFilePickerOptions> SaveRequests { get; } = new();
         public string? NextFolder { get; set; }
+        public IDesignerHostFile? NextSaveFile { get; set; }
 
         public Task<IReadOnlyList<IDesignerHostFile>> OpenFilesAsync(DesignerOpenFilePickerOptions options, CancellationToken cancellationToken = default)
         {
@@ -9304,7 +9308,7 @@ Diagnostics:
         public Task<IDesignerHostFile?> SaveFileAsync(DesignerSaveFilePickerOptions options, CancellationToken cancellationToken = default)
         {
             SaveRequests.Add(options);
-            return Task.FromResult<IDesignerHostFile?>(null);
+            return Task.FromResult(NextSaveFile);
         }
 
         public Task<string?> SelectFolderAsync(string title, string? initialDirectory = null, CancellationToken cancellationToken = default) => Task.FromResult(NextFolder);

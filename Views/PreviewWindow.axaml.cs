@@ -89,17 +89,17 @@ public partial class PreviewWindow : Window
     }
 
     public PreviewWindow(IDesignerRegistry registry, bool showRuntimeBadge)
+        : this(registry, showRuntimeBadge, "Legacy")
     {
+    }
+
+    private PreviewWindow(IDesignerRegistry registry, bool showRuntimeBadge, string previewMode)
+    {
+        _previewLifecycleMode = previewMode;
         _registry = registry;
         _showRuntimeBadge = showRuntimeBadge;
         InitializeComponent();
-        Closed += (_, _) =>
-        {
-            _databasePreviewClosed = true;
-            _databasePreviewCancellation?.Cancel();
-            _renderDocumentTimer.Stop();
-            _isRenderDocumentScheduled = false;
-        };
+        InitializePreviewLifecycle();
         RuntimeBadgeOverlay.IsVisible = _showRuntimeBadge;
         ApplyWindowSettings();
         Opened += PreviewWindow_Opened;
@@ -140,14 +140,14 @@ public partial class PreviewWindow : Window
     }
 
     public PreviewWindow(ExportedAxamlPreviewModel exportedAxamlPreview, IDesignerRegistry registry, bool showRuntimeBadge = false)
-        : this(
-            exportedAxamlPreview?.Document ?? throw new ArgumentNullException(nameof(exportedAxamlPreview)),
-            registry,
-            exportedAxamlPreview.ProjectForms,
-            exportedAxamlPreview.ActiveFormId,
-            showRuntimeBadge)
+        : this(registry, showRuntimeBadge, "AXAML")
     {
-        _exportedAxamlPreview = exportedAxamlPreview;
+        _exportedAxamlPreview = exportedAxamlPreview ?? throw new ArgumentNullException(nameof(exportedAxamlPreview));
+        _document = exportedAxamlPreview.Document ?? throw new ArgumentNullException(nameof(exportedAxamlPreview.Document));
+        _currentFormId = exportedAxamlPreview.ActiveFormId;
+        foreach (var form in exportedAxamlPreview.ProjectForms)
+            if (!string.IsNullOrWhiteSpace(form.Id)) _projectFormsById[form.Id] = form;
+        ApplyWindowSettings();
     }
 
     private PreviewRuntimeContext EnsurePreviewRuntimeContext()
@@ -228,6 +228,9 @@ public partial class PreviewWindow : Window
 
     private async void PreviewWindow_Opened(object? sender, EventArgs e)
     {
+        if (_databasePreviewClosed) return;
+        PreviewLifecycleOpened();
+        _previewActivities++;
         ShowLoading(
             "Подготавливаем окно",
             _exportedAxamlPreview is null
@@ -248,7 +251,8 @@ public partial class PreviewWindow : Window
         }
         finally
         {
-            HideLoading();
+            if (!_databasePreviewClosed) HideLoading();
+            FinishPreviewActivity();
         }
     }
 
@@ -936,6 +940,8 @@ public partial class PreviewWindow : Window
 
     private async Task ResetPreviewRuntimeAsync()
     {
+        if (_databasePreviewClosed) return;
+        _previewActivities++;
         ShowLoading("Reset Preview", "Сбрасываем runtime-состояние и заново применяем preview data.");
         try
         {
@@ -950,12 +956,15 @@ public partial class PreviewWindow : Window
         }
         finally
         {
-            HideLoading();
+            if (!_databasePreviewClosed) HideLoading();
+            FinishPreviewActivity();
         }
     }
 
     private async Task ReloadPreviewRuntimeAsync()
     {
+        if (_databasePreviewClosed) return;
+        _previewActivities++;
         ShowLoading("Reload Preview", "Пересобираем runtime tree, bindings и interactions.");
         try
         {
@@ -968,7 +977,8 @@ public partial class PreviewWindow : Window
         }
         finally
         {
-            HideLoading();
+            if (!_databasePreviewClosed) HideLoading();
+            FinishPreviewActivity();
         }
     }
 
@@ -1092,6 +1102,7 @@ public partial class PreviewWindow : Window
         }
         finally
         {
+            if (cancellation.IsCancellationRequested) TracePreviewLifecycle("PREVIEW_DATA_LOAD_CANCELLED");
             if (ReferenceEquals(_databasePreviewCancellation, cancellation)) _databasePreviewCancellation = null;
         }
     }
@@ -4992,13 +5003,16 @@ public partial class PreviewWindow : Window
 
     private void ShowLoading(string title, string description)
     {
+        if (_databasePreviewClosed) return;
         LoadingTitleText.Text = title;
         LoadingDescriptionText.Text = description;
         LoadingOverlay.IsVisible = true;
+        LoadingProgress.IsIndeterminate = true;
     }
 
     private void HideLoading()
     {
+        LoadingProgress.IsIndeterminate = false;
         LoadingOverlay.IsVisible = false;
     }
 
