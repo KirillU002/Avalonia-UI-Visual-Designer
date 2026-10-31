@@ -457,6 +457,10 @@ public partial class MainWindow : Window
         if (sender is not MainWindowViewModel viewModel)
             return;
 
+        if (e.PropertyName is nameof(MainWindowViewModel.SelectedLayoutGridRow) or nameof(MainWindowViewModel.SelectedLayoutGridColumn) or nameof(MainWindowViewModel.SelectedGridTrackIsRow))
+        {
+            if (!IsGridEditorPointerInteraction) ScheduleDesignerRender();
+        }
         if (e.PropertyName == nameof(MainWindowViewModel.IsBusy))
             LogStartupEvent("BUSY_STATE_CHANGED");
 
@@ -1675,7 +1679,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (_isDragging || _isMarqueeSelecting || _isResizing || _isResizingGridColumn || _isResizingDesignSurface)
+        if (IsGridEditorPointerInteraction || _isDragging || _isMarqueeSelecting || _isResizing || _isResizingGridColumn || _isResizingDesignSurface)
         {
             return;
         }
@@ -1698,7 +1702,7 @@ public partial class MainWindow : Window
             return;
 
         _isDesignerRenderScheduled = false;
-        if (VM.IsPropertyEditorFocused || _isDragging || _isMarqueeSelecting || _isResizing || _isResizingGridColumn || _isResizingDesignSurface)
+        if (VM.IsPropertyEditorFocused || IsGridEditorPointerInteraction || _isDragging || _isMarqueeSelecting || _isResizing || _isResizingGridColumn || _isResizingDesignSurface)
         {
             return;
         }
@@ -1751,8 +1755,8 @@ public partial class MainWindow : Window
             return;
 
         DesignSurfaceHost.RenderTransform = new ScaleTransform(_surfaceZoom, _surfaceZoom);
-        DesignViewportRoot.Width = Math.Max(1, DesignSurfaceHost.Width * _surfaceZoom);
-        DesignViewportRoot.Height = Math.Max(1, DesignSurfaceHost.Height * _surfaceZoom);
+        DesignViewportRoot.Width = Math.Max(1, (DesignSurfaceHost.Width + (VM.UsesNativeLayout && !VM.IsUserPreviewMode ? 124 : 0)) * _surfaceZoom);
+        DesignViewportRoot.Height = Math.Max(1, (DesignSurfaceHost.Height + (VM.UsesNativeLayout && !VM.IsUserPreviewMode ? 32 : 0)) * _surfaceZoom);
         DesignViewportRoot.InvalidateMeasure();
         DesignViewportRoot.InvalidateArrange();
         DesignerViewportScrollViewer.InvalidateMeasure();
@@ -2811,6 +2815,7 @@ public partial class MainWindow : Window
                 VM.IsUserPreviewMode);
 
             RenderIdleSelectionOverlay();
+            RenderNativeGridEditorOverlay();
             RenderMiniMap();
             VM.MarkCanvasRenderedDocument(
                 "RenderDesigner",
@@ -3033,6 +3038,8 @@ public partial class MainWindow : Window
             });
         }
 
+        // Native JSON uses measured track rulers. Keep only the background mesh here.
+        if (VM.UsesNativeLayout) return;
         RenderLayoutGridOverlay(
             0,
             0,

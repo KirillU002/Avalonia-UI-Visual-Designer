@@ -5318,6 +5318,8 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(ActiveStackSpacing));
         OnPropertyChanged(nameof(HasLayoutGridRows));
         OnPropertyChanged(nameof(HasLayoutGridColumns));
+        OnPropertyChanged(nameof(CanEditGridDefinitions));
+        OnPropertyChanged(nameof(IsGridDefinitionReadOnly));
     }
 
     public bool IsControlSelected(DesignControlModel? control)
@@ -8165,6 +8167,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void ClearActiveDocumentTransientState(string reason)
     {
+        ResetGridEditorTransientState();
         TraceDocumentDebug("ClearActiveDocumentTransientState", $"reason={reason}; active={ActiveDocumentName}:{ActiveDocumentId}", toOutput: false);
 
         if (_isEditingPropertyGrid)
@@ -10652,10 +10655,10 @@ public partial class MainWindowViewModel : ObservableObject
             yield return CreateNumberRow(PropertyGridCategoryLayout, nameof(DesignControlModel.LayoutSpacing), "Spacing", control.LayoutSpacing, "Spacing between child elements.", value => control.LayoutSpacing = Math.Max(0, value));
             if (GetLayoutModeForControl(control) == DesignerLayoutModes.Grid)
             {
-                yield return CreateNumberRow(PropertyGridCategoryLayout, nameof(DesignControlModel.Columns), "Columns", control.Columns, "Grid column count.", value => control.Columns = Math.Max(1, (int)Math.Round(value)));
-                yield return CreateNumberRow(PropertyGridCategoryLayout, nameof(DesignControlModel.Rows), "Rows", control.Rows, "Grid row count.", value => control.Rows = Math.Max(1, (int)Math.Round(value)));
-                yield return CreateTextRow(PropertyGridCategoryLayout, nameof(DesignControlModel.GridColumnDefinitions), "ColumnDefinitions", control.GridColumnDefinitions, "Comma-separated Grid column sizes: Auto, *, 2*, 160.", value => control.GridColumnDefinitions = value);
-                yield return CreateTextRow(PropertyGridCategoryLayout, nameof(DesignControlModel.GridRowDefinitions), "RowDefinitions", control.GridRowDefinitions, "Comma-separated Grid row sizes: Auto, *, 120.", value => control.GridRowDefinitions = value);
+                yield return CreateNumberRow(PropertyGridCategoryLayout, nameof(DesignControlModel.Columns), "Columns", control.Columns, "Grid column count.", value => { if (UsesNativeLayout) SetNativeGridCount(false, (int)Math.Round(value), control); else control.Columns = Math.Max(1, (int)Math.Round(value)); });
+                yield return CreateNumberRow(PropertyGridCategoryLayout, nameof(DesignControlModel.Rows), "Rows", control.Rows, "Grid row count.", value => { if (UsesNativeLayout) SetNativeGridCount(true, (int)Math.Round(value), control); else control.Rows = Math.Max(1, (int)Math.Round(value)); });
+                yield return CreateTextRow(PropertyGridCategoryLayout, nameof(DesignControlModel.GridColumnDefinitions), "ColumnDefinitions", control.GridColumnDefinitions, "Comma-separated Grid column sizes: Auto, *, 2*, 160.", value => { if (UsesNativeLayout) SetGridDefinitionText(false, value, control); else control.GridColumnDefinitions = value; });
+                yield return CreateTextRow(PropertyGridCategoryLayout, nameof(DesignControlModel.GridRowDefinitions), "RowDefinitions", control.GridRowDefinitions, "Comma-separated Grid row sizes: Auto, *, 120.", value => { if (UsesNativeLayout) SetGridDefinitionText(true, value, control); else control.GridRowDefinitions = value; });
                 yield return CreateBoolRow(PropertyGridCategoryLayout, nameof(DesignControlModel.ShowGridLines), "ShowGridLines", control.ShowGridLines, "Show Grid overlay in designer.", value => control.ShowGridLines = value);
             }
         }
@@ -12225,6 +12228,8 @@ public partial class MainWindowViewModel : ObservableObject
     [RelayCommand]
     private void SetActiveLayoutToGrid()
     {
+        if (IsAxamlRoundTripDocument || UsesNativeLayout && IsActiveLayoutGrid)
+        { EnableExperimentalLayoutTab = true; WorkspaceMode = WorkspaceModeLayout; return; }
         SetActiveLayoutMode(DesignerLayoutModes.Grid);
         if (UsesNativeLayout) { EnableExperimentalLayoutTab = true; WorkspaceMode = WorkspaceModeLayout; }
     }
@@ -12232,6 +12237,7 @@ public partial class MainWindowViewModel : ObservableObject
     [RelayCommand]
     private void ToggleActiveGridOverlay()
     {
+        if (UsesNativeLayout) { ShowGridEditorGuides = !ShowGridEditorGuides; NotifyDesignerStateChanged(trackHistory: false); return; }
         var host = GetActiveLayoutHost();
         if (host is null)
         {
@@ -12249,55 +12255,25 @@ public partial class MainWindowViewModel : ObservableObject
     [RelayCommand]
     private void AddGridRowDefinition()
     {
-        MutateGridDefinitions(isRows: true, definitions =>
-        {
-            definitions.Add(LayoutDefinitionToken.Star(1));
-            return definitions;
-        });
+        InsertGridTrack(true, CountGridDefinitions(GetActiveLayoutRows(), GetActiveGridRowDefinitions()));
     }
 
     [RelayCommand]
     private void AddGridColumnDefinition()
     {
-        MutateGridDefinitions(isRows: false, definitions =>
-        {
-            definitions.Add(LayoutDefinitionToken.Star(1));
-            return definitions;
-        });
+        InsertGridTrack(false, CountGridDefinitions(GetActiveLayoutColumns(), GetActiveGridColumnDefinitions()));
     }
 
     [RelayCommand]
     private void DeleteLayoutGridRow(LayoutDefinitionEditorItem? item)
     {
-        if (item is null)
-            return;
-
-        MutateGridDefinitions(isRows: true, definitions =>
-        {
-            if (definitions.Count <= 1)
-                return definitions;
-            var index = Math.Clamp(item.Index, 0, definitions.Count - 1);
-            definitions.RemoveAt(index);
-            NormalizeChildrenAfterGridDefinitionDelete(isRows: true, index, definitions.Count);
-            return definitions;
-        });
+        RequestGridTrackRemoval(true, item);
     }
 
     [RelayCommand]
     private void DeleteLayoutGridColumn(LayoutDefinitionEditorItem? item)
     {
-        if (item is null)
-            return;
-
-        MutateGridDefinitions(isRows: false, definitions =>
-        {
-            if (definitions.Count <= 1)
-                return definitions;
-            var index = Math.Clamp(item.Index, 0, definitions.Count - 1);
-            definitions.RemoveAt(index);
-            NormalizeChildrenAfterGridDefinitionDelete(isRows: false, index, definitions.Count);
-            return definitions;
-        });
+        RequestGridTrackRemoval(false, item);
     }
 
     [RelayCommand]
@@ -12338,45 +12314,16 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void MoveGridDefinition(bool isRows, LayoutDefinitionEditorItem? item, int direction)
     {
-        if (item is null)
-            return;
-
-        MutateGridDefinitions(isRows, definitions =>
-        {
-            var index = Math.Clamp(item.Index, 0, definitions.Count - 1);
-            var targetIndex = index + direction;
-            if (targetIndex < 0 || targetIndex >= definitions.Count)
-                return definitions;
-
-            (definitions[index], definitions[targetIndex]) = (definitions[targetIndex], definitions[index]);
-            foreach (var child in GetActiveLayoutChildren())
-            {
-                if (isRows)
-                {
-                    if (child.GridRow == index)
-                        child.GridRow = targetIndex;
-                    else if (child.GridRow == targetIndex)
-                        child.GridRow = index;
-                }
-                else
-                {
-                    if (child.GridColumn == index)
-                        child.GridColumn = targetIndex;
-                    else if (child.GridColumn == targetIndex)
-                        child.GridColumn = index;
-                }
-            }
-
-            return definitions;
-        });
+        if (item is not null) MoveGridTrackSafely(isRows, item, direction);
     }
 
     private void MutateGridDefinitions(bool isRows, Func<List<LayoutDefinitionToken>, List<LayoutDefinitionToken>> mutate)
     {
+        if (!EnsureGridEditable()) return;
         if (!IsActiveLayoutGrid)
             SetActiveLayoutMode(DesignerLayoutModes.Grid);
 
-        BeginUndoBatch();
+        BeginGridEditorUndoBatch();
         try
         {
             var count = isRows ? GetActiveLayoutRows() : GetActiveLayoutColumns();
@@ -12385,12 +12332,13 @@ public partial class MainWindowViewModel : ObservableObject
             definitions = mutate(definitions);
             ApplyActiveGridDefinitions(isRows, definitions);
             RebuildLayoutDefinitionEditor();
+            RebuildPropertyGrid("GridDefinitionMutation");
             RaiseActiveLayoutProperties();
             NotifyDesignerStateChanged();
         }
         finally
         {
-            CommitUndoBatch();
+            CommitGridEditorUndoBatch();
         }
     }
 
@@ -12427,27 +12375,6 @@ public partial class MainWindowViewModel : ObservableObject
         {
             host.Columns = normalized.Count;
             host.GridColumnDefinitions = text;
-        }
-    }
-
-    private void NormalizeChildrenAfterGridDefinitionDelete(bool isRows, int removedIndex, int newCount)
-    {
-        foreach (var child in GetActiveLayoutChildren())
-        {
-            if (isRows)
-            {
-                if (child.GridRow > removedIndex)
-                    child.GridRow--;
-                child.GridRow = Math.Clamp(child.GridRow, 0, Math.Max(0, newCount - 1));
-                child.GridRowSpan = Math.Clamp(child.GridRowSpan <= 0 ? 1 : child.GridRowSpan, 1, Math.Max(1, newCount - child.GridRow));
-            }
-            else
-            {
-                if (child.GridColumn > removedIndex)
-                    child.GridColumn--;
-                child.GridColumn = Math.Clamp(child.GridColumn, 0, Math.Max(0, newCount - 1));
-                child.GridColumnSpan = Math.Clamp(child.GridColumnSpan <= 0 ? 1 : child.GridColumnSpan, 1, Math.Max(1, newCount - child.GridColumn));
-            }
         }
     }
 
@@ -19710,6 +19637,11 @@ public partial class MainWindowViewModel : ObservableObject
         if (_isSyncingLayoutDefinitionEditor)
             return;
 
+        var sameContext = _gridEditorContext == GridEditorContext;
+        var rowIndex = sameContext ? SelectedLayoutGridRow?.Index ?? 0 : 0;
+        var columnIndex = sameContext ? SelectedLayoutGridColumn?.Index ?? 0 : 0;
+        if (!sameContext) { CancelGridTrackRemoval(); FinishGridTrackResize(false); }
+        _gridEditorContext = GridEditorContext;
         _isSyncingLayoutDefinitionEditor = true;
         try
         {
@@ -19724,8 +19656,8 @@ public partial class MainWindowViewModel : ObservableObject
                 foreach (var (definition, index) in ParseLayoutDefinitions(GetActiveGridColumnDefinitions(), GetActiveLayoutColumns(), UsesNativeLayout).Select((definition, index) => (definition, index)))
                     LayoutGridColumns.Add(new LayoutDefinitionEditorItem(index, definition.Kind, definition.Value, ApplyLayoutDefinitionEditorToActiveGrid, UsesNativeLayout));
 
-                SelectedLayoutGridRow = LayoutGridRows.FirstOrDefault();
-                SelectedLayoutGridColumn = LayoutGridColumns.FirstOrDefault();
+                SelectedLayoutGridRow = LayoutGridRows.ElementAtOrDefault(Math.Min(rowIndex, LayoutGridRows.Count - 1));
+                SelectedLayoutGridColumn = LayoutGridColumns.ElementAtOrDefault(Math.Min(columnIndex, LayoutGridColumns.Count - 1));
             }
             else
             {
@@ -19743,23 +19675,24 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void ApplyLayoutDefinitionEditorToActiveGrid()
     {
-        if (_isSyncingLayoutDefinitionEditor || !IsActiveLayoutGrid)
+        if (_isSyncingLayoutDefinitionEditor || !IsActiveLayoutGrid || !EnsureGridEditable())
             return;
 
-        BeginUndoBatch();
+        BeginGridEditorUndoBatch();
         try
         {
             _isSyncingLayoutDefinitionEditor = true;
             ApplyActiveGridDefinitions(isRows: true, LayoutGridRows.Select(LayoutDefinitionToken.FromEditor).ToList());
             ApplyActiveGridDefinitions(isRows: false, LayoutGridColumns.Select(LayoutDefinitionToken.FromEditor).ToList());
             _isSyncingLayoutDefinitionEditor = false;
+            RebuildPropertyGrid("GridDefinitionValue");
             RaiseActiveLayoutProperties();
             NotifyDesignerStateChanged();
         }
         finally
         {
             _isSyncingLayoutDefinitionEditor = false;
-            CommitUndoBatch();
+            CommitGridEditorUndoBatch();
         }
     }
 
@@ -21727,6 +21660,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void ResetDocumentScopedRefreshState()
     {
+        ResetGridEditorTransientState();
         _undoBatchDepth = 0;
         _undoBatchTrackHistory = false;
         _isEditingPropertyGrid = false;

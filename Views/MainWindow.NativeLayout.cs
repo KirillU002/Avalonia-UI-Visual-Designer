@@ -13,10 +13,17 @@ public partial class MainWindow
 {
     private void MeasureNativeDesignerLayout(double width, double height)
     {
-        try { VM.NativeLayoutBounds = VM.BuildNativeLayout(CreatePreviewControl, includeHidden: !VM.IsUserPreviewMode).Measure(width, height); }
+        try
+        {
+            var tree = VM.BuildNativeLayout(CreatePreviewControl, includeHidden: !VM.IsUserPreviewMode);
+            VM.ApplyGridTrackResizePreview(tree);
+            VM.NativeLayoutBounds = tree.Measure(width, height);
+            VM.NativeGridMeasurements = tree.MeasuredGrids;
+        }
         catch (Exception ex) when (ex is FormatException or ArgumentException or InvalidOperationException)
         {
             VM.NativeLayoutBounds = new Dictionary<string, Rect>();
+            VM.NativeGridMeasurements = new Dictionary<string, FormDesigner.DesignerSystem.AxamlRoundTrip.AxamlLayoutProjection.GridMeasurement>();
             VM.StatusText = "Не удалось построить Grid Layout: " + ex.Message;
         }
     }

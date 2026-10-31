@@ -55,26 +55,17 @@ public partial class MainWindowViewModel
 
     private void SetNativeDefinitions(bool rows, string value)
     {
-        try
-        {
-            var count = rows ? RowDefinitions.Parse(value).Count : ColumnDefinitions.Parse(value).Count;
-            if (count == 0) throw new FormatException();
-            if (rows) { SurfaceGridRowDefinitions = value; SurfaceLayoutRows = count; }
-            else { SurfaceGridColumnDefinitions = value; SurfaceLayoutColumns = count; }
-            RebuildLayoutDefinitionEditor();
-        }
-        catch (Exception ex) when (ex is FormatException or ArgumentException)
-        { StatusText = "Некорректные определения Grid. Используйте Auto, *, 2* или размер в пикселях."; }
+        SetGridDefinitionText(rows, value, null);
     }
 
-    private void SetNativeGridCount(bool rows, int count)
+    private void SetNativeGridCount(bool rows, int count, DesignControlModel? host = null)
     {
-        var text = rows ? SurfaceGridRowDefinitions : SurfaceGridColumnDefinitions;
-        var parts = AxamlLayoutProjection.Definitions(text, rows ? SurfaceLayoutRows : SurfaceLayoutColumns).Split(',').ToList();
+        var text = rows ? host?.GridRowDefinitions ?? SurfaceGridRowDefinitions : host?.GridColumnDefinitions ?? SurfaceGridColumnDefinitions;
+        var parts = AxamlLayoutProjection.Definitions(text, rows ? host?.Rows ?? SurfaceLayoutRows : host?.Columns ?? SurfaceLayoutColumns).Split(',').ToList();
         count = Math.Max(1, count);
         while (parts.Count < count) parts.Add("*");
         if (parts.Count > count) parts.RemoveRange(count, parts.Count - count);
-        SetNativeDefinitions(rows, string.Join(",", parts));
+        SetGridDefinitionText(rows, string.Join(",", parts), host);
     }
 
     private void SetNativeMargin(DesignControlModel control, string value)

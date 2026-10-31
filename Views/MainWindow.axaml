@@ -2093,12 +2093,12 @@
 
                   <Button Content="+ Row"
                           Classes="data-action-button"
-                          Command="{Binding AddGridRowDefinitionCommand}"
+                          Command="{Binding AddGridRowDefinitionCommand}" IsEnabled="{Binding CanEditGridDefinitions}"
                           IsVisible="{Binding IsActiveLayoutGrid}"
                           Padding="8,4"/>
                   <Button Content="+ Column"
                           Classes="data-action-button"
-                          Command="{Binding AddGridColumnDefinitionCommand}"
+                          Command="{Binding AddGridColumnDefinitionCommand}" IsEnabled="{Binding CanEditGridDefinitions}"
                           IsVisible="{Binding IsActiveLayoutGrid}"
                           Padding="8,4"/>
                   <Button Content="Edit rows/columns"
@@ -2983,139 +2983,6 @@
                     <TextBlock Text="{Binding PropertyGridEmptyText}"
                                Foreground="#64748B"
                                TextWrapping="Wrap"/>
-                  </Border>
-
-                  <Border Background="#FFFFFF"
-                          BorderBrush="#CBD5E1"
-                          BorderThickness="1"
-                          CornerRadius="6"
-                          Padding="8"
-                          IsVisible="{Binding IsActiveLayoutGrid}">
-                    <StackPanel Spacing="8">
-                      <Grid ColumnDefinitions="*,Auto,Auto">
-                        <StackPanel Spacing="1">
-                          <TextBlock Text="Grid definitions"
-                                     FontWeight="Bold"
-                                     FontSize="13"/>
-                          <TextBlock Text="{Binding ActiveGridDefinitionsPreview}"
-                                     Foreground="#64748B"
-                                     FontSize="11"
-                                     TextTrimming="CharacterEllipsis"/>
-                        </StackPanel>
-                        <Button Grid.Column="1"
-                                Content="+ Row"
-                                Classes="data-action-button"
-                                Command="{Binding AddGridRowDefinitionCommand}"
-                                Padding="7,3"/>
-                        <Button Grid.Column="2"
-                                Content="+ Column"
-                                Classes="data-action-button"
-                                Command="{Binding AddGridColumnDefinitionCommand}"
-                                Padding="7,3"/>
-                      </Grid>
-
-                      <StackPanel Spacing="4">
-                        <TextBlock Text="Rows"
-                                   FontWeight="SemiBold"
-                                   FontSize="12"/>
-                        <ItemsControl ItemsSource="{Binding LayoutGridRows}">
-                          <ItemsControl.ItemTemplate>
-                            <DataTemplate x:DataType="vm:LayoutDefinitionEditorItem">
-                              <Border BorderBrush="#E5E7EB"
-                                      BorderThickness="0,0,0,1"
-                                      Padding="0,2">
-                                <Grid ColumnDefinitions="28,86,58,*,Auto,Auto,Auto">
-                                  <TextBlock Text="{Binding Index}"
-                                             VerticalAlignment="Center"
-                                             Foreground="#64748B"/>
-                                  <ComboBox Grid.Column="1"
-                                            Classes="property-editor"
-                                            ItemsSource="{Binding #RootWindow.DataContext.AvailableLayoutDefinitionSizeKinds}"
-                                            SelectedItem="{Binding SizeKind, Mode=TwoWay}"/>
-                                  <TextBox Grid.Column="2"
-                                           Classes="property-editor"
-                                           Text="{Binding Value, Mode=TwoWay}"/>
-                                  <TextBlock Grid.Column="3"
-                                             Text="{Binding Preview}"
-                                             VerticalAlignment="Center"
-                                             Foreground="#1D4ED8"
-                                             FontWeight="SemiBold"/>
-                                  <Button Grid.Column="4"
-                                          Content="↑"
-                                          Classes="property-action"
-                                          Command="{Binding #RootWindow.DataContext.MoveLayoutGridRowUpCommand}"
-                                          CommandParameter="{Binding}"
-                                          Padding="5,1"/>
-                                  <Button Grid.Column="5"
-                                          Content="↓"
-                                          Classes="property-action"
-                                          Command="{Binding #RootWindow.DataContext.MoveLayoutGridRowDownCommand}"
-                                          CommandParameter="{Binding}"
-                                          Padding="5,1"/>
-                                  <Button Grid.Column="6"
-                                          Content="×"
-                                          Classes="property-action"
-                                          Command="{Binding #RootWindow.DataContext.DeleteLayoutGridRowCommand}"
-                                          CommandParameter="{Binding}"
-                                          Padding="5,1"/>
-                                </Grid>
-                              </Border>
-                            </DataTemplate>
-                          </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                      </StackPanel>
-
-                      <StackPanel Spacing="4">
-                        <TextBlock Text="Columns"
-                                   FontWeight="SemiBold"
-                                   FontSize="12"/>
-                        <ItemsControl ItemsSource="{Binding LayoutGridColumns}">
-                          <ItemsControl.ItemTemplate>
-                            <DataTemplate x:DataType="vm:LayoutDefinitionEditorItem">
-                              <Border BorderBrush="#E5E7EB"
-                                      BorderThickness="0,0,0,1"
-                                      Padding="0,2">
-                                <Grid ColumnDefinitions="28,86,58,*,Auto,Auto,Auto">
-                                  <TextBlock Text="{Binding Index}"
-                                             VerticalAlignment="Center"
-                                             Foreground="#64748B"/>
-                                  <ComboBox Grid.Column="1"
-                                            Classes="property-editor"
-                                            ItemsSource="{Binding #RootWindow.DataContext.AvailableLayoutDefinitionSizeKinds}"
-                                            SelectedItem="{Binding SizeKind, Mode=TwoWay}"/>
-                                  <TextBox Grid.Column="2"
-                                           Classes="property-editor"
-                                           Text="{Binding Value, Mode=TwoWay}"/>
-                                  <TextBlock Grid.Column="3"
-                                             Text="{Binding Preview}"
-                                             VerticalAlignment="Center"
-                                             Foreground="#1D4ED8"
-                                             FontWeight="SemiBold"/>
-                                  <Button Grid.Column="4"
-                                          Content="←"
-                                          Classes="property-action"
-                                          Command="{Binding #RootWindow.DataContext.MoveLayoutGridColumnUpCommand}"
-                                          CommandParameter="{Binding}"
-                                          Padding="5,1"/>
-                                  <Button Grid.Column="5"
-                                          Content="→"
-                                          Classes="property-action"
-                                          Command="{Binding #RootWindow.DataContext.MoveLayoutGridColumnDownCommand}"
-                                          CommandParameter="{Binding}"
-                                          Padding="5,1"/>
-                                  <Button Grid.Column="6"
-                                          Content="×"
-                                          Classes="property-action"
-                                          Command="{Binding #RootWindow.DataContext.DeleteLayoutGridColumnCommand}"
-                                          CommandParameter="{Binding}"
-                                          Padding="5,1"/>
-                                </Grid>
-                              </Border>
-                            </DataTemplate>
-                          </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                      </StackPanel>
-                    </StackPanel>
                   </Border>
 
                   <Border Background="#FFFFFF"
@@ -6412,6 +6279,148 @@
               <ScrollViewer Grid.Row="1"
                             VerticalScrollBarVisibility="Auto">
                 <StackPanel Spacing="4">
+                  <Border Background="#FFFFFF"
+                          BorderBrush="#CBD5E1"
+                          BorderThickness="1"
+                          CornerRadius="6"
+                          Padding="8"
+                          IsVisible="{Binding IsActiveLayoutGrid}">
+                    <StackPanel Spacing="8">
+                      <Grid ColumnDefinitions="*,Auto,Auto">
+                        <StackPanel Spacing="1">
+                          <TextBlock Text="Grid definitions"
+                                     FontWeight="Bold"
+                                     FontSize="13"/>
+                          <TextBlock Text="{Binding ActiveGridDefinitionsPreview}"
+                                     Foreground="#64748B"
+                                     FontSize="11"
+                                     TextTrimming="CharacterEllipsis"/>
+                        </StackPanel>
+                        <Button Grid.Column="1"
+                                Content="+ Row"
+                                Classes="data-action-button"
+                                Command="{Binding AddGridRowDefinitionCommand}" IsEnabled="{Binding CanEditGridDefinitions}"
+                                Padding="7,3"/>
+                        <Button Grid.Column="2"
+                                Content="+ Column"
+                                Classes="data-action-button"
+                                Command="{Binding AddGridColumnDefinitionCommand}" IsEnabled="{Binding CanEditGridDefinitions}"
+                                Padding="7,3"/>
+                      </Grid>
+
+                      <TextBlock IsVisible="{Binding IsGridDefinitionReadOnly}" Text="Импортированный AXAML: визуальная структура доступна только для чтения. Исходная разметка сохраняется." TextWrapping="Wrap" Foreground="#92400E"/>
+                      <Border IsVisible="{Binding HasPendingGridRemoval}" Background="#FFFBEB" BorderBrush="#FCD34D" BorderThickness="1" Padding="8" CornerRadius="6">
+                        <StackPanel Spacing="6">
+                          <TextBlock Text="{Binding GridRemovalWarning}" TextWrapping="Wrap"/>
+                          <WrapPanel>
+                            <Button Content="Перенести и удалить" Command="{Binding ConfirmGridTrackRemovalCommand}" Classes="property-action" Padding="7,4"/>
+                            <Button Content="Отмена" Command="{Binding CancelGridTrackRemovalCommand}" Classes="property-action" Padding="7,4"/>
+                          </WrapPanel>
+                        </StackPanel>
+                      </Border>
+                      <StackPanel Spacing="4">
+                        <TextBlock Text="Rows"
+                                   FontWeight="SemiBold"
+                                   FontSize="12"/>
+                        <WrapPanel>
+                          <Button Content="Вставить до" Command="{Binding InsertGridRowBeforeCommand}" IsEnabled="{Binding CanEditGridDefinitions}" Classes="property-action" Padding="7,3"/>
+                          <Button Content="Вставить после" Command="{Binding InsertGridRowAfterCommand}" IsEnabled="{Binding CanEditGridDefinitions}" Classes="property-action" Padding="7,3"/>
+                        </WrapPanel>
+                        <ListBox x:Name="GridRowsEditorList" SelectedItem="{Binding SelectedLayoutGridRow, Mode=TwoWay}" IsEnabled="{Binding CanEditGridDefinitions}" ItemsSource="{Binding LayoutGridRows}">
+                          <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:LayoutDefinitionEditorItem">
+                              <Border BorderBrush="#E5E7EB"
+                                      BorderThickness="0,0,0,1"
+                                      Padding="0,2">
+                                <Grid ColumnDefinitions="22,80,72,Auto,Auto,Auto">
+                                  <TextBlock Text="{Binding Index}"
+                                             VerticalAlignment="Center"
+                                             Foreground="#64748B"/>
+                                  <ComboBox Grid.Column="1"
+                                            Classes="property-editor"
+                                            ItemsSource="{Binding #RootWindow.DataContext.GridLengthKinds}"
+                                            SelectedItem="{Binding DisplaySizeKind, Mode=TwoWay}"/>
+                                  <TextBox Grid.Column="2"
+                                           Classes="property-editor"
+                                           Text="{Binding Value, Mode=TwoWay}" IsVisible="{Binding IsValueEditable}" ToolTip.Tip="Pixel: размер в DIP. Star: вес в распределении свободного места."/>
+                                  <Button Grid.Column="3"
+                                          Content="↑"
+                                          Classes="property-action"
+                                          Command="{Binding #RootWindow.DataContext.MoveLayoutGridRowUpCommand}"
+                                          CommandParameter="{Binding}"
+                                          Padding="5,1"/>
+                                  <Button Grid.Column="4"
+                                          Content="↓"
+                                          Classes="property-action"
+                                          Command="{Binding #RootWindow.DataContext.MoveLayoutGridRowDownCommand}"
+                                          CommandParameter="{Binding}"
+                                          Padding="5,1"/>
+                                  <Button Grid.Column="5"
+                                          Content="×"
+                                          Classes="property-action"
+                                          Command="{Binding #RootWindow.DataContext.DeleteLayoutGridRowCommand}"
+                                          CommandParameter="{Binding}"
+                                          Padding="5,1"/>
+                                </Grid>
+                              </Border>
+                            </DataTemplate>
+                          </ListBox.ItemTemplate>
+                        </ListBox>
+                      </StackPanel>
+
+                      <StackPanel Spacing="4">
+                        <TextBlock Text="Columns"
+                                   FontWeight="SemiBold"
+                                   FontSize="12"/>
+                        <WrapPanel>
+                          <Button Content="Вставить до" Command="{Binding InsertGridColumnBeforeCommand}" IsEnabled="{Binding CanEditGridDefinitions}" Classes="property-action" Padding="7,3"/>
+                          <Button Content="Вставить после" Command="{Binding InsertGridColumnAfterCommand}" IsEnabled="{Binding CanEditGridDefinitions}" Classes="property-action" Padding="7,3"/>
+                        </WrapPanel>
+                        <ListBox x:Name="GridColumnsEditorList" SelectedItem="{Binding SelectedLayoutGridColumn, Mode=TwoWay}" IsEnabled="{Binding CanEditGridDefinitions}" ItemsSource="{Binding LayoutGridColumns}">
+                          <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:LayoutDefinitionEditorItem">
+                              <Border BorderBrush="#E5E7EB"
+                                      BorderThickness="0,0,0,1"
+                                      Padding="0,2">
+                                <Grid ColumnDefinitions="22,80,72,Auto,Auto,Auto">
+                                  <TextBlock Text="{Binding Index}"
+                                             VerticalAlignment="Center"
+                                             Foreground="#64748B"/>
+                                  <ComboBox Grid.Column="1"
+                                            Classes="property-editor"
+                                            ItemsSource="{Binding #RootWindow.DataContext.GridLengthKinds}"
+                                            SelectedItem="{Binding DisplaySizeKind, Mode=TwoWay}"/>
+                                  <TextBox Grid.Column="2"
+                                           Classes="property-editor"
+                                           Text="{Binding Value, Mode=TwoWay}" IsVisible="{Binding IsValueEditable}" ToolTip.Tip="Pixel: размер в DIP. Star: вес в распределении свободного места."/>
+                                  <Button Grid.Column="3"
+                                          Content="←"
+                                          Classes="property-action"
+                                          Command="{Binding #RootWindow.DataContext.MoveLayoutGridColumnUpCommand}"
+                                          CommandParameter="{Binding}"
+                                          Padding="5,1"/>
+                                  <Button Grid.Column="4"
+                                          Content="→"
+                                          Classes="property-action"
+                                          Command="{Binding #RootWindow.DataContext.MoveLayoutGridColumnDownCommand}"
+                                          CommandParameter="{Binding}"
+                                          Padding="5,1"/>
+                                  <Button Grid.Column="5"
+                                          Content="×"
+                                          Classes="property-action"
+                                          Command="{Binding #RootWindow.DataContext.DeleteLayoutGridColumnCommand}"
+                                          CommandParameter="{Binding}"
+                                          Padding="5,1"/>
+                                </Grid>
+                              </Border>
+                            </DataTemplate>
+                          </ListBox.ItemTemplate>
+                        </ListBox>
+                      </StackPanel>
+                    </StackPanel>
+                  </Border>
+
+
                   <Border Background="#F8FAFC"
                           BorderBrush="#D7E2EE"
                           BorderThickness="1"

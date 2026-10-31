@@ -34,6 +34,7 @@ public partial class MainWindow
         DesignResizeHandle.AddHandler(InputElement.PointerPressedEvent, TraceDesignerPressed, RoutingStrategies.Tunnel, true);
         DesignResizeHandle.AddHandler(InputElement.PointerReleasedEvent, TraceDesignerReleased, RoutingStrategies.Tunnel, true);
         DesignerCanvas.AddHandler(DragDrop.DragLeaveEvent, (_, _) => FinishToolboxInteraction("toolbox-leave"), RoutingStrategies.Bubble, true);
+        Closing += (_, _) => CancelDesignerInteraction("window-closing", false);
         Closed += (_, _) => CancelDesignerInteraction("window-closed", false);
     }
 
@@ -105,6 +106,11 @@ public partial class MainWindow
         if (_designerInteractionMode == DesignerInteractionMode.None) return;
         var mode = _designerInteractionMode;
         var sameSession = DataContext is MainWindowViewModel && _designerInteractionSession == VM.DocumentSessionId;
+        if (IsGridEditorPointerInteraction)
+        {
+            _attachedViewModel?.FinishGridTrackResize(false);
+            _gridEditorPointerTarget = null;
+        }
         if (mode is DesignerInteractionMode.Selecting or DesignerInteractionMode.MarqueeSelecting)
             TraceDesignerInteraction("MARQUEE_CANCELLED", reason: reason);
         FinishDesignerInteraction(reason);

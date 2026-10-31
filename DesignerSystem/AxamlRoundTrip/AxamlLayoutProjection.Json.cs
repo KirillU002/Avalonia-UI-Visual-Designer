@@ -11,11 +11,15 @@ namespace FormDesigner.DesignerSystem.AxamlRoundTrip;
 
 public static partial class AxamlLayoutProjection
 {
+    public sealed record GridTrackMeasurement(double Size, string Definition);
+    public sealed record GridMeasurement(Rect Bounds, IReadOnlyList<GridTrackMeasurement> Rows, IReadOnlyList<GridTrackMeasurement> Columns);
     // JSON v2 uses the same native panels and measurement root as source projection.
     // This is a tree adapter, not an arithmetic implementation of Avalonia layout.
     public sealed record JsonLayoutTree(Panel Root, IReadOnlyDictionary<string, Control> Controls,
         IReadOnlyDictionary<string, string> Parents)
     {
+        public IReadOnlyDictionary<string, Grid> GridPanels { get; init; } = new Dictionary<string, Grid>();
+        public IReadOnlyDictionary<string, GridMeasurement> MeasuredGrids { get; private set; } = new Dictionary<string, GridMeasurement>();
         public IReadOnlyDictionary<string, Rect> Measure(double width, double height)
         {
             var measurement = new MeasurementRoot { Child = Root };
@@ -24,6 +28,13 @@ public static partial class AxamlLayoutProjection
                 PrepareOffscreen(Root);
                 measurement.Measure(new Size(width, height));
                 measurement.Arrange(new Rect(0, 0, width, height));
+                MeasuredGrids = GridPanels.ToDictionary(pair => pair.Key, pair =>
+                {
+                    var grid = pair.Value;
+                    return new GridMeasurement(new Rect(grid.TranslatePoint(default, Root) ?? default, grid.Bounds.Size),
+                        grid.RowDefinitions.Select(row => new GridTrackMeasurement(row.ActualHeight, row.Height.ToString())).ToArray(),
+                        grid.ColumnDefinitions.Select(column => new GridTrackMeasurement(column.ActualWidth, column.Width.ToString())).ToArray());
+                });
                 return Controls.ToDictionary(pair => pair.Key, pair =>
                 {
                     var parent = Parents[pair.Key];
@@ -43,6 +54,7 @@ public static partial class AxamlLayoutProjection
         if (document.LayoutSemanticsVersion != 2) throw new InvalidOperationException("Неизвестная версия native layout.");
         var byId = models.ToDictionary(c => c.Id, StringComparer.Ordinal);
         var views = new Dictionary<string, Control>(StringComparer.Ordinal);
+        var grids = new Dictionary<string, Grid>(StringComparer.Ordinal);
         var visiting = new HashSet<string>(StringComparer.Ordinal);
         foreach (var model in models)
             if (!string.IsNullOrEmpty(model.ParentId) && !byId.ContainsKey(model.ParentId))
@@ -81,6 +93,7 @@ public static partial class AxamlLayoutProjection
             {
                 var mode = string.IsNullOrEmpty(model.ChildLayoutMode) ? DesignerLayoutModes.GetModeForControlType(model.Type) : model.ChildLayoutMode;
                 var panel = PanelFor(mode, model.GridRowDefinitions, model.GridColumnDefinitions, model.Rows, model.Columns, model.LayoutOrientation, model.LayoutSpacing);
+                if (panel is Grid grid) grids[model.Id] = grid;
                 AddChildren(panel, children);
                 view = model.Type == DesignerControlTypes.Group ? panel : new Border
                 {
@@ -116,9 +129,10 @@ public static partial class AxamlLayoutProjection
         var root = PanelFor(document.SurfaceLayoutMode, document.SurfaceGridRowDefinitions, document.SurfaceGridColumnDefinitions,
             document.SurfaceLayoutRows, document.SurfaceLayoutColumns, document.SurfaceLayoutOrientation, document.SurfaceLayoutSpacing);
         root.Name = document.SurfaceLayoutMode == DesignerLayoutModes.Absolute ? "RootCanvas" : "RootLayout";
+        if (root is Grid rootGrid) grids[""] = rootGrid;
         AddChildren(root, models.Where(c => string.IsNullOrEmpty(c.ParentId)));
         if (views.Count != models.Count) throw new InvalidOperationException("Layout: дерево содержит недоступные или циклические элементы.");
-        return new JsonLayoutTree(root, views, models.ToDictionary(c => c.Id, c => c.ParentId));
+        return new JsonLayoutTree(root, views, models.ToDictionary(c => c.Id, c => c.ParentId)) { GridPanels = grids };
     }
 
     public static string Definitions(string text, int count) => string.IsNullOrWhiteSpace(text)

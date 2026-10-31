@@ -41,6 +41,7 @@ public partial class LayoutDefinitionEditorItem : ObservableObject
     };
 
     public bool IsValueEditable => SizeKind is "Star" or "Fixed";
+    public string DisplaySizeKind { get => SizeKind == "Fixed" ? "Pixel" : SizeKind; set => SizeKind = value == "Pixel" ? "Fixed" : value; }
 
     public void Reset(int index, string sizeKind, double value)
     {
@@ -71,6 +72,7 @@ public partial class LayoutDefinitionEditorItem : ObservableObject
         Value = NormalizeValue(normalized, Value);
         OnPropertyChanged(nameof(Preview));
         OnPropertyChanged(nameof(IsValueEditable));
+        OnPropertyChanged(nameof(DisplaySizeKind));
         NotifyChanged();
     }
 
