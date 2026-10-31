@@ -12,8 +12,24 @@ namespace FormDesigner.ViewModels;
 public partial class MainWindowViewModel
 {
     public int NativeDropPreviewLayoutPasses { get; private set; }
-    public string NativeGridMeasurementKey { get; set; } = "";
-    public string GridDropLayoutKey => JsonSerializer.Serialize(new
+    private string _nativeGridMeasurementKey = "";
+    private string? _gridDropLayoutFingerprint;
+    private List<(DesignControlModel Control, (string Key, string Json)[] Values)>? _gridDropPropertyFingerprint;
+    public string NativeGridMeasurementKey
+    {
+        get => _nativeGridMeasurementKey;
+        set { _nativeGridMeasurementKey = value; if (value.Length == 0) { _gridDropLayoutFingerprint = null; _gridDropPropertyFingerprint = null; } }
+    }
+    public string GridDropLayoutKey
+    {
+        get
+        {
+            // CustomProperties is an existing mutable bag; direct edits do not raise
+            // Control.PropertyChanged. Compare its strings exactly, without serialization
+            // or collision-prone hashes, before reusing the cached document fingerprint.
+            if (_gridDropLayoutFingerprint is not null && NativeDropPropertiesUnchanged()) return _gridDropLayoutFingerprint;
+            _gridDropPropertyFingerprint = Controls.Select(c => (c, c.CustomProperties.Select(p => (p.Key, p.ValueJson)).ToArray())).ToList();
+            return _gridDropLayoutFingerprint = JsonSerializer.Serialize(new
     {
         DocumentSessionId, Width = PreviewFormWidth, Height = PreviewFormHeight, SurfaceLayoutMode,
         SurfaceGridRowDefinitions, SurfaceGridColumnDefinitions, SurfaceLayoutRows, SurfaceLayoutColumns,
@@ -22,7 +38,21 @@ public partial class MainWindowViewModel
             c.Margin, c.Padding, c.BorderThickness, c.HorizontalAlignment, c.VerticalAlignment, c.IsVisible, c.IsLocked, c.ChildLayoutMode,
             c.StackOrder, c.LayoutOrientation, c.LayoutSpacing, c.Text, c.FontFamily, c.FontSize, c.FontWeight, c.Opacity,
             Properties = c.CustomProperties.Select(p => new { p.Key, p.ValueJson }) })
-    });
+            });
+        }
+    }
+    private bool NativeDropPropertiesUnchanged()
+    {
+        if (_gridDropPropertyFingerprint is not { } cache || cache.Count != Controls.Count) return false;
+        for (var i = 0; i < cache.Count; i++)
+        {
+            var (control, values) = cache[i];
+            if (!ReferenceEquals(control, Controls[i]) || control.CustomProperties.Count != values.Length) return false;
+            for (var j = 0; j < values.Length; j++)
+                if (control.CustomProperties[j].Key != values[j].Key || control.CustomProperties[j].ValueJson != values[j].Json) return false;
+        }
+        return true;
+    }
 
     public DesignControlModel CreateGridDropPrototype(string type)
     {
@@ -68,7 +98,8 @@ public partial class MainWindowViewModel
         var x = grid.Bounds.X + grid.Columns.Take(column).Sum(t => t.Size);
         var y = grid.Bounds.Y + grid.Rows.Take(row).Sum(t => t.Size);
         var cell = new Rect(x, y, grid.Columns.Skip(column).Take(Math.Max(1, columnSpan)).Sum(t => t.Size), grid.Rows.Skip(row).Take(Math.Max(1, rowSpan)).Sum(t => t.Size));
-        var geometry = NativeGridMeasurementKey + ":" + JsonSerializer.Serialize(grid);
+        var geometry = hostId is not null && _nativeContainerDropKeys.TryGetValue(hit.Key,out var cached)
+            ? cached : NativeGridMeasurementKey + ":" + JsonSerializer.Serialize(grid);
         return new(DocumentSessionId, hit.Key, row, column, rowSpan, columnSpan, grid.Bounds, cell, geometry, reason.Length == 0, reason);
     }
 

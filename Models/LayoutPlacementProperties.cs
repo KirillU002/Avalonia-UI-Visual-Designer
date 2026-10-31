@@ -12,10 +12,17 @@ public static class LayoutPlacementProperties
     public const string LastChildFillKey = "DockPanel.LastChildFill";
     public const string MinWidthKey = "MinWidth";
     public const string MinHeightKey = "MinHeight";
+    public const string MaxWidthKey = "MaxWidth";
+    public const string MaxHeightKey = "MaxHeight";
+    public static readonly string[] SizeConstraintKeys = { MinWidthKey, MinHeightKey, MaxWidthKey, MaxHeightKey };
 
     public static double Minimum(DesignControlModel model, string key)
         => double.TryParse(model.CustomProperties.FirstOrDefault(p => p.Key == key)?.ValueJson,
             System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var value) && double.IsFinite(value) && value >= 0 ? value : 0;
+
+    public static double Maximum(DesignControlModel model, string key)
+        => double.TryParse(model.CustomProperties.FirstOrDefault(p => p.Key == key)?.ValueJson,
+            System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var value) && double.IsFinite(value) && value >= 0 ? value : double.PositiveInfinity;
 
     public static Dock GetDock(DesignControlModel model) => Enum.TryParse<Dock>(ReadString(model, DockKey), out var dock) && Enum.IsDefined(dock) ? dock : Dock.Left;
     public static bool LastChildFill(DesignControlModel model)

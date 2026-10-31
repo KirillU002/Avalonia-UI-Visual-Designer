@@ -102,6 +102,7 @@
             <ComboBoxItem Content="50%"/>
             <ComboBoxItem Content="75%"/>
             <ComboBoxItem Content="100%"/>
+            <ComboBoxItem Content="125%"/>
             <ComboBoxItem Content="150%"/>
             <ComboBoxItem Content="200%"/>
           </ComboBox>

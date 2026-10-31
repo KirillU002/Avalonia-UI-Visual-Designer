@@ -7,11 +7,27 @@ using FormDesigner.Models;
 using FormDesigner.ViewModels;
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using Avalonia.Styling;
+using FormDesigner.Services;
 
 namespace FormDesigner.Views;
 
 public partial class MainWindow
 {
+    private readonly List<IStyle> _nativeCanvasThemeStyles = new();
+    private string _nativeCanvasThemeContext = "";
+    private void RefreshNativeCanvasThemeScope()
+    {
+        var context = VM.UsesNativeLayout ? VM.DocumentSessionId + ":" + string.Join(",", VM.NativeLayoutStyleTypes.OrderBy(t => t)) : "";
+        if (context == _nativeCanvasThemeContext) return;
+        foreach (var style in _nativeCanvasThemeStyles) DesignerCanvas.Styles.Remove(style);
+        _nativeCanvasThemeStyles.Clear(); _nativeCanvasThemeContext = context;
+        if (!VM.UsesNativeLayout) return;
+        var before = DesignerCanvas.Styles.ToArray();
+        PluginPreviewControlBuilder.ApplyNativeLayoutRootStyles(VM.Registry, VM.NativeLayoutStyleTypes, DesignerCanvas);
+        _nativeCanvasThemeStyles.AddRange(DesignerCanvas.Styles.Except(before));
+    }
     private void MeasureNativeDesignerLayout(double width, double height)
     {
         try

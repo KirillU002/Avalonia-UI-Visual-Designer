@@ -8,6 +8,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Text;
+using FormDesigner.Services;
 
 namespace FormDesigner.ViewModels;
 
@@ -22,8 +23,13 @@ public partial class MainWindowViewModel
     public bool UsesNativeLayout => !IsAxamlRoundTripDocument && LayoutSemanticsVersion == 2;
     public IReadOnlyDictionary<string, Rect> NativeLayoutBounds { get; set; } = new Dictionary<string, Rect>();
     private IReadOnlyDictionary<string, Rect> DesignerLayoutBounds => UsesNativeLayout ? NativeLayoutBounds : AxamlLayoutBounds;
+    internal IReadOnlyList<string> NativeLayoutStyleTypes => GetUsedProjectControlTypeKeys();
     public AxamlLayoutProjection.JsonLayoutTree BuildNativeLayout(Func<DesignControlModel, Control> leafFactory, bool includeHidden = false)
-        => AxamlLayoutProjection.BuildJson(CreateDocumentFileModel(), Controls.ToArray(), leafFactory, includeHidden);
+    {
+        var tree = AxamlLayoutProjection.BuildJson(CreateDocumentFileModel(), Controls.ToArray(), leafFactory, includeHidden);
+        PluginPreviewControlBuilder.ApplyNativeLayoutRootStyles(_registry, NativeLayoutStyleTypes, tree.Root);
+        return tree;
+    }
 
     private void ConfigureNativeControl(DesignControlModel model)
     {
@@ -89,9 +95,9 @@ public partial class MainWindowViewModel
     {
         return (control.WidthMode == "Auto" ? "" : $" Width=\"{ToInvariant(control.Width)}\"")
             + (control.HeightMode == "Auto" ? "" : $" Height=\"{ToInvariant(control.Height)}\"")
-            + string.Concat(new[] { LayoutPlacementProperties.MinWidthKey, LayoutPlacementProperties.MinHeightKey }
+            + string.Concat(LayoutPlacementProperties.SizeConstraintKeys
                 .Where(key => control.CustomProperties.Any(p => p.Key == key))
-                .Select(key => $" {key}=\"{EscapeXml(LayoutPlacementProperties.ReadString(control, key) ?? ToInvariant(LayoutPlacementProperties.Minimum(control, key)))}\""));
+                .Select(key => $" {key}=\"{EscapeXml(LayoutPlacementProperties.ReadString(control, key) ?? ToInvariant(key.StartsWith("Max", StringComparison.Ordinal) ? LayoutPlacementProperties.Maximum(control, key) : LayoutPlacementProperties.Minimum(control, key)))}\""));
     }
 
     private string NativePlacementAttributes(DesignControlModel control)
@@ -104,13 +110,37 @@ public partial class MainWindowViewModel
             result.Append($" Canvas.Left=\"{ToInvariant(control.X)}\" Canvas.Top=\"{ToInvariant(control.Y)}\"");
         else if (mode == DesignerLayoutModes.Dock)
             result.Append($" DockPanel.Dock=\"{EscapeXml(LayoutPlacementProperties.ReadString(control, LayoutPlacementProperties.DockKey) ?? "Left")}\"");
-        result.Append(AlignmentAttributes(control));
+        // Theme defaults differ between controls (Button defaults to Left). Native
+        // layout persists explicit semantics, including Stretch and Top.
+        result.Append($" HorizontalAlignment=\"{EscapeXml(DesignerLayoutModes.NormalizeHorizontalAlignment(control.HorizontalAlignment))}\" VerticalAlignment=\"{EscapeXml(DesignerLayoutModes.NormalizeVerticalAlignment(control.VerticalAlignment))}\"");
         result.Append($" Margin=\"{EscapeXml(control.Margin)}\"");
         return result.ToString();
     }
 
     private string ExportGridDefinitions(int count, string value) => UsesNativeLayout
         ? AxamlLayoutProjection.Definitions(value, count) : BuildGridDefinitions(count, value);
+
+    private static void AppendNativeViewportRefreshHelper(StringBuilder builder) => builder.AppendLine("""
+    private void ConfigureNativeViewportRefresh()
+    {
+        var pending = false;
+        var closed = false;
+        Closed += (_, _) => closed = true;
+        SizeChanged += (_, e) =>
+        {
+            if (closed || pending || (!e.WidthChanged && !e.HeightChanged)) return;
+            pending = true;
+            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            {
+                pending = false;
+                if (closed || Content is not Control root) return;
+                foreach (var child in System.Linq.Enumerable.Reverse(System.Linq.Enumerable.OfType<Control>(Avalonia.VisualTree.VisualExtensions.GetVisualDescendants(root))))
+                    child.InvalidateMeasure();
+                root.InvalidateMeasure();
+            }, Avalonia.Threading.DispatcherPriority.Background);
+        };
+    }
+    """);
 
     private static void ValidateNativeDocument(DesignerDocumentFileModel document)
     {

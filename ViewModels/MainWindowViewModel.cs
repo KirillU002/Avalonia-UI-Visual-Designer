@@ -5747,6 +5747,7 @@ public partial class MainWindowViewModel : ObservableObject
         AppendExportDiagnostics(diagnostics);
         AppendPreviewRuntimeDiagnostics(diagnostics);
         AppendDocumentIsolationDiagnostics(diagnostics);
+        AppendNativeLayoutDiagnostics(diagnostics);
 
         if (DiagnosticsMatch(Diagnostics, diagnostics))
         {
@@ -10773,7 +10774,7 @@ public partial class MainWindowViewModel : ObservableObject
         foreach (var customProperty in control.CustomProperties.Where(property =>
                      !descriptorKeys.Contains(property.Key)
                      && (!UsesNativeLayout || property.Key is not (LayoutPlacementProperties.DockKey or LayoutPlacementProperties.LastChildFillKey))
-                     && (!UsesNativeLayout || !CanHostChildren(control) || property.Key is not (LayoutPlacementProperties.MinWidthKey or LayoutPlacementProperties.MinHeightKey))
+                     && (!UsesNativeLayout || !LayoutPlacementProperties.SizeConstraintKeys.Contains(property.Key))
                      && !IsInternalPluginDependencyMetadata(property.Key)))
         {
             yield return CreateTextRow(
@@ -13172,7 +13173,7 @@ public partial class MainWindowViewModel : ObservableObject
         var exportNamespace = ResolveExportNamespace();
         var windowClassName = ResolveExportWindowClassName();
         var viewModelClassName = ResolveExportViewModelClassName();
-        var exportControlNames = BuildExportControlNameMap(Controls, windowClassName, viewModelClassName);
+        var exportControlNames = BuildExportControlNameMap(Controls, windowClassName, viewModelClassName, UsesNativeLayout ? "ConfigureNativeViewportRefresh" : "");
         var layoutPlan = BuildLayoutExportPlan();
         var controlNodes = Controls.ToDictionary(
             controlModel => controlModel.Id,
@@ -14243,7 +14244,7 @@ public partial class MainWindowViewModel : ObservableObject
             var runtimePreviewAxaml = GeneratedAxamlService.Create(
                 exportAxaml.Axaml,
                 AxamlGenerationMode.RuntimePreview,
-                preserveRuntimeNames: exportViewModel.Controls.Any(control => control.Type == DesignerControlTypes.DataGrid || StandardItemsProperties.IsStandardItemsControl(control.Type)),
+                preserveRuntimeNames: exportViewModel.UsesNativeLayout || exportViewModel.Controls.Any(control => control.Type == DesignerControlTypes.DataGrid || StandardItemsProperties.IsStandardItemsControl(control.Type)),
                 stretchRuntimeRoot: exportViewModel.UsesNativeLayout);
             stopwatch.Stop();
 
@@ -14320,7 +14321,7 @@ public partial class MainWindowViewModel : ObservableObject
                 Document = CloneDocumentFileModel(exportViewModel.ActiveFormDocument.Document),
                 ProjectForms = exportViewModel.CurrentProject.Forms.Select(CloneFormDocumentForPreview).ToList(),
                 ActiveFormId = form.Id,
-                StandardControlNames = BuildExportControlNameMap(exportViewModel.Controls, exportViewModel.ResolveExportWindowClassName(), exportViewModel.ResolveExportViewModelClassName()),
+                StandardControlNames = BuildExportControlNameMap(exportViewModel.Controls, exportViewModel.ResolveExportWindowClassName(), exportViewModel.ResolveExportViewModelClassName(), exportViewModel.UsesNativeLayout ? "ConfigureNativeViewportRefresh" : ""),
                 DataGridFieldPaths = exportViewModel.BuildCrudGenerationContexts()
                     .ToDictionary(context => context.Source.Id,
                         context => (IReadOnlyDictionary<string, string>)context.Fields.ToDictionary(field => field.Path, GetGeneratedRowPropertyName, StringComparer.Ordinal), StringComparer.Ordinal),
@@ -14862,8 +14863,9 @@ public partial class MainWindowViewModel : ObservableObject
     private IReadOnlyList<string> GetUsedProjectControlTypeKeys()
     {
         return CurrentProject.Forms
-            .SelectMany(form => form.Document?.Controls ?? Enumerable.Empty<DesignerControlFileModel>())
-            .Select(control => control.Type)
+            .SelectMany(form => form.Id == ActiveFormDocument?.Id ? Controls.Select(c => c.Type)
+                : (form.Document?.Controls ?? Enumerable.Empty<DesignerControlFileModel>()).Select(c => c.Type))
+            .Concat(Controls.Select(c => c.Type))
             .Where(typeKey => !string.IsNullOrWhiteSpace(typeKey))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
@@ -15840,7 +15842,7 @@ public partial class MainWindowViewModel : ObservableObject
         var exportNamespace = ResolveExportNamespace();
         var windowClassName = ResolveExportWindowClassName();
         var viewModelClassName = ResolveExportViewModelClassName();
-        var exportControlNames = BuildExportControlNameMap(Controls, windowClassName, viewModelClassName);
+        var exportControlNames = BuildExportControlNameMap(Controls, windowClassName, viewModelClassName, UsesNativeLayout ? "ConfigureNativeViewportRefresh" : "");
         var formClassNames = BuildProjectFormClassNameMap();
         var currentFormId = _exportActiveFormIdOverride ?? ActiveFormDocument?.Id ?? "";
         var exportableInteractions = GetExportableInteractions();
@@ -15901,6 +15903,7 @@ public partial class MainWindowViewModel : ObservableObject
         sb.AppendLine($"    public {windowClassName}()");
         sb.AppendLine("    {");
         sb.AppendLine("        InitializeComponent();");
+        if (UsesNativeLayout) sb.AppendLine("        ConfigureNativeViewportRefresh();");
         sb.AppendLine("    }");
 
         if (hasButtons)
@@ -15955,6 +15958,7 @@ public partial class MainWindowViewModel : ObservableObject
         if (hasInteractionHandlers)
             AppendGeneratedInteractionHandlers(sb, exportableInteractions, exportControlNames, formClassNames, currentFormId, skipButtonClickHandlers: false);
 
+        if (UsesNativeLayout) AppendNativeViewportRefreshHelper(sb);
         AppendStandardFlyoutHandlers(sb, exportControlNames);
         sb.AppendLine("}");
 
@@ -15966,7 +15970,7 @@ public partial class MainWindowViewModel : ObservableObject
         var exportNamespace = ResolveExportNamespace();
         var windowClassName = ResolveExportWindowClassName();
         var viewModelClassName = ResolveExportViewModelClassName();
-        var exportControlNames = BuildExportControlNameMap(Controls, windowClassName, viewModelClassName);
+        var exportControlNames = BuildExportControlNameMap(Controls, windowClassName, viewModelClassName, UsesNativeLayout ? "ConfigureNativeViewportRefresh" : "");
         var formClassNames = BuildProjectFormClassNameMap();
         var currentFormId = _exportActiveFormIdOverride ?? ActiveFormDocument?.Id ?? "";
         var exportableInteractions = GetExportableInteractions();
@@ -16227,6 +16231,7 @@ public partial class MainWindowViewModel : ObservableObject
         sb.AppendLine($"    public {windowClassName}()");
         sb.AppendLine("    {");
         sb.AppendLine("        InitializeComponent();");
+        if (UsesNativeLayout) sb.AppendLine("        ConfigureNativeViewportRefresh();");
         if (hasViewModel)
         {
             if (runtimeDataGridChecks.Count > 0)
@@ -16481,6 +16486,7 @@ public partial class MainWindowViewModel : ObservableObject
         else if (hasShowMessageInteractions && !hasSelectionInteractions)
             AppendGeneratedInteractionHelpers(sb, includeShowMessageHelper: true);
 
+        if (UsesNativeLayout) AppendNativeViewportRefreshHelper(sb);
         AppendStandardFlyoutHandlers(sb, exportControlNames);
         sb.AppendLine("}");
 
@@ -22699,6 +22705,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void Controls_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
+        if (UsesNativeLayout) NativeGridMeasurementKey = "";
         // Подписываемся на каждый контрол отдельно, чтобы любое изменение его свойств
         // сразу отражалось в XAML, предпросмотре и истории документа.
         if (e.OldItems is not null)
@@ -24674,6 +24681,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void NotifyDesignerStateChanged(bool trackHistory = true)
     {
+        _gridDropLayoutFingerprint = null;
         TrackRefreshOperation(nameof(NotifyDesignerStateChanged), trackHistory ? "Tracked" : "Untracked");
         // Общая точка синхронизации всего конструктора:
         // фиксируем историю, пересобираем XAML и просим окно перерисовать поверхность.

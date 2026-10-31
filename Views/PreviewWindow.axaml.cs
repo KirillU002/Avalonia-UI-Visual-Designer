@@ -1264,6 +1264,7 @@ public partial class PreviewWindow : Window
 
     private void PreviewWindow_SizeChanged(object? sender, SizeChangedEventArgs e)
     {
+        ScheduleNativeViewportMeasure();
         if (_document.LayoutSemanticsVersion == 2) return; // The native root re-arranges without rebuilding runtime controls.
         Debug.WriteLine(
             $"PREVIEW_WINDOW_RESIZE old={e.PreviousSize.Width.ToString(CultureInfo.InvariantCulture)}x{e.PreviousSize.Height.ToString(CultureInfo.InvariantCulture)}; " +
@@ -1934,6 +1935,12 @@ public partial class PreviewWindow : Window
                 VerticalAlignment.Center)
         };
 
+        if (_document.LayoutSemanticsVersion == 2)
+        {
+            button.Content = text; button.FontFamily = new FontFamily(control.FontFamily);
+            button.FontSize = control.FontSize; button.FontWeight = ParseFontWeight(control.FontWeight);
+            button.Foreground = ParseBrush(ResolvePreviewDesignColor(control.Foreground, "#FFFFFF", tokens, ThemeResourceKeys.ButtonForegroundBrush), tokens[ThemeResourceKeys.ButtonForegroundBrush]);
+        }
         button.Click += (_, _) =>
         {
             if (ApplyRuntimeInteractions(control, InteractionModel.EventButtonClick, BuildRuntimeSourceValues(control, text)))
@@ -1985,6 +1992,10 @@ public partial class PreviewWindow : Window
         var text = _runtimeTextBlockValuesByControlId.TryGetValue(control.Id, out var runtimeText)
             ? runtimeText
             : ResolvePreviewTextValue(control, string.IsNullOrWhiteSpace(control.Text) ? "Текст" : control.Text);
+
+        if (_document.LayoutSemanticsVersion == 2)
+            return new TextBlock { Text = text, FontFamily = new FontFamily(control.FontFamily), FontSize = control.FontSize,
+                FontWeight = ParseFontWeight(control.FontWeight), Foreground = ParseBrush(ResolvePreviewDesignColor(control.Foreground, "#0F172A", tokens, ThemeResourceKeys.TextBrush), tokens[ThemeResourceKeys.TextBrush]) };
 
         return new Border
         {

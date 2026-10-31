@@ -4,6 +4,7 @@ using System;
 using System.Diagnostics;
 using System.Linq;
 using System.Runtime.Loader;
+using System.Collections.Generic;
 
 namespace FormDesigner.Services;
 
@@ -26,6 +27,16 @@ public sealed record PluginPreviewBuildFailure(
 /// </summary>
 public static class PluginPreviewControlBuilder
 {
+    public static void ApplyNativeLayoutRootStyles(IDesignerRegistry registry, IEnumerable<string> controlTypes, Control root)
+    {
+        var context = new DesignerRuntimePreviewContributionContext { UsedControlTypeKeys = controlTypes.Distinct(StringComparer.Ordinal).ToArray() };
+        foreach (var provider in registry.GetRuntimePreviewContributionProviders())
+        {
+            var contribution = provider.GetRuntimePreviewContribution(context);
+            contribution?.Initialize?.Invoke();
+            contribution?.ApplyToPreviewRoot?.Invoke(root);
+        }
+    }
     public static bool TryBuild(
         string host,
         IControlDescriptor descriptor,

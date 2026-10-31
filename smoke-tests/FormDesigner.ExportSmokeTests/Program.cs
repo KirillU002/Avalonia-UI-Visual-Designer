@@ -45,6 +45,8 @@ internal static partial class Program
         // Initialize the real UI dispatcher before any view model can create the
         // fallback dispatcher; IPC continuations must run on the actual UI thread.
         EnsureAvaloniaRuntimeInitialized();
+        if (args.Contains("--layout-validation-checks")) return RunLayoutValidationChecks();
+        if (args.Contains("--layout-performance-checks")) return RunLayoutPerformanceChecks();
         if (args.Contains("--nested-layout-checks")) return RunNestedLayoutChecks();
         if (args.Contains("--preview-memory-dump")) return RunPreviewMemoryDump();
         if (args.Contains("--preview-memory-checks")) return RunPreviewMemoryChecks();
@@ -77,6 +79,14 @@ internal static partial class Program
             new("NestedLayoutPhase5Export", ConfigureNestedPhase5Export, AssertNestedPhase5Export, RequiresRealDataGrid: true),
             new("NestedLayoutPhase5EremexExport", ConfigureNestedPhase5EremexExport, AssertNestedPhase5EremexExport, RequiresRealDataGrid: true),
             new("NestedLayoutPhase5MultiFormExport", ConfigureNestedPhase5MultiFormExport, AssertNestedPhase5MultiFormExport, RequiresRealDataGrid: true),
+            new("LayoutPhase6_A", vm => ConfigureLayoutPhase6Export(vm, "A"), AssertLayoutPhase6Export, RequiresRealDataGrid: true),
+            new("LayoutPhase6_B", vm => ConfigureLayoutPhase6Export(vm, "B"), AssertLayoutPhase6Export, RequiresRealDataGrid: true),
+            new("LayoutPhase6_C", vm => ConfigureLayoutPhase6Export(vm, "C"), AssertLayoutPhase6Export, RequiresRealDataGrid: true),
+            new("LayoutPhase6_Eremex", vm => ConfigureLayoutPhase6Export(vm, "Eremex"), AssertLayoutPhase6Export, RequiresRealDataGrid: true),
+            new("LayoutPhase6_Constraints", vm => ConfigureLayoutPhase6Export(vm, "Constraints"), AssertLayoutPhase6Export, RequiresRealDataGrid: true),
+            new("LayoutPhase6_NameCollision", vm => { ConfigureLayoutPhase6Export(vm,"A"); vm.Controls.Single(c=>c.Name=="SaveButton").Name="ConfigureNativeViewportRefresh"; }, AssertLayoutPhase6Export, RequiresRealDataGrid: true),
+            new("LayoutPhase6_Mixed", vm => ConfigureLayoutPhase6Export(vm,"Mixed"), AssertLayoutPhase6Export, RequiresRealDataGrid: true),
+            new("LayoutPhase6_Bound", vm => ConfigureLayoutPhase6Export(vm,"Bound"), AssertLayoutPhase6Export, RequiresRealDataGrid: true),
             new("GridDropPhase4EremexExport", ConfigureGridDropPhase4EremexExport, AssertGridDropEremexExport),
             new("NativeGridPhase2MixedExport", ConfigureNativeGridMixedExport, AssertNativeGridMixedExport, RequiresRealDataGrid: true),
             new("NativeGridPhase2EremexExport", ConfigureNativeGridEremexExport, AssertNativeGridEremexExport),
@@ -8427,6 +8437,13 @@ internal static partial class Program
     private static void WriteAvaloniaProject(SmokeContext context)
     {
         Directory.CreateDirectory(context.ProjectPath);
+        if (context.Scenario.Name.StartsWith("LayoutPhase6_", StringComparison.Ordinal))
+        {
+            // Geometry/runtime validation must exercise the actual export shell,
+            // including plugin ApplicationStyles, not the legacy synthetic smoke shell.
+            context.ViewModel.ExportCurrentResultToProjectAsync(context.ProjectPath).GetAwaiter().GetResult();
+            return;
+        }
         File.WriteAllText(Path.Combine(context.ProjectPath, $"{context.Scenario.Name}.xaml.txt"), context.Xaml, Encoding.UTF8);
         File.WriteAllText(Path.Combine(context.ProjectPath, $"{context.Scenario.Name}.cs.txt"), context.CSharp, Encoding.UTF8);
         foreach (var generatedFile in context.GeneratedFiles.Where(file =>

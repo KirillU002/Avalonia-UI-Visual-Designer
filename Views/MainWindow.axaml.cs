@@ -42,7 +42,7 @@ public partial class MainWindow : Window
 {
     private const double DesignPreviewChromeHeight = 36;
     private static readonly TimeSpan AutosaveInterval = TimeSpan.FromSeconds(45);
-    private static readonly double[] SurfaceZoomLevels = { 0.25, 0.5, 0.75, 1.0, 1.5, 2.0 };
+    private static readonly double[] SurfaceZoomLevels = { 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0 };
     // Avalonia validates application-format identifiers and rejects values with '/'.
     private const string ControlTypeDataFormat = "formdesigner-control-type";
     private const string ControlSourceDocumentDataFormat = "formdesigner-source-document";
@@ -2765,6 +2765,7 @@ public partial class MainWindow : Window
         var renderStopwatch = Stopwatch.StartNew();
         DesignerSurface.ReportHostDiagnostic("DESIGNER_SURFACE_RENDER_START", $"document={VM.ActiveDocumentId}; controls={VM.Controls.Count}");
         RefreshPreviewMetrics();
+        RefreshNativeCanvasThemeScope();
         _isApplyingTextChanges = true;
 
         try
@@ -4756,6 +4757,11 @@ public partial class MainWindow : Window
     private Control CreateButtonPreview(DesignControlModel model)
     {
         var text = ResolvePreviewTextValue(model, model.Text ?? string.Empty);
+        if (VM.UsesNativeLayout)
+            return new Button { Content = text, FontFamily = new FontFamily(model.FontFamily), FontSize = model.FontSize, FontWeight = ParseFontWeight(model.FontWeight),
+                Background = ParseBrush(model.Background, "#2563EB"), Foreground = ParseBrush(model.Foreground, "#FFFFFF"),
+                BorderBrush = ParseBrush(model.BorderBrush, "#1D4ED8"), BorderThickness = UniformThickness(model.BorderThickness),
+                CornerRadius = UniformCornerRadius(model.CornerRadius), Padding = UniformThickness(model.Padding), IsHitTestVisible = false };
         VM.TraceDocumentDebug(
             "RENDER_BUTTON_CORNER_RADIUS",
             $"control={model.Name}:{model.Id}; value={model.CornerRadius.ToString(CultureInfo.InvariantCulture)}; renderMode=designer-border-preview",
@@ -4787,6 +4793,12 @@ public partial class MainWindow : Window
 
     private Control CreateTextBoxPreview(DesignControlModel model)
     {
+        if (VM.UsesNativeLayout)
+            return new TextBox { Text = ResolvePreviewTextValue(model, model.Text ?? string.Empty), Watermark = model.PlaceholderText,
+                FontFamily = new FontFamily(model.FontFamily), FontSize = model.FontSize, FontWeight = ParseFontWeight(model.FontWeight),
+                Background = ParseBrush(model.Background, "#FFFFFF"), Foreground = ParseBrush(model.Foreground, "#0F172A"),
+                BorderBrush = ParseBrush(model.BorderBrush, "#94A3B8"), BorderThickness = UniformThickness(model.BorderThickness),
+                CornerRadius = UniformCornerRadius(model.CornerRadius), Padding = UniformThickness(model.Padding), IsHitTestVisible = false };
         var hasDesignText = !string.IsNullOrWhiteSpace(model.Text) || !string.IsNullOrWhiteSpace(model.TextBindingPath);
         var text = hasDesignText
             ? ResolvePreviewTextValue(model, string.IsNullOrWhiteSpace(model.Text) ? string.Empty : model.Text)
@@ -4818,6 +4830,9 @@ public partial class MainWindow : Window
     private Control CreateTextBlockPreview(DesignControlModel model)
     {
         var text = ResolvePreviewTextValue(model, string.IsNullOrWhiteSpace(model.Text) ? "Текст" : model.Text);
+        if (VM.UsesNativeLayout)
+            return new TextBlock { Text = text, FontFamily = new FontFamily(model.FontFamily), FontSize = model.FontSize,
+                FontWeight = ParseFontWeight(model.FontWeight), Foreground = ParseBrush(model.Foreground, "#0F172A"), IsHitTestVisible = false };
 
         return new Border
         {
@@ -5336,6 +5351,11 @@ public partial class MainWindow : Window
 
     private Control CreateModernDataGridPreview(DesignControlModel model)
     {
+        if (VM.UsesNativeLayout && GetActiveBindingSource(model.BindingSourceId) is null)
+            return new DataGrid { AutoGenerateColumns = false, IsReadOnly = true,
+                Background = ParseBrush(model.DataGridRowBackground, "#FFFFFF"), BorderBrush = ParseBrush(model.DataGridOuterBorderBrush, "#CBD5E1"),
+                BorderThickness = UniformThickness(model.BorderThickness), RowHeight = model.DataGridRowHeight,
+                ColumnHeaderHeight = model.DataGridHeaderHeight, IsHitTestVisible = false };
         var fields = GetActiveBindingFields(model.BindingSourceId).ToList();
         var groupedFields = model.AllowGrouping
             ? fields

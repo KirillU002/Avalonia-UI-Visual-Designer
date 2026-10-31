@@ -1,5 +1,9 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
+using Avalonia.Data;
+using Avalonia.VisualTree;
+using DataBinding = Avalonia.Data.Binding;
 using Avalonia.Layout;
 using Avalonia.Media;
 using FormDesigner.Models;
@@ -26,6 +30,17 @@ public static partial class AxamlLayoutProjection
             try
             {
                 PrepareOffscreen(Root);
+                // ScrollBar normally receives these owner bindings on visual attachment.
+                // Offscreen trees have no render root; use the same public owner values,
+                // leaving visibility/extent calculations to Avalonia itself.
+                foreach (var bar in Root.GetVisualDescendants().OfType<ScrollBar>())
+                {
+                    if (bar.TemplatedParent is not ScrollViewer owner) continue;
+                    var horizontal = bar.Orientation == Orientation.Horizontal;
+                    if (!bar.IsSet(ScrollBar.VisibilityProperty)) bar.Bind(ScrollBar.VisibilityProperty, new DataBinding(horizontal ? "HorizontalScrollBarVisibility" : "VerticalScrollBarVisibility") { Source = owner, Priority = BindingPriority.Template });
+                    if (!bar.IsSet(ScrollBar.ViewportSizeProperty)) bar.Bind(ScrollBar.ViewportSizeProperty, new DataBinding(horizontal ? "Viewport.Width" : "Viewport.Height") { Source = owner, Priority = BindingPriority.Template });
+                    if (!bar.IsSet(ScrollBar.MaximumProperty)) bar.Bind(ScrollBar.MaximumProperty, new DataBinding(horizontal ? "ScrollBarMaximum.X" : "ScrollBarMaximum.Y") { Source = owner, Priority = BindingPriority.Template });
+                }
                 measurement.Measure(new Size(width, height));
                 measurement.Arrange(new Rect(0, 0, width, height));
                 MeasuredGrids = GridPanels.ToDictionary(pair => pair.Key, pair =>
@@ -153,6 +168,8 @@ public static partial class AxamlLayoutProjection
     {
         if (model.CustomProperties.Any(p => p.Key == LayoutPlacementProperties.MinWidthKey)) view.MinWidth = LayoutPlacementProperties.Minimum(model, LayoutPlacementProperties.MinWidthKey);
         if (model.CustomProperties.Any(p => p.Key == LayoutPlacementProperties.MinHeightKey)) view.MinHeight = LayoutPlacementProperties.Minimum(model, LayoutPlacementProperties.MinHeightKey);
+        if (model.CustomProperties.Any(p => p.Key == LayoutPlacementProperties.MaxWidthKey)) view.MaxWidth = LayoutPlacementProperties.Maximum(model, LayoutPlacementProperties.MaxWidthKey);
+        if (model.CustomProperties.Any(p => p.Key == LayoutPlacementProperties.MaxHeightKey)) view.MaxHeight = LayoutPlacementProperties.Maximum(model, LayoutPlacementProperties.MaxHeightKey);
         if (model.WidthMode == "Auto") view.ClearValue(Control.WidthProperty); else view.Width = model.Width;
         if (model.HeightMode == "Auto") view.ClearValue(Control.HeightProperty); else view.Height = model.Height;
         // The existing runtime DataGrid factory returns Border -> Grid -> DataGrid.

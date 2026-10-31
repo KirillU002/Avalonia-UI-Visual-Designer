@@ -43,6 +43,7 @@ public partial class MainWindowViewModel
         NativeContainerMeasurements = new Dictionary<string, AxamlLayoutProjection.ContainerMeasurement>();
         NativeVisualHits = Array.Empty<AxamlLayoutProjection.LayoutVisualHit>();
         _nativeContainerGeometry = new Dictionary<string, string>();
+        _nativeContainerDropKeys = new Dictionary<string, string>(); _nativeGeometryFingerprint = "";
     }
 
     private void BeginGridEditorUndoBatch()

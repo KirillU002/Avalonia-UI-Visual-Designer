@@ -29,15 +29,23 @@ public partial class MainWindowViewModel
                 LayoutPlacementProperties.GetDock(control).ToString(), DockSideChoices, "Сторона размещения в настоящем DockPanel; последний элемент может заполнять свободное место.",
                 value => SetNativeLayoutLiteral(control, LayoutPlacementProperties.DockKey, value));
         }
-        if (!CanHostChildren(control)) yield break;
-        foreach (var key in new[] { LayoutPlacementProperties.MinWidthKey, LayoutPlacementProperties.MinHeightKey })
+        foreach (var key in LayoutPlacementProperties.SizeConstraintKeys)
         {
-            if (control.CustomProperties.All(p => p.Key != key)) continue;
             if (LayoutPlacementProperties.ReadString(control, key) is { } expression)
-                yield return CreateReadOnlyRow(PropertyGridCategoryLayout, key, key, expression, "Выражение минимального размера сохранено.");
-            else yield return CreateNumberRow(PropertyGridCategoryLayout, key, key, LayoutPlacementProperties.Minimum(control, key),
-                "Настоящий минимальный размер Avalonia. Ноль разрешён; пустой Auto-контейнер может стать невидимым.", value => SetNativeLayoutLiteral(control, key, Math.Max(0, value)));
+                yield return CreateReadOnlyRow(PropertyGridCategoryLayout, key, key, expression, "Выражение ограничения размера сохранено.");
+            else yield return CreateNumberRow(PropertyGridCategoryLayout, key, key, key.StartsWith("Max", StringComparison.Ordinal) ? LayoutPlacementProperties.Maximum(control, key) : LayoutPlacementProperties.Minimum(control, key),
+                "Настоящее ограничение Avalonia в DIP; Max=Infinity снимает верхнее ограничение. Авторский Width/Height не меняется.", value =>
+                {
+                    if (double.IsPositiveInfinity(value) && key.StartsWith("Max", StringComparison.Ordinal))
+                    {
+                        var existing = control.CustomProperties.FirstOrDefault(p => p.Key == key); if (existing is not null) control.CustomProperties.Remove(existing);
+                        NotifyDesignerStateChanged(); RebuildPropertyGrid("NativeConstraint");
+                    }
+                    else if (double.IsFinite(value) && value >= 0) SetNativeLayoutLiteral(control, key, value);
+                    else StatusText = "Введите неотрицательный размер; Infinity допустим только для MaxWidth/MaxHeight.";
+                });
         }
+        if (!CanHostChildren(control)) yield break;
         if (!layoutOnly)
         {
             yield return CreateEnumRow(PropertyGridCategoryLayout, nameof(control.ChildLayoutMode), "Children Layout", GetLayoutModeForControl(control), NativeContainerModes,
@@ -84,6 +92,9 @@ public partial class MainWindowViewModel
         = new Dictionary<string, AxamlLayoutProjection.ContainerMeasurement>();
     public IReadOnlyList<AxamlLayoutProjection.LayoutVisualHit> NativeVisualHits { get; private set; } = Array.Empty<AxamlLayoutProjection.LayoutVisualHit>();
     private IReadOnlyDictionary<string, string> _nativeContainerGeometry = new Dictionary<string, string>();
+    private IReadOnlyDictionary<string, string> _nativeContainerDropKeys = new Dictionary<string, string>();
+    private string _nativeGeometryFingerprint = "";
+    private long _nativeGeometryVersion;
 
     public void UpdateNativeLayoutMeasurements(AxamlLayoutProjection.JsonLayoutTree tree, double width, double height)
     {
@@ -92,13 +103,21 @@ public partial class MainWindowViewModel
         NativeContainerMeasurements = tree.MeasuredContainers;
         NativeVisualHits = tree.VisualHits;
         object RectValues(Rect rect) => new { rect.X, rect.Y, rect.Width, rect.Height };
-        _nativeContainerGeometry = tree.MeasuredContainers.ToDictionary(p => p.Key, p => JsonSerializer.Serialize(new
+        var geometry = tree.MeasuredContainers.ToDictionary(p => p.Key, p => JsonSerializer.Serialize(new
         {
             p.Value.Mode, Bounds = RectValues(p.Value.Bounds), Clip = RectValues(p.Value.Clip), p.Value.Horizontal, p.Value.LastChildFill,
+            Tracks = tree.MeasuredGrids.TryGetValue(p.Key,out var grid) ? new { grid.Rows, grid.Columns } : null,
             Children = p.Value.Children.Select(c => new { c.Id, Bounds = RectValues(c.Bounds), c.Visible,
                 Margin = new { c.Margin.Left, c.Margin.Top, c.Margin.Right, c.Margin.Bottom } })
         }));
-        NativeGridMeasurementKey = GridDropLayoutKey;
+        var fingerprint=GridDropLayoutKey;
+        // Keys are small version tokens. Reuse is decided by exact input + geometry
+        // comparisons, never hashes; unchanged redraws do not invalidate a live gesture.
+        _nativeContainerDropKeys=geometry.ToDictionary(p=>p.Key,p=>_nativeGeometryFingerprint==fingerprint
+            && _nativeContainerGeometry.TryGetValue(p.Key,out var previous) && previous==p.Value && _nativeContainerDropKeys.TryGetValue(p.Key,out var key)
+                ? key : (++_nativeGeometryVersion).ToString(System.Globalization.CultureInfo.InvariantCulture));
+        _nativeContainerGeometry=geometry; _nativeGeometryFingerprint=fingerprint;
+        NativeGridMeasurementKey = fingerprint;
     }
 
     public GridDropTarget ResolveLayoutDropTarget(Point point, DesignControlModel? moving = null, Point grabOffset = default, bool bypassSnap = false)
@@ -138,7 +157,7 @@ public partial class MainWindowViewModel
 
         GridDropTarget Target(int index, string dock, Rect area, Rect? indicator = null, string note = "", Point canvas = default)
             => new(DocumentSessionId, hostId, -1, -1, moving?.GridRowSpan ?? 1, moving?.GridColumnSpan ?? 1,
-                host.Bounds, area, NativeGridMeasurementKey + ":" + _nativeContainerGeometry[hostId], true, note, LayoutMode: host.Mode, InsertionIndex: index,
+                host.Bounds, area, _nativeContainerDropKeys[hostId], true, note, LayoutMode: host.Mode, InsertionIndex: index,
                 DockSide: dock, CanvasPosition: canvas, InsertionIndicator: indicator, GrabOffset: grabOffset,
                 BypassSnap: bypassSnap, UsesContainerHitTest: true);
 
