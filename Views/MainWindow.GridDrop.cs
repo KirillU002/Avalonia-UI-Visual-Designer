@@ -5,6 +5,7 @@ using Avalonia.Input;
 using Avalonia.Media;
 using FormDesigner.Models;
 using FormDesigner.ViewModels;
+using FormDesigner.Services;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -92,6 +93,9 @@ public partial class MainWindow
     private void GridControl_PointerReleased(PointerReleasedEventArgs e)
     {
         if (!IsGridControlInteraction || !ReferenceEquals(e.Pointer, _designerPointer)) return;
+        using var profile = LayoutDropProfile.BeginIfEnabled(VM.ActiveDocumentId, _gridDragOrigin?.Model.Id ?? "",
+            (code, detail) => VM.TraceDocumentDebug(code, detail, toOutput: true));
+        using var releaseStage = LayoutDropProfile.Stage("PointerReleased");
         e.Handled = true;
         var origin = _gridDragOrigin; var target = _gridDropTarget;
         var moved = _designerInteractionMode == DesignerInteractionMode.MovingGridControl;
@@ -149,6 +153,9 @@ public partial class MainWindow
     private bool TryNativeGridToolboxDrop(DragEventArgs e)
     {
         if (!VM.UsesNativeLayout || !e.Data.Contains(ControlTypeDataFormat)) return false;
+        using var profile = LayoutDropProfile.BeginIfEnabled(VM.ActiveDocumentId, "toolbox",
+            (code, detail) => VM.TraceDocumentDebug(code, detail, toOutput: true));
+        using var releaseStage = LayoutDropProfile.Stage("ToolboxDrop");
         e.Handled = true; e.DragEffects = DragDropEffects.None;
         var source = e.Data.Get(ControlSourceDocumentDataFormat) as string ?? VM.ActiveDocumentId;
         var type = e.Data.Get(ControlTypeDataFormat) as string ?? "";

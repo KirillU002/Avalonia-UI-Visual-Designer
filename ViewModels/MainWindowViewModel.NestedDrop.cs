@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using FormDesigner.DesignerSystem.AxamlRoundTrip;
 using FormDesigner.Models;
+using FormDesigner.Services;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -98,6 +99,7 @@ public partial class MainWindowViewModel
 
     public void UpdateNativeLayoutMeasurements(AxamlLayoutProjection.JsonLayoutTree tree, double width, double height)
     {
+        using var profileStage = LayoutDropProfile.Stage("MeasureArrange");
         NativeLayoutBounds = tree.Measure(width, height);
         NativeGridMeasurements = tree.MeasuredGrids;
         NativeContainerMeasurements = tree.MeasuredContainers;
@@ -122,6 +124,7 @@ public partial class MainWindowViewModel
 
     public GridDropTarget ResolveLayoutDropTarget(Point point, DesignControlModel? moving = null, Point grabOffset = default, bool bypassSnap = false)
     {
+        using var profileStage = LayoutDropProfile.Stage("ResolveDropTarget");
         GridDropTarget Invalid(string reason, string parent = "", string mode = DesignerLayoutModes.Grid, Rect bounds = default)
             => new(DocumentSessionId, parent, -1, -1, moving?.GridRowSpan ?? 1, moving?.GridColumnSpan ?? 1,
                 bounds, default, NativeGridMeasurementKey, false, reason, LayoutMode: mode,

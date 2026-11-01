@@ -5425,6 +5425,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void RebuildStructureTree()
     {
+        using var profileStage = LayoutDropProfile.Stage("RebuildStructureTree");
         if (_isStructureTreeRefreshSuspended)
             return;
 
@@ -5515,11 +5516,19 @@ public partial class MainWindowViewModel : ObservableObject
                 root.Children.Add(orphanNode);
         }
 
-        StructureTreeItems.Clear();
-        StructureTreeItems.Add(root);
-        ApplyStructureDiagnosticsBadges();
-        RefreshStructureSelection();
-        RaiseStructureTreeProperties();
+        // TreeView can write SelectedItem=null while replacing its roots. That is
+        // a view refresh, not a user request to clear the canvas selection/Inspector.
+        var wasUpdatingSelection = _isUpdatingStructureSelection;
+        _isUpdatingStructureSelection = true;
+        try
+        {
+            StructureTreeItems.Clear();
+            StructureTreeItems.Add(root);
+            ApplyStructureDiagnosticsBadges();
+            RefreshStructureSelection();
+            RaiseStructureTreeProperties();
+        }
+        finally { _isUpdatingStructureSelection = wasUpdatingSelection; }
         stopwatch.Stop();
         _lastStructureTreeRebuildMs = stopwatch.Elapsed.TotalMilliseconds;
         ReportPerformanceMetric("StructureTree rebuild", _lastStructureTreeRebuildMs);
@@ -5575,6 +5584,7 @@ public partial class MainWindowViewModel : ObservableObject
 
         selectedItem ??= StructureTreeItems.FirstOrDefault();
 
+        var wasUpdatingSelection = _isUpdatingStructureSelection;
         _isUpdatingStructureSelection = true;
         try
         {
@@ -5582,7 +5592,7 @@ public partial class MainWindowViewModel : ObservableObject
         }
         finally
         {
-            _isUpdatingStructureSelection = false;
+            _isUpdatingStructureSelection = wasUpdatingSelection;
         }
 
         RaiseStructureTreeProperties();
@@ -6885,6 +6895,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     private DesignControlModel CreateControlCore(string type, double x, double y, string? parentId, bool bypassGridSnap, string documentId, string reason, GridDropTarget? gridTarget = null)
     {
+        using var profileStage = LayoutDropProfile.Stage("CreateControlCore");
         // Контрол всегда создается из стартового шаблона,
         // а координаты сразу привязываются к сетке и границам контейнера.
         var model = CreateDefaultControl(type);
@@ -6923,7 +6934,7 @@ public partial class MainWindowViewModel : ObservableObject
         ClampControlToSurface(model);
         TrackControlDocument(model, documentId);
         Controls.Add(model);
-        SelectedControl = model;
+        using (LayoutDropProfile.Stage("SelectNewControl")) SelectedControl = model;
         TraceDocumentDebug(reason, $"created={model.Name}/{model.Id}; type={type}; doc={documentId}; x={model.X:0.##}; y={model.Y:0.##}", toOutput: false);
         return model;
     }
@@ -8339,6 +8350,7 @@ public partial class MainWindowViewModel : ObservableObject
     private void RebuildCanvasForActiveForm(string reason)
     {
         TraceDocumentDebug("RebuildCanvasForActiveForm", $"reason={reason}; active={ActiveDocumentName}:{ActiveDocumentId}; controls={Controls.Count}", toOutput: false);
+        _nativeDropRenderChange = null;
         DesignerChanged?.Invoke(this, EventArgs.Empty);
     }
 
@@ -10349,6 +10361,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void RebuildPropertyGrid(string reason = "General")
     {
+        using var profileStage = LayoutDropProfile.Stage("RefreshPropertyInspector");
         TrackRefreshOperation(nameof(RebuildPropertyGrid), reason);
         if (_isApplyingDocument)
             return;
@@ -10390,6 +10403,7 @@ public partial class MainWindowViewModel : ObservableObject
             var query = PropertyGridSearchText.Trim();
             var hasSearch = !string.IsNullOrWhiteSpace(query);
             var rows = RemoveDuplicatePropertyGridRows(BuildPropertyGridRows().Select(ApplyAxamlPropertyCapability).ToList(), reason);
+            LayoutDropProfile.Count("InspectorRowsCreated", rows.Count);
             if (hasSearch)
             {
                 rows = rows
@@ -13122,6 +13136,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     public void CommitUndoBatch()
     {
+        using var profileStage = LayoutDropProfile.Stage("CommitUndoBatch");
         if (_undoBatchDepth <= 0)
             return;
 
@@ -15925,10 +15940,6 @@ public partial class MainWindowViewModel : ObservableObject
             }
         }
 
-        var extraInteractionHandlers = exportableInteractions
-            .Where(item => !string.Equals(item.EventName, InteractionModel.EventButtonClick, StringComparison.OrdinalIgnoreCase))
-            .ToList();
-
         if (hasSelectionInteractions)
         {
             sb.AppendLine();
@@ -16474,17 +16485,15 @@ public partial class MainWindowViewModel : ObservableObject
             AppendGeneratedInteractionHelpers(sb, includeShowMessageHelper: hasShowMessageInteractions);
         }
 
-        if (extraInteractionHandlers.Count > 0)
+        if (exportableInteractions.Count > 0)
             AppendGeneratedInteractionHandlers(
                 sb,
-                extraInteractionHandlers,
+                exportableInteractions,
                 exportControlNames,
                 formClassNames,
                 currentFormId,
-                skipButtonClickHandlers: false,
+                skipButtonClickHandlers: true,
                 includeShowMessageHelper: hasShowMessageInteractions && !hasSelectionInteractions);
-        else if (hasShowMessageInteractions && !hasSelectionInteractions)
-            AppendGeneratedInteractionHelpers(sb, includeShowMessageHelper: true);
 
         if (UsesNativeLayout) AppendNativeViewportRefreshHelper(sb);
         AppendStandardFlyoutHandlers(sb, exportControlNames);
@@ -18823,8 +18832,12 @@ public partial class MainWindowViewModel : ObservableObject
 
     private static string ToCamelCase(string value)
     {
+        // Toolkit strips a leading '_' from backing fields. The m_ convention
+        // preserves a property whose actual generated identifier starts with '_'
+        // (for example a form title beginning with a digit).
         if (string.IsNullOrWhiteSpace(value))
             return value;
+        if (value.StartsWith("_", StringComparison.Ordinal)) return "m_" + value;
 
         return char.ToLowerInvariant(value[0]) + value[1..];
     }
@@ -21426,6 +21439,7 @@ public partial class MainWindowViewModel : ObservableObject
         bool refreshEditorSurfaces = true,
         [CallerMemberName] string caller = "")
     {
+        using var profileStage = LayoutDropProfile.Stage("ApplyDocument");
         ValidateNativeDocument(document);
         if (_isExportPipelineRunning || _isGeneratingSecondaryFormExport)
         {
@@ -22185,6 +22199,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void RegisterHistorySnapshot()
     {
+        using var profileStage = LayoutDropProfile.Stage("CreateUndoSnapshot");
         if (_isHistorySuspended)
             return;
 
@@ -22754,6 +22769,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void Control_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
+        LayoutDropProfile.Count("ModelPropertyNotifications");
         if (UsesNativeLayout) NativeGridMeasurementKey = "";
         if (UsesNativeLayout && sender is DesignControlModel sized && !_isApplyingDocument)
         {
@@ -24700,7 +24716,9 @@ public partial class MainWindowViewModel : ObservableObject
         MarkExportCacheStale();
         ScheduleDiagnosticsRefresh();
         ScheduleEditorCommandRefresh();
-        DesignerChanged?.Invoke(this, EventArgs.Empty);
+        var nativeDropChange = _nativeDropRenderChange;
+        _nativeDropRenderChange = null;
+        DesignerChanged?.Invoke(this, nativeDropChange ?? EventArgs.Empty);
     }
 }
 

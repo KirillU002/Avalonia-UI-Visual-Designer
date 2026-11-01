@@ -26,6 +26,7 @@ public partial class MainWindowViewModel
     internal IReadOnlyList<string> NativeLayoutStyleTypes => GetUsedProjectControlTypeKeys();
     public AxamlLayoutProjection.JsonLayoutTree BuildNativeLayout(Func<DesignControlModel, Control> leafFactory, bool includeHidden = false)
     {
+        using var profileStage = LayoutDropProfile.Stage("BuildNativeProjection");
         var tree = AxamlLayoutProjection.BuildJson(CreateDocumentFileModel(), Controls.ToArray(), leafFactory, includeHidden);
         PluginPreviewControlBuilder.ApplyNativeLayoutRootStyles(_registry, NativeLayoutStyleTypes, tree.Root);
         return tree;

@@ -1674,6 +1674,7 @@ public partial class MainWindow : Window
 
     private void ViewModel_DesignerChanged(object? sender, EventArgs e)
     {
+        _nativeDropVisualChange = e as MainWindowViewModel.NativeDropRenderChange;
         if (VM.IsPropertyEditorFocused)
         {
             return;
@@ -2281,6 +2282,8 @@ public partial class MainWindow : Window
 
     private void MainWindow_KeyDown(object? sender, KeyEventArgs e)
     {
+        if (e.Key == Key.Escape && _contextMenuPointer is not null)
+        { CancelPendingContextMenu(); e.Handled = true; return; }
         if (DataContext is not MainWindowViewModel)
             return;
 
@@ -2642,6 +2645,14 @@ public partial class MainWindow : Window
 
     private void DesignerCanvas_PointerReleased(object? sender, PointerReleasedEventArgs e)
     {
+        // Selection can replace the pressed wrapper before a right-button release.
+        // Capture belongs to the stable Canvas; dispatch to the current wrapper.
+        if (_pendingContextMenuControlId.Length > 0 && e.InitialPressMouseButton == MouseButton.Right)
+        {
+            if (VM.GetControl(_pendingContextMenuControlId) is not null && _wrapperByControlId.TryGetValue(_pendingContextMenuControlId, out var contextTarget)) Control_PointerReleased(contextTarget, e);
+            else CancelPendingContextMenu();
+            return;
+        }
         if (IsGridControlInteraction) { GridControl_PointerReleased(e); return; }
         if (!_isMarqueeSelecting || !ReferenceEquals(e.Pointer, _designerPointer)) return;
         if (e.GetCurrentPoint(DesignerCanvas).Properties.IsLeftButtonPressed) return;
@@ -2759,8 +2770,29 @@ public partial class MainWindow : Window
 
     private void RenderDesigner()
     {
+        using var profileStage = LayoutDropProfile.Stage("RebuildVisualTree");
         if (_attachedViewModel is null)
             return;
+
+        _designerRenderTimer.Stop(); _isDesignerRenderScheduled = false;
+        var dropChange = _nativeDropVisualChange; _nativeDropVisualChange = null;
+        var nativeMeasured = false;
+        if (dropChange?.AddedControlId.Length > 0) RefreshNativeCanvasThemeScope();
+        if (dropChange is not null && VM.UsesNativeLayout && !VM.IsUserPreviewMode
+            && dropChange.Session == VM.DocumentSessionId && dropChange.Fingerprint == VM.GridDropLayoutKey
+            && (_nativeRenderedSelection == NativeSelectionStamp()
+                || (dropChange.AddedControlId.Length > 0 && _nativeRenderedSelectionCount <= 1 && !VM.HasMultipleSelection)))
+        {
+            MeasureNativeDesignerLayout(VM.PreviewFormWidth, VM.PreviewFormHeight); nativeMeasured = true;
+            if (TryUpdateNativeDropVisuals(dropChange))
+            {
+                ClearGuideOverlay(); RenderIdleSelectionOverlay(); RenderControlNameBadge();
+                RenderNativeGridEditorOverlay(); RenderMiniMap();
+                _nativeRenderedSelection = NativeSelectionStamp(); _nativeRenderedSelectionCount = VM.SelectedControlIds.Count;
+                VM.MarkCanvasRenderedDocument("NativeDropPlacement", _wrapperByControlId.Count, _previewRowsBySourceKey.Values.Sum(item => item.Rows.Count));
+                return;
+            }
+        }
 
         var renderStopwatch = Stopwatch.StartNew();
         DesignerSurface.ReportHostDiagnostic("DESIGNER_SURFACE_RENDER_START", $"document={VM.ActiveDocumentId}; controls={VM.Controls.Count}");
@@ -2808,7 +2840,7 @@ public partial class MainWindow : Window
             VM.AxamlLayoutBounds = VM.ActiveAxamlSourceDocument is { } axaml
                 ? AxamlLayoutProjection.Arrange(axaml, VM.Controls, surfaceWidth, surfaceHeight)
                 : new Dictionary<string, Rect>();
-            if (VM.UsesNativeLayout) MeasureNativeDesignerLayout(surfaceWidth, surfaceHeight);
+            if (VM.UsesNativeLayout && !nativeMeasured) MeasureNativeDesignerLayout(surfaceWidth, surfaceHeight);
 
             if (!VM.IsUserPreviewMode && VM.Controls.Count == 0)
             {
@@ -2825,9 +2857,12 @@ public partial class MainWindow : Window
                 VM.IsUserPreviewMode);
 
             RenderIdleSelectionOverlay();
+            RenderControlNameBadge();
             RenderNativeGridEditorOverlay();
             RestoreNativeGridDropOverlay();
             RenderMiniMap();
+            _nativeRenderedSelection = NativeSelectionStamp();
+            _nativeRenderedSelectionCount = VM.SelectedControlIds.Count;
             VM.MarkCanvasRenderedDocument(
                 "RenderDesigner",
                 _wrapperByControlId.Count,
@@ -4205,6 +4240,8 @@ public partial class MainWindow : Window
 
     private Border CreateDesignerWrapper(DesignControlModel model, double renderedWidth, double renderedHeight)
     {
+        using var profileStage = LayoutDropProfile.Stage("CreateDesignerWrappers");
+        LayoutDropProfile.Count("DesignerWrappersCreated");
         // У каждого элемента на форме есть не только его визуальное превью,
         // но и служебная обертка: рамка выделения, маркер размера, child-host и обработчики мыши.
         var isSelected = VM.IsControlSelected(model);
@@ -4363,27 +4400,6 @@ public partial class MainWindow : Window
                     toOutput: false);
             }
 
-            var label = new Border
-            {
-                Background = new SolidColorBrush(Color.Parse("#0F172A")),
-                CornerRadius = new CornerRadius(999),
-                Padding = new Thickness(8, 3),
-                Child = new TextBlock
-                {
-                    Text = model.Name,
-                    FontSize = 11,
-                    FontWeight = FontWeight.SemiBold,
-                    Foreground = Brushes.White
-                },
-                IsHitTestVisible = false,
-                IsVisible = !(VM.IsAxamlRoundTripDocument && preview is (Expander or ItemsControl or ListBoxItem or ProgressBar))
-                    && (!VM.IsAxamlRoundTripDocument || string.IsNullOrEmpty(model.ParentId) || isSelected)
-            };
-
-            Canvas.SetLeft(label, 8);
-            Canvas.SetTop(label, 8);
-            root.Children.Add(label);
-
             var topRightBadgeY = 8d;
 
             void AddTopRightBadge(string text, string background, double minLeft)
@@ -4468,14 +4484,19 @@ public partial class MainWindow : Window
             Background = Brushes.Transparent,
             Opacity = 1,
             Tag = model,
-            Child = root,
-            ContextMenu = isUserPreviewMode ? null : CreateControlContextMenu(model)
+            Child = root
         };
 
         if (VM.UsesNativeLayout) AddNativeSelectionFrame(root, wrapper, isSelected, renderedWidth, renderedHeight);
 
         if (!isUserPreviewMode)
         {
+            ToolTip.SetTip(wrapper, model.Name + " · " + model.Type);
+            wrapper.ContextRequested += (_, args) =>
+            {
+                wrapper.ContextMenu ??= CreateControlContextMenu(model);
+                wrapper.ContextMenu.Open(wrapper); args.Handled = true;
+            };
             wrapper.PointerPressed += Control_PointerPressed;
             wrapper.PointerMoved += Control_PointerMoved;
             wrapper.PointerReleased += Control_PointerReleased;
@@ -4551,6 +4572,7 @@ public partial class MainWindow : Window
 
     private Control CreatePreviewControl(DesignControlModel model)
     {
+        LayoutDropProfile.Count("PreviewControlsCreated");
         var descriptor = VM.Registry.GetRequiredControl(model.Type);
         var services = new DesignerServiceProvider()
             .Add<IBuiltInPreviewBridge>(new MainWindowPreviewBridge(this))
@@ -7176,6 +7198,8 @@ public partial class MainWindow : Window
 
     private ContextMenu CreateControlContextMenu(DesignControlModel model)
     {
+        using var profileStage = LayoutDropProfile.Stage("CreateContextMenus");
+        LayoutDropProfile.Count("ContextMenusCreated");
         MenuItem CreateCommandItem(EditorCommandId commandId, string? fallbackHeader = null)
         {
             var command = VM.GetEditorCommand(commandId);
@@ -7323,11 +7347,9 @@ public partial class MainWindow : Window
         menuItems.Add(new Separator());
         menuItems.Add(wrapInContainerItem);
 
-        var contextMenu = new ContextMenu
-        {
-            Placement = PlacementMode.Pointer,
-            ItemsSource = menuItems
-        };
+        var contextMenu = new ContextMenu();
+        contextMenu.Placement = PlacementMode.Pointer;
+        contextMenu.ItemsSource = menuItems;
 
         contextMenu.Opened += (_, _) =>
         {
@@ -7660,7 +7682,8 @@ public partial class MainWindow : Window
                 VM.SelectSingleControl(model);
 
             _pendingContextMenuControlId = model.Id;
-            e.Pointer.Capture(border);
+            _contextMenuPointer = e.Pointer;
+            e.Pointer.Capture(DesignerCanvas);
             e.Handled = true;
             return;
         }
@@ -7861,11 +7884,9 @@ public partial class MainWindow : Window
                     ? currentWrapper
                     : releasedBorder;
 
-                if (target.ContextMenu is { } contextMenu)
-                {
-                    contextMenu.Close();
-                    contextMenu.Open(target);
-                }
+                var contextMenu = target.ContextMenu ??= CreateControlContextMenu(releasedModel);
+                contextMenu.Close();
+                contextMenu.Open(target);
             }, DispatcherPriority.Input);
 
             e.Handled = true;
@@ -8918,6 +8939,7 @@ public partial class MainWindow : Window
 
     private void RefreshPropertiesTabContentVisual(MainWindowViewModel viewModel, string reason)
     {
+        using var profileStage = LayoutDropProfile.Stage("InspectorVisualRefresh");
         var rowsCount = viewModel.PropertyGridCategories.Sum(category => category.Rows.Count);
         var visualChildrenBefore = PropertyGridTableHost?.GetVisualChildren().Count() ?? 0;
         var hasHostContent = PropertyGridTableHost?.IsVisible == true && rowsCount > 0;

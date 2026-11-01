@@ -29,6 +29,8 @@ public partial class MainWindow
 
     private void InitializeDesignerInteraction()
     {
+        DesignerCanvas.PointerCaptureLost += (_, _) => { _pendingContextMenuControlId = ""; _contextMenuPointer = null; };
+        Deactivated += (_, _) => CancelPendingContextMenu();
         DesignerCanvas.AddHandler(InputElement.PointerPressedEvent, TraceDesignerPressed, RoutingStrategies.Tunnel, true);
         DesignerCanvas.AddHandler(InputElement.PointerReleasedEvent, TraceDesignerReleased, RoutingStrategies.Tunnel, true);
         DesignResizeHandle.AddHandler(InputElement.PointerPressedEvent, TraceDesignerPressed, RoutingStrategies.Tunnel, true);
@@ -108,6 +110,7 @@ public partial class MainWindow
 
     private void CancelDesignerInteraction(string reason, bool scheduleRender = true)
     {
+        CancelPendingContextMenu();
         if (_designerInteractionMode == DesignerInteractionMode.None) return;
         var mode = _designerInteractionMode;
         var sameSession = DataContext is MainWindowViewModel && _designerInteractionSession == VM.DocumentSessionId;

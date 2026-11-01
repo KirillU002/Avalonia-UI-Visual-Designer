@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using FormDesigner.DesignerSystem.AxamlRoundTrip;
 using FormDesigner.Models;
+using FormDesigner.Services;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -11,6 +12,14 @@ namespace FormDesigner.ViewModels;
 
 public partial class MainWindowViewModel
 {
+    internal sealed class NativeDropRenderChange(string session, string parent, string fingerprint, string addedControlId = "") : EventArgs
+    {
+        public string Session { get; } = session;
+        public string Parent { get; } = parent;
+        public string Fingerprint { get; } = fingerprint;
+        public string AddedControlId { get; } = addedControlId;
+    }
+    private NativeDropRenderChange? _nativeDropRenderChange;
     public int NativeDropPreviewLayoutPasses { get; private set; }
     private string _nativeGridMeasurementKey = "";
     private string? _gridDropLayoutFingerprint;
@@ -181,6 +190,7 @@ public partial class MainWindowViewModel
     }
     private bool ValidateGridDrop(GridDropTarget expected, Point point, DesignControlModel model)
     {
+        using var profileStage = LayoutDropProfile.Stage("ValidateDrop");
         if (LayoutPlacementProperties.ProtectedPlacement(model) is { } property)
         { StatusText = $"Drop отменён: {property} содержит отдельное placement-значение/binding. Оно сохранено."; return false; }
         var current = expected.UsesContainerHitTest ? ResolveLayoutDropTarget(point, model, expected.GrabOffset, expected.BypassSnap) : ResolveGridDropTarget(point, model);
@@ -198,14 +208,22 @@ public partial class MainWindowViewModel
 
     public bool CommitGridControlDrop(DesignControlModel control, GridDropTarget target, Point point)
     {
+        using var profileStage = LayoutDropProfile.Stage("CommitDrop");
         if (!Controls.Contains(control) || control.IsLocked || AncestorsOf(control).Any(c => c.IsLocked))
         { StatusText = "Исходный элемент или его родитель заблокирован либо удалён. Drop отменён."; return false; }
         if (!ValidateGridDrop(target, point, control)) return false;
+        var oldParent = control.ParentId;
         BeginGridEditorUndoBatch();
         try
         {
-            ApplyNativeDropPlacement(control, target, Controls); SelectSingleControl(control);
-            RebuildPropertyGrid("GridDropMove"); NotifyDesignerStateChanged(); SetGridDropStatus(target);
+            using (LayoutDropProfile.Stage("UpdateDocumentModel")) ApplyNativeDropPlacement(control, target, Controls);
+            using (LayoutDropProfile.Stage("RefreshSelection")) SelectSingleControl(control);
+            // Property notifications update placement rows. Rebuild categories only
+            // when the parent (and therefore placement editors) changes.
+            if (oldParent != control.ParentId) RebuildPropertyGrid("GridDropMove");
+            NotifyDesignerStateChanged(); SetGridDropStatus(target);
+            if (oldParent == control.ParentId)
+                _nativeDropRenderChange = new(DocumentSessionId, oldParent, GridDropLayoutKey);
         }
         finally { CommitGridEditorUndoBatch(); }
         return true;
@@ -213,6 +231,7 @@ public partial class MainWindowViewModel
 
     public DesignControlModel? CommitGridToolboxDrop(string type, GridDropTarget target, Point point, string documentId)
     {
+        using var profileStage = LayoutDropProfile.Stage("CommitToolboxDrop");
         if (!target.IsValid) { StatusText = target.Reason; return null; }
         if (!_registry.TryGetControl(type, out _)) { StatusText = "Компонент больше недоступен в Toolbox. Drop отменён."; return null; }
         var prototype = CreateDefaultControl(type);
@@ -221,7 +240,10 @@ public partial class MainWindowViewModel
         try
         {
             var created = CreateControlCore(type, point.X, point.Y, target.ParentId, false, ActiveDocumentId, "GridToolboxDrop", target);
-            RebuildPropertyGrid("GridDropCreate"); NotifyDesignerStateChanged(); SetGridDropStatus(target); return created;
+            // CreateControlCore selects the fully placed model; its existing
+            // selection handler builds the correct Inspector once.
+            _nativeDropRenderChange = new(DocumentSessionId, target.ParentId, GridDropLayoutKey, created.Id);
+            NotifyDesignerStateChanged(); SetGridDropStatus(target); return created;
         }
         finally { CommitGridEditorUndoBatch(); }
     }

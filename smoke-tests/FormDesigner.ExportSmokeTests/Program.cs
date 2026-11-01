@@ -45,6 +45,9 @@ internal static partial class Program
         // Initialize the real UI dispatcher before any view model can create the
         // fallback dispatcher; IPC continuations must run on the actual UI thread.
         EnsureAvaloniaRuntimeInitialized();
+        if (args.Contains("--layout-drop-performance-checks")) return RunLayoutDropPerformanceChecks();
+        if (args.Contains("--layout7a-checks")) return RunLayout7Checks();
+        if (args.Contains("--layout7a-desktop")) return RunLayout7Desktop();
         if (args.Contains("--layout-validation-checks")) return RunLayoutValidationChecks();
         if (args.Contains("--layout-performance-checks")) return RunLayoutPerformanceChecks();
         if (args.Contains("--nested-layout-checks")) return RunNestedLayoutChecks();
@@ -74,6 +77,7 @@ internal static partial class Program
         var scenarios = new SmokeScenario[]
         {
             new("NativeGridPhase2Export", ConfigureNativeGridExport, AssertNativeGridExport, RequiresRealDataGrid: true),
+            new("LayoutPhase7AMultiForm", ConfigureLayout7MultiForm, AssertLayout7MultiForm, RequiresRealDataGrid: true),
             new("GridEditorPhase3Export", ConfigureGridEditorPhase3Export, AssertNativeGridExport, RequiresRealDataGrid: true),
             new("GridDropPhase4Export", ConfigureGridDropPhase4Export, AssertNativeGridExport, RequiresRealDataGrid: true),
             new("NestedLayoutPhase5Export", ConfigureNestedPhase5Export, AssertNestedPhase5Export, RequiresRealDataGrid: true),
@@ -8437,7 +8441,7 @@ internal static partial class Program
     private static void WriteAvaloniaProject(SmokeContext context)
     {
         Directory.CreateDirectory(context.ProjectPath);
-        if (context.Scenario.Name.StartsWith("LayoutPhase6_", StringComparison.Ordinal))
+        if (context.Scenario.Name.StartsWith("LayoutPhase6_", StringComparison.Ordinal) || context.Scenario.Name == "LayoutPhase7AMultiForm")
         {
             // Geometry/runtime validation must exercise the actual export shell,
             // including plugin ApplicationStyles, not the legacy synthetic smoke shell.
