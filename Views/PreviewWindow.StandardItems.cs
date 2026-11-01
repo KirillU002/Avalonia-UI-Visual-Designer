@@ -70,8 +70,9 @@ public partial class PreviewWindow
             foreach (var model in _document.Controls)
             {
                 if (!controls.TryGetValue(Name(model.Id, model.Name), out var actual)) continue;
-                actual.IsVisible = IsRuntimeControlVisible(model);
-                actual.IsEnabled = IsRuntimeControlEnabled(model) && StandardItemsProperties.Read(model, "IsEnabled", true);
+                // Do not replace authored literals or bindings without a Logic override.
+                if (_runtimeVisibilityByControlId.TryGetValue(model.Id, out var visible)) actual.IsVisible = visible;
+                if (_runtimeEnabledByControlId.TryGetValue(model.Id, out var enabled)) actual.IsEnabled = enabled;
                 if (actual is TextBlock text && _runtimeTextBlockValuesByControlId.TryGetValue(model.Id, out var label)) text.Text = label;
                 if (actual is TextBox edit && _runtimeTextBoxValuesByControlId.TryGetValue(model.Id, out var value)) edit.Text = value;
                 if (actual is ContentControl content && _runtimeButtonContentByControlId.TryGetValue(model.Id, out var caption)) content.Content = caption;

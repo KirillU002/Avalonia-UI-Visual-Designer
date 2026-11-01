@@ -1,0 +1,85 @@
+using System;
+using System.IO;
+using System.Linq;
+using System.Collections.Generic;
+using System.Reflection;
+using System.Text.Json;
+using System.Threading;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Threading;
+using Avalonia.VisualTree;
+using Avalonia.Interactivity;
+
+public static class PreviewConsistencyProbe
+{
+    public sealed class Item
+    {
+        public string Id {get;set;}="";
+        public string Name {get;set;}="";
+        public string Type {get;set;}="";
+        public string ParentId {get;set;}="";
+        public string ChildLayoutMode {get;set;}="";
+        public string WindowClass {get;set;}="MainWindow";
+    }
+    public static void Attach(IClassicDesktopStyleApplicationLifetime lifetime,Window window)
+    {
+        window.Position=new PixelPoint(-3500,-3500);window.ShowInTaskbar=false;window.ShowActivated=false;
+        window.Opened+=(_,_)=>Dispatcher.UIThread.Post(()=>
+        {
+            var exit=0;
+            try{Run(window);}
+            catch(Exception error){Console.Error.WriteLine(error);exit=1;}
+            finally{window.Close();lifetime.Shutdown(exit);}
+        });
+    }
+    private static void Run(Window window)
+    {
+        var manifest=JsonSerializer.Deserialize<List<Item>>(File.ReadAllText(Environment.GetEnvironmentVariable("PC_MANIFEST")!))!;
+        var rows=new List<object>();
+            Pump(250);
+            foreach(var size in new[]{new Size(800,600),new Size(1200,800),new Size(1600,900)})
+            {
+                window.Width=size.Width;window.Height=size.Height;Pump(300);window.UpdateLayout();
+                var all=window.GetVisualDescendants().OfType<Control>().ToArray();
+                var views=manifest.ToDictionary(m=>m.Id,m=>
+                {
+                    Control view=all.SingleOrDefault(c=>c.Name==m.Name)??throw new Exception("Missing generated control "+m.Name+" in "+window.GetType().Name);
+                    return m.Type=="Image"&&view is Image&&view.GetVisualParent() is Border border?border:view;
+                });
+                foreach(var m in manifest)
+                {
+                    var view=views[m.Id];
+                    var expected=m.Type=="Group"?m.ChildLayoutMode switch{"Stack"=>"StackPanel","Grid"=>"Grid","Flex"=>"WrapPanel","Dock"=>"DockPanel",_=>"Canvas"}:m.Type;
+                    var native=view.GetVisualDescendants().OfType<Control>().Prepend(view).FirstOrDefault(c=>c.GetType().Name==expected);
+                    if(native==null)throw new Exception("No native "+expected+" for "+m.Name);
+                    if(native is Image image&&image.Source==null)throw new Exception("Image resource failed: "+m.Name);
+                    var parent=view.GetVisualAncestors().OfType<Control>().FirstOrDefault(c=>views.Values.Contains(c));
+                    var parentId=parent==null?"":views.Single(p=>ReferenceEquals(p.Value,parent)).Key;
+                    if(parentId!=m.ParentId)throw new Exception("ParentId differs for "+m.Name);
+                    var point=view.TranslatePoint(default,window)!.Value;
+                    rows.Add(new{Scene=Environment.GetEnvironmentVariable("PC_SCENE"),Mode="Runtime",ViewportWidth=window.ClientSize.Width,ViewportHeight=window.ClientSize.Height,
+                        m.Id,m.Name,ParentId=parentId,m.Type,NativeType=native.GetType().FullName,NativePresent=true,Attached=view.GetVisualRoot()==window,Visible=view.IsVisible,
+                        X=point.X,Y=point.Y,Width=view.Bounds.Width,Height=view.Bounds.Height});
+                }
+            }
+            // Real native popup/template interaction, not just XML inspection.
+            foreach(var split in window.GetVisualDescendants().OfType<SplitButton>().ToArray())
+            {
+                split.GetVisualDescendants().OfType<Button>().Single(b=>b.Name=="PART_SecondaryButton").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Pump(50);
+                if(split.Flyout is not Flyout{IsOpen:true,Content:StackPanel menu}||menu.Children.OfType<Button>().Count()==0)throw new Exception("SplitButton menu missing");
+                split.Flyout.Hide();
+            }
+            foreach(var drop in window.GetVisualDescendants().OfType<DropDownButton>().ToArray())
+            {
+                typeof(DropDownButton).GetMethod("OnClick",BindingFlags.NonPublic|BindingFlags.Instance)!.Invoke(drop,null);Pump(50);
+                if(drop.Flyout?.IsOpen!=true)throw new Exception("DropDownButton menu missing");drop.Flyout.Hide();
+            }
+            foreach(var list in window.GetVisualDescendants().OfType<ListBox>())
+            {if(list.ItemCount>1){list.SelectedIndex=1;if(list.SelectedItem==null)throw new Exception("ListBox selection failed");}}
+            File.WriteAllText(Environment.GetEnvironmentVariable("PC_RESULT")!,JsonSerializer.Serialize(rows,new JsonSerializerOptions{WriteIndented=true}));
+            Console.WriteLine("PASS native exported runtime: "+rows.Count+" visual observations, hierarchy, images, Flyouts, selection");
+    }
+    private static void Pump(int ms){using var stop=new CancellationTokenSource(ms);Dispatcher.UIThread.MainLoop(stop.Token);}
+}

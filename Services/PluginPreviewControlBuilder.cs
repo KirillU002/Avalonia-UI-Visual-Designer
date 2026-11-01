@@ -27,14 +27,24 @@ public sealed record PluginPreviewBuildFailure(
 /// </summary>
 public static class PluginPreviewControlBuilder
 {
-    public static void ApplyNativeLayoutRootStyles(IDesignerRegistry registry, IEnumerable<string> controlTypes, Control root)
+    public static void ApplyNativeLayoutRootStyles(IDesignerRegistry registry, IEnumerable<string> controlTypes, Control root,
+        Action<string, Exception>? onFailure = null)
     {
         var context = new DesignerRuntimePreviewContributionContext { UsedControlTypeKeys = controlTypes.Distinct(StringComparer.Ordinal).ToArray() };
         foreach (var provider in registry.GetRuntimePreviewContributionProviders())
         {
-            var contribution = provider.GetRuntimePreviewContribution(context);
-            contribution?.Initialize?.Invoke();
-            contribution?.ApplyToPreviewRoot?.Invoke(root);
+            try
+            {
+                var contribution = provider.GetRuntimePreviewContribution(context);
+                contribution?.Initialize?.Invoke();
+                contribution?.ApplyToPreviewRoot?.Invoke(root);
+            }
+            catch (Exception ex)
+            {
+                // One optional provider must not discard the standard layout subtree.
+                Debug.WriteLine($"PREVIEW_RESOURCE_FAILED provider={provider.ProviderId}; exception={ex.GetType().Name}");
+                onFailure?.Invoke(provider.ProviderId, ex);
+            }
         }
     }
     public static bool TryBuild(

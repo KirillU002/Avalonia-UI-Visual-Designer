@@ -57,6 +57,8 @@ public partial class PreviewWindow
 
     private void TraceDataGrid(string code, DesignerControlFileModel control, int loaded = 0, DataGrid? grid = null, string details = "")
     {
+        if (code == "DATAGRID_QUERY_FAILED")
+            ReportPreviewFailure(control, "BindingFailed", $"Не удалось загрузить данные компонента {control.Name}. Подробности показаны в сообщении подключения.", code: "PREVIEW_BINDING_FAILED");
         var source = GetBindingSource(control.BindingSourceId);
         var record = new DataGridPreviewDiagnostic(code, string.IsNullOrEmpty(_currentFormId) ? "standalone-preview" : _currentFormId,
             control.Id, control.BindingSourceId, source?.SourceKind ?? "None",

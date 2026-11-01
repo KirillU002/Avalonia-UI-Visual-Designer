@@ -67,6 +67,8 @@ public partial class PreviewWindow
         _databasePreviewCancellation?.Cancel();
         _renderDocumentTimer.Stop();
         _isRenderDocumentScheduled = false;
+        _previewBuildGeneration++;
+        _builtPreviewControls.Clear();
         if (_previewWasOpened) Interlocked.Decrement(ref _activePreviewWindows);
         TracePreviewLifecycle("PREVIEW_LIFECYCLE_CLOSED");
         CompletePreviewLifetimeIfIdle();
@@ -126,5 +128,6 @@ public partial class PreviewWindow
         if (!_databasePreviewClosed || _previewActivities != 0 || _previewLifecycleDisposed) return;
         _previewLifecycleDisposed = true;
         TracePreviewLifecycle("PREVIEW_LIFECYCLE_DISPOSED");
+        BuildDiagnosticEmitted = null;
     }
 }

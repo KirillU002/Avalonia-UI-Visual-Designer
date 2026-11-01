@@ -37,20 +37,29 @@ internal static partial class Program
             return failures == 0 ? 0 : 1;
         }
         foreach (var axaml in new[] { false, true })
-        foreach (var layout in new[] { "single", "metadata", "unbound-first", "empty", "invalid-query", "disconnected", "aliases", "wrapped", "filters", "json", "multiple" })
+        foreach (var layout in new[] { "single", "metadata", "unbound-first", "empty", "invalid-query", "disconnected", "aliases", "wrapped", "filters", "json", "multiple", "native-grid", "nested-grid" })
         {
             total++;
             var name = "LIVE_SQL_" + (axaml ? "Axaml" : "Legacy") + "_" + layout;
             try
             {
                 var vm = DataGridRegressionModel(connection, layout);
+                if (layout is "native-grid" or "nested-grid")
+                {
+                    Console.WriteLine("NATIVE_MODEL " + JsonSerializer.Serialize(new { vm.LayoutSemanticsVersion, vm.SurfaceLayoutMode,
+                        Controls = vm.Controls.Select(c => new { c.Name, c.ParentId, c.WidthMode, c.HeightMode, c.GridRow, c.Type }).ToArray() }));
+                    if (!vm.UsesNativeLayout) throw new Exception("The live fixture did not create a native Grid form.");
+                }
                 using var preview = ShowDataGridRegressionPreview(vm, axaml);
                 var grids = preview.Window.GetLogicalDescendants().OfType<DataGrid>().ToArray();
                 var counts = grids.Select(g => (g.ItemsSource?.Cast<object>() ?? Array.Empty<object>()).Count()).ToArray();
                 var texts = grids.Select(g => string.Join("|", g.GetVisualDescendants().OfType<TextBlock>().Select(t => t.Text))).ToArray();
                 var banner = preview.Window.FindControl<Border>("DatabaseErrorBanner")!.IsVisible;
-                Console.WriteLine("OBSERVED " + JsonSerializer.Serialize(new { name, counts, banner, context = grids.Select(g => g.DataContext?.GetType().Name).ToArray(), status = preview.Window.FindControl<TextBlock>("PreviewRuntimeStatusText")!.Text }));
-                if (axaml && preview.Window.FindControl<TextBlock>("PreviewRuntimeStatusText")!.Text != "AXAML Preview ready") throw new Exception("AXAML Preview must not fall back to Legacy.");
+                Console.WriteLine("OBSERVED " + JsonSerializer.Serialize(new { name, counts, banner, context = grids.Select(g => g.DataContext?.GetType().Name).ToArray(),
+                    styles = grids.Select(g => new { g.FontSize, FontFamily = g.FontFamily.ToString(), Background = g.Background?.ToString(),
+                        TextSizes = g.GetVisualDescendants().OfType<TextBlock>().Select(t => t.FontSize).Distinct().ToArray() }).ToArray(),
+                    status = preview.Window.FindControl<TextBlock>("PreviewRuntimeStatusText")!.Text }));
+                if (axaml && preview.Window.ControlDiagnostics.LastOrDefault(d => d.Event == "PREVIEW_BUILD_SUMMARY")?.PreviewMode != "AXAML") throw new Exception("AXAML Preview must not fall back to Legacy, including when it reports a query error.");
                 if (layout is "invalid-query" or "disconnected")
                 {
                     if (!banner) throw new Exception("SQL error must be visible.");
@@ -82,6 +91,22 @@ internal static partial class Program
                     filter.Text = ""; NativeItemsUiWait(100);
                     if (grids[0].ItemsSource!.Cast<object>().Count() != 3) throw new Exception("Clearing the filter must restore actual rows.");
                 }
+                if (layout is "native-grid" or "nested-grid")
+                {
+                    if (layout == "nested-grid")
+                    {
+                        // Container names belong to their authored Border frame; the
+                        // real native Grid is its child in both JSON pipelines.
+                        var parent = grids[0].GetVisualAncestors().OfType<Control>().SingleOrDefault(c => c.Name == "LiveNestedGrid");
+                        if (parent is null || !parent.GetVisualDescendants().OfType<Grid>().Any()) throw new Exception("Live grid lost its nested native parent.");
+                    }
+                    var before = grids[0].Bounds.Size;
+                    preview.Window.Width += 200; preview.Window.Height += 100; NativeItemsUiWait(200); preview.Window.UpdateLayout();
+                    Console.WriteLine("NATIVE_RESIZE " + JsonSerializer.Serialize(new { before.Width, before.Height, AfterWidth=grids[0].Bounds.Width, AfterHeight=grids[0].Bounds.Height,
+                        Parents=grids[0].GetVisualAncestors().OfType<Control>().Select(c=>c.GetType().Name+":"+c.Name).ToArray() }));
+                    if (grids[0].Bounds.Width <= before.Width + 100 || grids[0].Bounds.Height <= before.Height + 50) throw new Exception("The actual SQL DataGrid did not stretch after Window resize.");
+                    if (grids[0].ItemsSource!.Cast<object>().Count() != 3 || !grids[0].GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text == "Борис SQL")) throw new Exception("Native layout resize lost actual SQL values.");
+                }
                 if (layout == "metadata")
                 {
                     var content = (Avalonia.Controls.Control)preview.Window.Content!;
@@ -107,6 +132,7 @@ internal static partial class Program
     private static MainWindowViewModel DataGridRegressionModel(string connection, string layout)
     {
         var vm = CreateViewModel("DataGridRegression");
+        if (layout is "native-grid" or "nested-grid") vm.CreateNewForm("Grid");
         vm.DataGridExportMode = MainWindowViewModel.DataGridExportModeReal;
         var source = new BindingSourceModel
         {
@@ -124,6 +150,18 @@ internal static partial class Program
         vm.BindingSources.Add(source);
         if (layout == "unbound-first") vm.Controls.Add(DataGrid("UnboundGrid", "", 10, 10, 760, 140));
         vm.Controls.Add(DataGrid("CustomersGrid", source.Id, 10, layout == "unbound-first" ? 170 : 10, 760, 260));
+        if (layout is "native-grid" or "nested-grid")
+        {
+            vm.SurfaceLayoutRows = 2; vm.SurfaceGridRowDefinitions = "Auto,*";
+            var grid = vm.Controls.Single(); grid.GridRow = 1; grid.WidthMode = grid.HeightMode = "Auto"; grid.VerticalAlignment = "Stretch";
+            var title = vm.CreateControl("TextBlock", 0, 0); title.Text = "Real SQL in native Grid"; title.HeightMode = "Auto";
+            if (layout == "nested-grid")
+            {
+                var parent = vm.CreateControl("Grid", 0, 0); parent.Name = "LiveNestedGrid"; parent.GridRow = 1;
+                parent.Rows = parent.Columns = 1; parent.GridRowDefinitions = parent.GridColumnDefinitions = "*";
+                parent.WidthMode = parent.HeightMode = "Auto"; grid.ParentId = parent.Id; grid.GridRow = 0;
+            }
+        }
         if (layout == "wrapped") source.Fields[1].TextWrapping = BindingFieldModel.TextWrappingWrap;
         if (layout == "filters") vm.Controls.Single().ShowFilterRow = true;
         if (layout == "multiple")
@@ -144,6 +182,7 @@ internal static partial class Program
     {
         var window = axaml ? new PreviewWindow(vm.GenerateExportedAxamlPreviewSnapshot(), vm.Registry)
             : new PreviewWindow(vm.CreatePreviewDocumentSnapshot(), vm.Registry, vm.CreatePreviewProjectFormsSnapshot(), vm.ActiveFormDocument!.Id);
+        if (vm.ActiveAxamlSourceDocument is { } source) window.SetImportedSourceContext(source);
         window.Position = new PixelPoint(-3000, -3000); window.ShowInTaskbar = false; window.ShowActivated = false;
         beforeShow?.Invoke(window); window.Show();
         var deadline = DateTime.UtcNow.AddSeconds(20);

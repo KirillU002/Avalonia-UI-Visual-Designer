@@ -8493,8 +8493,10 @@ public partial class MainWindow : Window
             previewWindow.DataGridDiagnosticEmitted += (_, diagnostic) => VM.LogWorkspace(
                 diagnostic.Event.EndsWith("FAILED", StringComparison.Ordinal) ? WorkspaceLogLevel.Error : WorkspaceLogLevel.Info,
                 "DataGrid Preview", diagnostic.Event, System.Text.Json.JsonSerializer.Serialize(diagnostic));
+            if (VM.ActiveAxamlSourceDocument is { } importedSource) previewWindow.SetImportedSourceContext(importedSource);
             foreach (var diagnostic in previewWindow.LifecycleDiagnostics) LogPreviewLifecycleDiagnostic(previewWindow, diagnostic);
             previewWindow.LifecycleDiagnosticEmitted += LogPreviewLifecycleDiagnostic;
+            previewWindow.BuildDiagnosticEmitted += LogPreviewBuildDiagnostic;
             previewWindow.Closed += LaunchPreviewWindow_Closed;
             _launchPreviewWindow = previewWindow;
             previewWindow.Show();
@@ -8731,7 +8733,23 @@ public partial class MainWindow : Window
     {
         VM.LogWorkspace(WorkspaceLogLevel.Info, "Preview lifecycle", diagnostic.Event, System.Text.Json.JsonSerializer.Serialize(diagnostic));
         if (diagnostic.Event == "PREVIEW_LIFECYCLE_DISPOSED" && sender is PreviewWindow preview)
+        {
             preview.LifecycleDiagnosticEmitted -= LogPreviewLifecycleDiagnostic;
+            preview.BuildDiagnosticEmitted -= LogPreviewBuildDiagnostic;
+        }
+    }
+
+    private void LogPreviewBuildDiagnostic(object? sender, PreviewControlDiagnostic diagnostic)
+    {
+        VM.LogWorkspace(WorkspaceLogLevel.Info, MainWindowViewModel.OutputCategoryDiagnostics, diagnostic.Event,
+            System.Text.Json.JsonSerializer.Serialize(diagnostic));
+        if (diagnostic.Event != "PREVIEW_BUILD_SUMMARY" || sender is not PreviewWindow preview) return;
+        var source = "Preview " + diagnostic.FormId + "/" + diagnostic.PreviewMode;
+        foreach (var previous in VM.Diagnostics.Where(d => d.Source == source).ToArray()) VM.Diagnostics.Remove(previous);
+        if (preview.BuildIssues.Count > 0)
+            VM.Diagnostics.Add(new DocumentDiagnosticModel { Source = source, Category = "Preview", Severity = DocumentDiagnosticSeverity.Warning,
+                Message = $"Preview: {preview.BuildIssues.Count} проблем. " + string.Join(" ", preview.BuildIssues.Take(6).Select(d => d.Message)),
+                Recommendation = "Откройте диагностику Preview; проверьте layout и зависимости компонентов." });
     }
 
     private void HelpWindow_Closed(object? sender, EventArgs e)

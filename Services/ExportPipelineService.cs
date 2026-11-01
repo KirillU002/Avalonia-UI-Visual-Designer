@@ -12,7 +12,7 @@ using System.Threading.Tasks;
 
 namespace FormDesigner.Services;
 
-public sealed class ExportPipelineService
+public sealed partial class ExportPipelineService
 {
     public const string DefaultNuGetSourceUrl = "https://api.nuget.org/v3/index.json";
     private const string AvaloniaVersion = "11.1.1";
@@ -238,6 +238,7 @@ public sealed class ExportPipelineService
         CancellationToken cancellationToken,
         Func<string, Task>? logAsync = null)
     {
+        await CopyDesignerAssetsAsync(result, targetFolder, cancellationToken).ConfigureAwait(false);
         foreach (var file in result.GeneratedFiles.Where(file => !IsGeneratedReadme(file.Path)
                      && (file.Path.EndsWith(".axaml", StringComparison.OrdinalIgnoreCase)
                          || file.Path.EndsWith(".cs", StringComparison.OrdinalIgnoreCase))))
@@ -248,7 +249,7 @@ public sealed class ExportPipelineService
             if (!string.IsNullOrWhiteSpace(directory))
                 Directory.CreateDirectory(directory);
 
-            await File.WriteAllTextAsync(filePath, file.Content, Encoding.UTF8, cancellationToken).ConfigureAwait(false);
+            await File.WriteAllTextAsync(filePath, PackageDesignerAssetReferences(file.Content, file.Path), Encoding.UTF8, cancellationToken).ConfigureAwait(false);
             await LogAsync(logAsync, $"Wrote {file.Path}").ConfigureAwait(false);
         }
     }
@@ -269,7 +270,7 @@ public sealed class ExportPipelineService
         await File.WriteAllTextAsync(Path.Combine(targetFolder, "Program.cs"), BuildProgramCode(result.Profile.ProjectNamespace), Encoding.UTF8, cancellationToken).ConfigureAwait(false);
 
         var projectFileName = BuildExportProjectFileName(result);
-        await File.WriteAllTextAsync(Path.Combine(targetFolder, projectFileName), BuildProjectFile(result.RequiredPackages), Encoding.UTF8, cancellationToken).ConfigureAwait(false);
+        await File.WriteAllTextAsync(Path.Combine(targetFolder, projectFileName), BuildProjectFile(result.RequiredPackages, FindDesignerAssets(result).Count > 0), Encoding.UTF8, cancellationToken).ConfigureAwait(false);
         await LogAsync(logAsync, $"Wrote {projectFileName}").ConfigureAwait(false);
 
         if (!generateNuGetConfig)
@@ -302,7 +303,15 @@ public sealed class ExportPipelineService
             var entry = archive.CreateEntry(file.Path.Replace('\\', '/'));
             await using var entryStream = entry.Open();
             await using var writer = new StreamWriter(entryStream, Encoding.UTF8);
-            await writer.WriteAsync(file.Content).ConfigureAwait(false);
+            await writer.WriteAsync(PackageDesignerAssetReferences(file.Content, file.Path)).ConfigureAwait(false);
+        }
+
+        foreach (var asset in FindDesignerAssets(result))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            using var source = Avalonia.Platform.AssetLoader.Open(asset.Source);
+            await using var destination = archive.CreateEntry(asset.RelativePath).Open();
+            await source.CopyToAsync(destination, cancellationToken).ConfigureAwait(false);
         }
 
         await WriteZipTextAsync(archive, "README.generated.md", BuildReadme(result, Array.Empty<NuGetPackageSource>(), includeDefaultNugetSource: true, generateNuGetConfig: true), cancellationToken).ConfigureAwait(false);
@@ -322,7 +331,7 @@ public sealed class ExportPipelineService
         yield return new GeneratedFileModel { Path = "App.axaml", Content = BuildAppXaml(result.Profile.ProjectNamespace, RequiresDataGridTheme(result), result.ApplicationStyleContributions) };
         yield return new GeneratedFileModel { Path = "App.axaml.cs", Content = BuildAppCode(result.Profile.ProjectNamespace) };
         yield return new GeneratedFileModel { Path = "Program.cs", Content = BuildProgramCode(result.Profile.ProjectNamespace) };
-        yield return new GeneratedFileModel { Path = BuildExportProjectFileName(result), Content = BuildProjectFile(result.RequiredPackages) };
+        yield return new GeneratedFileModel { Path = BuildExportProjectFileName(result), Content = BuildProjectFile(result.RequiredPackages, FindDesignerAssets(result).Count > 0) };
         yield return new GeneratedFileModel { Path = "NuGet.config", Content = BuildNuGetConfigForSources(Array.Empty<NuGetPackageSource>(), includeDefaultNugetSource: true) };
     }
 
@@ -338,7 +347,7 @@ public sealed class ExportPipelineService
         await File.WriteAllTextAsync(Path.Combine(projectPath, "App.axaml"), BuildAppXaml(result.Profile.ProjectNamespace, RequiresDataGridTheme(result), result.ApplicationStyleContributions), Encoding.UTF8, cancellationToken).ConfigureAwait(false);
         await File.WriteAllTextAsync(Path.Combine(projectPath, "App.axaml.cs"), BuildAppCode(result.Profile.ProjectNamespace), Encoding.UTF8, cancellationToken).ConfigureAwait(false);
         await File.WriteAllTextAsync(Path.Combine(projectPath, "Program.cs"), BuildProgramCode(result.Profile.ProjectNamespace), Encoding.UTF8, cancellationToken).ConfigureAwait(false);
-        await File.WriteAllTextAsync(Path.Combine(projectPath, "ExportValidation.csproj"), BuildProjectFile(result.RequiredPackages), Encoding.UTF8, cancellationToken).ConfigureAwait(false);
+        await File.WriteAllTextAsync(Path.Combine(projectPath, "ExportValidation.csproj"), BuildProjectFile(result.RequiredPackages, FindDesignerAssets(result).Count > 0), Encoding.UTF8, cancellationToken).ConfigureAwait(false);
         await File.WriteAllTextAsync(Path.Combine(projectPath, "NuGet.config"), BuildNuGetConfigForSources(packageSources, includeDefaultNugetSource), Encoding.UTF8, cancellationToken).ConfigureAwait(false);
     }
 
@@ -501,8 +510,9 @@ public sealed class ExportPipelineService
         return string.IsNullOrWhiteSpace(result) ? "AvaloniaApplication1" : result;
     }
 
-    private static string BuildProjectFile(IEnumerable<RequiredPackageModel> requiredPackages)
+    private static string BuildProjectFile(IEnumerable<RequiredPackageModel> requiredPackages, bool includeDesignerAssets = false)
     {
+        var assetItems = includeDesignerAssets ? "  <ItemGroup><AvaloniaResource Include=\"Assets/Designer/**\" /></ItemGroup>\n" : "";
         var packageLines = new StringBuilder();
         foreach (var package in requiredPackages.GroupBy(package => package.Id, StringComparer.OrdinalIgnoreCase).Select(group => group.First()))
         {
@@ -525,6 +535,7 @@ public sealed class ExportPipelineService
     <PackageReference Include=""Avalonia.Fonts.Inter"" Version=""{AvaloniaDesktopVersion}"" />
 {packageLines.ToString().TrimEnd()}
   </ItemGroup>
+{assetItems}
 </Project>
 ";
     }

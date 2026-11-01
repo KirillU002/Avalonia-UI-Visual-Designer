@@ -13,10 +13,23 @@ internal static partial class Program
         try
         {
             var vm = DataGridRegressionModel(connection, "metadata");
-            vm.CreateNewForm(); vm.Controls.Clear(); vm.BindingSources.Clear();
+            // Exercise the same real SQL loader inside adaptive native layouts,
+            // rather than proving SQL and Grid only in separate fixtures.
+            var native = vm.CreatePreviewDocumentSnapshot(); native.LayoutSemanticsVersion = 2;
+            native.SurfaceLayoutMode = DesignerLayoutModes.Grid; native.SurfaceLayoutRows = native.SurfaceLayoutColumns = 1;
+            native.SurfaceGridRowDefinitions = native.SurfaceGridColumnDefinitions = "*";
+            native.Controls.Single().WidthMode = native.Controls.Single().HeightMode = "Auto";
+            native.Controls.Single().VerticalAlignment = "Stretch";
+            vm.LoadDocumentJson(System.Text.Json.JsonSerializer.Serialize(native));
+            var customersFormId = vm.ActiveDocumentId;
+            vm.CreateNewForm(DesignerLayoutModes.Grid); vm.Controls.Clear(); vm.BindingSources.Clear();
             var orders = DataGridRegressionModel(connection, "multiple").BindingSources.Single(s => s.Id == "p0-orders").Clone();
-            vm.BindingSources.Add(orders); vm.Controls.Add(DataGrid("OrdersGrid", orders.Id, 10, 10, 760, 240));
-            vm.OpenFormDocument(vm.CurrentProject.Forms.First().Id);
+            vm.BindingSources.Add(orders);
+            var parent = vm.CreateControl("Grid",0,0); parent.Rows = parent.Columns = 1;
+            parent.GridRowDefinitions = parent.GridColumnDefinitions = "*"; parent.WidthMode = parent.HeightMode = "Auto";
+            var ordersGrid = DataGrid("OrdersGrid", orders.Id, 0, 0, 760, 240); ordersGrid.ParentId = parent.Id;
+            ordersGrid.WidthMode = ordersGrid.HeightMode = "Auto"; ordersGrid.VerticalAlignment = "Stretch"; vm.Controls.Add(ordersGrid);
+            vm.OpenFormDocument(customersFormId);
             // This fixture uses Windows authentication and contains no password. Use the
             // existing opt-in SQL export setting; no runtime export implementation changes.
             vm.ExportSqlConnectionString = true;
@@ -74,13 +87,15 @@ internal static class DataGridRuntimeProbe
             {
                 await Task.Delay(200);
                 Require(window, 3, "Анна SQL");
+                await RequireResize(window, 3, "Анна SQL");
                 var secondaryType = typeof(MainWindow).Assembly.GetTypes().Single(t => typeof(Window).IsAssignableFrom(t) && t != typeof(MainWindow) && t.GetConstructor(Type.EmptyTypes) is not null);
                 var secondary = (Window)Activator.CreateInstance(secondaryType)!;
                 secondary.Position = new PixelPoint(-3000, -3000); secondary.ShowInTaskbar = false; secondary.ShowActivated = false;
                 secondary.Show(); await Task.Delay(200);
                 Require(secondary, 2, "19.50");
+                await RequireResize(secondary, 2, "19.50");
                 secondary.Close();
-                File.WriteAllText(result, "PASS LIVE_SQL_generated_restore_build_run: separate process, Customers=3, Orders=2, real visible values and independent ViewModels.");
+                File.WriteAllText(result, "PASS LIVE_SQL_generated_restore_build_run: separate process, Grid Customers=3, nested Grid Orders=2, real visible values, independent ViewModels and runtime resize.");
                 lifetime.Shutdown(0);
             }
             catch (Exception ex) { File.WriteAllText(result, "FAIL " + ex.GetType().Name); lifetime.Shutdown(1); }
@@ -91,6 +106,13 @@ internal static class DataGridRuntimeProbe
         var grid = window.GetLogicalDescendants().OfType<DataGrid>().Single();
         if (window.DataContext is null || grid.ItemsSource is null || grid.ItemsSource.Cast<object>().Count() != expected) throw new Exception("Generated binding failed.");
         if (!grid.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Text == expectedValue || t.Text == expectedValue.Replace('.', ','))) throw new Exception("Actual SQL values are not visible in the generated DataGrid.");
+    }
+    private static async Task RequireResize(Window window, int expected, string value)
+    {
+        var grid = window.GetLogicalDescendants().OfType<DataGrid>().Single(); var before = grid.Bounds.Size;
+        window.Width += 200; window.Height += 100; await Task.Delay(150); window.UpdateLayout();
+        if (grid.Bounds.Width < before.Width + 190 || grid.Bounds.Height < before.Height + 90) throw new Exception("Generated native SQL DataGrid did not resize.");
+        Require(window, expected, value);
     }
 }
 """;

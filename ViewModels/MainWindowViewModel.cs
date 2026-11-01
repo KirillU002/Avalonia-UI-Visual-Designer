@@ -14260,7 +14260,7 @@ public partial class MainWindowViewModel : ObservableObject
             var runtimePreviewAxaml = GeneratedAxamlService.Create(
                 exportAxaml.Axaml,
                 AxamlGenerationMode.RuntimePreview,
-                preserveRuntimeNames: exportViewModel.UsesNativeLayout || exportViewModel.Controls.Any(control => control.Type == DesignerControlTypes.DataGrid || StandardItemsProperties.IsStandardItemsControl(control.Type)),
+                preserveRuntimeNames: true,
                 stretchRuntimeRoot: exportViewModel.UsesNativeLayout);
             stopwatch.Stop();
 

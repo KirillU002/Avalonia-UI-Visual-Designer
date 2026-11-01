@@ -258,6 +258,7 @@ public partial class PreviewWindow : Window
 
     private async Task LoadExportedAxamlPreviewAsync(ExportedAxamlPreviewModel preview)
     {
+        BeginPreviewBuild();
         var stopwatch = Stopwatch.StartNew();
         var xClass = ReadXClass(preview.Axaml);
         var hasXClass = !string.IsNullOrWhiteSpace(xClass);
@@ -280,6 +281,7 @@ public partial class PreviewWindow : Window
                 throw new InvalidOperationException($"Runtime Preview AXAML references unsupported x:Class '{xClass}'.");
 
             var pluginAssemblies = PrepareRuntimePreviewPluginContributions(preview);
+            ApplyPreviewRootTheme(preview.ExportAxaml);
             var loadedRoot = RuntimeAxamlPreviewLoader.Load(PrepareDataGridPreviewAxaml(preview.Axaml), pluginAssemblies);
 
             var content = ExtractPreviewContent(loadedRoot);
@@ -293,9 +295,11 @@ public partial class PreviewWindow : Window
             Debug.WriteLine($"AXAML_PREVIEW_RUNTIME_LOAD_SUCCESS rootType={loadedRoot.GetType().FullName}; elapsedMs={stopwatch.ElapsedMilliseconds}");
             PreviewRuntimeStatusText.Text = "AXAML Preview ready";
             ToolTip.SetTip(PreviewRuntimeStatusText, "Preview загружен из AXAML, который используется Export Pipeline.");
+            CompletePreviewBuild();
         }
         catch (Exception ex)
         {
+            ReportPreviewFailure(null, "AXAMLLoadFailed", "Не удалось загрузить AXAML Preview. Подробности доступны в диагностике.", ex);
             stopwatch.Stop();
             var (line, position) = GetXamlErrorLocation(ex);
             var (xmlNamespace, tag) = FindRuntimePreviewPluginTag(preview.Axaml);
@@ -353,7 +357,7 @@ public partial class PreviewWindow : Window
         return (namespaceMatch.Groups["namespace"].Value, $"{prefix}:{tagMatch.Groups["tag"].Value}");
     }
 
-    private static IReadOnlyList<System.Reflection.Assembly> PrepareRuntimePreviewPluginContributions(ExportedAxamlPreviewModel preview)
+    private IReadOnlyList<System.Reflection.Assembly> PrepareRuntimePreviewPluginContributions(ExportedAxamlPreviewModel preview)
     {
         var assemblies = new List<System.Reflection.Assembly>();
         foreach (var contribution in preview.RuntimePreviewContributions)
@@ -374,8 +378,9 @@ public partial class PreviewWindow : Window
             {
                 Debug.WriteLine(
                     "AXAML_PREVIEW_PLUGIN_CONTRIBUTION_FAILED " +
-                    $"provider={contribution.ProviderId}; exception={ex.GetType().Name}; reason={ex.Message}");
-                throw;
+                    $"provider={contribution.ProviderId}; exception={ex.GetType().Name}");
+                _failedPreviewProviders.Add(contribution.ProviderId);
+                ReportPreviewResourceFailure(contribution.ProviderId, ex);
             }
         }
 
@@ -385,11 +390,11 @@ public partial class PreviewWindow : Window
             .ToList();
     }
 
-    private static void ApplyRuntimePreviewPluginStyles(Control previewRoot, ExportedAxamlPreviewModel preview)
+    private void ApplyRuntimePreviewPluginStyles(Control previewRoot, ExportedAxamlPreviewModel preview)
     {
         foreach (var contribution in preview.RuntimePreviewContributions)
         {
-            if (contribution.ApplyToPreviewRoot is null)
+            if (contribution.ApplyToPreviewRoot is null || _failedPreviewProviders.Contains(contribution.ProviderId))
                 continue;
 
             try
@@ -403,8 +408,8 @@ public partial class PreviewWindow : Window
             {
                 Debug.WriteLine(
                     "AXAML_PREVIEW_PLUGIN_STYLE_SCOPE_FAILED " +
-                    $"provider={contribution.ProviderId}; exception={ex.GetType().Name}; reason={ex.Message}");
-                throw;
+                    $"provider={contribution.ProviderId}; exception={ex.GetType().Name}");
+                ReportPreviewResourceFailure(contribution.ProviderId, ex);
             }
         }
     }
@@ -1229,6 +1234,7 @@ public partial class PreviewWindow : Window
         try
         {
             _isRenderingDocument = true;
+            BeginPreviewBuild();
 
             if (_document.LayoutSemanticsVersion == 2)
                 RenderNativeLayoutDocument();
@@ -1253,6 +1259,7 @@ public partial class PreviewWindow : Window
         finally
         {
             _isRenderingDocument = false;
+            CompletePreviewBuild();
         }
 
         if (_renderDocumentAgainRequested)
@@ -1310,7 +1317,7 @@ public partial class PreviewWindow : Window
                 ? DesignerLayoutModes.NormalizeMode(_registry.GetRequiredControl(parent.Type).ChildLayoutMode)
                 : DesignerLayoutModes.NormalizeMode(parent.ChildLayoutMode);
         var children = GetChildControlsInVisualOrder(parent?.Id, layoutMode)
-            .Where(control => control.IsVisible && IsRuntimeControlVisible(control))
+            .Where(IsRuntimeControlVisible)
             .ToList();
         if (children.Count == 0)
             return;
@@ -1371,10 +1378,23 @@ public partial class PreviewWindow : Window
 
     private Border CreatePreviewWrapper(DesignerControlFileModel control, double renderedWidth, double renderedHeight)
     {
+        var layoutMode = string.IsNullOrEmpty(control.ChildLayoutMode) ? _registry.GetRequiredControl(control.Type).ChildLayoutMode : control.ChildLayoutMode;
+        if (CanHostChildren(control) && !DesignerLayoutModes.IsAbsolute(layoutMode))
+        {
+            // Reuse the existing native projection for this managed subtree; the outer
+            // Canvas placement remains version-1 free positioning.
+            var managed = new Border { Width = renderedWidth, Height = renderedHeight,
+                IsEnabled = IsRuntimeControlEnabled(control), Child = BuildManagedCanvasSubtree(control, renderedWidth, renderedHeight) };
+            TrackPreviewControl(control, managed);
+            return managed;
+        }
         // Как и в дизайнере, каждый элемент оборачивается в отдельный Canvas,
         // чтобы вложенные контролы рисовались в локальных координатах родителя.
         var renderControl = CreateRenderControl(control, renderedWidth, renderedHeight);
         var preview = CreatePreviewControl(renderControl);
+        // Canvas wrappers own version-1 opacity. The shared native factory also
+        // applies it for direct Grid children; do not multiply it a second time.
+        if (StandardItemsProperties.IsStandardItemsControl(control.Type)) preview.Opacity = 1;
         var root = new Canvas
         {
             Width = renderedWidth,
@@ -1409,7 +1429,7 @@ public partial class PreviewWindow : Window
             Canvas.SetTop(childHost, 0);
         }
 
-        return new Border
+        var wrapper = new Border
         {
             Width = renderedWidth,
             Height = renderedHeight,
@@ -1418,16 +1438,18 @@ public partial class PreviewWindow : Window
             IsEnabled = IsRuntimeControlEnabled(control),
             Child = root
         };
+        TrackPreviewControl(control, wrapper);
+        return wrapper;
     }
 
     private bool IsRuntimeControlVisible(DesignerControlFileModel control)
     {
-        return !_runtimeVisibilityByControlId.TryGetValue(control.Id, out var isVisible) || isVisible;
+        return _runtimeVisibilityByControlId.TryGetValue(control.Id, out var isVisible) ? isVisible : control.IsVisible;
     }
 
     private bool IsRuntimeControlEnabled(DesignerControlFileModel control)
     {
-        return !_runtimeEnabledByControlId.TryGetValue(control.Id, out var isEnabled) || isEnabled;
+        return _runtimeEnabledByControlId.TryGetValue(control.Id, out var isEnabled) ? isEnabled : StandardItemsProperties.Read(control, "IsEnabled", true);
     }
 
     private static DesignerControlFileModel CreateRenderControl(DesignerControlFileModel control, double renderedWidth, double renderedHeight)
@@ -1608,6 +1630,12 @@ public partial class PreviewWindow : Window
 
     private Control CreatePreviewControl(DesignerControlFileModel control)
     {
+        if (!_registry.TryGetControl(control.Type, out _))
+        {
+            var unavailable = CreateMissingPreview(control);
+            TrackPreviewControl(control, unavailable);
+            return unavailable;
+        }
         var descriptor = _registry.GetRequiredControl(control.Type);
         var services = new DesignerServiceProvider()
             .Add<IBuiltInPreviewBridge>(new PreviewWindowBuiltInPreviewBridge(this))
@@ -1620,7 +1648,7 @@ public partial class PreviewWindow : Window
                 .ToList(),
             BindingMetadataMapper.ToMetadataMap(ToRuntimeBindingSources()));
 
-        return PluginPreviewControlBuilder.TryBuild(
+        var created = PluginPreviewControlBuilder.TryBuild(
             "LegacyPreview",
             descriptor,
             new DesignControlFileNodeAdapter(control),
@@ -1629,6 +1657,9 @@ public partial class PreviewWindow : Window
             out var failure)
             ? preview!
             : CreateMissingPreview(control, failure);
+        created.IsEnabled = IsRuntimeControlEnabled(control);
+        TrackPreviewControl(control, created);
+        return created;
     }
 
     private Control CreateBuiltInPreviewControl(DesignerControlFileModel control)
@@ -1666,6 +1697,8 @@ public partial class PreviewWindow : Window
 
     private Control CreateMissingPreview(DesignerControlFileModel control, PluginPreviewBuildFailure? failure = null)
     {
+        ReportPreviewFailure(control, _registry.TryGetControl(control.Type, out _) ? "ControlFactoryFailed" : "MissingDescriptor",
+            $"Не удалось отобразить компонент {control.Name}: недоступен тип или необходимая зависимость.");
         var message = failure is null
             ? $"{control.Type}\nНет доступного preview"
             : $"Не удалось отобразить {control.Type}\nПричина: {failure.UserMessage}";
@@ -1935,7 +1968,7 @@ public partial class PreviewWindow : Window
                 VerticalAlignment.Center)
         };
 
-        if (_document.LayoutSemanticsVersion == 2)
+        if (UsesNativePreviewContent)
         {
             button.Content = text; button.FontFamily = new FontFamily(control.FontFamily);
             button.FontSize = control.FontSize; button.FontWeight = ParseFontWeight(control.FontWeight);
@@ -1993,7 +2026,7 @@ public partial class PreviewWindow : Window
             ? runtimeText
             : ResolvePreviewTextValue(control, string.IsNullOrWhiteSpace(control.Text) ? "Текст" : control.Text);
 
-        if (_document.LayoutSemanticsVersion == 2)
+        if (UsesNativePreviewContent)
             return new TextBlock { Text = text, FontFamily = new FontFamily(control.FontFamily), FontSize = control.FontSize,
                 FontWeight = ParseFontWeight(control.FontWeight), Foreground = ParseBrush(ResolvePreviewDesignColor(control.Foreground, "#0F172A", tokens, ThemeResourceKeys.TextBrush), tokens[ThemeResourceKeys.TextBrush]) };
 
@@ -2266,6 +2299,8 @@ public partial class PreviewWindow : Window
     private Control CreateImagePreview(DesignerControlFileModel control)
     {
         var bitmap = TryLoadBitmap(control.ImageSource);
+        if (bitmap is null && !string.IsNullOrWhiteSpace(control.ImageSource))
+            ReportPreviewFailure(control, "ResourceResolutionFailed", $"Не удалось загрузить изображение компонента {control.Name}.", code: "PREVIEW_RESOURCE_FAILED");
         Control content;
 
         if (bitmap is not null)

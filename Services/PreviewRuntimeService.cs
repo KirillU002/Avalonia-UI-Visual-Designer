@@ -90,6 +90,11 @@ public sealed class PreviewRuntimeContext
 
     public int DiagnosticsVersion { get; private set; }
 
+    public void RemoveDiagnostics(string category)
+    {
+        if (_diagnostics.RemoveAll(d => d.Category == category) > 0) DiagnosticsVersion++;
+    }
+
     public Dictionary<string, string> TextBoxValuesByControlId { get; } = new(StringComparer.OrdinalIgnoreCase);
 
     public Dictionary<string, string> TextBlockValuesByControlId { get; } = new(StringComparer.OrdinalIgnoreCase);
