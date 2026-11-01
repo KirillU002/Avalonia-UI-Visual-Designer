@@ -12,17 +12,47 @@ using FormDesigner.Views;
 using System.Diagnostics;
 using System.Reflection;
 using System.Runtime;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 
 namespace FormDesigner.ExportSmokeTests;
 
 internal static partial class Program
 {
-    private static string Layout72Folder => Path.Combine(FindRepositoryRoot(), "artifacts", "layout-phase7a2");
+    private static string Layout72Folder => Environment.GetEnvironmentVariable("DROP_BENCH_OUTPUT_DIRECTORY")
+        ?? Path.Combine(FindRepositoryRoot(), "artifacts", "layout-phase7a2");
     private sealed record DropObservation(int Iteration, string Phase, double HoverMs, double HandlerMs,
         double VisualMs, double LayoutMs, double FirstCommitMs, double ReadyMs, long UiAllocatedBytes,
         long ProcessAllocatedBytes, int Gen0, int Gen1, int Gen2, long JittedMethods, int LayoutPasses,
-        int Controls, int Wrappers, LayoutDropProfile.StageResult[] Stages, Dictionary<string,long> Counters);
+        int Controls, int Wrappers, LayoutDropProfile.StageResult[] Stages, Dictionary<string,long> Counters)
+    {
+        public long SnapshotCharacters {get;init;}
+        public long RetainedHistoryCharacters {get;init;}
+        public int UndoEntryDelta {get;init;}
+        // Valid product restore timing only in directRestore=true datasets.
+        // The legacy reset helper otherwise includes 160+100ms test pumps.
+        public double UndoCommitMs {get;set;}
+        public long UndoUiAllocatedBytes {get;set;}
+        public double RedoCommitMs {get;set;}
+        public long RedoUiAllocatedBytes {get;set;}
+        public bool? ToolbarUndoEnabledBeforeCommand {get;set;}
+        public bool? ToolbarRedoEnabledBeforeCommand {get;set;}
+        public double? UiCpuMs {get;init;}
+        public long HistoryCacheHits {get;init;}
+        public long HistoryCacheMisses {get;init;}
+        public int HistoryCacheCount {get;init;}
+    }
+    [DllImport("kernel32.dll")][return:MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetThreadTimes(IntPtr thread,out long created,out long exited,out long kernel,out long user);
+    private static double? BenchmarkThreadCpuMs()=>OperatingSystem.IsWindows()&&GetThreadTimes(new IntPtr(-2),out _,out _,out var kernel,out var user)
+        ?(kernel+user)/10000d:null;
+    private static long RetainedHistoryCharacters(MainWindowViewModel vm)
+    {
+        var session=vm.ActiveSession;
+        var strings=new HashSet<string>(ReferenceEqualityComparer.Instance){session.CurrentSnapshot,session.SavedSnapshot};
+        strings.UnionWith(session.UndoSnapshots);strings.UnionWith(session.RedoSnapshots);
+        return strings.Sum(s=>(long)s.Length);
+    }
 
     private static void DropPumpUntil(Func<bool> ready, string reason)
     {
@@ -85,6 +115,22 @@ internal static partial class Program
         var samples=int.Parse(Environment.GetEnvironmentVariable("DROP_BENCH_SAMPLES")??"30");
         var label=Environment.GetEnvironmentVariable("DROP_BENCH_LABEL")??"current";
         var vm=NestedModel();vm.LoadDocumentJson(JsonSerializer.Serialize(DropSeed(count,scenario)));
+        int? preparedHistory=Environment.GetEnvironmentVariable("DROP_BENCH_HISTORY_PAIR") is {Length:>0} historyText?int.Parse(historyText):null;
+        if(preparedHistory is not null)
+        {
+            RequireCapability(preparedHistory is 0 or 10 or 30,"Matched history fixture accepts H0/H10/H30.");
+            var text=vm.Controls[0].Text;
+            // Identical 30 actual VM edits in both arms, before showing the Window.
+            // Both end in exactly the original model state; H0 only drops fixture history.
+            for(var i=0;i<30;i++)
+            {
+                vm.ActiveSession.LastHistoryMutationUtc=DateTime.MinValue;
+                vm.BeginUndoBatch();vm.Controls[0].Text=i==29?text:"Prepared history "+i;vm.CommitUndoBatch();
+            }
+            RequireCapability(vm.ActiveSession.UndoSnapshots.Count==30,"History fixture did not create thirty independent steps.");
+            if(preparedHistory<30)vm.ActiveSession.SetHistoryState(vm.ActiveSession.UndoSnapshots.Reverse().TakeLast(preparedHistory.Value).ToArray(),Array.Empty<string>(),vm.ActiveSession.CurrentSnapshot,vm.ActiveSession.SavedSnapshot);
+            RefreshHistory(vm);
+        }
         var selectedId=vm.Controls.Last().Id;var originalParent=vm.Controls.Last().ParentId;vm.SelectSingleControl(vm.GetControl(selectedId)!);
         var setup=Stopwatch.StartNew();var window=CreateSmokeWindow(vm);window.Show();NativeItemsUiWait(150);DropFrame(window);
         var showMs=setup.Elapsed.TotalMilliseconds;
@@ -120,8 +166,10 @@ internal static partial class Program
                 else {target=vm.ResolveLayoutDropTarget(point,moving);RequireCapability(target.IsValid,"Benchmark move target invalid: "+target.Reason);}
                 DropFrame(window);var hoverMs=hover.Elapsed.TotalMilliseconds;
                 var gc=Enumerable.Range(0,3).Select(GC.CollectionCount).ToArray();var jit=JitInfo.GetCompiledMethodCount();
-                var total=GC.GetTotalAllocatedBytes(false);layoutPasses=0;
+                var total=GC.GetTotalAllocatedBytes(false);layoutPasses=0;var undoBefore=vm.ActiveSession.UndoSnapshots.Count;
+                var cacheHits=vm.ActiveSession.HistoryDescriptions.HitCount;var cacheMisses=vm.ActiveSession.HistoryDescriptions.MissCount;
                 using var profile=LayoutDropProfile.Begin(vm.ActiveDocumentId,toolbox?"toolbox":selectedId);
+                var cpuBefore=BenchmarkThreadCpuMs();
                 var clock=Stopwatch.StartNew();
                 using(LayoutDropProfile.Stage(toolbox?"DropEvent":"MoveEvent"))
                 {
@@ -141,17 +189,23 @@ internal static partial class Program
                 profile.Dispose();
                 var record=new DropObservation(iteration,iteration==-4?"FirstDrop":iteration<0?"Warmup":"Steady",hoverMs,handlerMs,visualMs,layoutMs,firstMs,readyMs,
                     profile.AllocatedBytes,GC.GetTotalAllocatedBytes(false)-total,GC.CollectionCount(0)-gc[0],GC.CollectionCount(1)-gc[1],GC.CollectionCount(2)-gc[2],
-                    JitInfo.GetCompiledMethodCount()-jit,layoutPasses,vm.Controls.Count,DropWrappers(window).Count,profile.Stages.ToArray(),new(profile.Counters));
+                    JitInfo.GetCompiledMethodCount()-jit,layoutPasses,vm.Controls.Count,DropWrappers(window).Count,profile.Stages.ToArray(),new(profile.Counters))
+                    {SnapshotCharacters=vm.ActiveSession.CurrentSnapshot.Length,RetainedHistoryCharacters=RetainedHistoryCharacters(vm),UndoEntryDelta=vm.ActiveSession.UndoSnapshots.Count-undoBefore,
+                        UiCpuMs=BenchmarkThreadCpuMs()-cpuBefore,HistoryCacheHits=vm.ActiveSession.HistoryDescriptions.HitCount-cacheHits,
+                        HistoryCacheMisses=vm.ActiveSession.HistoryDescriptions.MissCount-cacheMisses,HistoryCacheCount=vm.ActiveSession.HistoryDescriptions.Count};
                 observations.Add(record);
                 RequireCapability(vm.SelectedControl is {Type:"Button"} selected&&vm.PropertyGridCategories.SelectMany(g=>g.Rows).Any(r=>r.Key=="Name"&&r.ContextControlId==selected.Id),"Benchmark selection/Inspector mismatch.");
                 RequireCapability(vm.Controls.Count==count+(toolbox?1:0),"Benchmark duplicated/lost controls.");
-                GridEditorUndo(vm);vm.SelectSingleControl(vm.GetControl(selectedId)!);
+                var undoClock=Stopwatch.StartNew();var undoBytes=GC.GetAllocatedBytesForCurrentThread();
+                if(Environment.GetEnvironmentVariable("DROP_BENCH_DIRECT_UNDO")=="1")vm.UndoCommand.Execute(null);else GridEditorUndo(vm);
+                vm.SelectSingleControl(vm.GetControl(selectedId)!);
                 DropPumpUntil(()=>DropSnapshotReady(window,vm),"reset layout");DropFrame(window);
+                record.UndoCommitMs=undoClock.Elapsed.TotalMilliseconds;record.UndoUiAllocatedBytes=GC.GetAllocatedBytesForCurrentThread()-undoBytes;
                 RequireCapability(vm.Controls.Count==count&&vm.GetControl(selectedId)!.ParentId==originalParent,"Undo corrupted benchmark seed.");
             }
             var steady=observations.Where(s=>s.Phase=="Steady").ToArray();
             double Quantile(Func<DropObservation,double> select,double q){var values=steady.Select(select).Order().ToArray();return values[Math.Clamp((int)Math.Ceiling(q*values.Length)-1,0,values.Length-1)];}
-            var result=new {label,scenario,count,samples,ablation,InspectorVisuals=inspector.GetVisualDescendants().Count(),Build=typeof(Program).Assembly.GetCustomAttribute<System.Reflection.AssemblyConfigurationAttribute>()?.Configuration,
+            var result=new {label,scenario,count,samples,ablation,preparedHistory,InspectorVisuals=inspector.GetVisualDescendants().Count(),Build=typeof(Program).Assembly.GetCustomAttribute<System.Reflection.AssemblyConfigurationAttribute>()?.Configuration,
                 actualZoom,ActualRootWidth=vm.PreviewFormWidth,ActualRootHeight=vm.PreviewFormHeight,window.ClientSize,Environment.ProcessorCount,GCSettings.IsServerGC,
                 ProfileSources=System.Diagnostics.Tracing.EventSource.GetSources().Where(s=>s.Name.Contains("FormDesigner")).Select(s=>new{s.Name,Enabled=s.IsEnabled(),Error=s.ConstructionException?.Message}).ToArray(),
                 Runtime=System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription,Debugger=Debugger.IsAttached,ProcessId=Environment.ProcessId,

@@ -21858,6 +21858,8 @@ public partial class MainWindowViewModel : ObservableObject
     {
         var snapshots = BuildHistorySnapshots();
         var currentIndex = _undoStack.Count;
+        var descriptions = ActiveSession.HistoryDescriptions;
+        descriptions.Prepare(snapshots, "v1:" + CultureInfo.CurrentCulture.Name + ":" + CultureInfo.CurrentUICulture.Name);
 
         UndoRedoHistoryItems.Clear();
 
@@ -21865,7 +21867,7 @@ public partial class MainWindowViewModel : ObservableObject
         {
             var description = index == 0
                 ? ("Начальное состояние", "Документ создан, открыт или восстановлен.")
-                : DescribeHistoryTransition(snapshots[index - 1], snapshots[index]);
+                : descriptions.GetOrCreate(snapshots[index - 1], snapshots[index], DescribeHistoryTransition);
             var isCurrent = index == currentIndex;
 
             UndoRedoHistoryItems.Add(new UndoRedoHistoryItemModel
@@ -21883,6 +21885,7 @@ public partial class MainWindowViewModel : ObservableObject
                 IsFuture = index > currentIndex
             });
         }
+        descriptions.ReportStatistics();
     }
 
     private static (string Title, string Description) DescribeHistoryTransition(string previousSnapshot, string snapshot)

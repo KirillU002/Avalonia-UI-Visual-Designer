@@ -28,6 +28,7 @@ public sealed class DesignerDocumentSession : IDisposable
         DocumentId = string.IsNullOrWhiteSpace(formDocument?.Id)
             ? Guid.NewGuid().ToString("N")
             : formDocument.Id;
+        HistoryDescriptions = new UndoHistoryDescriptionCache(DocumentId);
 
         Controls.CollectionChanged += Controls_CollectionChanged;
         SelectedControlIds.CollectionChanged += SelectedControlIds_CollectionChanged;
@@ -41,6 +42,7 @@ public sealed class DesignerDocumentSession : IDisposable
     public ObservableCollection<string> SelectedControlIds { get; } = new();
     public Stack<string> UndoSnapshots { get; } = new();
     public Stack<string> RedoSnapshots { get; } = new();
+    public UndoHistoryDescriptionCache HistoryDescriptions { get; }
     public DateTime LastHistoryMutationUtc { get; set; } = DateTime.UtcNow;
     public long Revision { get; private set; }
     public bool IsDisposed => _isDisposed;
@@ -126,6 +128,7 @@ public sealed class DesignerDocumentSession : IDisposable
         string? savedSnapshot)
     {
         ThrowIfDisposed();
+        HistoryDescriptions.Clear("HistoryReplaced");
         UndoSnapshots.Clear();
         foreach (var snapshot in undoSnapshots ?? Array.Empty<string>())
             UndoSnapshots.Push(snapshot);
@@ -156,6 +159,16 @@ public sealed class DesignerDocumentSession : IDisposable
         ThrowIfDisposed();
         var wasDirty = IsDirty;
         _currentSnapshot = snapshot ?? "";
+        // A completed mutation/restore boundary, not the intermediate pop/push in Undo.
+        // Also catches redo-branch clearing through the existing public stacks.
+        if (HistoryDescriptions.Count > 0)
+        {
+            var snapshots = UndoSnapshots.Reverse().ToList();
+            if (!string.IsNullOrWhiteSpace(_currentSnapshot))
+                snapshots.Add(_currentSnapshot);
+            snapshots.AddRange(RedoSnapshots);
+            HistoryDescriptions.Prune(snapshots);
+        }
         LastHistoryMutationUtc = DateTime.UtcNow;
         Revision++;
         HistoryChanged?.Invoke(this, EventArgs.Empty);
@@ -236,6 +249,7 @@ public sealed class DesignerDocumentSession : IDisposable
             return;
 
         _isDisposed = true;
+        HistoryDescriptions.Clear("SessionDisposed");
         Controls.CollectionChanged -= Controls_CollectionChanged;
         SelectedControlIds.CollectionChanged -= SelectedControlIds_CollectionChanged;
         SelectionChanged = null;
