@@ -12,12 +12,13 @@ namespace FormDesigner.ViewModels;
 
 public partial class MainWindowViewModel
 {
-    internal sealed class NativeDropRenderChange(string session, string parent, string fingerprint, string addedControlId = "") : EventArgs
+    internal sealed class NativeDropRenderChange(string session, string parent, string fingerprint, string addedControlId = "",string movedControlId="") : EventArgs
     {
         public string Session { get; } = session;
         public string Parent { get; } = parent;
         public string Fingerprint { get; } = fingerprint;
         public string AddedControlId { get; } = addedControlId;
+        public string MovedControlId {get;}=movedControlId;
     }
     private NativeDropRenderChange? _nativeDropRenderChange;
     public int NativeDropPreviewLayoutPasses { get; private set; }
@@ -212,7 +213,6 @@ public partial class MainWindowViewModel
         if (!Controls.Contains(control) || control.IsLocked || AncestorsOf(control).Any(c => c.IsLocked))
         { StatusText = "Исходный элемент или его родитель заблокирован либо удалён. Drop отменён."; return false; }
         if (!ValidateGridDrop(target, point, control)) return false;
-        var oldParent = control.ParentId;
         BeginGridEditorUndoBatch();
         try
         {
@@ -220,10 +220,10 @@ public partial class MainWindowViewModel
             using (LayoutDropProfile.Stage("RefreshSelection")) SelectSingleControl(control);
             // Property notifications update placement rows. Rebuild categories only
             // when the parent (and therefore placement editors) changes.
-            if (oldParent != control.ParentId) RebuildPropertyGrid("GridDropMove");
+            // ParentId notifications (or selecting a different control) have
+            // already rebuilt the parent-specific editors. Do not build them twice.
             NotifyDesignerStateChanged(); SetGridDropStatus(target);
-            if (oldParent == control.ParentId)
-                _nativeDropRenderChange = new(DocumentSessionId, oldParent, GridDropLayoutKey);
+            _nativeDropRenderChange = new(DocumentSessionId, control.ParentId, GridDropLayoutKey,movedControlId:control.Id);
         }
         finally { CommitGridEditorUndoBatch(); }
         return true;

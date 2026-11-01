@@ -33,12 +33,15 @@ public partial class PreviewWindow
             ActivePreviewWindows, _previewActivities, reason);
         if (_previewLifecycleDiagnostics.Count == 64) _previewLifecycleDiagnostics.RemoveAt(0);
         _previewLifecycleDiagnostics.Add(record);
+        NativeCrashDiagnostics.Write(code,_previewId,_previewLifecycleMode,ActivePreviewWindows,reason);
+        if(code=="PREVIEW_LIFECYCLE_OPENED")NativeCrashDiagnostics.CaptureModules("first-preview-opened");
         Debug.WriteLine(code + " " + JsonSerializer.Serialize(record));
         LifecycleDiagnosticEmitted?.Invoke(this, record);
     }
 
     private void InitializePreviewLifecycle()
     {
+        NativeCrashDiagnostics.InitializeFromEnvironment();
         Closed += PreviewWindow_Closed;
         if (OperatingSystem.IsWindows()) Win32Properties.AddWndProcHookCallback(this, PreviewNativeLifetimeHook);
         TracePreviewLifecycle("PREVIEW_LIFECYCLE_CREATED");

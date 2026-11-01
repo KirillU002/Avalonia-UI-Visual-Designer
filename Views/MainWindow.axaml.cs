@@ -1136,6 +1136,7 @@ public partial class MainWindow : Window
         _previewFilterRefreshTimer.Stop();
         _sqlPreviewRowsLoading.Clear();
         _previewRowsBySourceKey.Clear();
+        InvalidateNativePreviewContent();
 
         if (DataContext is MainWindowViewModel viewModel)
             viewModel.ClearPreviewRuntimeDiagnostics();
@@ -1166,6 +1167,7 @@ public partial class MainWindow : Window
         _dragRootStartPositions.Clear();
         ClearSnapCandidateSnapshot();
         _wrapperByControlId.Clear();
+        _nativeContentKeys.Clear();
 
         GuideOverlayCanvas.Children.Clear();
         SelectionOverlayCanvas.Children.Clear();
@@ -1674,6 +1676,8 @@ public partial class MainWindow : Window
 
     private void ViewModel_DesignerChanged(object? sender, EventArgs e)
     {
+        LayoutDropProfile.Note("DesignerChanged:"+e.GetType().Name);
+        if(e is not MainWindowViewModel.NativeDropRenderChange)_hasPendingAuthoredDesignerChange=true;
         _nativeDropVisualChange = e as MainWindowViewModel.NativeDropRenderChange;
         if (VM.IsPropertyEditorFocused)
         {
@@ -2732,6 +2736,9 @@ public partial class MainWindow : Window
         if (IsSourceGridDropBlocked(GetDesignCanvasPosition(e)))
         { e.DragEffects = DragDropEffects.None; e.Handled = true; VM.StatusText = "Перенос в ячейки импортированного AXAML недоступен. Исходная разметка сохранена."; return; }
         if (TryNativeGridToolboxDrop(e)) return;
+        var appendCanvas=!_hasPendingAuthoredDesignerChange&&!_isDesignerRenderScheduled&&!VM.IsPropertyEditorFocused;
+        using var canvasProfile=LayoutDropProfile.BeginIfEnabled(VM.ActiveDocumentId,"toolbox",(code,detail)=>VM.TraceDocumentDebug(code,detail,toOutput:true));
+        using var canvasStage=LayoutDropProfile.Stage("CanvasToolboxDrop");
         BeginToolboxInteraction();
         try
         {
@@ -2762,6 +2769,7 @@ public partial class MainWindow : Window
             }
 
             _designerInteractionControlId = created.Id;
+            if(appendCanvas)TryAppendLegacyCanvasControl(created);
             ClearGuideOverlay();
             e.Handled = true;
         }
@@ -2770,25 +2778,30 @@ public partial class MainWindow : Window
 
     private void RenderDesigner()
     {
+        LayoutDropProfile.Note("RenderDesigner");
         using var profileStage = LayoutDropProfile.Stage("RebuildVisualTree");
         if (_attachedViewModel is null)
             return;
 
         _designerRenderTimer.Stop(); _isDesignerRenderScheduled = false;
         var dropChange = _nativeDropVisualChange; _nativeDropVisualChange = null;
+        var allowIncremental=!_hasPendingAuthoredDesignerChange;_hasPendingAuthoredDesignerChange=false;
+        if(dropChange is not null)LayoutDropProfile.Count("NativeDropHintReceived");
         var nativeMeasured = false;
         if (dropChange?.AddedControlId.Length > 0) RefreshNativeCanvasThemeScope();
-        if (dropChange is not null && VM.UsesNativeLayout && !VM.IsUserPreviewMode
+        if (allowIncremental&&dropChange is not null && VM.UsesNativeLayout && !VM.IsUserPreviewMode
             && dropChange.Session == VM.DocumentSessionId && dropChange.Fingerprint == VM.GridDropLayoutKey
             && (_nativeRenderedSelection == NativeSelectionStamp()
                 || (dropChange.AddedControlId.Length > 0 && _nativeRenderedSelectionCount <= 1 && !VM.HasMultipleSelection)))
         {
+            LayoutDropProfile.Count("NativeDropReuseEligible");
             MeasureNativeDesignerLayout(VM.PreviewFormWidth, VM.PreviewFormHeight); nativeMeasured = true;
             if (TryUpdateNativeDropVisuals(dropChange))
             {
                 ClearGuideOverlay(); RenderIdleSelectionOverlay(); RenderControlNameBadge();
                 RenderNativeGridEditorOverlay(); RenderMiniMap();
                 _nativeRenderedSelection = NativeSelectionStamp(); _nativeRenderedSelectionCount = VM.SelectedControlIds.Count;
+                _renderedPrimaryControlId=VM.SelectedControl?.Id??"";
                 VM.MarkCanvasRenderedDocument("NativeDropPlacement", _wrapperByControlId.Count, _previewRowsBySourceKey.Values.Sum(item => item.Rows.Count));
                 return;
             }
@@ -2836,6 +2849,7 @@ public partial class MainWindow : Window
             SelectionOverlayCanvas.Children.Clear();
             DesignerCanvas.Children.Clear();
             _wrapperByControlId.Clear();
+            _nativeContentKeys.Clear();
 
             VM.AxamlLayoutBounds = VM.ActiveAxamlSourceDocument is { } axaml
                 ? AxamlLayoutProjection.Arrange(axaml, VM.Controls, surfaceWidth, surfaceHeight)
@@ -2863,6 +2877,7 @@ public partial class MainWindow : Window
             RenderMiniMap();
             _nativeRenderedSelection = NativeSelectionStamp();
             _nativeRenderedSelectionCount = VM.SelectedControlIds.Count;
+            _renderedPrimaryControlId=VM.SelectedControl?.Id??"";
             VM.MarkCanvasRenderedDocument(
                 "RenderDesigner",
                 _wrapperByControlId.Count,
@@ -4502,6 +4517,7 @@ public partial class MainWindow : Window
             wrapper.PointerReleased += Control_PointerReleased;
         }
 
+        if(HasReusableDataPreview(model)&&NativeContentKey(model) is { } contentKey)_nativeContentKeys[model.Id]=contentKey;
         return wrapper;
     }
 
@@ -8526,6 +8542,7 @@ public partial class MainWindow : Window
         {
             var result = await PreviewRowsLoader.LoadRowsAsync(source);
             _previewRowsBySourceKey[sourceKey] = (signature, result.Rows);
+            InvalidateNativePreviewContent();
             var rowsAppliedEvent = result.IsRealData
                 ? "DATAGRID_PREVIEW_REAL_ROWS_APPLIED"
                 : result.DataKind is "SampleRows" or "DemoData"
@@ -8554,6 +8571,7 @@ public partial class MainWindow : Window
         catch (Exception ex)
         {
             _previewRowsBySourceKey.Remove(sourceKey);
+            InvalidateNativePreviewContent();
             source.PreviewRowsDataKind = "SchemaOnly";
             source.PreviewRowsStatus = $"Реальные данные не загружены. Причина: {ex.Message}";
             Debug.WriteLine($"DATAGRID_PREVIEW_CACHE_INVALIDATED sourceKey={sourceKey}; reason=load-failed");
@@ -8997,6 +9015,7 @@ public partial class MainWindow : Window
 
     private void RefreshSimpleInspectorFields(bool force)
     {
+        using var profileStage=LayoutDropProfile.Stage("RefreshSimpleInspector");
         var details =
             $"force={force}; textEditing={IsSimpleInspectorTextEditing}; " +
             $"activeDocument={VM.ActiveDocumentId}; selected={VM.SelectedControl?.Name ?? "-"}:{VM.SelectedControl?.Id ?? "-"}";

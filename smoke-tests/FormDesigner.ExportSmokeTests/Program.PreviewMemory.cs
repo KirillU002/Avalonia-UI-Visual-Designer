@@ -115,6 +115,7 @@ internal static partial class Program
 
     private static PreviewMemoryReferences CaptureMemoryReferences(PreviewWindow window)
     {
+        if(Environment.GetEnvironmentVariable("FORMDESIGNER_PREVIEW_FORCE_UIA")=="1")AttachMemoryUiaClient(window);
         var contexts = new List<object>(); var items = new List<object>(); var grids = new List<object>();
         if (window.DataContext is { } context) contexts.Add(context);
         if (window.FindControl<Border>("PreviewSurfaceBorder")?.Child?.DataContext is { } rootContext) contexts.Add(rootContext);

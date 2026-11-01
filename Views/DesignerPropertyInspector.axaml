@@ -4,6 +4,38 @@
              xmlns:controls="using:FormDesigner.Controls"
              x:Class="FormDesigner.Views.DesignerPropertyInspector"
              x:Name="RootInspector">
+  <UserControl.Resources>
+    <controls:PropertyGridEditorTemplates x:Key="ActiveEditorTemplates">
+      <controls:PropertyGridEditorTemplates.Text>
+        <DataTemplate x:DataType="vm:PropertyGridRowViewModel"><controls:PropertyGridTextEditor Classes="property-editor" Row="{Binding}" MinWidth="80" HorizontalAlignment="Stretch" VerticalAlignment="Center"/></DataTemplate>
+      </controls:PropertyGridEditorTemplates.Text>
+      <controls:PropertyGridEditorTemplates.Boolean>
+        <DataTemplate x:DataType="vm:PropertyGridRowViewModel"><CheckBox IsChecked="{Binding BoolValue, Mode=TwoWay}" HorizontalAlignment="Left" VerticalAlignment="Center"/></DataTemplate>
+      </controls:PropertyGridEditorTemplates.Boolean>
+      <controls:PropertyGridEditorTemplates.Enumeration>
+        <DataTemplate x:DataType="vm:PropertyGridRowViewModel">
+          <ComboBox ItemsSource="{Binding Options}" SelectedItem="{Binding SelectedOption, Mode=TwoWay}" MinWidth="80" MaxDropDownHeight="320" HorizontalAlignment="Stretch" VerticalAlignment="Center" ToolTip.Tip="{Binding Description}">
+            <ComboBox.ItemTemplate><DataTemplate x:DataType="vm:PropertyGridOptionViewModel"><TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis"/></DataTemplate></ComboBox.ItemTemplate>
+          </ComboBox>
+        </DataTemplate>
+      </controls:PropertyGridEditorTemplates.Enumeration>
+      <controls:PropertyGridEditorTemplates.Color>
+        <DataTemplate x:DataType="vm:PropertyGridRowViewModel">
+          <Grid ColumnDefinitions="Auto,*,Auto">
+            <Border Width="14" Height="14" Margin="0,0,6,0" Background="{Binding Value}" BorderBrush="#94A3B8" BorderThickness="1" CornerRadius="3" VerticalAlignment="Center" IsHitTestVisible="False"/>
+            <TextBlock Grid.Column="1" Text="{Binding Value}" Foreground="#334155" FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" IsHitTestVisible="False"/>
+            <Button Grid.Column="2" Classes="property-action" Content="..." Click="PropertyGridColorButton_Click" ToolTip.Tip="Выбрать цвет"/>
+          </Grid>
+        </DataTemplate>
+      </controls:PropertyGridEditorTemplates.Color>
+      <controls:PropertyGridEditorTemplates.Action>
+        <DataTemplate x:DataType="vm:PropertyGridRowViewModel"><Button Classes="property-action" Content="{Binding ActionText}" HorizontalAlignment="Stretch" Click="PropertyGridActionButton_Click"/></DataTemplate>
+      </controls:PropertyGridEditorTemplates.Action>
+      <controls:PropertyGridEditorTemplates.ReadOnly>
+        <DataTemplate x:DataType="vm:PropertyGridRowViewModel"><TextBlock Text="{Binding Value}" Foreground="#475569" FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" IsHitTestVisible="False"/></DataTemplate>
+      </controls:PropertyGridEditorTemplates.ReadOnly>
+    </controls:PropertyGridEditorTemplates>
+  </UserControl.Resources>
   <ItemsControl x:Name="PropertyGridCategoriesItemsControl"
                 DataContext="{Binding Context, ElementName=RootInspector}"
                 ItemsSource="{Binding PropertyGridCategories}">
@@ -36,28 +68,7 @@
                       </TextBlock.Text>
                     </TextBlock>
                     <Border Grid.Column="2" BorderBrush="#E5E7EB" BorderThickness="1,0,0,0" Padding="6,1,0,1">
-                      <Grid MinWidth="116">
-                        <controls:PropertyGridTextEditor Classes="property-editor" Row="{Binding}" MinWidth="80" HorizontalAlignment="Stretch" VerticalAlignment="Center" IsVisible="{Binding IsTextEditor}"/>
-                        <controls:PropertyGridTextEditor Classes="property-editor" Row="{Binding}" MinWidth="80" HorizontalAlignment="Stretch" VerticalAlignment="Center" IsVisible="{Binding IsNumberEditor}"/>
-                        <CheckBox IsVisible="{Binding IsBoolEditor}" IsChecked="{Binding BoolValue, Mode=TwoWay}" HorizontalAlignment="Left" VerticalAlignment="Center"/>
-                        <ComboBox IsVisible="{Binding IsEnumEditor}" ItemsSource="{Binding Options}" SelectedItem="{Binding SelectedOption, Mode=TwoWay}" MinWidth="80" MaxDropDownHeight="320" HorizontalAlignment="Stretch" VerticalAlignment="Center" ToolTip.Tip="{Binding Description}">
-                          <ComboBox.ItemTemplate>
-                            <DataTemplate x:DataType="vm:PropertyGridOptionViewModel"><TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis"/></DataTemplate>
-                          </ComboBox.ItemTemplate>
-                        </ComboBox>
-                        <ComboBox IsVisible="{Binding IsBindingSourceEditor}" ItemsSource="{Binding Options}" SelectedItem="{Binding SelectedOption, Mode=TwoWay}" MinWidth="80" MaxDropDownHeight="320" HorizontalAlignment="Stretch" VerticalAlignment="Center" ToolTip.Tip="{Binding Description}">
-                          <ComboBox.ItemTemplate>
-                            <DataTemplate x:DataType="vm:PropertyGridOptionViewModel"><TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis"/></DataTemplate>
-                          </ComboBox.ItemTemplate>
-                        </ComboBox>
-                        <Grid IsVisible="{Binding IsColorEditor}" ColumnDefinitions="Auto,*,Auto">
-                          <Border Width="14" Height="14" Margin="0,0,6,0" Background="{Binding Value}" BorderBrush="#94A3B8" BorderThickness="1" CornerRadius="3" VerticalAlignment="Center" IsHitTestVisible="False"/>
-                          <TextBlock Grid.Column="1" Text="{Binding Value}" Foreground="#334155" FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" IsHitTestVisible="False"/>
-                          <Button Grid.Column="2" Classes="property-action" Content="..." Click="PropertyGridColorButton_Click" ToolTip.Tip="Выбрать цвет"/>
-                        </Grid>
-                        <Button Classes="property-action" Content="{Binding ActionText}" IsVisible="{Binding IsActionEditor}" HorizontalAlignment="Stretch" Click="PropertyGridActionButton_Click"/>
-                        <TextBlock Text="{Binding Value}" IsVisible="{Binding IsReadOnlyEditor}" Foreground="#475569" FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" IsHitTestVisible="False"/>
-                      </Grid>
+                      <ContentControl MinWidth="116" Content="{Binding}" ContentTemplate="{Binding Editor, Converter={StaticResource ActiveEditorTemplates}}" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Center"/>
                     </Border>
                     <Button Grid.Column="3" Classes="property-action" Content="↺" IsVisible="{Binding CanResetToDefault}" Click="PropertyGridResetButton_Click" ToolTip.Tip="{Binding DefaultTooltip}"/>
                     <TextBlock Grid.Column="4" Text="!" FontWeight="Bold" Foreground="#DC2626" IsVisible="{Binding HasValidationError}" ToolTip.Tip="{Binding ValidationMessage}" VerticalAlignment="Center" IsHitTestVisible="False"/>

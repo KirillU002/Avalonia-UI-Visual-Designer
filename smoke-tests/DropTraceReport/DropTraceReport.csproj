@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net8.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup>
+  <ItemGroup>
+    <Reference Include="Microsoft.Diagnostics.Tracing.TraceEvent"><HintPath>../../artifacts/layout-phase7a2/tools/.store/dotnet-trace/9.0.652701/dotnet-trace/9.0.652701/tools/net8.0/any/Microsoft.Diagnostics.Tracing.TraceEvent.dll</HintPath></Reference>
+    <Reference Include="Microsoft.Diagnostics.FastSerialization"><HintPath>../../artifacts/layout-phase7a2/tools/.store/dotnet-trace/9.0.652701/dotnet-trace/9.0.652701/tools/net8.0/any/Microsoft.Diagnostics.FastSerialization.dll</HintPath></Reference>
+  </ItemGroup>
+</Project>

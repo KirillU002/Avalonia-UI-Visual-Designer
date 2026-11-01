@@ -48,6 +48,7 @@ public partial class MainWindowViewModel
 
     private void BeginGridEditorUndoBatch()
     {
+        using var profileStage=FormDesigner.Services.LayoutDropProfile.Stage("CreateUndoTransaction");
         // Explicit structure/definition commands must not coalesce with earlier typing.
         if (_undoBatchDepth == 0) RegisterHistorySnapshot();
         _lastHistoryMutationUtc = DateTime.MinValue;

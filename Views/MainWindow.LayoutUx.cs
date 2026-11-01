@@ -8,6 +8,7 @@ using FormDesigner.Services;
 using FormDesigner.ViewModels;
 using System;
 using System.Linq;
+using System.Text.Json;
 
 namespace FormDesigner.Views;
 
@@ -16,7 +17,24 @@ public partial class MainWindow
     private MainWindowViewModel.NativeDropRenderChange? _nativeDropVisualChange;
     private string _nativeRenderedSelection = "";
     private int _nativeRenderedSelectionCount;
+    private string _renderedPrimaryControlId="";
+    private bool _hasPendingAuthoredDesignerChange;
     private IPointer? _contextMenuPointer;
+    private readonly System.Collections.Generic.Dictionary<string,string> _nativeContentKeys=new();
+    private int _previewContentRevision;
+    private static bool HasReusableDataPreview(DesignControlModel model)=>model.Type is "DataGrid" or "Eremex.DataGridControl" or "Eremex.TextEditor";
+    private string? NativeContentKey(DesignControlModel model)
+    {
+        try
+        {
+            var copy=model.Clone();copy.Id=model.Id;copy.ParentId="";copy.X=copy.Y=0;copy.GridRow=copy.GridColumn=copy.StackOrder=0;copy.GridRowSpan=copy.GridColumnSpan=1;
+            // Private, in-memory comparison only: never log or persist these values.
+            return JsonSerializer.Serialize(new{Model=copy,Source=VM.GetBindingSource(model.BindingSourceId)?.Clone(),Revision=_previewContentRevision,
+                Selected= model.Type=="DataGrid"&&VM.IsControlSelected(model)});
+        }
+        catch(Exception ex) when(ex is JsonException or NotSupportedException or ArgumentException){return null;}
+    }
+    private void InvalidateNativePreviewContent(){_previewContentRevision++;_nativeDropVisualChange=null;}
     private void CancelPendingContextMenu()
     {
         _pendingContextMenuControlId = "";
@@ -25,46 +43,83 @@ public partial class MainWindow
     }
     private string NativeSelectionStamp() => VM.DocumentSessionId + ":" + VM.SelectedControl?.Id + ":" + string.Join(",", VM.SelectedControlIds.OrderBy(id => id));
 
+    private bool TryAppendLegacyCanvasControl(DesignControlModel added)
+    {
+        using var stage=LayoutDropProfile.Stage("AppendCanvasWrapper");
+        bool Plain(DesignControlModel c)=>c.Type is "Button" or "TextBox" or "TextBlock" && string.IsNullOrEmpty(c.BindingSourceId)&&string.IsNullOrEmpty(c.TextBindingPath);
+        if(VM.UsesNativeLayout||VM.IsAxamlRoundTripDocument||VM.IsUserPreviewMode||!DesignerLayoutModes.IsAbsolute(VM.SurfaceLayoutMode)
+            ||_nativeRenderedSelectionCount>1||added.ParentId.Length!=0||VM.Controls.Any(c=>c.ParentId.Length!=0||!Plain(c))
+            ||_wrapperByControlId.Count!=VM.Controls.Count-1)return false;
+        foreach(var model in VM.Controls.Where(c=>c.Id!=added.Id))
+            if(!_wrapperByControlId.TryGetValue(model.Id,out var wrapper)||!ReferenceEquals(wrapper.Tag,model))return false;
+        _designerRenderTimer.Stop();_isDesignerRenderScheduled=false;_hasPendingAuthoredDesignerChange=false;_nativeDropVisualChange=null;
+        if(_wrapperByControlId.Count==0)DesignerCanvas.Children.Clear();
+        // Exactly the same Rect as the existing Absolute branch of AddControlsToCanvas.
+        AddRenderedControl(DesignerCanvas,added,new Rect(added.X,added.Y,added.Width,added.Height),false);
+        if(_wrapperByControlId.TryGetValue(_renderedPrimaryControlId,out var previous)&&previous.Tag is DesignControlModel old)
+        {RefreshNativeWrapperSelection(previous,old);previous.ZIndex=VM.GetCanvasVisualZIndex(old);LayoutDropProfile.Count("DesignerWrappersUpdated");}
+        ClearGuideOverlay();RenderIdleSelectionOverlay();RenderControlNameBadge();RenderMiniMap();
+        _nativeRenderedSelection=NativeSelectionStamp();_nativeRenderedSelectionCount=VM.SelectedControlIds.Count;_renderedPrimaryControlId=added.Id;
+        VM.MarkCanvasRenderedDocument("CanvasDropAppend",_wrapperByControlId.Count,_previewRowsBySourceKey.Values.Sum(p=>p.Rows.Count));return true;
+    }
+
     private bool TryUpdateNativeDropVisuals(MainWindowViewModel.NativeDropRenderChange change)
     {
         using var stage = LayoutDropProfile.Stage("UpdateExistingWrappers");
+        bool Reject(string reason){LayoutDropProfile.Count("ReuseRejected_"+reason);return false;}
         // Data/plugin/item previews can refresh independently of placement (for
         // example an async row cache). Preserve their existing full refresh path.
-        if (VM.Controls.Any(c => !VM.CanHostChildren(c)
+        if (VM.Controls.Any(c => !VM.CanHostChildren(c)&&!HasReusableDataPreview(c)
             && (c.Type is not (DesignerControlTypes.Button or DesignerControlTypes.TextBox or DesignerControlTypes.TextBlock)
-                || !string.IsNullOrEmpty(c.BindingSourceId) || !string.IsNullOrEmpty(c.TextBindingPath)))) return false;
-        // Narrow reuse: same hierarchy, selection and dimensions. All other edits,
-        // reparenting, zero-size changes and new controls use the existing full renderer.
+                || !string.IsNullOrEmpty(c.BindingSourceId) || !string.IsNullOrEmpty(c.TextBindingPath)))) return Reject("ContentKind");
+        var refreshData=VM.Controls.Where(HasReusableDataPreview).Where(c=>!_nativeContentKeys.TryGetValue(c.Id,out var key)||key!=NativeContentKey(c)).Select(c=>c.Id).ToHashSet();
+        Canvas? Host(string parentId)
+        {
+            if(parentId.Length==0)return DesignerCanvas;
+            return _wrapperByControlId.TryGetValue(parentId,out var parent)&&parent.Child is Canvas root
+                ?root.Children.OfType<Canvas>().FirstOrDefault()?.Children.OfType<Canvas>().LastOrDefault():null;
+        }
+        var create=new System.Collections.Generic.List<DesignControlModel>();
+        var remove=new System.Collections.Generic.List<string>();
+        Border? reparent=null;
+        // Only leaf wrappers may be replaced/moved. Changing a container's own
+        // geometry or an authored edit still requires the existing full renderer.
+        var ids=VM.Controls.Select(c=>c.Id).ToHashSet();
+        if(_wrapperByControlId.Keys.Any(id=>!ids.Contains(id)))return false;
         foreach (var model in VM.Controls)
         {
             var positive = VM.NativeLayoutBounds.TryGetValue(model.Id, out var bounds) && bounds.Width > 0 && bounds.Height > 0;
-            if (model.Id == change.AddedControlId) { if (!positive || _wrapperByControlId.ContainsKey(model.Id)) return false; continue; }
-            if (!positive) { if (_wrapperByControlId.ContainsKey(model.Id)) return false; continue; }
-            if (!_wrapperByControlId.TryGetValue(model.Id, out var wrapper) || !ReferenceEquals(wrapper.Tag, model)
-                || wrapper.Width != bounds.Width || wrapper.Height != bounds.Height) return false;
+            var exists=_wrapperByControlId.TryGetValue(model.Id,out var wrapper);
+            if(model.Id==change.AddedControlId&&exists)return false;
+            if(!positive)
+            {if(exists){if(VM.CanHostChildren(model))return false;remove.Add(model.Id);}continue;}
+            if(!exists)
+            {if(model.Id!=change.AddedControlId&&VM.CanHostChildren(model))return false;create.Add(model);continue;}
+            if(!ReferenceEquals(wrapper!.Tag,model))return false;
+            if(wrapper.Width!=bounds.Width||wrapper.Height!=bounds.Height||refreshData.Contains(model.Id))
+            {if(VM.CanHostChildren(model))return Reject("ContainerSize");remove.Add(model.Id);create.Add(model);continue;}
             var parent = wrapper.GetVisualAncestors().OfType<Border>().FirstOrDefault(b => b.Tag is DesignControlModel);
-            if ((parent?.Tag as DesignControlModel)?.Id != (model.ParentId.Length == 0 ? null : model.ParentId)) return false;
+            if ((parent?.Tag as DesignControlModel)?.Id != (model.ParentId.Length == 0 ? null : model.ParentId))
+            {if(model.Id!=change.MovedControlId||VM.CanHostChildren(model)||Host(model.ParentId) is null)return false;reparent=wrapper;}
         }
-        if (change.AddedControlId.Length > 0)
+        if(create.Any(m=>Host(m.ParentId) is null))return false;
+        foreach(var id in remove)
         {
-            var added = VM.GetControl(change.AddedControlId)!;
-            Canvas? dropHost = DesignerCanvas;
-            if (added.ParentId.Length > 0)
-            {
-                if (!_wrapperByControlId.TryGetValue(added.ParentId,out var parent) || parent.Child is not Canvas root) return false;
-                dropHost = root.Children.OfType<Canvas>().FirstOrDefault()?.Children.OfType<Canvas>().LastOrDefault();
-                if (dropHost is null) return false;
-            }
-            if (_wrapperByControlId.Count == 0) DesignerCanvas.Children.Clear(); // first control replaces the empty-state card
-            AddRenderedControl(dropHost, added, VM.NativeLayoutBounds[added.Id], false);
+            var wrapper=_wrapperByControlId[id];(wrapper.Parent as Canvas)?.Children.Remove(wrapper);_wrapperByControlId.Remove(id);
+            _nativeContentKeys.Remove(id);
+            LayoutDropProfile.Count("DesignerWrappersReplaced");
         }
+        if(reparent is not null){(reparent.Parent as Canvas)!.Children.Remove(reparent);Host(((DesignControlModel)reparent.Tag!).ParentId)!.Children.Add(reparent);}
+        if(_wrapperByControlId.Count==0)DesignerCanvas.Children.Clear();
+        foreach(var model in create)AddRenderedControl(Host(model.ParentId)!,model,VM.NativeLayoutBounds[model.Id],false);
         foreach (var pair in _wrapperByControlId)
         {
             if (!VM.NativeLayoutBounds.TryGetValue(pair.Key, out var bounds)) return false;
             Canvas.SetLeft(pair.Value, bounds.X); Canvas.SetTop(pair.Value, bounds.Y);
-            if (change.AddedControlId.Length > 0 && pair.Value.Tag is DesignControlModel model)
+            if ((change.AddedControlId.Length > 0||pair.Key==change.MovedControlId) && pair.Value.Tag is DesignControlModel model)
                 RefreshNativeWrapperSelection(pair.Value,model);
             LayoutDropProfile.Count("DesignerWrappersUpdated");
+            LayoutDropProfile.Affect(pair.Key);
         }
         var siblings = GetActiveChildControls(change.Parent).Where(c => _wrapperByControlId.ContainsKey(c.Id)).ToArray();
         if (siblings.FirstOrDefault() is { } first && _wrapperByControlId[first.Id].Parent is Canvas host)
@@ -82,6 +137,7 @@ public partial class MainWindow
         if (wrapper.Child is not Canvas root) return;
         var selected = VM.IsControlSelected(model); var primary = VM.SelectedControl?.Id == model.Id;
         wrapper.BorderBrush = new SolidColorBrush(Color.Parse(selected ? (model.IsLocked ? "#0F766E" : "#2563EB") : (model.IsLocked ? "#64748B" : "#66CBD5E1")));
+        if(!VM.UsesNativeLayout)wrapper.BorderThickness=new Thickness(selected?(primary?2:1.5):1);
         if (root.Children.OfType<Avalonia.Controls.Shapes.Rectangle>().LastOrDefault() is { } frame)
         { frame.Stroke = wrapper.BorderBrush; frame.StrokeThickness = selected ? 2 : 1; }
         foreach (var outline in root.Children.OfType<Avalonia.Controls.Shapes.Rectangle>().Where(r=>r.StrokeDashArray?.Count > 0)) outline.StrokeThickness=selected?2.5:1.5;

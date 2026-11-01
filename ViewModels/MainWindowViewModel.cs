@@ -6899,6 +6899,7 @@ public partial class MainWindowViewModel : ObservableObject
         // Контрол всегда создается из стартового шаблона,
         // а координаты сразу привязываются к сетке и границам контейнера.
         var model = CreateDefaultControl(type);
+        LayoutDropProfile.Affect(model.Id);
         model.Name = GetUniqueControlName(type);
         model.ParentId = NormalizeId(parentId);
         var parentLayoutMode = GetLayoutModeForParent(model.ParentId);
@@ -22770,6 +22771,7 @@ public partial class MainWindowViewModel : ObservableObject
     private void Control_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         LayoutDropProfile.Count("ModelPropertyNotifications");
+        if(sender is DesignControlModel profiledControl)LayoutDropProfile.Affect(profiledControl.Id);
         if (UsesNativeLayout) NativeGridMeasurementKey = "";
         if (UsesNativeLayout && sender is DesignControlModel sized && !_isApplyingDocument)
         {
