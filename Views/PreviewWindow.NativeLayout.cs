@@ -33,15 +33,11 @@ public partial class PreviewWindow
             // Version-1 export authors fixed dimensions, including managed descendants.
             model.WidthMode = model.HeightMode = "Fixed";
         }
-        var rootModel = models.Single(m => m.Id == control.Id);
-        rootModel.ParentId = ""; rootModel.X = rootModel.Y = 0;
-        rootModel.Margin = "0"; rootModel.Width = width; rootModel.Height = height;
-        var input = new DesignerDocumentFileModel { LayoutSemanticsVersion = 2, SurfaceLayoutMode = DesignerLayoutModes.Absolute,
-            DesignWidth = width, DesignHeight = height };
         _buildingManagedCanvasSubtree = true;
         try
         {
-            var tree = AxamlLayoutProjection.BuildJson(input, models, model => CreatePreviewControl(files[model.Id]));
+            var tree = LegacyCanvasLayoutProjection.Build(models, control.Id, width, height,
+                model => CreatePreviewControl(files[model.Id]));
             foreach (var model in models) TrackPreviewControl(files[model.Id], tree.Controls[model.Id]);
             var result = tree.Controls[control.Id];
             tree.Root.Children.Remove(result);

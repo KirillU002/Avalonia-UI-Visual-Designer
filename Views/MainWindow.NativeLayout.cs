@@ -15,6 +15,7 @@ namespace FormDesigner.Views;
 
 public partial class MainWindow
 {
+    private bool _buildingLegacyCanvasProjection;
     private readonly List<IStyle> _nativeCanvasThemeStyles = new();
     private string _nativeCanvasThemeContext = "";
     private void RefreshNativeCanvasThemeScope()
@@ -43,6 +44,37 @@ public partial class MainWindow
             VM.NativeGridMeasurements = new Dictionary<string, FormDesigner.DesignerSystem.AxamlRoundTrip.AxamlLayoutProjection.GridMeasurement>();
             VM.StatusText = "Не удалось построить Grid Layout: " + ex.Message;
         }
+    }
+
+    private void MeasureLegacyManagedCanvasLayouts()
+    {
+        if (VM.UsesNativeLayout || VM.IsAxamlRoundTripDocument) return;
+        var measured = new Dictionary<string, Rect>();
+        foreach (var root in VM.Controls.Where(c => VM.CanHostChildren(c) && !DesignerLayoutModes.IsAbsolute(VM.GetLayoutModeForControl(c))))
+        {
+            // An outer managed subtree already measures its descendants.
+            var ancestor = VM.GetControl(root.ParentId);var contained = false;var visited = new HashSet<string>();
+            while (ancestor is not null && visited.Add(ancestor.Id))
+            {
+                if (!DesignerLayoutModes.IsAbsolute(VM.GetLayoutModeForControl(ancestor))) { contained = true;break; }
+                ancestor = VM.GetControl(ancestor.ParentId);
+            }
+            if (contained) continue;
+            _buildingLegacyCanvasProjection = true;
+            try
+            {
+                var tree = LegacyCanvasLayoutProjection.Build(VM.Controls.ToArray(), root.Id, root.Width, root.Height,
+                    CreatePreviewControl, includeHidden: !VM.IsUserPreviewMode);
+                foreach (var frame in tree.Measure(root.Width, root.Height))
+                    if (frame.Key != root.Id) measured[frame.Key] = frame.Value;
+            }
+            catch (Exception ex) when (ex is FormatException or ArgumentException or InvalidOperationException)
+            {
+                VM.StatusText = "Не удалось измерить вложенный Canvas layout: " + ex.Message;
+            }
+            finally { _buildingLegacyCanvasProjection = false; }
+        }
+        VM.AxamlLayoutBounds = measured;
     }
 
     private Control CreateNativeContainerBackdrop(DesignControlModel model) => new Border

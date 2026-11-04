@@ -6,6 +6,9 @@ namespace FormDesigner.Models;
 
 public sealed class ExportedAxamlPreviewModel
 {
+    public string ProjectId { get; init; } = "";
+    public string SourceKind { get; init; } = "ProjectJson";
+    public string GenerationFailure { get; init; } = "";
     public string ExportAxaml { get; init; } = "";
 
     public string Axaml { get; init; } = "";

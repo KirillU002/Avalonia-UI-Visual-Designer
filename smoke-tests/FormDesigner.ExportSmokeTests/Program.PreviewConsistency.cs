@@ -13,7 +13,8 @@ namespace FormDesigner.ExportSmokeTests;
 
 internal static partial class Program
 {
-    private static string ConsistencyFolder => Path.Combine(FindRepositoryRoot(),"artifacts","preview-consistency-audit");
+    private static string ConsistencyFolder => Environment.GetEnvironmentVariable("FORMDESIGNER_CONSISTENCY_ARTIFACTS")
+        ?? Path.Combine(FindRepositoryRoot(),"artifacts","preview-consistency-audit");
     private static MainWindowViewModel AllRegistryScene(bool native)
     {
         var vm=CreateViewModel("RegistryAudit");

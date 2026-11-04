@@ -129,5 +129,6 @@ public partial class PreviewWindow
         _previewLifecycleDisposed = true;
         TracePreviewLifecycle("PREVIEW_LIFECYCLE_DISPOSED");
         BuildDiagnosticEmitted = null;
+        ModeDiagnosticEmitted = null;
     }
 }

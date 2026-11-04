@@ -41,6 +41,7 @@ public sealed class AppSettingsService
 
             var json = File.ReadAllText(SettingsFilePath);
             var settings = JsonSerializer.Deserialize<AppSettingsModel>(json, JsonOptions) ?? new AppSettingsModel();
+            settings.Preview ??= new PreviewSettingsModel();
             settings.PostgreSql ??= new PostgreSqlSettingsModel();
             settings.PostgreSql.Password = settings.PostgreSql.RememberPassword
                 ? WindowsSecretProtection.Unprotect(settings.PostgreSql.ProtectedPassword) : "";

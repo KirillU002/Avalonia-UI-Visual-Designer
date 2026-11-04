@@ -78,7 +78,7 @@ public partial class PreviewWindow
                 if (actual is ContentControl content && _runtimeButtonContentByControlId.TryGetValue(model.Id, out var caption)) content.Content = caption;
             }
         }
-        foreach (var model in _document.Controls.Where(m => StandardItemsProperties.IsStandardItemsControl(m.Type) || (_document.LayoutSemanticsVersion == 2 && m.Type == DesignerControlTypes.Button)))
+        foreach (var model in _document.Controls.Where(m => StandardItemsProperties.IsStandardItemsControl(m.Type) || m.Type == DesignerControlTypes.Button))
         {
             if (!controls.TryGetValue(Name(model.Id, model.Name), out var actual)) continue;
             if (model.Type == DesignerControlTypes.Button && actual is Button basic)

@@ -174,10 +174,12 @@ internal static partial class Program
             var second = vm.CreateNewForm("Grid"); vm.CreateControl("TextBox", 0, 0); vm.MarkWorkspaceSaved("recovery.formdesigner.json", vm.ExportWorkspaceJson());
             vm.SetActiveForm(first.Id, "audit-recovery-edit"); vm.Controls.First().Text = "Recovery must include this"; vm.SetActiveForm(second.Id, "audit-recovery-clean");
             var host = new TestDesignerHostServices(true); var window = new MainWindow(host) { DataContext = vm }; SmokeWindows.Add(window); window.Show(); NativeItemsUiWait(120);
+            Console.WriteLine($"OBSERVED autosave-before: busy={vm.IsBusy}; dirtyWorkspace={vm.HasUnsavedWorkspaceChanges}; dirtyActive={vm.HasUnsavedChanges}; dirtyForms={vm.CurrentProject.Forms.Count(f=>f.IsDirty)}; path={host.Paths.RecoveryDirectory}");
             typeof(MainWindow).GetMethod("AutosaveTimer_Tick", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, new object?[] { null, EventArgs.Empty });
             var recovery = new AutosaveRecoveryService(host.Paths.RecoveryDirectory); var deadline = DateTime.UtcNow.AddSeconds(2);
             while (!File.Exists(recovery.RecoveryFilePath) && DateTime.UtcNow < deadline) NativeItemsUiWait(20);
             var draftTask = recovery.TryLoadDraftAsync(); Pump(draftTask);
+            Console.WriteLine($"OBSERVED autosave-after: file={File.Exists(recovery.RecoveryFilePath)}; status={vm.AutosaveStatusText}; draft={draftTask.Result is not null}; busy={vm.IsBusy}; dirtyWorkspace={vm.HasUnsavedWorkspaceChanges}");
             RequireCapability(draftTask.Result?.DocumentJson.Contains("Recovery must include this") == true, "Autosave skipped an inactive dirty form.");
             vm.SetActiveForm(first.Id, "audit-recovery-back"); vm.SetActiveForm(second.Id, "audit-recovery-return-clean");
             RequireCapability(File.Exists(recovery.RecoveryFilePath), "Switching to a clean form deleted the dirty workspace recovery.");

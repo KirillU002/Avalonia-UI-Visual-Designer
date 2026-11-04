@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Text.Json.Serialization;
 
 namespace FormDesigner.Models;
 
@@ -91,7 +92,29 @@ public sealed class PreviewSettingsModel
 
     public bool AutoHideRuntimeBadge { get; set; } = true;
 
-    public bool UseExportedAxamlPreview { get; set; }
+    private bool _useExportedAxamlPreview = PreviewModePolicy.DefaultForJson;
+    [JsonIgnore]
+    public bool UseExportedAxamlPreview
+    {
+        get => _useExportedAxamlPreview;
+        set { _useExportedAxamlPreview = value; HasExplicitPreviewMode = true; }
+    }
+    [JsonIgnore]
+    public bool HasExplicitPreviewMode { get; private set; }
+
+    // The existing JSON boolean keeps its name and meaning. Absence is retained
+    // across unrelated settings saves, so imported sessions can keep their policy.
+    [JsonPropertyName(nameof(UseExportedAxamlPreview))]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? PersistedPreviewMode
+    {
+        get => HasExplicitPreviewMode ? _useExportedAxamlPreview : null;
+        set { if (value.HasValue) UseExportedAxamlPreview = value.Value; }
+    }
+    public void SetResolvedMode(bool value, bool explicitChoice)
+    {
+        _useExportedAxamlPreview = value; HasExplicitPreviewMode = explicitChoice;
+    }
 
     public bool FallbackToLegacyPreviewOnAxamlError { get; set; } = true;
 

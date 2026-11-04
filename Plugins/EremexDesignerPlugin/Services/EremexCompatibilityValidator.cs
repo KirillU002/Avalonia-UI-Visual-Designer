@@ -4,7 +4,6 @@ using Avalonia.Data;
 using Avalonia.Markup.Xaml.MarkupExtensions;
 using Avalonia.Themes.Fluent;
 using Eremex.AvaloniaUI.Controls.Editors;
-using Eremex.AvaloniaUI.Themes.DeltaDesign;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -18,6 +17,12 @@ internal sealed record EremexCompatibilityResult(bool IsCompatible, string Reaso
 
 internal static class EremexCompatibilityValidator
 {
+    private static readonly Lazy<EremexCompatibilityResult> Compatibility = new(Validate);
+    public static void EnsureCompatible()
+    {
+        var result = Compatibility.Value;
+        if (!result.IsCompatible) throw new InvalidOperationException(result.Reason);
+    }
     private const string RequiredMethodName = "ProvideValue";
 
     public static EremexCompatibilityResult Validate()
@@ -86,8 +91,7 @@ internal static class EremexCompatibilityValidator
             typeof(Control).Assembly,
             typeof(ReflectionBindingExtension).Assembly,
             typeof(FluentTheme).Assembly,
-            typeof(TextEditor).Assembly,
-            typeof(DeltaDesignTheme).Assembly
+            typeof(TextEditor).Assembly
         };
 
         return assemblies.Distinct().ToList();
@@ -108,7 +112,7 @@ internal static class EremexCompatibilityValidator
 
     private static IReadOnlyList<Version> GetEremexAvaloniaReferences()
     {
-        return new[] { typeof(TextEditor).Assembly, typeof(DeltaDesignTheme).Assembly }
+        return new[] { typeof(TextEditor).Assembly }
             .SelectMany(assembly => assembly.GetReferencedAssemblies())
             .Where(reference => reference.Name is "Avalonia.Base" or "Avalonia.Controls" or "Avalonia.Markup.Xaml")
             .Select(reference => reference.Version)

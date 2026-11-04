@@ -30,13 +30,13 @@ public sealed class EremexTextEditorDescriptor : IControlDescriptor, IDesignerCo
 
     private readonly string _pluginId;
     private readonly string _pluginVersion;
-    private readonly IReadOnlyList<DesignPropertyDescriptor> _propertySchema;
+    private readonly Lazy<IReadOnlyList<DesignPropertyDescriptor>> _propertySchema;
 
     public EremexTextEditorDescriptor(string pluginId, string pluginVersion)
     {
         _pluginId = pluginId;
         _pluginVersion = pluginVersion;
-        _propertySchema = BuildPropertySchema();
+        _propertySchema = new(() => { EremexCompatibilityValidator.EnsureCompatible(); return BuildPropertySchema(); });
     }
 
     public string TypeKey => TypeKeyValue;
@@ -46,7 +46,7 @@ public sealed class EremexTextEditorDescriptor : IControlDescriptor, IDesignerCo
     public bool IsContainer => false;
     public bool CanHostChildren => false;
     public string ChildLayoutMode => "Absolute";
-    public IReadOnlyList<DesignPropertyDescriptor> Properties => _propertySchema;
+    public IReadOnlyList<DesignPropertyDescriptor> Properties => _propertySchema.Value;
     public string ProviderId => "Eremex";
     public string ProviderTitle => "Eremex";
     public string ToolboxGroup => "Eremex";

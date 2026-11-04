@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Threading;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
@@ -51,7 +52,7 @@ public static class PreviewConsistencyProbe
                 foreach(var m in manifest)
                 {
                     var view=views[m.Id];
-                    var expected=m.Type=="Group"?m.ChildLayoutMode switch{"Stack"=>"StackPanel","Grid"=>"Grid","Flex"=>"WrapPanel","Dock"=>"DockPanel",_=>"Canvas"}:m.Type;
+                    var expected=m.Type=="Group"?m.ChildLayoutMode switch{"Stack"=>"StackPanel","Grid"=>"Grid","Flex"=>"WrapPanel","Dock"=>"DockPanel",_=>"Canvas"}:m.Type.StartsWith("Eremex.")?m.Type.Split('.').Last():m.Type;
                     var native=view.GetVisualDescendants().OfType<Control>().Prepend(view).FirstOrDefault(c=>c.GetType().Name==expected);
                     if(native==null)throw new Exception("No native "+expected+" for "+m.Name);
                     if(native is Image image&&image.Source==null)throw new Exception("Image resource failed: "+m.Name);
@@ -79,6 +80,14 @@ public static class PreviewConsistencyProbe
             foreach(var list in window.GetVisualDescendants().OfType<ListBox>())
             {if(list.ItemCount>1){list.SelectedIndex=1;if(list.SelectedItem==null)throw new Exception("ListBox selection failed");}}
             File.WriteAllText(Environment.GetEnvironmentVariable("PC_RESULT")!,JsonSerializer.Serialize(rows,new JsonSerializerOptions{WriteIndented=true}));
+            // The generated project legitimately omits the DataGrid package when it has no grids.
+            var headers=window.GetVisualDescendants().OfType<ContentControl>().Where(h=>h.GetType().FullName=="Avalonia.Controls.DataGridColumnHeader"&&h.Content!=null).Select(h=>new
+            {
+                Header=h.Content!.ToString(),Appearance=new {Background=h.Background?.ToString()??"",Foreground=h.Foreground?.ToString()??"",BorderBrush=h.BorderBrush?.ToString()??"",
+                    BorderThickness=h.BorderThickness.ToString(),Padding=h.Padding.ToString(),FontFamily=h.FontFamily.ToString(),FontSize=h.FontSize,FontWeight=h.FontWeight.ToString(),
+                    MinHeight=h.MinHeight,Height=h.Bounds.Height,HeaderTemplate=h.ContentTemplate?.GetType().Name??"none"}
+            }).ToArray();
+            File.WriteAllText(Path.Combine(Path.GetDirectoryName(Environment.GetEnvironmentVariable("PC_RESULT"))!,Environment.GetEnvironmentVariable("PC_SCENE")+"-header-styles.json"),JsonSerializer.Serialize(headers,new JsonSerializerOptions{WriteIndented=true}));
             Console.WriteLine("PASS native exported runtime: "+rows.Count+" visual observations, hierarchy, images, Flyouts, selection");
     }
     private static void Pump(int ms){using var stop=new CancellationTokenSource(ms);Dispatcher.UIThread.MainLoop(stop.Token);}

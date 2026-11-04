@@ -98,13 +98,13 @@ public sealed class EremexDataGridControlDescriptor : IControlDescriptor, IDesig
 
     private readonly string _pluginId;
     private readonly string _pluginVersion;
-    private readonly IReadOnlyList<DesignPropertyDescriptor> _properties;
+    private readonly Lazy<IReadOnlyList<DesignPropertyDescriptor>> _properties;
 
     public EremexDataGridControlDescriptor(string pluginId, string pluginVersion)
     {
         _pluginId = pluginId;
         _pluginVersion = pluginVersion;
-        _properties = BuildPropertySchema();
+        _properties = new(() => { EremexCompatibilityValidator.EnsureCompatible(); return BuildPropertySchema(); });
     }
 
     public string TypeKey => TypeKeyValue;
@@ -114,7 +114,7 @@ public sealed class EremexDataGridControlDescriptor : IControlDescriptor, IDesig
     public bool IsContainer => false;
     public bool CanHostChildren => false;
     public string ChildLayoutMode => "Absolute";
-    public IReadOnlyList<DesignPropertyDescriptor> Properties => _properties;
+    public IReadOnlyList<DesignPropertyDescriptor> Properties => _properties.Value;
     public string ProviderId => "Eremex";
     public string ProviderTitle => "Eremex";
     public string ToolboxGroup => "Eremex";

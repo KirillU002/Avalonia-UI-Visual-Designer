@@ -65,7 +65,11 @@ public static partial class AxamlLayoutProjection
 
     public static JsonLayoutTree BuildJson(DesignerDocumentFileModel document,
         IReadOnlyList<DesignControlModel> models, Func<DesignControlModel, Control> leafFactory,
-        bool includeHidden = false)
+        bool includeHidden = false) => BuildJson(document, models, leafFactory, includeHidden, null);
+
+    public static JsonLayoutTree BuildJson(DesignerDocumentFileModel document,
+        IReadOnlyList<DesignControlModel> models, Func<DesignControlModel, Control> leafFactory,
+        bool includeHidden, Action<DesignControlModel, Control>? adaptPlacement)
     {
         if (document.LayoutSemanticsVersion != 2) throw new InvalidOperationException("Неизвестная версия native layout.");
         var byId = models.ToDictionary(c => c.Id, StringComparer.Ordinal);
@@ -128,6 +132,7 @@ public static partial class AxamlLayoutProjection
                 view = leafFactory(model);
             }
             ApplyJsonLayout(model, view, includeHidden);
+            adaptPlacement?.Invoke(model, view);
             views.Add(model.Id, view);
             visiting.Remove(model.Id);
             return view;

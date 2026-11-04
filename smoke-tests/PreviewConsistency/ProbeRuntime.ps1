@@ -1,4 +1,4 @@
-param([Parameter(Mandatory=$true)][string]$ProjectPath,[Parameter(Mandatory=$true)][string]$Manifest,[Parameter(Mandatory=$true)][string]$Scene)
+param([Parameter(Mandatory=$true)][string]$ProjectPath,[Parameter(Mandatory=$true)][string]$Manifest,[Parameter(Mandatory=$true)][string]$Scene,[ValidateSet('Debug','Release')][string]$Configuration='Debug')
 $ErrorActionPreference='Stop'
 $folder=(Resolve-Path -LiteralPath $ProjectPath).Path
 $manifestPath=(Resolve-Path -LiteralPath $Manifest).Path
@@ -22,11 +22,11 @@ try{
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'RuntimeProbe.cs.txt') -Destination $probe
     & dotnet restore $projects[0].FullName --verbosity quiet
     if($LASTEXITCODE -ne 0){throw 'Generated restore failed'}
-    & dotnet build $projects[0].FullName --no-restore -m:1 --verbosity quiet
+    & dotnet build $projects[0].FullName --no-restore -c $Configuration -m:1 --verbosity quiet
     if($LASTEXITCODE -ne 0){throw 'Generated build failed'}
     [xml]$xml=Get-Content -LiteralPath $projects[0].FullName -Raw
     $framework=[string]$xml.Project.PropertyGroup.TargetFramework
-    $dll=Join-Path $folder ('bin/Debug/'+$framework+'/'+$projects[0].BaseName+'.dll')
+    $dll=Join-Path $folder ('bin/'+$Configuration+'/'+$framework+'/'+$projects[0].BaseName+'.dll')
     $stdout=Join-Path $folder 'runtime.stdout.log';$stderr=Join-Path $folder 'runtime.stderr.log'
     $process=Start-Process -FilePath (Get-Command dotnet).Source -ArgumentList ('"'+$dll+'"') -WorkingDirectory $folder -WindowStyle Hidden -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
     if(-not $process.WaitForExit(45000)){$process.Kill();throw 'Generated runtime timed out'}
@@ -36,5 +36,5 @@ try{
 }finally{
     [IO.File]::WriteAllBytes($entry,$original)
     Remove-Item -LiteralPath $probe -ErrorAction SilentlyContinue
-    & dotnet build $projects[0].FullName --no-restore -m:1 --verbosity quiet
+    & dotnet build $projects[0].FullName --no-restore -c $Configuration -m:1 --verbosity quiet
 }

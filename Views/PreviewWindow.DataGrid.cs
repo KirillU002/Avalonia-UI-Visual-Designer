@@ -93,6 +93,8 @@ public partial class PreviewWindow
     private Control EmptyRuntimeDataGrid(DesignerControlFileModel control, string status)
     {
         var grid = new DataGrid { Width = control.Width, Height = control.Height, AutoGenerateColumns = false, ItemsSource = Array.Empty<object>(), IsReadOnly = true };
+        grid.ColumnHeaderHeight = Math.Max(24, control.DataGridHeaderHeight);
+        DataGridVisualStyle.Create(CreateRuntimeControlModel(control)).Apply(grid);
         ToolTip.SetTip(grid, status);
         AttachDataGridPreviewContext(grid, control, 0);
         return grid;

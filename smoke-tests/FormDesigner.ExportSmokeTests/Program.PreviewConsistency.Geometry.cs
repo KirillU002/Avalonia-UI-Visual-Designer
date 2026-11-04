@@ -43,6 +43,11 @@ internal static partial class Program
 
     private static Type? ExpectedConsistencyType(DesignControlModel model)
     {
+        if(model.Type.StartsWith("Eremex.",StringComparison.Ordinal))
+        {
+            var fullName=model.Type=="Eremex.TextEditor"?"Eremex.AvaloniaUI.Controls.Editors.TextEditor":"Eremex.AvaloniaUI.Controls.DataGrid.DataGridControl";
+            return AppDomain.CurrentDomain.GetAssemblies().Select(a=>a.GetType(fullName,false)).FirstOrDefault(t=>t!=null);
+        }
         var name=model.Type=="Group"?model.ChildLayoutMode switch{"Stack"=>"StackPanel","Grid"=>"Grid","Flex"=>"WrapPanel","Dock"=>"DockPanel",_=>"Canvas"}:model.Type;
         return name=="DataGrid"?typeof(DataGrid):typeof(Control).Assembly.GetType("Avalonia.Controls."+name);
     }
@@ -93,7 +98,6 @@ internal static partial class Program
                     {
                         var left=l.Single(r=>r.Id==model.Id);var right=a.Single(r=>r.Id==model.Id);var d=designer.Single(r=>r.Id==model.Id);
                         RequireCapability(left.ParentId==model.ParentId&&right.ParentId==model.ParentId,"Native hierarchy lost ParentId for "+model.Name);
-                        if(scene=="RegistryCanvas")continue; // Legacy fixed Canvas is measured/reported separately, not called responsive.
                         var delta=new[]{Math.Abs(left.X-right.X),Math.Abs(left.Y-right.Y),Math.Abs(left.Width-right.Width),Math.Abs(left.Height-right.Height),
                             Math.Abs(d.X-right.X),Math.Abs(d.Y-right.Y),Math.Abs(d.Width-right.Width),Math.Abs(d.Height-right.Height)}.Max();
                         RequireCapability(delta<=1.1,$"{model.Name} geometry differs by {delta:F2} DIP: Designer {d}; Legacy {left}; AXAML {right}");

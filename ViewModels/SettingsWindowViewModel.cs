@@ -94,6 +94,12 @@ public sealed partial class SettingsWindowViewModel : ViewModelBase
 
     [ObservableProperty]
     private bool useExportedAxamlPreview;
+    private bool _readingPreviewMode;
+    private bool _previewModeEdited;
+    partial void OnUseExportedAxamlPreviewChanged(bool value)
+    {
+        if (!_readingPreviewMode) _previewModeEdited = true;
+    }
 
     [ObservableProperty]
     private bool fallbackToLegacyPreviewOnAxamlError = true;
@@ -498,7 +504,9 @@ public sealed partial class SettingsWindowViewModel : ViewModelBase
         _source.ShowPreviewRuntimeBadge = ShowPreviewRuntimeBadge;
         _source.CompactPreviewRuntimeBadge = CompactPreviewRuntimeBadge;
         _source.AutoHidePreviewRuntimeBadge = AutoHidePreviewRuntimeBadge;
-        _source.UseExportedAxamlPreview = UseExportedAxamlPreview;
+        if (_previewModeEdited || _source.UseExportedAxamlPreview != UseExportedAxamlPreview)
+            _source.UseExportedAxamlPreview = UseExportedAxamlPreview;
+        _previewModeEdited = false;
         _source.FallbackToLegacyPreviewOnAxamlError = FallbackToLegacyPreviewOnAxamlError;
         _source.ShowGeneratedAxamlOnPreviewError = ShowGeneratedAxamlOnPreviewError;
         _source.PreviewTopmost = PreviewTopmost;
@@ -559,7 +567,9 @@ public sealed partial class SettingsWindowViewModel : ViewModelBase
         ShowPreviewRuntimeBadge = _source.ShowPreviewRuntimeBadge;
         CompactPreviewRuntimeBadge = _source.CompactPreviewRuntimeBadge;
         AutoHidePreviewRuntimeBadge = _source.AutoHidePreviewRuntimeBadge;
+        _readingPreviewMode = true;
         UseExportedAxamlPreview = _source.UseExportedAxamlPreview;
+        _readingPreviewMode = false; _previewModeEdited = false;
         FallbackToLegacyPreviewOnAxamlError = _source.FallbackToLegacyPreviewOnAxamlError;
         ShowGeneratedAxamlOnPreviewError = _source.ShowGeneratedAxamlOnPreviewError;
         PreviewTopmost = _source.PreviewTopmost;

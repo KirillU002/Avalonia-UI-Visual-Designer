@@ -2,6 +2,7 @@ using EremexDesignerPlugin.Descriptors;
 using FormDesigner.PluginContracts;
 using System;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 
 [assembly: FormDesignerPlugin(typeof(EremexDesignerPlugin.EremexPlugin))]
 
@@ -28,13 +29,6 @@ public sealed class EremexPlugin : IFormDesignerPlugin, IDesignerExportContribut
         Debug.WriteLine($"EREMEX_PLUGIN_LOAD_START plugin={PluginIdValue}; packageVersion={PackageVersion}");
         try
         {
-            var compatibility = Services.EremexCompatibilityValidator.Validate();
-            if (!compatibility.IsCompatible)
-            {
-                Debug.WriteLine($"EREMEX_CONTROL_REGISTRATION_SKIPPED plugin={PluginIdValue}; reason={compatibility.Reason}");
-                throw new InvalidOperationException(compatibility.Reason);
-            }
-
             var descriptors = new IControlDescriptor[]
             {
                 new EremexTextEditorDescriptor(PluginIdValue, PluginVersionValue),
@@ -95,14 +89,20 @@ public sealed class EremexPlugin : IFormDesignerPlugin, IDesignerExportContribut
     {
         if (!UsesEremexControl(context))
             return null;
+        return CreateRuntimeContribution();
+    }
 
+    // Keep native type tokens outside the unused-provider call path: JIT may
+    // resolve them even when the outer method returns early for a standard form.
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static DesignerRuntimePreviewContribution CreateRuntimeContribution()
+    {
         return new DesignerRuntimePreviewContribution
         {
-            ProviderId = ProviderId,
+            ProviderId = "Eremex",
             Assemblies = new[]
             {
-                typeof(Eremex.AvaloniaUI.Controls.Editors.TextEditor).Assembly,
-                typeof(Eremex.AvaloniaUI.Themes.DeltaDesign.DeltaDesignTheme).Assembly
+                typeof(Eremex.AvaloniaUI.Controls.Editors.TextEditor).Assembly
             },
             ApplyToPreviewRoot = previewRoot =>
                 Services.EremexPreviewTheme.EnsureInstalled(previewRoot, "RuntimeAxamlPreview")

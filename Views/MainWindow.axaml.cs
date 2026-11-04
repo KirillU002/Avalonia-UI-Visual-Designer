@@ -2855,6 +2855,7 @@ public partial class MainWindow : Window
                 ? AxamlLayoutProjection.Arrange(axaml, VM.Controls, surfaceWidth, surfaceHeight)
                 : new Dictionary<string, Rect>();
             if (VM.UsesNativeLayout && !nativeMeasured) MeasureNativeDesignerLayout(surfaceWidth, surfaceHeight);
+            MeasureLegacyManagedCanvasLayouts();
 
             if (!VM.IsUserPreviewMode && VM.Controls.Count == 0)
             {
@@ -2908,7 +2909,7 @@ public partial class MainWindow : Window
         if (children.Count == 0)
             return;
 
-        if (VM.IsAxamlRoundTripDocument || VM.UsesNativeLayout)
+        if (VM.IsAxamlRoundTripDocument || VM.UsesNativeLayout || children.All(c => VM.AxamlLayoutBounds.ContainsKey(c.Id)))
         {
             var layoutBounds = VM.UsesNativeLayout ? VM.NativeLayoutBounds : VM.AxamlLayoutBounds;
             foreach (var child in children)
@@ -4795,7 +4796,7 @@ public partial class MainWindow : Window
     private Control CreateButtonPreview(DesignControlModel model)
     {
         var text = ResolvePreviewTextValue(model, model.Text ?? string.Empty);
-        if (VM.UsesNativeLayout)
+        if (VM.UsesNativeLayout || _buildingLegacyCanvasProjection)
             return new Button { Content = text, FontFamily = new FontFamily(model.FontFamily), FontSize = model.FontSize, FontWeight = ParseFontWeight(model.FontWeight),
                 Background = ParseBrush(model.Background, "#2563EB"), Foreground = ParseBrush(model.Foreground, "#FFFFFF"),
                 BorderBrush = ParseBrush(model.BorderBrush, "#1D4ED8"), BorderThickness = UniformThickness(model.BorderThickness),
@@ -4831,7 +4832,7 @@ public partial class MainWindow : Window
 
     private Control CreateTextBoxPreview(DesignControlModel model)
     {
-        if (VM.UsesNativeLayout)
+        if (VM.UsesNativeLayout || _buildingLegacyCanvasProjection)
             return new TextBox { Text = ResolvePreviewTextValue(model, model.Text ?? string.Empty), Watermark = model.PlaceholderText,
                 FontFamily = new FontFamily(model.FontFamily), FontSize = model.FontSize, FontWeight = ParseFontWeight(model.FontWeight),
                 Background = ParseBrush(model.Background, "#FFFFFF"), Foreground = ParseBrush(model.Foreground, "#0F172A"),
@@ -4868,7 +4869,7 @@ public partial class MainWindow : Window
     private Control CreateTextBlockPreview(DesignControlModel model)
     {
         var text = ResolvePreviewTextValue(model, string.IsNullOrWhiteSpace(model.Text) ? "Текст" : model.Text);
-        if (VM.UsesNativeLayout)
+        if (VM.UsesNativeLayout || _buildingLegacyCanvasProjection)
             return new TextBlock { Text = text, FontFamily = new FontFamily(model.FontFamily), FontSize = model.FontSize,
                 FontWeight = ParseFontWeight(model.FontWeight), Foreground = ParseBrush(model.Foreground, "#0F172A"), IsHitTestVisible = false };
 
@@ -5390,10 +5391,14 @@ public partial class MainWindow : Window
     private Control CreateModernDataGridPreview(DesignControlModel model)
     {
         if (VM.UsesNativeLayout && GetActiveBindingSource(model.BindingSourceId) is null)
-            return new DataGrid { AutoGenerateColumns = false, IsReadOnly = true,
+        {
+            var empty = new DataGrid { AutoGenerateColumns = false, IsReadOnly = true,
                 Background = ParseBrush(model.DataGridRowBackground, "#FFFFFF"), BorderBrush = ParseBrush(model.DataGridOuterBorderBrush, "#CBD5E1"),
                 BorderThickness = UniformThickness(model.BorderThickness), RowHeight = model.DataGridRowHeight,
                 ColumnHeaderHeight = model.DataGridHeaderHeight, IsHitTestVisible = false };
+            DataGridVisualStyle.Create(model).Apply(empty);
+            return empty;
+        }
         var fields = GetActiveBindingFields(model.BindingSourceId).ToList();
         var groupedFields = model.AllowGrouping
             ? fields
@@ -5863,6 +5868,7 @@ public partial class MainWindow : Window
         bool isInteractive,
         Action onClick)
     {
+        var appearance = DataGridVisualStyle.Create(model);
         var title = new TextBlock
         {
             Text = string.IsNullOrWhiteSpace(field.Header) ? field.Path : field.Header,
@@ -5931,10 +5937,12 @@ public partial class MainWindow : Window
 
         var cell = new Border
         {
-            Background = background,
+            Background = Brush.Parse(appearance.HeaderBackground),
             BorderBrush = separatorBrush,
-            BorderThickness = borderThickness,
-            Padding = new Thickness(0, 0, Math.Max(4, model.DataGridCellPadding), 0),
+            BorderThickness = appearance.HeaderBorder,
+            Padding = appearance.HeaderPadding,
+            MinHeight = appearance.HeaderHeight,
+            Tag = field,
             Child = content
         };
 
@@ -8467,20 +8475,24 @@ public partial class MainWindow : Window
 
             Debug.WriteLine($"AXAML_PREVIEW_REQUESTED document={VM.ActiveDocumentName}:{VM.ActiveDocumentId}; setting={VM.UseExportedAxamlPreview}");
             PreviewWindow previewWindow;
-            if (VM.UseExportedAxamlPreview)
+            var mode = VM.ResolvePreviewMode();
+            if (mode.PreviewMode == "AXAML")
             {
                 try
                 {
                     var exportedPreview = VM.GenerateExportedAxamlPreviewSnapshot();
                     previewWindow = new PreviewWindow(exportedPreview, VM.Registry, VM.ShowPreviewRuntimeBadge);
                 }
-                catch (Exception ex) when (VM.FallbackToLegacyPreviewOnAxamlError)
+                catch (Exception ex)
                 {
-                    Debug.WriteLine($"AXAML_PREVIEW_FALLBACK_TO_LEGACY reason=generation-failed:{ex.GetType().Name}:{ex.Message}");
-                    VM.StatusText = $"AXAML Preview не удалось собрать, открыт обычный Preview: {ex.Message}";
-                    var fallbackSnapshot = VM.CreatePreviewDocumentSnapshot();
-                    var fallbackProjectForms = VM.CreatePreviewProjectFormsSnapshot();
-                    previewWindow = new PreviewWindow(fallbackSnapshot, VM.Registry, fallbackProjectForms, VM.ActiveFormDocument?.Id ?? string.Empty, VM.ShowPreviewRuntimeBadge);
+                    previewWindow = new PreviewWindow(new ExportedAxamlPreviewModel
+                    {
+                        ProjectId = mode.ProjectId, ActiveFormId = mode.FormId, SourceKind = mode.SourceKind,
+                        Document = VM.CreatePreviewDocumentSnapshot(), ProjectForms = VM.CreatePreviewProjectFormsSnapshot(),
+                        GenerationFailure = "Не удалось сформировать AXAML Preview (" + ex.GetType().Name + ").",
+                        FallbackToLegacyPreviewOnError = VM.FallbackToLegacyPreviewOnAxamlError,
+                        ShowGeneratedAxamlOnError = VM.ShowGeneratedAxamlOnPreviewError
+                    }, VM.Registry, VM.ShowPreviewRuntimeBadge);
                 }
             }
             else
@@ -8497,6 +8509,7 @@ public partial class MainWindow : Window
             foreach (var diagnostic in previewWindow.LifecycleDiagnostics) LogPreviewLifecycleDiagnostic(previewWindow, diagnostic);
             previewWindow.LifecycleDiagnosticEmitted += LogPreviewLifecycleDiagnostic;
             previewWindow.BuildDiagnosticEmitted += LogPreviewBuildDiagnostic;
+            previewWindow.ModeDiagnosticEmitted += LogPreviewModeDiagnostic;
             previewWindow.Closed += LaunchPreviewWindow_Closed;
             _launchPreviewWindow = previewWindow;
             previewWindow.Show();
@@ -8736,6 +8749,7 @@ public partial class MainWindow : Window
         {
             preview.LifecycleDiagnosticEmitted -= LogPreviewLifecycleDiagnostic;
             preview.BuildDiagnosticEmitted -= LogPreviewBuildDiagnostic;
+            preview.ModeDiagnosticEmitted -= LogPreviewModeDiagnostic;
         }
     }
 
@@ -8751,6 +8765,10 @@ public partial class MainWindow : Window
                 Message = $"Preview: {preview.BuildIssues.Count} проблем. " + string.Join(" ", preview.BuildIssues.Take(6).Select(d => d.Message)),
                 Recommendation = "Откройте диагностику Preview; проверьте layout и зависимости компонентов." });
     }
+
+    private void LogPreviewModeDiagnostic(object? sender, PreviewModeDiagnostic diagnostic) => VM.LogWorkspace(
+        diagnostic.Event == "AXAML_PREVIEW_FAILED" ? WorkspaceLogLevel.Warning : WorkspaceLogLevel.Info,
+        MainWindowViewModel.OutputCategoryDiagnostics, diagnostic.Event, System.Text.Json.JsonSerializer.Serialize(diagnostic));
 
     private void HelpWindow_Closed(object? sender, EventArgs e)
     {

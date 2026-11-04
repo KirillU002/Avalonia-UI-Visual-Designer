@@ -46,6 +46,13 @@ internal static partial class Program
         // Initialize the real UI dispatcher before any view model can create the
         // fallback dispatcher; IPC continuations must run on the actual UI thread.
         EnsureAvaloniaRuntimeInitialized();
+        if (args.Contains("--preview-phase2-checks")) return RunPreviewPhase2Checks();
+        if (args.Contains("--preview-phase2-prereq-checks")) return RunPreviewPhase2Checks(false);
+        if (args.Contains("--preview-phase2-plugin-cold")) return RunPreviewPhase2PluginCold();
+        if (args.Contains("--preview-phase2-missing-theme")) return RunPreviewPhase2MissingTheme();
+        if (args.Contains("--preview-phase2-missing-runtime")) return RunPreviewPhase2MissingTheme(true);
+        if (args.Contains("--preview-phase2-export-fixtures")) return RunPreviewPhase2ExportFixtures();
+        if (args.Contains("--preview-phase2-dependency-report")) return RunPreviewPhase2DependencyReport();
         if (args.Contains("--preview-consistency-checks")) return RunPreviewConsistencyChecks();
         if (args.Contains("--undo-history-cache-checks")) return RunUndoHistoryCacheChecks();
         if (args.Contains("--undo-history-cache-benchmark")) return RunUndoHistoryCacheBenchmark();
@@ -9491,6 +9498,15 @@ Diagnostics:
                 try
                 {
                     return AssemblyLoadContext.Default.LoadFromAssemblyName(assemblyName);
+                }
+                catch (FileNotFoundException) when (assemblyName.Name == "Avalonia.Diagnostics")
+                {
+                    // Debug AXAML name generation references optional DevTools even
+                    // in an untaken branch. It belongs to this generated application's
+                    // deps graph, not to the Release designer's shared UI framework.
+                    var optionalPath = _resolver.ResolveAssemblyToPath(assemblyName);
+                    Console.WriteLine("GENERATED_OPTIONAL_DEPENDENCY_RESOLVED "+JsonSerializer.Serialize(new{Requested=assemblyName.FullName,Path=optionalPath,Context=Name}));
+                    return optionalPath is null ? null : LoadFromAssemblyPath(optionalPath);
                 }
                 catch (FileNotFoundException)
                 {

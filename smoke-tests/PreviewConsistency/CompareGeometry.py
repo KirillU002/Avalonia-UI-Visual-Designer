@@ -1,6 +1,6 @@
-import json, csv
+import json, csv, os
 from pathlib import Path
-root=Path(__file__).resolve().parents[2]/'artifacts'/'preview-consistency-audit'
+root=Path(os.environ['FORMDESIGNER_CONSISTENCY_ARTIFACTS']) if 'FORMDESIGNER_CONSISTENCY_ARTIFACTS' in os.environ else Path(__file__).resolve().parents[2]/'artifacts'/'preview-consistency-audit'
 rows=json.loads((root/'geometry.json').read_text(encoding='utf-8-sig'))
 for file in root.glob('*-runtime.json'):
     rows.extend(json.loads(file.read_text(encoding='utf-8-sig')))
@@ -24,5 +24,5 @@ for scene in sorted({r['Scene'] for r in rows}):
             result=dict(Scene=scene,Width=width,Mode=mode,Count=len(actual),Mismatches=len(diffs),MaxDelta=max([d['Delta'] for d in diffs],default=0),Differences=diffs)
             report.append(result)
             print(f'{scene} {width} {mode}: {len(actual)} controls; mismatches {len(diffs)}; max {result["MaxDelta"]:.3f} DIP')
-            if scene!='RegistryCanvas':assert not diffs,result
 json.dump(report,(root/'geometry-comparison.json').open('w',encoding='utf-8'),ensure_ascii=False,indent=2)
+assert not any(r['Mismatches'] for r in report), 'Geometry mismatches; see geometry-comparison.json'

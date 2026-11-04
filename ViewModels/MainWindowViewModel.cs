@@ -952,8 +952,15 @@ public partial class MainWindowViewModel : ObservableObject
     [ObservableProperty]
     private bool autoHidePreviewRuntimeBadge = true;
 
-    [ObservableProperty]
-    private bool useExportedAxamlPreview;
+    private bool useExportedAxamlPreview = PreviewModePolicy.DefaultForJson;
+    private bool _hasExplicitPreviewMode;
+    private readonly Dictionary<string, string> _controlExportFailures = new(StringComparer.Ordinal);
+    public bool HasExplicitPreviewMode => _hasExplicitPreviewMode;
+    public bool UseExportedAxamlPreview
+    {
+        get => useExportedAxamlPreview;
+        set { _hasExplicitPreviewMode = true; SetProperty(ref useExportedAxamlPreview, value); }
+    }
 
     [ObservableProperty]
     private bool fallbackToLegacyPreviewOnAxamlError = true;
@@ -6611,14 +6618,14 @@ public partial class MainWindowViewModel : ObservableObject
 
     public (double X, double Y) GetAbsolutePosition(DesignControlModel control)
     {
-        var bounds = (IsAxamlRoundTripDocument || UsesNativeLayout) && DesignerLayoutBounds.TryGetValue(control.Id, out var frame) ? frame : new Avalonia.Rect(control.X, control.Y, control.Width, control.Height);
+        var bounds = DesignerLayoutBounds.TryGetValue(control.Id, out var frame) ? frame : new Avalonia.Rect(control.X, control.Y, control.Width, control.Height);
         var x = bounds.X;
         var y = bounds.Y;
         var currentParent = GetControl(control.ParentId);
 
         while (currentParent is not null)
         {
-            var parentBounds = (IsAxamlRoundTripDocument || UsesNativeLayout) && DesignerLayoutBounds.TryGetValue(currentParent.Id, out var parentFrame)
+            var parentBounds = DesignerLayoutBounds.TryGetValue(currentParent.Id, out var parentFrame)
                 ? parentFrame : new Avalonia.Rect(currentParent.X, currentParent.Y, currentParent.Width, currentParent.Height);
             x += parentBounds.X;
             y += parentBounds.Y;
@@ -9713,7 +9720,8 @@ public partial class MainWindowViewModel : ObservableObject
         ShowPreviewRuntimeBadge = settings?.ShowRuntimeBadge ?? false;
         CompactPreviewRuntimeBadge = settings?.CompactRuntimeBadge ?? true;
         AutoHidePreviewRuntimeBadge = settings?.AutoHideRuntimeBadge ?? true;
-        UseExportedAxamlPreview = settings?.UseExportedAxamlPreview ?? false;
+        _hasExplicitPreviewMode = settings?.HasExplicitPreviewMode ?? false;
+        SetProperty(ref useExportedAxamlPreview, settings?.UseExportedAxamlPreview ?? PreviewModePolicy.DefaultForJson, nameof(UseExportedAxamlPreview));
         FallbackToLegacyPreviewOnAxamlError = settings?.FallbackToLegacyPreviewOnAxamlError ?? true;
         ShowGeneratedAxamlOnPreviewError = settings?.ShowGeneratedAxamlOnPreviewError ?? true;
         PreviewTopmost = settings?.PreviewTopmost ?? false;
@@ -9724,18 +9732,30 @@ public partial class MainWindowViewModel : ObservableObject
 
     public PreviewSettingsModel CapturePreviewSettings()
     {
-        return new PreviewSettingsModel
+        var captured = new PreviewSettingsModel
         {
             ShowRuntimeBadge = ShowPreviewRuntimeBadge,
             CompactRuntimeBadge = CompactPreviewRuntimeBadge,
             AutoHideRuntimeBadge = AutoHidePreviewRuntimeBadge,
-            UseExportedAxamlPreview = UseExportedAxamlPreview,
             FallbackToLegacyPreviewOnAxamlError = FallbackToLegacyPreviewOnAxamlError,
             ShowGeneratedAxamlOnPreviewError = ShowGeneratedAxamlOnPreviewError,
             PreviewTopmost = PreviewTopmost,
             PreviewDefaultZoomPercent = Math.Clamp(PreviewDefaultZoomPercent, 25, 300),
             EnableExperimentalLayoutTab = EnableExperimentalLayoutTab
         };
+        captured.SetResolvedMode(UseExportedAxamlPreview, _hasExplicitPreviewMode);
+        return captured;
+    }
+
+    public PreviewModeDecision ResolvePreviewMode()
+    {
+        var imported = IsAxamlRoundTripDocument;
+        var useAxaml = _hasExplicitPreviewMode ? UseExportedAxamlPreview : !imported && PreviewModePolicy.DefaultForJson;
+        var result = new PreviewModeDecision(CurrentProject.Id, ActiveDocumentId, useAxaml ? "AXAML" : "Legacy",
+            imported ? "ImportedAxaml" : "ProjectJson", _hasExplicitPreviewMode ? "ExplicitUserSetting" : imported ? "ImportedWorkflowLegacy" : "JsonDefault");
+        if (!_hasExplicitPreviewMode) LogWorkspace(WorkspaceLogLevel.Info, OutputCategoryDiagnostics, "PREVIEW_MODE_DEFAULT_RESOLVED", JsonSerializer.Serialize(result));
+        LogWorkspace(WorkspaceLogLevel.Info, OutputCategoryDiagnostics, "PREVIEW_MODE_SELECTED", JsonSerializer.Serialize(result));
+        return result;
     }
 
     private void ApplyBuildAndLogsSettings(BuildAndLogsSettingsModel? settings)
@@ -13177,6 +13197,7 @@ public partial class MainWindowViewModel : ObservableObject
     [RelayCommand]
     public void GenerateXaml()
     {
+        _controlExportFailures.Clear();
         TrackRefreshOperation(nameof(GenerateXaml), _isGeneratingSecondaryFormExport ? "SecondaryForm" : "ExplicitExport");
         var stopwatch = Stopwatch.StartNew();
         var memoryBefore = GC.GetTotalMemory(forceFullCollection: false);
@@ -14250,6 +14271,9 @@ public partial class MainWindowViewModel : ObservableObject
                 CloneDocumentFileModel(exportViewModel.ActiveFormDocument.Document),
                 CurrentProjectPath);
             exportViewModel.GenerateXaml();
+            if (exportViewModel._controlExportFailures.Count > 0)
+                throw new InvalidOperationException("Не удалось сформировать AXAML компонентов: " + string.Join(", ",
+                    exportViewModel.Controls.Where(c => exportViewModel._controlExportFailures.ContainsKey(c.Id)).Select(c => c.Name)) + ". Доступен Legacy Preview.");
             var exportAxaml = GeneratedAxamlService.Create(
                 exportViewModel.GeneratedXaml,
                 AxamlGenerationMode.Export);
@@ -14261,7 +14285,7 @@ public partial class MainWindowViewModel : ObservableObject
                 exportAxaml.Axaml,
                 AxamlGenerationMode.RuntimePreview,
                 preserveRuntimeNames: true,
-                stretchRuntimeRoot: exportViewModel.UsesNativeLayout);
+                stretchRuntimeRoot: exportViewModel.UsesNativeLayout || !IsAxamlRoundTripDocument);
             stopwatch.Stop();
 
             foreach (var propertyName in runtimePreviewAxaml.RemovedRootProperties)
@@ -14330,6 +14354,8 @@ public partial class MainWindowViewModel : ObservableObject
             return new ExportedAxamlPreviewModel
             {
                 ExportAxaml = exportAxaml.Axaml,
+                ProjectId = CurrentProject.Id,
+                SourceKind = IsAxamlRoundTripDocument ? "ImportedAxaml" : "ProjectJson",
                 Axaml = runtimePreviewAxaml.Axaml,
                 RootElement = runtimePreviewAxaml.RootElement,
                 RemovedXClass = runtimePreviewAxaml.RemovedXClass,
@@ -14515,7 +14541,9 @@ public partial class MainWindowViewModel : ObservableObject
             foreach (var interactionFile in document.Interactions)
                 Interactions.Add(FromInteractionFileModel(interactionFile));
 
-            ClampAllControlsToSurface();
+            // This is an export-only copy of an already authored document. Canvas
+            // overflow is clipped by the viewport; it must not rewrite dimensions
+            // or offsets in Preview/Export (including secondary forms).
             SelectedBindingSource = BindingSources.FirstOrDefault();
             DocumentSessionId = Guid.NewGuid().ToString("N");
             ActiveSession.SetHistoryState(
@@ -17993,8 +18021,11 @@ public partial class MainWindowViewModel : ObservableObject
             descriptor.AppendXaml(writer, controlNode, indentLevel, context);
             return true;
         }
-        catch
+        catch (Exception exception)
         {
+            _controlExportFailures[controlNode.Id] = exception.GetType().Name;
+            LogWorkspace(WorkspaceLogLevel.Error, OutputCategoryDiagnostics, "EXPORT_CONTROL_FAILED",
+                JsonSerializer.Serialize(new { ControlId = controlNode.Id, Type = controlNode.TypeKey, ExceptionType = exception.GetType().Name }));
             if (ShouldIncludeExportComments)
                 writer.WriteLine(indentLevel, $"<!-- Failed to export control: {EscapeXml(controlNode.TypeKey)} -->");
             return false;
@@ -19951,7 +19982,7 @@ public partial class MainWindowViewModel : ObservableObject
             default:
                 sb.AppendLine(usesManagedWindowLayout
                     ? "  <Canvas x:Name=\"RootCanvas\" HorizontalAlignment=\"Stretch\" VerticalAlignment=\"Stretch\">"
-                    : $"  <Canvas x:Name=\"RootCanvas\" {SizeAttributes(resolvedWidth, resolvedHeight)}>");
+                    : $"  <Canvas x:Name=\"RootCanvas\" {SizeAttributes(resolvedWidth, resolvedHeight)} HorizontalAlignment=\"Left\" VerticalAlignment=\"Top\" ClipToBounds=\"True\">");
                 break;
         }
     }
@@ -20399,37 +20430,9 @@ public partial class MainWindowViewModel : ObservableObject
 
         var rowHeightAttribute = hasWrappedTextColumns ? "" : $" RowHeight=\"{ToInvariant(rowHeight)}\"";
         sb.AppendLine($"{Indent(dataGridIndent)}<DataGrid{dataGridNameAttribute}{dataGridPlacement} Background=\"{rowBackground}\" RowBackground=\"{rowBackground}\" Foreground=\"{rowForeground}\" BorderBrush=\"{outerBorderBrush}\" BorderThickness=\"{ToInvariant(control.BorderThickness)}\" FontFamily=\"{EscapeXml(control.FontFamily)}\" FontSize=\"{ToInvariant(control.DataGridRowFontSize)}\" FontWeight=\"{EscapeXml(control.DataGridRowFontWeight)}\" AutoGenerateColumns=\"{BoolToXaml(control.AutoGenerateColumns)}\" CanUserSortColumns=\"True\" CanUserResizeColumns=\"True\" CanUserReorderColumns=\"True\" HorizontalScrollBarVisibility=\"Auto\" VerticalScrollBarVisibility=\"Auto\" HeadersVisibility=\"{headersVisibility}\" GridLinesVisibility=\"{gridLinesVisibility}\" ColumnHeaderHeight=\"{ToInvariant(headerHeight)}\"{rowHeightAttribute}{itemsSource}{selectedItem}{selectionChangedAttribute}{commonVisibilityAttributes}>");
-        sb.AppendLine($"{Indent(dataGridIndent + 1)}<DataGrid.Styles>");
-        sb.AppendLine($"{Indent(dataGridIndent + 2)}<Style Selector=\"DataGridColumnHeader\">");
-        sb.AppendLine($"{Indent(dataGridIndent + 3)}<Setter Property=\"Background\" Value=\"{headerBackground}\" />");
-        sb.AppendLine($"{Indent(dataGridIndent + 3)}<Setter Property=\"Foreground\" Value=\"{headerForeground}\" />");
-        sb.AppendLine($"{Indent(dataGridIndent + 3)}<Setter Property=\"BorderBrush\" Value=\"{gridLineBrush}\" />");
-        sb.AppendLine($"{Indent(dataGridIndent + 3)}<Setter Property=\"BorderThickness\" Value=\"{headerBorderThickness}\" />");
-        sb.AppendLine($"{Indent(dataGridIndent + 3)}<Setter Property=\"Padding\" Value=\"{headerPaddingValue}\" />");
-        sb.AppendLine($"{Indent(dataGridIndent + 3)}<Setter Property=\"MinHeight\" Value=\"{ToInvariant(headerHeight)}\" />");
-        sb.AppendLine($"{Indent(dataGridIndent + 3)}<Setter Property=\"FontSize\" Value=\"{ToInvariant(control.DataGridHeaderFontSize)}\" />");
-        sb.AppendLine($"{Indent(dataGridIndent + 3)}<Setter Property=\"FontWeight\" Value=\"{EscapeXml(control.DataGridHeaderFontWeight)}\" />");
-        sb.AppendLine($"{Indent(dataGridIndent + 2)}</Style>");
-        sb.AppendLine($"{Indent(dataGridIndent + 2)}<Style Selector=\"DataGridCell\">");
-        sb.AppendLine($"{Indent(dataGridIndent + 3)}<Setter Property=\"Foreground\" Value=\"{rowForeground}\" />");
-        sb.AppendLine($"{Indent(dataGridIndent + 3)}<Setter Property=\"BorderBrush\" Value=\"{gridLineBrush}\" />");
-        sb.AppendLine($"{Indent(dataGridIndent + 3)}<Setter Property=\"BorderThickness\" Value=\"{cellBorderThickness}\" />");
-        sb.AppendLine($"{Indent(dataGridIndent + 3)}<Setter Property=\"Padding\" Value=\"{rowCellPaddingValue}\" />");
-        sb.AppendLine($"{Indent(dataGridIndent + 3)}<Setter Property=\"MinHeight\" Value=\"{ToInvariant(rowHeight)}\" />");
-        sb.AppendLine($"{Indent(dataGridIndent + 3)}<Setter Property=\"HorizontalContentAlignment\" Value=\"{dataGridTextAlignment}\" />");
-        sb.AppendLine($"{Indent(dataGridIndent + 3)}<Setter Property=\"VerticalContentAlignment\" Value=\"Center\" />");
-        sb.AppendLine($"{Indent(dataGridIndent + 2)}</Style>");
-        sb.AppendLine($"{Indent(dataGridIndent + 2)}<Style Selector=\"DataGridCell:pointerover\">");
-        sb.AppendLine($"{Indent(dataGridIndent + 3)}<Setter Property=\"Background\" Value=\"{hoverRowBackground}\" />");
-        sb.AppendLine($"{Indent(dataGridIndent + 2)}</Style>");
-        sb.AppendLine($"{Indent(dataGridIndent + 2)}<Style Selector=\"DataGridCell:selected\">");
-        sb.AppendLine($"{Indent(dataGridIndent + 3)}<Setter Property=\"Background\" Value=\"{selectedRowBackground}\" />");
-        sb.AppendLine($"{Indent(dataGridIndent + 3)}<Setter Property=\"Foreground\" Value=\"{selectedRowForeground}\" />");
-        sb.AppendLine($"{Indent(dataGridIndent + 2)}</Style>");
-        sb.AppendLine($"{Indent(dataGridIndent + 2)}<Style Selector=\"DataGridRow\">");
-        sb.AppendLine($"{Indent(dataGridIndent + 3)}<Setter Property=\"MinHeight\" Value=\"{ToInvariant(rowHeight)}\" />");
-        sb.AppendLine($"{Indent(dataGridIndent + 2)}</Style>");
-        sb.AppendLine($"{Indent(dataGridIndent + 1)}</DataGrid.Styles>");
+        DataGridVisualStyle.Create(control, new DataGridVisualStyle.Brushes(
+            headerBackground, headerForeground, rowForeground, gridLineBrush,
+            hoverRowBackground, selectedRowBackground, selectedRowForeground)).AppendAxaml(sb, dataGridIndent + 1);
 
         if (ShouldIncludeExportComments && (sortedFields.Count > 0 || groupedFields.Count > 0 || summaryFields.Count > 0))
         {

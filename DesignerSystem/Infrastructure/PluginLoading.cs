@@ -79,6 +79,8 @@ public sealed class PluginLoadContext : AssemblyLoadContext
             return sharedAssembly;
         }
 
+        var runtimeAssembly = PluginRuntimeAssemblyBridge.LoadRuntimeAssemblyIfRegistered(assemblyName);
+        if (runtimeAssembly is not null) return runtimeAssembly;
         var path = _resolver.ResolveAssemblyToPath(assemblyName);
         return path is null ? null : LoadFromAssemblyPath(path);
     }
@@ -100,6 +102,7 @@ public sealed class PluginLoader
     private static readonly Version SupportedApiVersion = new(1, 0, 0);
     private static readonly object RetainedContextsGate = new();
     private static readonly List<PluginLoadContext> RetainedContexts = new();
+    private static readonly Dictionary<string, PluginLoadContext> ContextsByFile = new(StringComparer.OrdinalIgnoreCase);
 
     private readonly IDesignerLogger _logger;
 
@@ -147,12 +150,12 @@ public sealed class PluginLoader
 
     private IReadOnlyList<PluginLoadReport> LoadPluginAssembly(string assemblyPath, IDesignerRegistry registry)
     {
-        PluginRuntimeAssemblyBridge.EnsureRuntimeAssembliesAvailable(assemblyPath, _logger);
-        var loadContext = new PluginLoadContext(assemblyPath);
-        RetainContext(loadContext);
-
         try
         {
+            // A missing optional runtime dependency must become a plugin report,
+            // never an exception escaping discovery into application startup.
+            PluginRuntimeAssemblyBridge.EnsureRuntimeAssembliesAvailable(assemblyPath, _logger);
+            var loadContext = GetOrCreateContext(assemblyPath);
             var assembly = loadContext.LoadFromAssemblyPath(assemblyPath);
             var discovery = DiscoverPluginTypes(assembly);
             if (discovery.PluginTypes.Count == 0)
@@ -201,16 +204,25 @@ public sealed class PluginLoader
         {
             contexts = RetainedContexts.ToList();
             RetainedContexts.Clear();
+            ContextsByFile.Clear();
         }
 
         foreach (var context in contexts)
             context.Unload();
     }
 
-    private static void RetainContext(PluginLoadContext context)
+    private static PluginLoadContext GetOrCreateContext(string path)
     {
         lock (RetainedContextsGate)
+        {
+            var file = new FileInfo(path);
+            var key = file.FullName + "|" + file.LastWriteTimeUtc.Ticks + "|" + file.Length;
+            if (ContextsByFile.TryGetValue(key, out var retained)) return retained;
+            var context = new PluginLoadContext(path);
             RetainedContexts.Add(context);
+            ContextsByFile.Add(key, context);
+            return context;
+        }
     }
 
     private static List<string> FindPluginAssemblyPaths(string folderPath)
@@ -559,6 +571,7 @@ internal static class PluginRuntimeAssemblyBridge
     private static readonly object Gate = new();
     private static readonly Dictionary<string, string> AssemblyPaths = new(StringComparer.OrdinalIgnoreCase);
     private static readonly HashSet<string> LoadingAssemblies = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly HashSet<string> RuntimeAssemblyNames = new(StringComparer.OrdinalIgnoreCase);
     private static bool _resolverAttached;
 
     public static void EnsureRuntimeAssembliesAvailable(string pluginAssemblyPath, IDesignerLogger logger)
@@ -590,18 +603,33 @@ internal static class PluginRuntimeAssemblyBridge
         if (runtimeAssemblyPaths.Count == 0)
             return;
 
+        // Lazy loading must not publish descriptors/contributions for an incomplete
+        // package: their first use can otherwise fail outside plugin discovery.
+        foreach (var runtimeAssemblyPath in runtimeAssemblyPaths)
+            if (!File.Exists(runtimeAssemblyPath))
+                throw new FileNotFoundException("Required plugin runtime assembly is missing: " + Path.GetFileName(runtimeAssemblyPath), runtimeAssemblyPath);
+
         lock (Gate)
         {
             RegisterPluginDirectoryAssemblies(pluginDirectory);
+            foreach (var path in runtimeAssemblyPaths) RuntimeAssemblyNames.Add(Path.GetFileNameWithoutExtension(path));
             if (!_resolverAttached)
             {
                 AssemblyLoadContext.Default.Resolving += ResolveDefaultAssembly;
                 _resolverAttached = true;
             }
 
-            foreach (var runtimeAssemblyPath in runtimeAssemblyPaths)
-                LoadIntoDefaultContext(runtimeAssemblyPath, logger);
+            if (manifest?.PreloadRuntimeAssemblies != false)
+                foreach (var runtimeAssemblyPath in runtimeAssemblyPaths)
+                    LoadIntoDefaultContext(runtimeAssemblyPath, logger);
         }
+    }
+
+    internal static Assembly? LoadRuntimeAssemblyIfRegistered(AssemblyName name)
+    {
+        lock (Gate)
+            if (name.Name is null || !RuntimeAssemblyNames.Contains(name.Name)) return null;
+        return AssemblyLoadContext.Default.LoadFromAssemblyName(name);
     }
 
     private static void RegisterPluginDirectoryAssemblies(string pluginDirectory)
@@ -679,6 +707,7 @@ internal static class PluginRuntimeAssemblyBridge
 
     private sealed class PluginRuntimeManifest
     {
+        public bool PreloadRuntimeAssemblies { get; init; } = true;
         public List<string> RuntimeAssemblies { get; init; } = new();
     }
 }

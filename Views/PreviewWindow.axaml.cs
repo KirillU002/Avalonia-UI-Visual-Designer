@@ -258,6 +258,7 @@ public partial class PreviewWindow : Window
 
     private async Task LoadExportedAxamlPreviewAsync(ExportedAxamlPreviewModel preview)
     {
+        TracePreviewMode("AXAML_PREVIEW_START", preview.SourceKind == "ImportedAxaml" ? "ExperimentalImportedModelSnapshot" : "GeneratedJsonExportSnapshot");
         BeginPreviewBuild();
         var stopwatch = Stopwatch.StartNew();
         var xClass = ReadXClass(preview.Axaml);
@@ -277,6 +278,7 @@ public partial class PreviewWindow : Window
 
         try
         {
+            if (!string.IsNullOrEmpty(preview.GenerationFailure)) throw new InvalidOperationException(preview.GenerationFailure);
             if (hasXClass)
                 throw new InvalidOperationException($"Runtime Preview AXAML references unsupported x:Class '{xClass}'.");
 
@@ -294,11 +296,13 @@ public partial class PreviewWindow : Window
             Debug.WriteLine($"AXAML_PREVIEW_LOAD_SUCCESS rootType={loadedRoot.GetType().FullName}; elapsedMs={stopwatch.ElapsedMilliseconds}");
             Debug.WriteLine($"AXAML_PREVIEW_RUNTIME_LOAD_SUCCESS rootType={loadedRoot.GetType().FullName}; elapsedMs={stopwatch.ElapsedMilliseconds}");
             PreviewRuntimeStatusText.Text = "AXAML Preview ready";
+            TracePreviewMode("AXAML_PREVIEW_SUCCESS", "NativeVisualTreeAttached");
             ToolTip.SetTip(PreviewRuntimeStatusText, "Preview загружен из AXAML, который используется Export Pipeline.");
             CompletePreviewBuild();
         }
         catch (Exception ex)
         {
+            TracePreviewMode("AXAML_PREVIEW_FAILED", ex.GetType().Name);
             ReportPreviewFailure(null, "AXAMLLoadFailed", "Не удалось загрузить AXAML Preview. Подробности доступны в диагностике.", ex);
             stopwatch.Stop();
             var (line, position) = GetXamlErrorLocation(ex);
@@ -325,16 +329,6 @@ public partial class PreviewWindow : Window
                     "AXAML_PREVIEW_INVALID_ROOT_PROPERTY_DETECTED " +
                     $"rootType={preview.RootElement}; property={invalidRootProperty}");
             }
-            if (preview.FallbackToLegacyPreviewOnError)
-            {
-                Debug.WriteLine($"AXAML_PREVIEW_FALLBACK_TO_LEGACY reason={ex.GetType().Name}:{ex.Message}");
-                RuntimeBadgeOverlay.IsVisible = true;
-                PreviewRuntimeStatusText.Text = "AXAML Preview failed, legacy Preview opened";
-                ToolTip.SetTip(PreviewRuntimeStatusText, ex.Message);
-                RenderDocument();
-                return;
-            }
-
             ShowExportedAxamlPreviewError(ex, preview.ShowGeneratedAxamlOnError ? preview.Axaml : "");
         }
 
@@ -901,17 +895,21 @@ public partial class PreviewWindow : Window
 
         var fallbackButton = new Button
         {
+            Name = "OpenLegacyPreviewFallback",
             Content = "Переключиться на обычный Preview",
-            Margin = new Thickness(8, 0, 0, 0)
+            Margin = new Thickness(8, 0, 0, 0),
+            IsVisible = _exportedAxamlPreview?.FallbackToLegacyPreviewOnError != false
         };
         fallbackButton.Click += (_, _) =>
         {
+            TracePreviewMode("PREVIEW_MODE_SELECTED", "UserRequestedLegacyFallback", "Legacy");
             Debug.WriteLine("AXAML_PREVIEW_FALLBACK_TO_LEGACY reason=user-requested-from-error-view");
             RenderDocument();
             RuntimeBadgeOverlay.IsVisible = true;
             PreviewRuntimeStatusText.Text = "Legacy Preview opened";
         };
         actions.Children.Add(fallbackButton);
+        if (fallbackButton.IsVisible) TracePreviewMode("LEGACY_PREVIEW_FALLBACK_OFFERED", "AxamlFailureRequiresUserAction");
         stack.Children.Add(actions);
         PreviewSurfaceBorder.Child = new ScrollViewer { Content = stack };
         RuntimeBadgeOverlay.IsVisible = true;
@@ -1193,6 +1191,10 @@ public partial class PreviewWindow : Window
         PreviewCanvas.Background = ParseBrush(_document.SurfaceBackground, "#FFFFFF");
         PreviewCanvas.MinWidth = Math.Max(300, _document.DesignWidth);
         PreviewCanvas.MinHeight = Math.Max(200, _document.DesignHeight);
+        PreviewCanvas.Width = PreviewCanvas.MinWidth;
+        PreviewCanvas.Height = PreviewCanvas.MinHeight;
+        PreviewCanvas.HorizontalAlignment = HorizontalAlignment.Left;
+        PreviewCanvas.VerticalAlignment = VerticalAlignment.Top;
         Debug.WriteLine($"PREVIEW_RUNTIME_BADGE_{(_showRuntimeBadge ? "SHOWN" : "HIDDEN")} mode=compact-overlay; affectsLayout=false; window={Width.ToString(CultureInfo.InvariantCulture)}x{Height.ToString(CultureInfo.InvariantCulture)}");
     }
 
@@ -2811,6 +2813,7 @@ public partial class PreviewWindow : Window
         };
         if (!hasWrappedTextColumns)
             dataGrid.RowHeight = Math.Max(18, control.DataGridRowHeight);
+        DataGridVisualStyle.Create(CreateRuntimeControlModel(control)).Apply(dataGrid);
 
         dataGrid.SelectionChanged += (_, _) =>
         {
