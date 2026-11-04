@@ -74,7 +74,7 @@ internal static partial class Program
     private static void ConfigureNestedPhase5MultiFormExport(MainWindowViewModel vm)
     {
         ConfigureNestedPhase5Export(vm); var gridForm = vm.ActiveFormDocument!.Id;
-        vm.CreateNewForm(); var button = vm.CreateControl("Button", 37, 53, null, true); button.Name = "ApplyButton";
+        vm.CreateNewForm(DesignerLayoutModes.Absolute); var button = vm.CreateControl("Button", 37, 53, null, true); button.Name = "ApplyButton";
         vm.SetActiveForm(gridForm, "nested-export");
     }
     private static void AssertNestedPhase5MultiFormExport(SmokeContext context)

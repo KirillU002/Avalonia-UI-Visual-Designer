@@ -8154,7 +8154,7 @@ public partial class MainWindowViewModel : ObservableObject
         return result;
     }
 
-    public DesignerFormDocument CreateNewForm() => CreateNewForm(DesignerLayoutModes.Absolute);
+    public DesignerFormDocument CreateNewForm() => CreateNewForm(DesignerLayoutModes.Grid);
 
     public DesignerFormDocument CreateNewForm(string rootLayout)
     {
@@ -8171,6 +8171,7 @@ public partial class MainWindowViewModel : ObservableObject
         MarkExportCacheStale();
         RaiseDocumentStateProperties();
         RaiseProjectWorkspaceProperties();
+        NewFormLayoutChoice = NewFormGridChoice;
         StatusText = $"Form added: {form.DisplayName}";
         LogWorkspace(WorkspaceLogLevel.Info, OutputCategoryGeneral, StatusText);
         DumpInteractionState("AfterAddForm");
@@ -8611,6 +8612,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void NewProject()
     {
+        var rootLayout = NewFormLayoutChoice == NewFormCanvasChoice ? DesignerLayoutModes.Absolute : DesignerLayoutModes.Grid;
         var oldFormIds = CurrentProject.Forms.Select(form => form.Id).Where(id => !string.IsNullOrWhiteSpace(id)).ToList();
         var oldControlIds = CurrentProject.Forms
             .SelectMany(form => form.Document?.Controls ?? new List<DesignerControlFileModel>())
@@ -8638,7 +8640,8 @@ public partial class MainWindowViewModel : ObservableObject
         Workspace = _projectWorkspaceService.CreateWorkspace("Avalonia UI Project");
         CurrentProjectPath = "";
         var activeForm = CurrentProject.Forms[0];
-        activeForm.Document = CreateDefaultDocumentFileModel("Form1");
+        activeForm.Document = CreateDefaultDocumentFileModel("Form1", rootLayout);
+        NewFormLayoutChoice = NewFormGridChoice;
         activeForm.Name = activeForm.Document.FormTitle;
         activeForm.RelativePath = $"Forms/{activeForm.DisplayName}.formdesigner.json";
         CurrentProject.DefaultNamespace = ResolveExportNamespace();
@@ -21395,11 +21398,11 @@ public partial class MainWindowViewModel : ObservableObject
         ApplyDocument(CreateDefaultDocumentFileModel("Form1"), "", markAsSaved, resetDocumentSession);
     }
 
-    private DesignerDocumentFileModel CreateDefaultDocumentFileModel(string formTitle)
+    private DesignerDocumentFileModel CreateDefaultDocumentFileModel(string formTitle, string rootLayout = DesignerLayoutModes.Grid)
     {
         var normalizedTheme = DesignerThemeCatalog.NormalizeThemeName(FormTheme);
         var palette = DesignerThemeCatalog.Get(normalizedTheme);
-        return new DesignerDocumentFileModel
+        var document = new DesignerDocumentFileModel
         {
             DesignWidth = 1200,
             DesignHeight = 800,
@@ -21432,6 +21435,8 @@ public partial class MainWindowViewModel : ObservableObject
             FormTopmost = false,
             FormHasSystemDecorations = true
         };
+        ProjectDocumentService.ConfigureNewFormLayout(document, rootLayout);
+        return document;
     }
 
     private void ApplyDocument(

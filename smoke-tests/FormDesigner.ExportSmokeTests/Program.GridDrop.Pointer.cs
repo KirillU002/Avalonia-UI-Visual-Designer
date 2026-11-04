@@ -95,7 +95,7 @@ internal static partial class Program
                 var point = f.ControlPoint(c); var end = f.CanvasPoint(300, 160); f.Down(point); f.Move(end); f.NoMarquee();
                 if (ending == "Escape") f.Escape(); else if (ending == "CaptureLost") f.Pointer.Capture(null);
                 else if (ending == "Outside") { var outside = f.CanvasPoint(-12, 80); f.Move(outside); f.Up(outside); }
-                else if (ending == "FormSwitch") f.Vm.CreateNewForm(); else f.Window.CloseForExternalHost();
+                else if (ending == "FormSwitch") f.Vm.CreateNewForm(DesignerLayoutModes.Absolute); else f.Window.CloseForExternalHost();
                 f.AssertIdle(); RequireCapability(c.GridRow == 0 && c.GridColumn == 0 && c.X == 0 && c.Y == 0, "Cancelled drag mutated source.");
                 RequireCapability(f.Window.GridDragDiagnostics.Any(d => d.Event == "GRID_DROP_CANCELLED"), "Cancellation was not diagnosed.");
             });

@@ -828,7 +828,7 @@
                              ToolTip.Tip="{Binding ProjectExplorerScopeHint}"/>
                 </StackPanel>
                 <WrapPanel Grid.Row="1">
-                <ComboBox x:Name="NewFormLayoutSelector" ItemsSource="{Binding NewFormLayoutChoices}" SelectedItem="{Binding NewFormLayoutChoice, Mode=TwoWay}" Width="230" Margin="0,0,6,4" ToolTip.Tip="Тип макета новой формы. Canvas остаётся вариантом по умолчанию."/>
+                <ComboBox x:Name="NewFormLayoutSelector" ItemsSource="{Binding NewFormLayoutChoices}" SelectedItem="{Binding NewFormLayoutChoice, Mode=TwoWay}" Width="230" Margin="0,0,6,4" ToolTip.Tip="Grid — адаптивная компоновка по умолчанию. Canvas — свободное размещение. Выбор применяется к одной новой форме; следующая снова Grid."/>
                 <Button Content="{Binding Texts.AddForm}"
                         Command="{Binding NewFormEditorCommand}"
                         Classes="data-action-button"

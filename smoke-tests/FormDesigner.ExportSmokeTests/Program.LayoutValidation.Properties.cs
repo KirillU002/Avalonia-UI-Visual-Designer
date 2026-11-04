@@ -83,7 +83,7 @@ internal static partial class Program
         check("ThreeFormLayoutIsolationAndHistory", () =>
         {
             var vm=CreateViewModel("ThreeLayouts"); vm.LoadDocumentJson(JsonSerializer.Serialize(ResponsiveScene("A").CreatePreviewDocumentSnapshot())); var gridForm=vm.ActiveFormDocument!.Id;
-            vm.CreateNewForm(); var canvasForm=vm.ActiveFormDocument!.Id; var canvas=vm.CreateControl("Button",37,53,null,true); var canvasId=canvas.Id;
+            vm.CreateNewForm(DesignerLayoutModes.Absolute); var canvasForm=vm.ActiveFormDocument!.Id; var canvas=vm.CreateControl("Button",37,53,null,true); var canvasId=canvas.Id;
             vm.CreateNewForm("Grid"); var nestedForm=vm.ActiveFormDocument!.Id; var host=NestedHost(vm,DesignerLayoutModes.Stack); var child=NestedLeaf(vm,host,"nested"); var childId=child.Id;
             foreach(var id in new[]{gridForm,canvasForm,nestedForm,canvasForm,gridForm,nestedForm}) vm.SetActiveForm(id,"layout6-isolation");
             RequireCapability(vm.Controls.Single(c=>c.Id==childId).ParentId==host.Id, "Nested parent was lost between forms.");

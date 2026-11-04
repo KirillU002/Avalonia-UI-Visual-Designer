@@ -110,7 +110,7 @@ internal static partial class Program
                 f.Send(RawPointerEventType.RightButtonDown,point,RawInputModifiers.RightMouseButton);
                 if(cancel=="CaptureLost")f.Pointer.Capture(null);
                 if(cancel=="Escape")f.Window.RaiseEvent(new KeyEventArgs{RoutedEvent=InputElement.KeyDownEvent,Key=Key.Escape});
-                if(cancel=="FormSwitch")f.Vm.CreateNewForm();
+                if(cancel=="FormSwitch")f.Vm.CreateNewForm(DesignerLayoutModes.Absolute);
                 if(cancel=="TargetRemoved")f.Vm.Controls.Remove(selected);
                 f.Send(RawPointerEventType.RightButtonUp,point);NativeItemsUiWait(50);
                 RequireCapability(f.Pointer.Captured is null&&((string)typeof(MainWindow).GetField("_pendingContextMenuControlId",BindingFlags.NonPublic|BindingFlags.Instance)!.GetValue(f.Window)!).Length==0,"Cancelled context menu retained capture/state.");

@@ -1,0 +1,85 @@
+using System;
+using System.IO;
+using System.Linq;
+using System.Collections;
+using System.Collections.Generic;
+using System.Threading;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Interactivity;
+using Avalonia.Threading;
+using Avalonia.VisualTree;
+
+public static class GridFirstRuntimeProbe
+{
+    private static readonly List<Window> Windows=new();
+    public static void Track(Window window)
+    {
+        window.Position=new PixelPoint(-3500,-3500);window.ShowInTaskbar=false;window.ShowActivated=false;
+        window.Opened+=(_,_)=>Windows.Add(window);
+    }
+    public static void Attach(IClassicDesktopStyleApplicationLifetime lifetime,Window home)
+    {
+        home.Opened+=(_,_)=>Dispatcher.UIThread.Post(()=>
+        {
+            var exit=0;
+            try{Run(home);File.WriteAllText(Environment.GetEnvironmentVariable("GRID_FIRST_RESULT")!,"PASS forms=4 roots=Grid/Grid/Canvas/Grid navigation=6 independentContexts=true rows=true resize=true CanvasPosition=true\n");}
+            catch(Exception error){Console.Error.WriteLine(error);exit=1;}
+            finally{foreach(var w in Windows.ToArray())w.Close();lifetime.Shutdown(exit);}
+        });
+    }
+    private static void Pump(int milliseconds){using var stop=new CancellationTokenSource(milliseconds);Dispatcher.UIThread.MainLoop(stop.Token);}
+    private static void Check(bool value,string message){if(!value)throw new Exception(message);}
+    private static void Click(Window window,string name)
+    {
+        var button=window.FindControl<Button>(name)??throw new Exception("Missing native button "+name);
+        button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Pump(180);window.UpdateLayout();
+    }
+    private static void Rows(Window window,string name,bool resize)
+    {
+        var grid=window.FindControl<DataGrid>(name)??throw new Exception("Missing native DataGrid "+name);
+        Check(grid.ItemsSource is IEnumerable rows&&rows.Cast<object>().Any(),"Explicit local BindingSource rows missing: "+name);
+        Check(grid.GetVisualDescendants().OfType<DataGridRow>().Any(),"Rows did not reach native visual tree: "+name);
+        if(!resize)return;
+        var before=grid.Bounds.Size;window.Width+=240;window.Height+=120;Pump(240);window.UpdateLayout();
+        Check(grid.Bounds.Width>before.Width+200&&grid.Bounds.Height>before.Height+90,"Star DataGrid did not resize: "+before+" -> "+grid.Bounds.Size);
+        Console.WriteLine("GRID_FIRST_RESIZE "+name+" "+before+" -> "+grid.Bounds.Size);
+    }
+    private static void Run(Window home)
+    {
+        Pump(250);Check(home.Content is Grid,"New project runtime root is not Grid.");Rows(home,"HomeRows",true);
+        var pages=new List<Window>();
+        foreach(var name in new[]{"OpenGrid","OpenCanvas","OpenNested"})
+        {
+            var count=Windows.Count;Click(home,name);Check(Windows.Count==count+1,"Navigation did not open "+name);
+            var page=Windows.Last();pages.Add(page);Check(!ReferenceEquals(page.DataContext,home.DataContext),"Shared form DataContext.");
+            Check(page.GetType().Name==(name=="OpenGrid"?"Form2":name=="OpenCanvas"?"Form3":"Form4"),"Navigation opened the wrong form class.");
+            if(name=="OpenCanvas")
+            {
+                Check(page.Content is Canvas,"Explicit Canvas migrated at runtime.");
+                var button=page.FindControl<Button>("CanvasButton")!;var before=button.TranslatePoint(default,(Control)page.Content!)!.Value;
+                Check(Math.Abs(before.X-100)<1.1&&Math.Abs(before.Y-150)<1.1,"Canvas placement changed.");
+                page.Width+=240;page.Height+=120;Pump(180);var after=button.TranslatePoint(default,(Control)page.Content!)!.Value;
+                Check(before==after,"Canvas coordinates adapted on resize.");
+            }
+            else
+            {
+                Check(page.Content is Grid,"Additional default form root is not Grid.");
+                if(name=="OpenGrid"){Rows(page,"GridRows",true);Click(page,"GridApply");Check(page.FindControl<TextBox>("GridInput")?.Text=="Grid accepted","Generated Logic failed.");}
+                else
+                {
+                    Check(page.FindControl<Control>("NestedStack") is { } host&&host.GetVisualDescendants().OfType<StackPanel>().Prepend(host).OfType<StackPanel>().Any(),"Nested StackPanel hierarchy missing.");
+                    Rows(page,"NestedRows",true);
+                    var list=page.FindControl<ListBox>("ListBox")!;if(list.ItemCount>1){list.SelectedIndex=1;Check(list.SelectedItem is not null,"ListBox selection failed.");}
+                    foreach(var flyout in new[]{page.FindControl<DropDownButton>("DropDownButton")!.Flyout,page.FindControl<SplitButton>("SplitButton")!.Flyout})
+                    {Check(flyout is not null,"Flyout missing.");flyout!.ShowAt(page.FindControl<Control>("NestedStack")!);Pump(30);Check(flyout.IsOpen,"Native Flyout did not open.");flyout.Hide();}
+                }
+            }
+            count=Windows.Count;Click(page,"BackHome");Check(Windows.Count==count+1,"BackHome did not open home.");var back=Windows.Last();
+            Check(back.Content is Grid&&!ReferenceEquals(back.DataContext,home.DataContext)&&!ReferenceEquals(back.DataContext,page.DataContext),"Back navigation lost Grid/independent context.");back.Close();
+            Console.WriteLine("GRID_FIRST_NAVIGATION "+name+" -> BackHome PASS");
+        }
+        Check(pages.Select(p=>p.DataContext).Distinct().Count()==3,"Additional forms share ViewModels.");
+    }
+}

@@ -168,7 +168,7 @@ internal static partial class Program
         Check("MultiFormPendingAndGestureIsolation", () =>
         {
             var vm = GridEditorModel(); vm.CreateControl("Button", 0, 0); vm.DeleteLayoutGridRowCommand.Execute(vm.LayoutGridRows[0]); vm.BeginGridTrackResize(true, 0, 80, 320); vm.UpdateGridTrackResize(60); var id = vm.ActiveFormDocument!.Id;
-            var added = vm.CreateNewForm(); RequireCapability(!vm.HasPendingGridRemoval && !vm.UsesNativeLayout, $"Pending operation leaked into Canvas: pending={vm.HasPendingGridRemoval}; native={vm.UsesNativeLayout}; mode={vm.SurfaceLayoutMode}; version={vm.LayoutSemanticsVersion}; newVersion={added.Document.LayoutSemanticsVersion}; newMode={added.Document.SurfaceLayoutMode}."); vm.FinishGridTrackResize(true); vm.SetActiveForm(id, "verify editor isolation"); RequireCapability(vm.SurfaceGridRowDefinitions == "80,*" && vm.Controls.Single().GridRow == 0, "Switching form committed a temporary gesture.");
+            var added = vm.CreateNewForm(DesignerLayoutModes.Absolute); RequireCapability(!vm.HasPendingGridRemoval && !vm.UsesNativeLayout, $"Pending operation leaked into Canvas: pending={vm.HasPendingGridRemoval}; native={vm.UsesNativeLayout}; mode={vm.SurfaceLayoutMode}; version={vm.LayoutSemanticsVersion}; newVersion={added.Document.LayoutSemanticsVersion}; newMode={added.Document.SurfaceLayoutMode}."); vm.FinishGridTrackResize(true); vm.SetActiveForm(id, "verify editor isolation"); RequireCapability(vm.SurfaceGridRowDefinitions == "80,*" && vm.Controls.Single().GridRow == 0, "Switching form committed a temporary gesture.");
         });
         foreach (var axaml in new[] { false, true })
             Check((axaml ? "Axaml" : "Legacy") + "PreviewAndResize", () =>
@@ -241,7 +241,7 @@ internal static partial class Program
             check("PointerPixelResize" + ending, () =>
             {
                 using var f = GridEditorPointerFixture(); var p = GridEditorHandlePoint(f, "GridRowBoundary_0"); f.Down(p); f.ExpectMode(DesignerInteractionMode.ResizingGridRow); f.Move(p + new Vector(0, 25)); f.NoMarquee();
-                if (ending == "Escape") f.Escape(); else if (ending == "CaptureLost") f.Pointer.Capture(null); else if (ending == "FormSwitch") f.Vm.CreateNewForm(); else f.Up(p + new Vector(0, 25));
+                if (ending == "Escape") f.Escape(); else if (ending == "CaptureLost") f.Pointer.Capture(null); else if (ending == "FormSwitch") f.Vm.CreateNewForm(DesignerLayoutModes.Absolute); else f.Up(p + new Vector(0, 25));
                 f.AssertIdle(); if (ending != "FormSwitch") RequireCapability(f.Vm.SurfaceGridRowDefinitions == (ending == "Release" ? "105,*" : "80,*"), "Resize ending corrupted definitions.");
             });
         check("PointerStarResizeAndControlHit", () =>

@@ -114,7 +114,7 @@ internal static partial class Program
             var source = vm.AddPostgreSqlBindingSource(); source.SourceTableName = "Customers";
             source.Fields.Add(Field("Id", "Id", "", "int", "100"));
             var firstForm = vm.ActiveFormDocument!.Id;
-            vm.CreateNewForm(); vm.AddPostgreSqlBindingSource().SourceTableName = "Orders";
+            vm.CreateNewForm(DesignerLayoutModes.Absolute); vm.AddPostgreSqlBindingSource().SourceTableName = "Orders";
             vm.SetActiveForm(firstForm, "PostgresTest");
             RequireEqual("PostgreSql", vm.BindingSources.Single().SourceKind, "Switching form must preserve provider.");
             RequireEqual("Customers", vm.BindingSources.Single().SourceTableName, "Switching form must preserve table.");
@@ -373,10 +373,10 @@ internal static partial class Program
     private static void ConfigurePostgreSqlMixedMultiForm(MainWindowViewModel vm)
     {
         ConfigurePostgreSqlDataGridExport(vm);
-        vm.CreateNewForm(); vm.Controls.Clear(); vm.BindingSources.Clear();
+        vm.CreateNewForm(DesignerLayoutModes.Absolute); vm.Controls.Clear(); vm.BindingSources.Clear();
         var orders = PostgresSource("pg-orders", "Orders"); vm.BindingSources.Add(orders);
         var grid = Control(DesignerControlTypes.DataGrid, "OrdersGrid", 20, 20, 600, 280); grid.BindingSourceId = orders.Id; vm.Controls.Add(grid);
-        vm.CreateNewForm(); vm.Controls.Clear(); vm.BindingSources.Clear();
+        vm.CreateNewForm(DesignerLayoutModes.Absolute); vm.Controls.Clear(); vm.BindingSources.Clear();
         var sql = SqlCustomersSource(); sql.Name = "Products"; sql.SourceTableName = "Products"; sql.SourceQuery = "";
         vm.BindingSources.Add(sql);
         grid = Control(DesignerControlTypes.DataGrid, "ProductsGrid", 20, 20, 600, 280); grid.BindingSourceId = sql.Id; vm.Controls.Add(grid);
@@ -546,7 +546,7 @@ internal static partial class Program
         if (!eremex)
         {
             var customersForm = vm.ActiveFormDocument!.Id;
-            vm.CreateNewForm(); vm.Controls.Clear(); vm.BindingSources.Clear();
+            vm.CreateNewForm(DesignerLayoutModes.Absolute); vm.Controls.Clear(); vm.BindingSources.Clear();
             var orders = PostgresSource("pg-orders", "Orders"); orders.SourceConnectionString = profile; orders.SourceSchemaName = schema;
             orders.Fields.Clear();
             foreach (var field in new DatabaseReadService(DatabaseProviderAdapters.PostgreSql).DescribeAsync(orders).GetAwaiter().GetResult()) orders.Fields.Add(field);

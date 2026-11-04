@@ -223,7 +223,7 @@ internal static partial class Program
     private static void RequireLiveSqlMultiForm(string connection)
     {
         var vm = DataGridRegressionModel(connection, "metadata");
-        vm.CreateNewForm(); vm.Controls.Clear(); vm.BindingSources.Clear();
+        vm.CreateNewForm(DesignerLayoutModes.Absolute); vm.Controls.Clear(); vm.BindingSources.Clear();
         var orders = DataGridRegressionModel(connection, "multiple").BindingSources.Single(s => s.Id == "p0-orders").Clone();
         vm.BindingSources.Add(orders); vm.Controls.Add(DataGrid("OrdersGrid", orders.Id, 10, 10, 760, 240));
         foreach (var form in vm.CurrentProject.Forms.ToArray())

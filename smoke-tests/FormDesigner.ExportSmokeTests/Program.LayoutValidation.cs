@@ -97,7 +97,7 @@ internal static partial class Program
         vm.IncludePluginRuntimeReferences=true; vm.DataGridExportMode=MainWindowViewModel.DataGridExportModeReal;
         var primary=vm.ActiveFormDocument!.Id; vm.CreateNewForm("Grid");
         var editor=vm.CreateControl("Eremex.TextEditor",0,0); editor.Name="SecondaryEditor";
-        vm.CreateNewForm(); var legacy=vm.CreateControl("Button",37,53,null,true); legacy.Name="LegacyButton";
+        vm.CreateNewForm(DesignerLayoutModes.Absolute); var legacy=vm.CreateControl("Button",37,53,null,true); legacy.Name="LegacyButton";
         vm.SetActiveForm(primary,"mixed-responsive-fixture");
     }
 
@@ -244,7 +244,7 @@ internal static partial class Program
                 while(!vm.PropertyGridCategories.SelectMany(g=>g.Rows).Any(r=>r.Key=="Name" && r.ContextControlId==selected.Id) && DateTime.UtcNow<deadline) NativeItemsUiWait(5);
                 window.UpdateLayout(); var selectionMs=timer.Elapsed.TotalMilliseconds;
                 RequireCapability(vm.PropertyGridCategories.SelectMany(g=>g.Rows).Any(r=>r.Key=="Name" && r.ContextControlId==selected.Id),"Inspector did not follow measured selection.");
-                timer.Restart(); var key = vm.ActiveFormDocument!.Id; vm.CreateNewForm(); vm.SetActiveForm(key, "perf"); NativeItemsUiWait(30); var switchMs = timer.Elapsed.TotalMilliseconds;
+                timer.Restart(); var key = vm.ActiveFormDocument!.Id; vm.CreateNewForm(DesignerLayoutModes.Absolute); vm.SetActiveForm(key, "perf"); NativeItemsUiWait(30); var switchMs = timer.Elapsed.TotalMilliseconds;
                 var result = new { count, createMs, openMs, showMs, measureMs, dropPreviewMs, dropCommitUiMs, selectionMs, switchMs, hitMedianMs = samples.OrderBy(v=>v).ElementAt(50), hitAllocated, managedBytes = GC.GetTotalMemory(false) };
                 measurements.Add(result); Console.WriteLine("PERFORMANCE " + JsonSerializer.Serialize(result));
             }

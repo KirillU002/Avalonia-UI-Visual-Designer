@@ -157,10 +157,10 @@ internal static partial class Program
     private static void RequireDataGridMixedFormContracts()
     {
         var vm = DataGridContractModel("SqlServer");
-        vm.CreateNewForm(); vm.Controls.Clear(); vm.BindingSources.Clear();
+        vm.CreateNewForm(DesignerLayoutModes.Absolute); vm.Controls.Clear(); vm.BindingSources.Clear();
         var source = DataGridContractModel("PostgreSql").BindingSources.Single().Clone(); vm.BindingSources.Add(source);
         vm.Controls.Add(DataGrid("PostgresGrid", source.Id, 10, 10, 760, 200));
-        vm.CreateNewForm(); vm.Controls.Clear(); vm.BindingSources.Clear(); vm.Controls.Add(DataGrid("UnboundGrid", "", 10, 10, 760, 200));
+        vm.CreateNewForm(DesignerLayoutModes.Absolute); vm.Controls.Clear(); vm.BindingSources.Clear(); vm.Controls.Add(DataGrid("UnboundGrid", "", 10, 10, 760, 200));
         foreach (var form in vm.CurrentProject.Forms.ToArray())
         {
             vm.OpenFormDocument(form.Id);

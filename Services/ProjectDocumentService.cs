@@ -8,7 +8,7 @@ namespace FormDesigner.Services;
 public sealed class ProjectDocumentService
 {
     public DesignerFormDocument AddForm(DesignerProjectModel project, string baseName = "Form")
-        => AddForm(project, baseName, DesignerLayoutModes.Absolute);
+        => AddForm(project, baseName, DesignerLayoutModes.Grid);
 
     public DesignerFormDocument AddForm(DesignerProjectModel project, string baseName, string rootLayout)
     {
@@ -19,18 +19,24 @@ public sealed class ProjectDocumentService
             Document = new DesignerDocumentFileModel()
         };
         form.Document.FormTitle = form.Name;
-        if (rootLayout == DesignerLayoutModes.Grid)
-        {
-            form.Document.Version = "2.4";
-            form.Document.LayoutSemanticsVersion = 2;
-            form.Document.SurfaceLayoutMode = DesignerLayoutModes.Grid;
-            form.Document.SurfaceLayoutRows = form.Document.SurfaceLayoutColumns = 1;
-            form.Document.SurfaceGridRowDefinitions = form.Document.SurfaceGridColumnDefinitions = "*";
-            form.Document.SurfaceLayoutSpacing = 0;
-        }
+        ConfigureNewFormLayout(form.Document, rootLayout);
         form.RelativePath = $"Forms/{form.Name}.formdesigner.json";
         project.Forms.Add(form);
         return form;
+    }
+
+    // Creation policy only. DTO defaults and load/repair paths retain v1 Canvas.
+    internal static void ConfigureNewFormLayout(DesignerDocumentFileModel document, string rootLayout)
+    {
+        if (rootLayout == DesignerLayoutModes.Grid)
+        {
+            document.Version = "2.4";
+            document.LayoutSemanticsVersion = 2;
+            document.SurfaceLayoutMode = DesignerLayoutModes.Grid;
+            document.SurfaceLayoutRows = document.SurfaceLayoutColumns = 1;
+            document.SurfaceGridRowDefinitions = document.SurfaceGridColumnDefinitions = "*";
+            document.SurfaceLayoutSpacing = 0;
+        }
     }
 
     public DesignerFormDocument DuplicateForm(DesignerProjectModel project, DesignerFormDocument source)

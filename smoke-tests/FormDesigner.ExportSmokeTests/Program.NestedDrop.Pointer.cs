@@ -141,7 +141,7 @@ internal static partial class Program
             using var f = NestedPointerFixture(); var host = NestedHost(f.Vm, DesignerLayoutModes.Stack); f.Refresh(); var form = f.Vm.ActiveFormDocument!.Id;
             var point = NestedPoint(f.Vm, host.Id); var data = GridToolboxData(f); RouteGridToolbox(f, data, DragDrop.DragOverEvent, point);
             host.LayoutOrientation = "Horizontal"; RouteGridToolbox(f, data, DragDrop.DropEvent, point); f.AssertIdle(); RequireCapability(f.Vm.Controls.Count == 1, "Stale measured geometry was committed.");
-            f.Refresh(); data = GridToolboxData(f); RouteGridToolbox(f, data, DragDrop.DragOverEvent, point); f.Vm.CreateNewForm(); f.Refresh();
+            f.Refresh(); data = GridToolboxData(f); RouteGridToolbox(f, data, DragDrop.DragOverEvent, point); f.Vm.CreateNewForm(DesignerLayoutModes.Absolute); f.Refresh();
             RouteGridToolbox(f, data, DragDrop.DropEvent, point); RequireCapability(f.Vm.Controls.Count == 0, "Drop leaked into another form.");
             f.Vm.SetActiveForm(form, "nested-regression"); f.Refresh(); RequireCapability(f.Vm.Controls.Single().Id == host.Id, "Switching forms damaged the original hierarchy.");
         });

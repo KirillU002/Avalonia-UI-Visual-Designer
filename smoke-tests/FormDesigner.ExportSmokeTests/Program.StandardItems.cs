@@ -189,7 +189,7 @@ internal static partial class Program
 
     private static void ConfigureToolboxStandardMultiForm(MainWindowViewModel vm)
     {
-        ConfigureToolboxStandardItems(vm); vm.CreateNewForm(); ConfigureToolboxStandardItems(vm);
+        ConfigureToolboxStandardItems(vm); vm.CreateNewForm(DesignerLayoutModes.Absolute); ConfigureToolboxStandardItems(vm);
     }
     private static void AssertToolboxStandardMultiForm(SmokeContext context)
     {

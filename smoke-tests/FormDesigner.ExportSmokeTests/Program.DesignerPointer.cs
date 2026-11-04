@@ -46,7 +46,7 @@ internal static partial class Program
             f.Surface.Canvas.RaiseEvent(new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.Escape }); f.NoMarquee();
         });
         Check("Pointer_ButtonNotPressed", f => { var p = f.CanvasPoint(30, 300); f.Down(p); f.Move(p + new Vector(80, 40)); f.Send(RawPointerEventType.Move, p + new Vector(100, 60)); f.NoMarquee(); });
-        Check("Pointer_FormSwitch", f => { var p = f.CanvasPoint(30, 300); f.Down(p); f.Move(p + new Vector(80, 40)); f.Vm.CreateNewForm(); f.Refresh(); f.NoMarquee(); if (f.Pointer.Captured is not null) throw new Exception("Form switch retained capture."); });
+        Check("Pointer_FormSwitch", f => { var p = f.CanvasPoint(30, 300); f.Down(p); f.Move(p + new Vector(80, 40)); f.Vm.CreateNewForm(DesignerLayoutModes.Absolute); f.Refresh(); f.NoMarquee(); if (f.Pointer.Captured is not null) throw new Exception("Form switch retained capture."); });
         Check("Pointer_MoveControl", f =>
         {
             var p = f.ControlPoint(f.First); var before = new Point(f.First.X, f.First.Y);
@@ -119,7 +119,7 @@ internal static partial class Program
         });
         Check("Pointer_MoveFormSwitch", f =>
         {
-            var p = f.ControlPoint(f.First); f.Down(p); f.Move(p + new Vector(40, 30)); f.Vm.CreateNewForm(); f.Refresh(); f.AssertIdle();
+            var p = f.ControlPoint(f.First); f.Down(p); f.Move(p + new Vector(40, 30)); f.Vm.CreateNewForm(DesignerLayoutModes.Absolute); f.Refresh(); f.AssertIdle();
         });
         Check("Pointer_ToolboxDragLeave", f =>
         {

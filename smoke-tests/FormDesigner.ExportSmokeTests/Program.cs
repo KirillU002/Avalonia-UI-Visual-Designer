@@ -1,4 +1,4 @@
-﻿using FormDesigner.DesignerSystem.Binding;
+using FormDesigner.DesignerSystem.Binding;
 using FormDesigner.DesignerSystem.BuiltIn;
 using Avalonia;
 using Avalonia.Controls;
@@ -46,6 +46,9 @@ internal static partial class Program
         // Initialize the real UI dispatcher before any view model can create the
         // fallback dispatcher; IPC continuations must run on the actual UI thread.
         EnsureAvaloniaRuntimeInitialized();
+        if (args.Contains("--grid-first-checks")) return RunGridFirstChecks();
+        if (args.Contains("--grid-first-benchmark")) return RunGridFirstBenchmark(args.Contains("--before") ? "before" : "after");
+        if (args.Contains("--grid-first-export")) return RunGridFirstExport();
         if (args.Contains("--preview-phase2-checks")) return RunPreviewPhase2Checks();
         if (args.Contains("--preview-phase2-prereq-checks")) return RunPreviewPhase2Checks(false);
         if (args.Contains("--preview-phase2-plugin-cold")) return RunPreviewPhase2PluginCold();
@@ -662,6 +665,16 @@ internal static partial class Program
             FormTitle = scenarioName
         };
 
+        // These established export/pointer fixtures exercise v1 Canvas. Creation
+        // defaults are tested independently with the unmodified GridFirstVm.
+        var initialName = viewModel.ActiveFormDocument!.Name;
+        var initialPath = viewModel.ActiveFormDocument.RelativePath;
+        viewModel.LoadDocumentJson(JsonSerializer.Serialize(new DesignerDocumentFileModel
+        {
+            FormTitle=scenarioName,DesignWidth=900,DesignHeight=620
+        }));
+        viewModel.ActiveFormDocument!.Name=initialName;
+        viewModel.ActiveFormDocument.RelativePath=initialPath;
         viewModel.Controls.Clear();
         viewModel.BindingSources.Clear();
         viewModel.Interactions.Clear();
@@ -3106,7 +3119,7 @@ internal static partial class Program
         vm.BindingSources.Add(source1);
         vm.Controls.Add(DataGrid("Form1Grid", source1.Id, 32, 42, 720, 320));
 
-        var form2 = vm.CreateNewForm();
+        var form2 = vm.CreateNewForm(DesignerLayoutModes.Absolute);
         form2.Name = "Form2";
         form2.Document.FormTitle = "Form2";
         vm.FormTitle = "Form2";
@@ -3144,7 +3157,7 @@ internal static partial class Program
         {
             if (index > 1)
             {
-                var form = vm.CreateNewForm();
+                var form = vm.CreateNewForm(DesignerLayoutModes.Absolute);
                 form.Name = $"Form{index}";
                 form.Document.FormTitle = $"Form{index}";
                 vm.FormTitle = $"Form{index}";
@@ -3194,7 +3207,7 @@ internal static partial class Program
         vm.BindingSources.Add(source1);
         vm.Controls.Add(DataGrid("OrdersGrid", source1.Id, 32, 42, 720, 320));
 
-        var form2 = vm.CreateNewForm();
+        var form2 = vm.CreateNewForm(DesignerLayoutModes.Absolute);
         form2.Name = "Form2";
         form2.Document.FormTitle = "Form2";
         vm.FormTitle = "Form2";
@@ -3209,7 +3222,7 @@ internal static partial class Program
         vm.BindingSources.Add(source2);
         vm.Controls.Add(DataGrid("AuditGrid", source2.Id, 32, 42, 720, 320));
 
-        var form3 = vm.CreateNewForm();
+        var form3 = vm.CreateNewForm(DesignerLayoutModes.Absolute);
         form3.Name = "Form3";
         form3.Document.FormTitle = "Form3";
         vm.FormTitle = "Form3";
@@ -3586,7 +3599,7 @@ internal static partial class Program
         vm.BindingSources.Add(products);
         var grid1 = DataGrid("OrdersGrid", products.Id, 32, 42, 520, 260);
         vm.Controls.Add(grid1);
-        var form2 = vm.CreateNewForm();
+        var form2 = vm.CreateNewForm(DesignerLayoutModes.Absolute);
         form2.Name = "Form2";
         var orders = DllOrdersSource();
         vm.BindingSources.Add(orders);
@@ -4460,7 +4473,7 @@ internal static partial class Program
             throw new InvalidOperationException("Form1 session is not registered as the active session.");
         }
 
-        var form2 = vm.CreateNewForm();
+        var form2 = vm.CreateNewForm(DesignerLayoutModes.Absolute);
         if (!vm.DocumentSessions.TryGetValue(form2.Id, out var form2Session)
             || !ReferenceEquals(form2Session, vm.ActiveSession)
             || ReferenceEquals(form1Session, form2Session))
@@ -4508,7 +4521,7 @@ internal static partial class Program
         var form1Session = vm.ActiveSession;
         vm.Controls.Add(Control(DesignerControlTypes.Button, "Form1SessionButton", 28, 34, 160, 38, text: "Form1"));
 
-        var form2 = vm.CreateNewForm();
+        var form2 = vm.CreateNewForm(DesignerLayoutModes.Absolute);
         var form2Session = vm.ActiveSession;
         vm.Controls.Add(Control(DesignerControlTypes.TextBox, "Form2SessionText", 28, 34, 220, 38, placeholder: "Form2"));
 
@@ -4536,7 +4549,7 @@ internal static partial class Program
         var button = Control(DesignerControlTypes.Button, "Form1SessionStable", 28, 34, 160, 38, text: "Stable");
         vm.Controls.Add(button);
 
-        var form2 = vm.CreateNewForm();
+        var form2 = vm.CreateNewForm(DesignerLayoutModes.Absolute);
         if (form1Session.IsDisposed || vm.DocumentSessions[form1.Id] != form1Session)
             throw new InvalidOperationException("Add Form disposed or replaced the existing Form1 session.");
         if (!form1Session.Document.Controls.Any(control => string.Equals(control.Id, button.Id, StringComparison.OrdinalIgnoreCase)))
@@ -4557,7 +4570,7 @@ internal static partial class Program
     private static void ConfigureDeletingFormDisposesItsSession(MainWindowViewModel vm)
     {
         var form1 = vm.ActiveFormDocument ?? throw new InvalidOperationException("Form1 missing.");
-        var form2 = vm.CreateNewForm();
+        var form2 = vm.CreateNewForm(DesignerLayoutModes.Absolute);
         var form2Session = vm.ActiveSession;
         var form2ExplorerItem = FlattenExplorerItems(vm.ProjectExplorerItems)
             .FirstOrDefault(item => item.Source is DesignerFormDocument form
@@ -4583,7 +4596,7 @@ internal static partial class Program
     {
         var form1 = vm.ActiveFormDocument ?? throw new InvalidOperationException("Form1 missing.");
         var form1Session = vm.ActiveSession;
-        var form2 = vm.CreateNewForm();
+        var form2 = vm.CreateNewForm(DesignerLayoutModes.Absolute);
         var form2Session = vm.ActiveSession;
 
         vm.NewDocumentCommand.Execute(null);
@@ -4611,7 +4624,7 @@ internal static partial class Program
         if (!ReferenceEquals(vm.ActiveSession.SelectedControl, button))
             throw new InvalidOperationException("Property Inspector target does not come from the active session selection.");
 
-        var form2 = vm.CreateNewForm();
+        var form2 = vm.CreateNewForm(DesignerLayoutModes.Absolute);
         var textBox = Control(DesignerControlTypes.TextBox, "InspectorSessionText", 28, 34, 220, 38, placeholder: "Form2");
         vm.Controls.Add(textBox);
         vm.SelectSingleControl(textBox);
@@ -4638,7 +4651,7 @@ internal static partial class Program
         if (!form1Session.CanUndo)
             throw new InvalidOperationException("Form1 edit did not create document-scoped history.");
 
-        var form2 = vm.CreateNewForm();
+        var form2 = vm.CreateNewForm(DesignerLayoutModes.Absolute);
         var form2Button = Control(DesignerControlTypes.Button, "UndoForm2Button", 28, 34, 160, 38, text: "Form2 original");
         vm.Controls.Add(form2Button);
         form2Button.Text = "Form2 changed";
@@ -4670,7 +4683,7 @@ internal static partial class Program
         vm.Controls.Add(button);
         vm.SelectSingleControl(button);
 
-        vm.CreateNewForm();
+        vm.CreateNewForm(DesignerLayoutModes.Absolute);
         SwitchToForm(vm, form1.Id);
         var restoredButton = vm.Controls.Single(control => control.Name == "ApplySessionButton");
         vm.SelectSingleControl(restoredButton);
@@ -4727,7 +4740,7 @@ internal static partial class Program
         var vm = context.ViewModel;
         var firstSession = vm.ActiveSession;
         var surface = new DesignerSurface { Context = vm, Session = firstSession };
-        var form2 = vm.CreateNewForm();
+        var form2 = vm.CreateNewForm(DesignerLayoutModes.Absolute);
 
         surface.Session = vm.ActiveSession;
         if (ReferenceEquals(firstSession, surface.Session)
@@ -4871,7 +4884,7 @@ internal static partial class Program
                 throw new InvalidOperationException($"Favorite '{key}' was lost after switching the selected control.");
         }
 
-        var form2 = vm.CreateNewForm();
+        var form2 = vm.CreateNewForm(DesignerLayoutModes.Absolute);
         var form2Button = vm.TryCreateControlFromToolboxDrop(DesignerControlTypes.Button, 48, 56, null, false, form2.Id)
             ?? throw new InvalidOperationException("Form2 Button was not created for the favorite persistence test.");
         vm.SelectSingleControl(form2Button);
@@ -4975,7 +4988,7 @@ internal static partial class Program
         var vm = context.ViewModel;
         var surface = CreateMainWindowDesignerSurface(context);
         var firstSurface = surface;
-        var form2 = vm.CreateNewForm();
+        var form2 = vm.CreateNewForm(DesignerLayoutModes.Absolute);
 
         if (!ReferenceEquals(firstSurface, surface)
             || !ReferenceEquals(surface.Session, vm.DocumentSessions[form2.Id]))
@@ -5568,6 +5581,7 @@ internal static partial class Program
         SetPropertyGridValue(vm, nameof(DesignControlModel.Width), "188");
         RequirePropertyGridContext(vm, form1.Id, form1Button.Id);
 
+        vm.NewFormLayoutChoice = MainWindowViewModel.NewFormCanvasChoice;
         vm.NewFormEditorCommand?.Execute(null);
         var form2 = vm.ActiveFormDocument ?? throw new InvalidOperationException("Form2 missing.");
         form2.Name = "Form2";
@@ -5655,6 +5669,7 @@ internal static partial class Program
         SetPropertyGridValue(vm, nameof(DesignControlModel.Width), "400");
         RequirePropertyGridContext(vm, form1.Id, form1Grid.Id);
 
+        vm.NewFormLayoutChoice = MainWindowViewModel.NewFormCanvasChoice;
         vm.NewFormEditorCommand?.Execute(null);
         var form2 = vm.ActiveFormDocument ?? throw new InvalidOperationException("Form2 missing.");
         form2.Name = "Form2";
@@ -6073,7 +6088,7 @@ internal static partial class Program
         RequirePropertyGridContext(vm, form1.Id, "");
         RequireNoDuplicatePropertyRows(vm);
 
-        var form2 = vm.CreateNewForm();
+        var form2 = vm.CreateNewForm(DesignerLayoutModes.Absolute);
         EditPropertyGridTextLikeUi(vm, "FormTitle", "Form_B");
         RequirePropertyGridContext(vm, form2.Id, "");
         RequireNoDuplicatePropertyRows(vm);
@@ -6171,7 +6186,7 @@ internal static partial class Program
     private static void ConfigurePropertyEditBlockedForStaleInspectorTarget(MainWindowViewModel vm)
     {
         var form1 = vm.ActiveFormDocument ?? throw new InvalidOperationException("Form1 missing.");
-        var form2 = vm.CreateNewForm();
+        var form2 = vm.CreateNewForm(DesignerLayoutModes.Absolute);
         SwitchToForm(vm, form1.Id);
 
         var staleRow = new PropertyGridRowViewModel(
@@ -6205,7 +6220,7 @@ internal static partial class Program
         var button = vm.TryCreateControlFromToolboxDrop(DesignerControlTypes.Button, 40, 40, null, false, form1.Id)
             ?? throw new InvalidOperationException("Button was not created.");
 
-        vm.CreateNewForm();
+        vm.CreateNewForm(DesignerLayoutModes.Absolute);
         SwitchToForm(vm, form1.Id);
         var restored = vm.Controls.Single(control => control.Id == button.Id);
         vm.SelectSingleControl(restored);
@@ -6252,13 +6267,13 @@ internal static partial class Program
         vm.FilteredImportedDllCatalog.Add(vm.ImportedDllCatalog[0]);
 
         vm.GenerateXaml();
-        var form2 = vm.CreateNewForm();
+        var form2 = vm.CreateNewForm(DesignerLayoutModes.Absolute);
         var form2TextBox = vm.TryCreateControlFromToolboxDrop(DesignerControlTypes.TextBox, 70, 80, null, false, form2.Id)
             ?? throw new InvalidOperationException("Form2 TextBox was not created.");
         form2TextBox.PlaceholderText = "Old Form2";
         vm.SelectSingleControl(form2TextBox);
 
-        var form3 = vm.CreateNewForm();
+        var form3 = vm.CreateNewForm(DesignerLayoutModes.Absolute);
         var form3Border = vm.TryCreateControlFromToolboxDrop(DesignerControlTypes.Border, 80, 90, null, false, form3.Id)
             ?? throw new InvalidOperationException("Form3 Border was not created.");
         vm.SelectSingleControl(form3Border);
@@ -6437,7 +6452,7 @@ internal static partial class Program
         form1Button.Name = "WeakOldForm1Button";
         vm.SelectSingleControl(form1Button);
 
-        var form2 = vm.CreateNewForm();
+        var form2 = vm.CreateNewForm(DesignerLayoutModes.Absolute);
         var form2Button = vm.TryCreateControlFromToolboxDrop(DesignerControlTypes.Button, 84, 84, null, false, form2.Id)
             ?? throw new InvalidOperationException("Old Form2 Button was not created.");
         form2Button.Name = "WeakOldForm2Button";
@@ -6538,7 +6553,7 @@ internal static partial class Program
         var button = vm.TryCreateControlFromToolboxDrop(DesignerControlTypes.Button, 60, 60, null, false, form1.Id)
             ?? throw new InvalidOperationException("Form1 Button was not created.");
         button.Text = "Export state Button";
-        var form2 = vm.CreateNewForm();
+        var form2 = vm.CreateNewForm(DesignerLayoutModes.Absolute);
         var textBox = vm.TryCreateControlFromToolboxDrop(DesignerControlTypes.TextBox, 90, 90, null, false, form2.Id)
             ?? throw new InvalidOperationException("Form2 TextBox was not created.");
         textBox.PlaceholderText = "Secondary";
@@ -6569,7 +6584,7 @@ internal static partial class Program
         var form1 = vm.ActiveFormDocument ?? throw new InvalidOperationException("Form1 missing.");
         _ = vm.TryCreateControlFromToolboxDrop(DesignerControlTypes.Button, 50, 50, null, false, form1.Id)
             ?? throw new InvalidOperationException("Form1 Button was not created.");
-        var form2 = vm.CreateNewForm();
+        var form2 = vm.CreateNewForm(DesignerLayoutModes.Absolute);
         _ = vm.TryCreateControlFromToolboxDrop(DesignerControlTypes.TextBlock, 80, 80, null, false, form2.Id)
             ?? throw new InvalidOperationException("Form2 TextBlock was not created.");
 
@@ -6623,7 +6638,7 @@ internal static partial class Program
         var form1 = vm.ActiveFormDocument ?? throw new InvalidOperationException("Form1 missing.");
         var button = vm.TryCreateControlFromToolboxDrop(DesignerControlTypes.Button, 60, 60, null, false, form1.Id)
             ?? throw new InvalidOperationException("Button was not created.");
-        var form2 = vm.CreateNewForm();
+        var form2 = vm.CreateNewForm(DesignerLayoutModes.Absolute);
         _ = vm.TryCreateControlFromToolboxDrop(DesignerControlTypes.TextBox, 90, 90, null, false, form2.Id)
             ?? throw new InvalidOperationException("Form2 TextBox was not created.");
 
@@ -6659,7 +6674,7 @@ internal static partial class Program
             ?? throw new InvalidOperationException("Old Button was not created.");
         oldButton.Name = "OldExportButton";
         oldButton.Text = "Old export text";
-        var oldForm2 = vm.CreateNewForm();
+        var oldForm2 = vm.CreateNewForm(DesignerLayoutModes.Absolute);
         var oldTextBox = vm.TryCreateControlFromToolboxDrop(DesignerControlTypes.TextBox, 80, 80, null, false, oldForm2.Id)
             ?? throw new InvalidOperationException("Old TextBox was not created.");
         oldTextBox.Name = "OldExportTextBox";
@@ -6712,7 +6727,7 @@ internal static partial class Program
         form1Button.Name = "OldForm1Button";
         form1Button.Text = "Old Form1 Button";
 
-        var form2 = vm.CreateNewForm();
+        var form2 = vm.CreateNewForm(DesignerLayoutModes.Absolute);
         var form2Button = vm.TryCreateControlFromToolboxDrop(DesignerControlTypes.Button, 82, 88, null, false, form2.Id)
             ?? throw new InvalidOperationException("Old Form2 Button was not created.");
         form2Button.Name = "OldForm2Button";

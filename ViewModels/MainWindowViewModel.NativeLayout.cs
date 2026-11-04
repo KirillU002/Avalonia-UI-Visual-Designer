@@ -16,9 +16,9 @@ public partial class MainWindowViewModel
 {
     public const string NewFormCanvasChoice = "Canvas — свободное размещение";
     public const string NewFormGridChoice = "Grid — адаптивный";
-    public ObservableCollection<string> NewFormLayoutChoices { get; } = new() { NewFormCanvasChoice, NewFormGridChoice };
+    public ObservableCollection<string> NewFormLayoutChoices { get; } = new() { NewFormGridChoice, NewFormCanvasChoice };
     public ObservableCollection<string> AvailableSizeModes { get; } = new() { "Fixed", "Auto" };
-    [ObservableProperty] private string newFormLayoutChoice = NewFormCanvasChoice;
+    [ObservableProperty] private string newFormLayoutChoice = NewFormGridChoice;
     [ObservableProperty] private int layoutSemanticsVersion = 1;
     public bool UsesNativeLayout => !IsAxamlRoundTripDocument && LayoutSemanticsVersion == 2;
     public IReadOnlyDictionary<string, Rect> NativeLayoutBounds { get; set; } = new Dictionary<string, Rect>();

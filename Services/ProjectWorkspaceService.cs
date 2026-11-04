@@ -80,7 +80,7 @@ public sealed class ProjectWorkspaceService
     {
         workspace.Project ??= new DesignerProjectModel();
         if (workspace.Project.Forms.Count == 0)
-            workspace.Project.Forms.Add(CreateForm("MainWindow"));
+            workspace.Project.Forms.Add(CreateForm("MainWindow", DesignerLayoutModes.Absolute));
         if (workspace.Project.ExportProfiles.Count == 0)
             workspace.Project.ExportProfiles.Add(new DesignerExportProfileModel
             {
@@ -96,10 +96,12 @@ public sealed class ProjectWorkspaceService
             workspace.Session.OpenDocumentIds.Add(workspace.Session.ActiveDocumentId);
     }
 
-    public DesignerFormDocument CreateForm(string name)
+    public DesignerFormDocument CreateForm(string name) => CreateForm(name, DesignerLayoutModes.Grid);
+
+    public DesignerFormDocument CreateForm(string name, string rootLayout)
     {
         var safeName = string.IsNullOrWhiteSpace(name) ? "Form" : name.Trim();
-        return new DesignerFormDocument
+        var form = new DesignerFormDocument
         {
             Name = safeName,
             RelativePath = $"Forms/{safeName}.formdesigner.json",
@@ -108,6 +110,8 @@ public sealed class ProjectWorkspaceService
                 FormTitle = safeName
             }
         };
+        ProjectDocumentService.ConfigureNewFormLayout(form.Document, rootLayout);
+        return form;
     }
 
     private static string SanitizeNamespace(string value)

@@ -46,7 +46,7 @@ internal static partial class Program
             try { test(); Console.WriteLine("PASS " + name); }
             catch (Exception ex) { failures++; Console.WriteLine("FAIL " + name + ": " + ex); }
         }
-        Check("NativeGrid_CanvasCreation", () => { var vm = CreateViewModel("Canvas"); vm.CreateNewForm(); RequireCapability(!vm.UsesNativeLayout && vm.SurfaceLayoutMode == "Absolute" && vm.NewFormLayoutChoice == MainWindowViewModel.NewFormCanvasChoice, "Canvas default changed."); });
+        Check("NativeGrid_CanvasCreation", () => { var vm = CreateViewModel("Canvas"); vm.CreateNewForm(DesignerLayoutModes.Absolute); RequireCapability(!vm.UsesNativeLayout && vm.SurfaceLayoutMode == "Absolute" && vm.NewFormLayoutChoice == MainWindowViewModel.NewFormGridChoice, "Explicit Canvas or one-shot creation choice changed."); });
         Check("NativeGrid_GridCreation", () => { var vm = NativeGridModel(); RequireCapability(vm.UsesNativeLayout && vm.SurfaceLayoutMode == "Grid" && vm.SurfaceLayoutRows == 1 && vm.SurfaceGridColumnDefinitions == "*", "Grid factory did not configure a native root."); });
         foreach (var type in new[] { DesignerControlTypes.Button, DesignerControlTypes.TextBox, DesignerControlTypes.TextBlock })
             Check("NativeGrid_Add_" + type, () =>
