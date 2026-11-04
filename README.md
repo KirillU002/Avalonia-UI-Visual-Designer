@@ -1,45 +1,50 @@
-# Avalonia UI Visual Designer
+# Avalonia UI Visual Designer — Beta 0.1
 
-**Текущая версия:** Alpha 4.0 (`v0.4.0-alpha.1`) · **Visual Studio Extension:** 0.1.17
+**Предварительная Beta-версия в активной разработке.** Продукт `0.1.0-beta.1` · Visual Studio Extension `0.1.18`.
 
-Avalonia UI Visual Designer - визуальный дизайнер форм для Avalonia UI. Он позволяет создавать многоформенные проекты, редактировать интерфейс, настраивать источники данных, просматривать результат и экспортировать Avalonia-проект с AXAML и C#.
+[Скачать Beta 0.1](https://github.com/KirillU002/Avalonia-UI-Visual-Designer/releases/tag/v0.1.0-beta.1) · [Что нового](Docs/Releases/Beta-0.1.md)
 
-Доступны два сценария: **standalone Designer** с JSON-проектами и **Visual Studio Extension** для source-preserving редактирования существующих `.axaml`. Оба используют общий `DesignerSurface`; расширение запускает Designer в отдельном процессе.
+Avalonia UI Visual Designer — визуальный конструктор пользовательских интерфейсов для Avalonia на платформе .NET. Он помогает проектировать формы без необходимости вручную писать всю AXAML-разметку: размещать компоненты, настраивать свойства, данные и поведение, просматривать результат и экспортировать готовый Avalonia-проект.
+
+Проект ориентирован на разработчиков .NET и предлагает привычный подход к визуальному проектированию, похожий на Windows Forms Designer. Цель — упростить создание кроссплатформенных интерфейсов; готовые дистрибутивы этой Beta проверяются и поставляются **только для Windows x64**.
+
+Доступны **Standalone Designer** для JSON-проектов и **Visual Studio Extension** для частичного source-preserving редактирования существующих `.axaml`. Оба используют общий DesignerSurface.
 
 ![C#](https://img.shields.io/badge/C%23-.NET_8-blue?style=for-the-badge&logo=csharp)
 ![Avalonia](https://img.shields.io/badge/Avalonia-11.1.1-purple?style=for-the-badge)
-![Status](https://img.shields.io/badge/status-Alpha_4.0-orange?style=for-the-badge)
+![Status](https://img.shields.io/badge/status-Beta_0.1-orange?style=for-the-badge)
 
 ## Статус проекта
 
-Проект находится на стадии **Alpha** и активно развивается. Standalone-сценарии, Visual Studio bridge и AXAML Round-trip имеют smoke/regression tests, но проект пока не считается production-ready.
+Beta 0.1 — предварительный выпуск для знакомства с продуктом и обратной связи. Grid/Canvas, Multi Form, Preview и Export доступны; ограничения PostgreSQL, AXAML Import, плагинов и больших форм перечислены ниже. Перед работой с важными проектами сохраняйте резервную копию или используйте систему контроля версий.
 
-**Alpha 4.0** объединяет .NET 8, Visual Studio integration и AXAML Import Phase 2–5. Visual Studio integration остаётся экспериментальной: это отдельное окно Designer, а не встроенный редактор Visual Studio. Состояние предварительного релиза закреплено тегом [`v0.4.0-alpha.1`](https://github.com/KirillU002/Avalonia-UI-Visual-Designer/tree/v0.4.0-alpha.1); основные изменения и ограничения описаны в [Release Notes](Docs/Alpha4ReleaseNotes.md).
+[Release Notes](Docs/Releases/Beta-0.1.md) описывают возможности и известные проблемы. Подробные результаты автоматизированных проверок сохранены в [Beta Readiness Audit](Docs/BetaReadinessAudit.md) и [историческом отчёте RC](Docs/Beta01ReleaseCandidate.md).
 
-## Что изменилось в Alpha 4.0
+JSON Designer и AXAML Import — разные workflows. Для JSON основным Preview является AXAML Preview; Legacy сохраняется. Visual Studio integration остаётся экспериментальной и открывает отдельное окно VsHost.
 
-- Сохранены улучшения New Project, Multi Form, Property Inspector, DataGrid, DLL Import и соответствия Preview/Export.
-- Export Pipeline изолирован от editor state; доступны Build Validation, diagnostics и smoke tests.
-- Выделены общий `DesignerSurface`, document sessions и host services для standalone и Visual Studio.
-- Добавлен VSIX bridge: активный AXAML из text buffer передаётся во внешний VsHost через Named Pipes.
-- Реализованы AXAML Import, granular capabilities и minimal patches с сохранением исходной разметки.
-- Phase 2/3 добавили вложенные layout containers, статические вкладки и отчёт о partial import.
-- Phase 4 добавила native Expander и ComboBox: Content hierarchy, static items, безопасные Inspector edits и minimal patches.
-- Phase 5 добавила ItemsControl, ListBox/ListBoxItem, TreeView/TreeViewItem и ProgressBar: статические collections/hierarchy, native preview и безопасные property patches.
-- Designer, VsHost, plugins, sample и smoke runner переведены на .NET 8 без изменения версий NuGet-пакетов. VSIX сохраняет совместимый `net472`.
-- Исправлен блокирующий startup overlay: отсутствующий или повреждённый последний workspace больше не мешает работе New/Open и остального интерфейса. Smoke hosts изолированы от пользовательских настроек.
-- Расширены regression tests для startup/input, shared surface, AXAML patches, ACK/checksum и внешнего VsHost.
+## Что изменилось в Beta 0.1
+
+- **Grid-first:** новые проекты и формы используют настоящий Grid; Canvas доступен явно. Старые JSON без layout metadata сохраняют Canvas-семантику, без автоматической миграции.
+- **Layout Designer:** Grid Definition Editor (Auto/Star/Pixel), ячейки Grid, nested StackPanel/DockPanel/WrapPanel/Canvas, визуальный Drop/Reparent, Undo/Redo.
+- **Preview:** AXAML Preview по умолчанию для JSON, Legacy в Settings, согласованность layout/стандартных controls с экспортом и диагностика отсутствующих компонентов.
+- **Сохранность данных:** preflight повреждённых документов/ControlId, защита async Save и Multi Form, recovery при I/O errors, отложенное восстановление и атомарная публикация autosave.
+- **Undo/Redo:** атомарное удаление поддерева и отсутствие ложных правок BindingSource при refresh Inspector; кэш описаний истории.
+- **Multi Form / DataGrid / Logic / Export:** проверены Save/Open, реальные строки SQL Server LocalDB, folder/ZIP export и запуск generated приложения с навигацией.
+- **VSIX:** source-preserving AXAML patches, ACK/checksum/version protection, внешний VsHost с отдельной версией расширения.
+- **PostgreSQL — experimental**, live acceptance не завершена. **Eremex — optional experimental plugin**, стандартные пакеты его не включают.
+- Сохранены .NET 8 Designer/VsHost, `net472` bridge и текущие NuGet versions. Изменения предыдущей Alpha: [Alpha 4.0 Release Notes](Docs/Alpha4ReleaseNotes.md).
 
 ## Основные возможности
 
 | Область | Что уже доступно |
 | --- | --- |
-| Visual Designer | Canvas, Toolbox, selection, Drag & Drop, перемещение, resize, Property Inspector, Undo/Redo |
-| Проекты | New/Open/Save, JSON-формат `.formdesigner.json`, Multi Form, вкладки и Project Explorer |
-| Preview и Export | Preview, генерация AXAML/C#, Export Pipeline, экспорт Avalonia-проекта и Build Validation через restore/build |
+| Visual Designer | Grid-first / Canvas, вложенные layouts, Grid Definition Editor, Toolbox Drag & Drop/Reparent, selection/resize, Property Inspector с Favorites, Undo/Redo |
+| Проекты | New/Open/Save, JSON-формат `.formdesigner.json`, Multi Form, вкладки и Project Explorer, Autosave/Recovery |
+| Поведение | Logic Editor, события компонентов и реализованные действия, включая открытие других форм |
+| Preview и Export | AXAML Preview default для JSON, Legacy Preview, AXAML/C#/ViewModel, Multi Form, folder/ZIP, restore/build/runtime |
 | Данные | DataGrid Designer и Column Editor, Binding Source, SQL Server / PostgreSQL Data Source, DLL Import метаданных источников данных |
 | Расширение Designer | Plugin contracts, demo/minimal plugins, собственные properties, preview и export plugin controls |
-| Eremex | Отдельные vertical slices TextEditor и DataGridControl, не весь каталог controls |
+| Eremex | Optional experimental TextEditor/DataGridControl plugin; отсутствует в стандартных пакетах |
 | Visual Studio | Открытие активного `.axaml`, внешний VsHost, Apply в VS buffer, ACK, version/checksum conflict protection |
 | AXAML Round-trip | Частичное редактирование поддерживаемых элементов, сохранение opaque syntax, source map и minimal text edits |
 | Диагностика | Problems/Output/Trace, AXAML Import Report, capability/blocker analysis и smoke/regression suites |
@@ -104,15 +109,13 @@ VSIX получает текст открытого документа, вклю
 
 Capability model разделяет **document → element → property**: supported части доступны для редактирования, unsupported сохраняются. Unknown attribute не блокирует остальные свойства элемента; unknown sibling не блокирует поддерживаемых соседей. Поддерево неизвестного контейнера остаётся opaque, когда его semantics нельзя безопасно спроецировать. Read-only применяется при невозможности безопасного разбора/patch, а не просто из-за partial support. В режиме частичной поддержки кнопка **«Подробнее»** открывает AXAML Import Report с counts, paths, причинами и blockers.
 
-На настоящем [`Views/MainWindow.axaml`](Views/MainWindow.axaml) Phase 5 импортирует **1487 / 1490 visual candidates (99.80%)**: 2524 XML elements, 3 opaque visual candidates, 3 skipped subtree boundaries (custom controls). PostgreSQL-панель рабочей ветки добавила 17 standard visuals к прежнему fixture 1470/1473. Это **coverage модели/source map одного stress-test документа**, не процент поддержки всей Avalonia, не поддержка всех properties и не полная visual equivalence. Статические items проверены на native shared surface; bindings/templates приложения сохраняются, но не исполняются. Проверка: `AxamlPhase5RealMainWindow`. Исторические отчёты: [Phase 5](Docs/AxamlCoveragePhase5.md), [Phase 4](Docs/AxamlCoveragePhase4.md), [миграция .NET 8](Docs/Net8Migration.md).
+Границы editable/opaque элементов и результаты source-preservation проверок описаны в [AXAML coverage](Docs/AxamlCoveragePhase5.md). Частичный импорт не означает выполнение пользовательского DataContext или полную визуальную эквивалентность исходному приложению.
 
 Перед применением patch проверяются version/checksum текущего VS buffer. При внешнем изменении source patch отклоняется; после успешного Apply документ остаётся dirty и сохраняется обычным `Ctrl+S`. ACK обновляет snapshot для следующего редактирования.
 
-## PostgreSQL в рабочей ветке
+## PostgreSQL — experimental
 
-Phase 2: исправлена сборка VSIX и подготовлен настоящий DB fixture/runner;
-результаты и оставшаяся runtime-приёмка описаны в
-[PostgreSQL Integration Phase 2](Docs/PostgreSqlIntegrationPhase2.md).
+Реализованы настройки подключения, schema discovery, BindingSource, Preview и export. Полноценное live-тестирование на настоящем сервере ещё требуется; текущие результаты и acceptance checklist: [PostgreSQL Integration](Docs/PostgreSqlIntegrationPhase2.md).
 
 Settings → PostgreSQL → Host/Port/Database/Username/Password → проверить и применить.
 Затем Data → PostgreSQL → получить схемы → таблицы → колонки → выбрать BindingSource
@@ -128,7 +131,9 @@ Settings → PostgreSQL → Host/Port/Database/Username/Password → прове�
 подтверждён. Архитектура, безопасность, результаты проверок и перечень невыполненных
 integration checks: [PostgreSQL Integration](Docs/PostgreSqlIntegration.md).
 
-## Eremex integration
+## Eremex — optional experimental plugin
+
+Стандартный Designer работает без Eremex assemblies/themes. Плагин можно собрать отдельно при наличии лицензии/trial; поддержка не удалена.
 
 Plugin реализует vertical slices **TextEditor** и **DataGridControl**: реальные controls в preview, Property Inspector, JSON persistence и export. Используются `Eremex.Avalonia.Controls` и `Eremex.Avalonia.Themes.DeltaDesign` **1.0.98** с Avalonia **11.1.1**; нужна соответствующая лицензия/trial Eremex.
 
@@ -136,21 +141,21 @@ Plugin реализует vertical slices **TextEditor** и **DataGridControl**:
 
 ## Версии
 
-Текущая версия: **[Alpha 4.0 / `v0.4.0-alpha.1`](https://github.com/KirillU002/Avalonia-UI-Visual-Designer/tree/v0.4.0-alpha.1)**, VSIX **0.1.17**. Ниже сохранены ссылки на **две предыдущие версии**, чтобы можно было посмотреть проект до текущих изменений.
+Текущая версия — **[Beta 0.1 / `v0.1.0-beta.1`](https://github.com/KirillU002/Avalonia-UI-Visual-Designer/releases/tag/v0.1.0-beta.1)**. Это новая Beta-схема нумерации продукта; версия VSIX развивается отдельно — **0.1.18**.
+
+Две предыдущие версии доступны по существующим Git tags. Их исторические README и исходники сохранены:
+
+## Alpha 4.0
+
+[Alpha 4.0 / `v0.4.0-alpha.1`](https://github.com/KirillU002/Avalonia-UI-Visual-Designer/tree/v0.4.0-alpha.1) — предыдущая Alpha с внешним VsHost и Visual Studio integration. [Release notes](Docs/Alpha4ReleaseNotes.md).
 
 ## Alpha 3.0
 
-[Alpha 3.0 / `v0.3.0-alpha`](https://github.com/KirillU002/Avalonia-UI-Visual-Designer/tree/v0.3.0-alpha) - предыдущая зафиксированная standalone-версия. Это существующий Git tag, не сборка текущей `main` с .NET 8 и новым AXAML Import; отдельной GitHub Release page для него нет.
-
-## Alpha 2.0
-
-Alpha 2.0 (`0.2.0-alpha`) - историческое состояние до стабилизационного цикла Alpha 3.0. Отдельного тега для этой ссылки нет; версия доступна по прежнему коммиту:
-
-[`29c5864908912c10713498b30def81af00ee4355`](https://github.com/KirillU002/Avalonia-UI-Visual-Designer/commit/29c5864908912c10713498b30def81af00ee4355)
+[Alpha 3.0 / `v0.3.0-alpha`](https://github.com/KirillU002/Avalonia-UI-Visual-Designer/tree/v0.3.0-alpha) — более ранняя standalone-версия. Ссылки ведут на реальные теги; отдельные GitHub Releases для этих Alpha не создаются заново.
 
 ## Требования
 
-- .NET 8 SDK или более новый совместимый SDK; для запуска Designer/VsHost требуется .NET 8 runtime.
+- Для сборки нужен .NET 8 SDK или более новый совместимый SDK. Подготовленные Windows x64 self-contained пакеты содержат .NET 8 runtime; SDK нужен для Build Validation и сборки generated проектов.
 - Текущая проверенная desktop/VSIX-конфигурация - Windows. Avalonia-проекты используют `net8.0`, без обязательного `-windows`; другие ОС не заявляются проверенными.
 - Для Visual Studio Extension - Visual Studio 2022 Community x64. Для сборки VSIX нужен .NET Framework 4.7.2 targeting/developer pack; bridge использует текущий VSSDK.
 - Зависимости восстанавливаются через NuGet: Avalonia **11.1.1**, CommunityToolkit.Mvvm **8.2.1**, Eremex **1.0.98** для plugin. Обновление их версий не требуется для .NET 8.
@@ -176,21 +181,29 @@ dotnet --list-runtimes
 ```powershell
 git clone https://github.com/KirillU002/Avalonia-UI-Visual-Designer.git
 cd Avalonia-UI-Visual-Designer
-dotnet restore .\FormDesigner.sln
-dotnet build .\FormDesigner.sln
-dotnet run --no-build --project .\FormDesigner.csproj
+git checkout v0.1.0-beta.1
+dotnet restore .\FormDesigner.csproj -p:BuildExperimentalEremexPlugin=false
+dotnet run -c Release --project .\FormDesigner.csproj -p:BuildExperimentalEremexPlugin=false
 ```
 
-Если нужен только standalone Designer без VSIX tooling:
+Для сборки всей solution, включая VSIX, нужны перечисленные выше VSIX build tools:
 
 ```powershell
-dotnet build .\FormDesigner.csproj
-dotnet run --no-build --project .\FormDesigner.csproj
+dotnet restore .\FormDesigner.sln
+dotnet build .\FormDesigner.sln -c Release
 ```
+
+### Установка Standalone
+
+1. Откройте [Beta 0.1 Release](https://github.com/KirillU002/Avalonia-UI-Visual-Designer/releases/tag/v0.1.0-beta.1).
+2. Скачайте `Avalonia-UI-Visual-Designer-Beta-0.1-win-x64.zip` и `SHA256SUMS.txt`.
+3. Сверьте SHA-256 (`Get-FileHash -Algorithm SHA256 <файл.zip>`), распакуйте архив **целиком** и запустите `FormDesigner.exe`.
+
+Пакет Windows x64 self-contained содержит .NET 8 runtime. Visual Studio, SDK и Eremex для запуска не нужны. Для restore/build экспортированных проектов нужен SDK, для запуска default generated `net6.0` приложений — соответствующий runtime. Linux/macOS и Windows ARM64 runtime в эту поставку не входят. Пакеты не подписаны цифровой подписью; не смешивайте DLL разных сборок.
 
 ### Visual Studio Extension
 
-После Debug-сборки solution пакет **0.1.17** находится в:
+Скачайте `Avalonia-UI-Visual-Designer-Beta-0.1.vsix` из [Beta 0.1 Release](https://github.com/KirillU002/Avalonia-UI-Visual-Designer/releases/tag/v0.1.0-beta.1). Версия расширения — **0.1.18**. При сборке из исходников Debug-пакет находится в:
 
 ```text
 AvaloniaDesigner.VSIX/bin/Debug/net472/AvaloniaDesigner.VSIX.vsix
@@ -200,7 +213,7 @@ AvaloniaDesigner.VSIX/bin/Debug/net472/AvaloniaDesigner.VSIX.vsix
 2. Перезапустите Visual Studio, откройте `.axaml` и выберите **Tools → Open in Avalonia UI Visual Designer** (Tools / «Средства»).
 3. Измените поддерживаемые properties в отдельном VsHost, нажмите **«Применить изменения»**, проверьте VS buffer и сохраните документ через `Ctrl+S`.
 
-VsHost и его runtime dependencies входят в `VsHost/` внутри VSIX; на машине запуска нужен .NET 8 runtime. Для первой проверки есть [SimpleAvaloniaApp](Samples/VisualStudioPoC/README.md). Интеграция развивается, поэтому после обновления пакета рекомендуется повторить этот ручной сценарий; автоматические IPC/packaging tests не заменяют проверку загрузки в живом Visual Studio.
+Поставляемый VSIX содержит self-contained Windows x64 VsHost в `VsHost/`; runtime входит в пакет, Eremex не включён. Обычный developer Debug VSIX остаётся framework-dependent и требует .NET 8 runtime. Для первой проверки есть [SimpleAvaloniaApp](Samples/VisualStudioPoC/README.md). Интеграция развивается, поэтому после обновления пакета рекомендуется повторить этот ручной сценарий; автоматические IPC/packaging tests не заменяют проверку загрузки в живом Visual Studio.
 
 ### Smoke tests
 
@@ -222,6 +235,7 @@ Runner содержит AXAML/layout/source-preservation, startup/input, Designe
 
 ## Документация
 
+- [Beta 0.1 Release Notes](Docs/Releases/Beta-0.1.md), [RC validation](Docs/Beta01ReleaseCandidate.md) и [Beta Readiness Audit](Docs/BetaReadinessAudit.md).
 - [P0 DataGrid Preview regression: root cause, live SQL Server и результаты проверок](Docs/DataGridPreviewRegression.md).
 - [DropDownButton, SplitButton и ListBox: Toolbox, Preview, Export и проверки](Docs/StandardToolboxControls.md).
 - [DeveloperArchitecture](Docs/DeveloperArchitecture.md) - техническая документация для разработчиков.
@@ -240,11 +254,12 @@ Runner содержит AXAML/layout/source-preservation, startup/input, Designe
 - AXAML Import не воспроизводит весь Avalonia API. DataGrid и custom/Eremex controls пока не входят в поддержанный import subset. Items/Selector controls поддерживают статические коллекции, не runtime Binding Engine или пользовательские templates/ItemsPanel.
 - Bindings, Styles, Resources и Templates сохраняются, но не вычисляются и не редактируются специальными визуальными редакторами. Arbitrary assemblies/plugins открытого VS solution не загружаются.
 - Изменение hierarchy, insertion и destructive operations ограничиваются безопасными source-mapped сценариями. Partial import не гарантирует runtime-equivalent внешний вид.
-- Известные отклонения полного smoke-прогона и границы релизной проверки перечислены в [Alpha 4.0 Release Notes](Docs/Alpha4ReleaseNotes.md).
+- Известны intermittent native UI Automation retention обычных окон и задержки больших форм (300–500 controls). Preview-specific memory regression проверяется отдельно. Полные результаты, включая красные/flaky прогоны: [Beta Readiness Audit](Docs/BetaReadinessAudit.md) и [Beta 0.1 RC](Docs/Beta01ReleaseCandidate.md).
+- Physical Drag & Drop/DPI/мультимониторный UX, установленный VSIX в живом Visual Studio и live PostgreSQL требуют отдельной acceptance. Не заявляется полная поддержка произвольного AXAML Preview.
 - Следующее расширение import coverage выбирается по blocker impact реальных документов; после Phase 5 в текущем MainWindow остаются три custom controls. Дальнейшие направления: безопасная custom-control metadata, расширение patches и hardening Visual Studio lifecycle.
 
 ## Примечания
 
 Архитектура, ключевые классы, flows, diagnostics и правила разработки описаны в [DeveloperArchitecture](Docs/DeveloperArchitecture.md).
 
-JSON project → Export и existing AXAML → minimal patch - разные workflows. Экспортируемые проекты сохраняют текущий default `net6.0` / Avalonia `11.1.1`; переход самого Designer на .NET 8 не меняет уже созданные пользовательские проекты. Проект может содержать Alpha-баги; перед редактированием важных AXAML используйте version control.
+JSON project → Export и existing AXAML → minimal patch - разные workflows. Экспортируемые проекты сохраняют текущий default `net6.0` / Avalonia `11.1.1`; переход самого Designer на .NET 8 не меняет уже созданные пользовательские проекты. Beta может содержать ошибки; перед редактированием важных AXAML используйте version control.

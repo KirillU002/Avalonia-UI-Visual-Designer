@@ -11925,7 +11925,9 @@ public partial class MainWindowViewModel : ObservableObject
         if (roots.Count == 0)
             return;
 
-        BeginUndoBatch();
+        // Deletion is structural: do not merge it with editing before a form
+        // switch (restoring a session also refreshes the grouping timestamp).
+        BeginGridEditorUndoBatch();
         try
         {
             var toRemove = roots.SelectMany(GetControlAndDescendants).DistinctBy(control => control.Id).ToList();
@@ -11942,7 +11944,7 @@ public partial class MainWindowViewModel : ObservableObject
         }
         finally
         {
-            CommitUndoBatch();
+            CommitGridEditorUndoBatch();
         }
     }
 

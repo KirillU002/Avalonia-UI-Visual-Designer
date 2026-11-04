@@ -142,6 +142,8 @@ public partial class MainWindow : Window
     private bool _isApplyingAppSettings;
     private bool _isCloseConfirmed;
     private bool _suppressRecoverySessionChangeHandling;
+    // Until recovery is inspected, a draft can belong to another document.
+    private bool _hasUnresolvedRecoveryDraft = true;
     private string _lastObservedDocumentSessionId = string.Empty;
     private int _responsiveShellBreakpoint = -1;
     private readonly IDesignerHostServices _hostServices;
@@ -431,7 +433,7 @@ public partial class MainWindow : Window
 
             _isCloseConfirmed = true;
             await SaveAppSettingsNowAsync();
-            _autosaveRecoveryService.TryDeleteDraft();
+            TryDeleteCurrentRecoveryDraft();
             Close();
             return;
         }
@@ -524,8 +526,8 @@ public partial class MainWindow : Window
 
         if (!viewModel.HasUnsavedWorkspaceChanges)
         {
-            _autosaveRecoveryService.TryDeleteDraft();
-            viewModel.AutosaveStatusText = "Черновик очищен для новой сессии.";
+            if (TryDeleteCurrentRecoveryDraft())
+                viewModel.AutosaveStatusText = "Черновик очищен для новой сессии.";
         }
     }
 
@@ -1311,7 +1313,7 @@ public partial class MainWindow : Window
     private void UpdateWindowTitle()
     {
         if (DataContext is MainWindowViewModel viewModel)
-            Title = $"{viewModel.CurrentDocumentDisplayName} - Конструктор форм Avalonia";
+            Title = $"{viewModel.CurrentDocumentDisplayName} - Конструктор форм Avalonia · Beta 0.1";
     }
 
     private void ApplyAppSettingsToViewModel(MainWindowViewModel viewModel)
@@ -1495,6 +1497,12 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (_hasUnresolvedRecoveryDraft)
+        {
+            VM.AutosaveStatusText = "Автосохранение приостановлено: сначала восстановите или удалите найденный черновик через меню восстановления.";
+            return;
+        }
+
         _isAutosaveRunning = true;
 
         try
@@ -1542,13 +1550,18 @@ public partial class MainWindow : Window
 
     private async Task<bool> CheckRecoveryOnStartupAsync()
     {
+        _hasUnresolvedRecoveryDraft = File.Exists(_autosaveRecoveryService.RecoveryFilePath);
         var draft = await _autosaveRecoveryService.TryLoadDraftAsync();
         if (draft is null)
+        {
+            if (_hasUnresolvedRecoveryDraft)
+                VM.AutosaveStatusText = "Не удалось прочитать recovery-файл. Он сохранён; повторите восстановление после устранения ошибки.";
             return false;
+        }
 
         if (!draft.HasUnsavedChanges)
         {
-            _autosaveRecoveryService.TryDeleteDraft();
+            _hasUnresolvedRecoveryDraft = !_autosaveRecoveryService.TryDeleteDraft();
             return false;
         }
 
@@ -1574,23 +1587,27 @@ public partial class MainWindow : Window
 
                 if (!string.IsNullOrWhiteSpace(draft.DocumentPath))
                     VM.AddOrUpdateRecentFile(draft.DocumentPath);
+                _hasUnresolvedRecoveryDraft = false;
                 VM.StatusText = "Восстановлен автосохранённый черновик.";
                 VM.AutosaveStatusText = $"Восстановлен черновик от {draft.LastAutosaveUtc.ToLocalTime():dd.MM.yyyy HH:mm:ss}";
                 await SaveAppSettingsNowAsync();
                 return true;
 
             case RecoveryDialogResult.DeleteDraft:
-                _autosaveRecoveryService.TryDeleteDraft();
-                VM.AutosaveStatusText = "Recovery-файл удалён.";
+                _hasUnresolvedRecoveryDraft = !_autosaveRecoveryService.TryDeleteDraft();
+                VM.AutosaveStatusText = _hasUnresolvedRecoveryDraft ? "Не удалось удалить recovery-файл. Он сохранён." : "Recovery-файл удалён.";
                 return false;
 
             case RecoveryDialogResult.OpenNormally:
             case RecoveryDialogResult.None:
             default:
-                VM.AutosaveStatusText = $"Найден черновик от {draft.LastAutosaveUtc.ToLocalTime():dd.MM.yyyy HH:mm:ss}. Восстановление отложено.";
+                VM.AutosaveStatusText = $"Найден черновик от {draft.LastAutosaveUtc.ToLocalTime():dd.MM.yyyy HH:mm:ss}. Восстановление отложено; автосохранение новой работы приостановлено.";
                 return false;
         }
     }
+
+    private bool TryDeleteCurrentRecoveryDraft() =>
+        !_hasUnresolvedRecoveryDraft && _autosaveRecoveryService.TryDeleteDraft();
 
     private async Task LoadStandaloneDocumentAsync(string path)
     {
@@ -10225,8 +10242,8 @@ public partial class MainWindow : Window
             var localPath = file.LocalPath ?? file.Name;
             VM.LoadDocumentJson(json, localPath);
             VM.AddOrUpdateRecentFile(localPath);
-            _autosaveRecoveryService.TryDeleteDraft();
-            VM.AutosaveStatusText = "Черновик очищен после открытия документа.";
+            if (TryDeleteCurrentRecoveryDraft())
+                VM.AutosaveStatusText = "Черновик очищен после открытия документа.";
             VM.StatusText = $"Открыт документ: {file.Name}";
             VM.LogWorkspace(WorkspaceLogLevel.Success, MainWindowViewModel.OutputCategoryGeneral, "File opened.", localPath);
             VM.ShowWorkspaceToast(WorkspaceToastLevel.Success, "File opened", file.Name);
@@ -10263,8 +10280,8 @@ public partial class MainWindow : Window
             var result = new AxamlImportService().Import(source.Text, localPath);
             result.RoundTripDocument.SetTextEncoding(source.Encoding);
             VM.LoadAxamlImportedDocument(result, localPath);
-            _autosaveRecoveryService.TryDeleteDraft();
-            VM.AutosaveStatusText = "Черновик очищен после открытия AXAML.";
+            if (TryDeleteCurrentRecoveryDraft())
+                VM.AutosaveStatusText = "Черновик очищен после открытия AXAML.";
             VM.ShowWorkspaceToast(WorkspaceToastLevel.Info, "AXAML Import — Experimental", file.Name);
             VM.LogWorkspace(WorkspaceLogLevel.Info, MainWindowViewModel.OutputCategoryDiagnostics, "HOST_FILE_PICKER_RESULT", "operation=OpenAxamlDocument; selected=true");
         }
@@ -10303,8 +10320,8 @@ public partial class MainWindow : Window
         {
             await LoadStandaloneDocumentAsync(recentFile.FilePath);
             VM.AddOrUpdateRecentFile(recentFile.FilePath);
-            _autosaveRecoveryService.TryDeleteDraft();
-            VM.AutosaveStatusText = "Черновик очищен после открытия документа.";
+            if (TryDeleteCurrentRecoveryDraft())
+                VM.AutosaveStatusText = "Черновик очищен после открытия документа.";
             VM.StatusText = $"Открыт документ: {System.IO.Path.GetFileName(recentFile.FilePath)}";
             VM.LogWorkspace(WorkspaceLogLevel.Success, MainWindowViewModel.OutputCategoryGeneral, "Recent file opened.", recentFile.FilePath);
             VM.ShowWorkspaceToast(WorkspaceToastLevel.Success, "Recent opened", recentFile.Title);
@@ -10383,8 +10400,8 @@ public partial class MainWindow : Window
             if (!await EnsureUnsavedChangesHandledAsync())
                 return;
             VM.NewDocumentCommand.Execute(null);
-            _autosaveRecoveryService.TryDeleteDraft();
-            VM.AutosaveStatusText = "Черновик очищен для нового документа.";
+            if (TryDeleteCurrentRecoveryDraft())
+                VM.AutosaveStatusText = "Черновик очищен для нового документа.";
             await SaveAppSettingsNowAsync();
         }
         catch (Exception ex)
@@ -10606,7 +10623,7 @@ public partial class MainWindow : Window
             if (IsSaveDocumentCurrent(scope))
             {
                 VM.MarkAxamlRoundTripSaved(path, patch.PatchedText, snapshot);
-                if (CanClearSavedDraft()) _autosaveRecoveryService.TryDeleteDraft();
+                if (CanClearSavedDraft()) TryDeleteCurrentRecoveryDraft();
                 VM.AutosaveStatusText = backup is null ? "Записана выбранная ревизия AXAML." : $"AXAML сохранён. Backup: {backup.DisplayName}";
             }
             VM.LogWorkspace(WorkspaceLogLevel.Success, MainWindowViewModel.OutputCategoryDiagnostics, "AXAML_PATCH_APPLIED", $"path={path}; edits={patch.Edits.Count}");
@@ -10683,7 +10700,7 @@ public partial class MainWindow : Window
             {
                 VM.MarkWorkspaceSaved(path, json);
                 VM.AddOrUpdateRecentFile(path);
-                if (CanClearSavedDraft()) _autosaveRecoveryService.TryDeleteDraft();
+                if (CanClearSavedDraft()) TryDeleteCurrentRecoveryDraft();
                 VM.AutosaveStatusText = backup is null ? "Записана выбранная ревизия проекта." : $"Проект сохранён. Backup: {backup.DisplayName}";
             }
             VM.LogWorkspace(WorkspaceLogLevel.Success, MainWindowViewModel.OutputCategoryGeneral, "File saved.", path);
@@ -10724,7 +10741,7 @@ public partial class MainWindow : Window
             if (IsSaveWorkspaceCurrent(scope))
             {
                 VM.MarkWorkspaceSaved(file.Name, json);
-                if (CanClearSavedDraft()) _autosaveRecoveryService.TryDeleteDraft();
+                if (CanClearSavedDraft()) TryDeleteCurrentRecoveryDraft();
                 VM.AutosaveStatusText = "Записана выбранная ревизия проекта.";
             }
             VM.LogWorkspace(WorkspaceLogLevel.Success, MainWindowViewModel.OutputCategoryGeneral, "File saved.", file.Name);

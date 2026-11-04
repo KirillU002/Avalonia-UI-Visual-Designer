@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011" xmlns:d="http://schemas.microsoft.com/developer/vsx-schema-design/2011">
   <Metadata>
-    <Identity Id="AvaloniaDesigner.VSIX" Version="0.1.17" Language="ru-RU" Publisher="Avalonia UI Visual Designer" />
-    <DisplayName>Avalonia UI Visual Designer (PoC)</DisplayName>
-    <Description xml:space="preserve">External Avalonia Designer host bridge for AXAML documents.</Description>
+    <Identity Id="AvaloniaDesigner.VSIX" Version="0.1.18" Language="ru-RU" Publisher="Avalonia UI Visual Designer" />
+    <DisplayName>Avalonia UI Visual Designer — Beta 0.1</DisplayName>
+    <Description xml:space="preserve">Beta 0.1 pre-release. External Avalonia Designer host bridge for AXAML documents; experimental Visual Studio integration.</Description>
   </Metadata>
   <Installation InstalledByMsi="false">
     <InstallationTarget Id="Microsoft.VisualStudio.Community" Version="[17.0,18.0)">

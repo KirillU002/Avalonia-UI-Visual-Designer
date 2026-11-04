@@ -46,6 +46,10 @@ internal static partial class Program
         // Initialize the real UI dispatcher before any view model can create the
         // fallback dispatcher; IPC continuations must run on the actual UI thread.
         EnsureAvaloniaRuntimeInitialized();
+        if (args.Contains("--rc-package-checks")) return RunReleaseCandidatePackageChecks();
+        if (args.Contains("--beta-readiness-checks")) return RunBetaReadinessChecks();
+        if (args.Contains("--beta-workflow")) return RunBetaWorkflow();
+        if (args.Contains("--beta-performance")) return RunBetaPerformance();
         if (args.Contains("--grid-first-checks")) return RunGridFirstChecks();
         if (args.Contains("--grid-first-benchmark")) return RunGridFirstBenchmark(args.Contains("--before") ? "before" : "after");
         if (args.Contains("--grid-first-export")) return RunGridFirstExport();

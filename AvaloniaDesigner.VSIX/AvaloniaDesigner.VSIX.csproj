@@ -1,12 +1,17 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net472</TargetFramework>
+    <Version>0.1.18</Version>
+    <AssemblyVersion>0.1.18.0</AssemblyVersion>
+    <FileVersion>0.1.18.0</FileVersion>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
     <GeneratePkgDefFile>true</GeneratePkgDefFile>
     <UseCodebase>true</UseCodebase>
     <IncludeAssemblyInVSIXContainer>true</IncludeAssemblyInVSIXContainer>
     <IncludeDebugSymbolsInVSIXContainer>true</IncludeDebugSymbolsInVSIXContainer>
+    <IncludeDebugSymbolsInVSIXContainer Condition="'$(Configuration)' == 'Release'">false</IncludeDebugSymbolsInVSIXContainer>
+    <VsHostPackageDirectory Condition="'$(VsHostPackageDirectory)' == ''">$(MSBuildProjectDirectory)\..\AvaloniaDesigner.VsHost\bin\$(Configuration)\net8.0</VsHostPackageDirectory>
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
     <UseWPF>true</UseWPF>
     <DeployExtension>false</DeployExtension>
@@ -35,11 +40,19 @@
     </Content>
     <!-- The bridge packages the external process as content. The VSIX assembly itself has no
          Avalonia/Eremex/FormDesigner assembly reference, so devenv.exe never loads them. -->
-    <Content Include="..\AvaloniaDesigner.VsHost\bin\$(Configuration)\net8.0\**\*">
-      <Link>VsHost\%(RecursiveDir)%(Filename)%(Extension)</Link>
-      <IncludeInVSIX>true</IncludeInVSIX>
-    </Content>
   </ItemGroup>
+
+  <!-- Add net8 payload only after bridge references have been resolved. Evaluated
+       Content DLLs otherwise become CandidateAssemblyFiles for the net472 compiler. -->
+  <Target Name="CollectExternalVsHostRuntime" BeforeTargets="GetVsixSourceItems" DependsOnTargets="BuildExternalVsHost">
+    <Error Condition="!Exists('$(VsHostPackageDirectory)\AvaloniaDesigner.VsHost.exe')" Text="VsHost runtime was not prepared: $(VsHostPackageDirectory)" />
+    <ItemGroup>
+      <_VsHostPayload Include="$(VsHostPackageDirectory)\**\*" Exclude="$(VsHostPackageDirectory)\**\*.pdb;$(VsHostPackageDirectory)\**\*.log;$(VsHostPackageDirectory)\**\*.tmp" />
+      <VSIXSourceItem Include="@(_VsHostPayload)">
+        <VSIXSubPath>VsHost\%(_VsHostPayload.RecursiveDir)</VSIXSubPath>
+      </VSIXSourceItem>
+    </ItemGroup>
+  </Target>
 
   <!-- A net472 VSSDK bridge cannot have a ProjectReference to a modern .NET executable, even when
        ReferenceOutputAssembly is false. Build the external process as package content instead. -->

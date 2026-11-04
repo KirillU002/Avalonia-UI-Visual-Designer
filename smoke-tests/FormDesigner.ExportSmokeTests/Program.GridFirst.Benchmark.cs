@@ -15,7 +15,8 @@ namespace FormDesigner.ExportSmokeTests;
 
 internal static partial class Program
 {
-    private static string GridFirstFolder => Path.Combine(FindRepositoryRoot(), "artifacts", "layout-phase7b");
+    private static string GridFirstFolder => Environment.GetEnvironmentVariable("FORMDESIGNER_GRID_FIRST_ARTIFACTS")
+        ?? Path.Combine(FindRepositoryRoot(), "artifacts", "layout-phase7b");
     private static MainWindowViewModel GridFirstVm()
     {
         var registry=new DesignerRegistry();BuiltInControlRegistrar.Register(registry);

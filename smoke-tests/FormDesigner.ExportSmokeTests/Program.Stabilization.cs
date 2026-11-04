@@ -208,6 +208,7 @@ internal static partial class Program
             var references = Enumerable.Range(0, 6).Select(_ => AuditClosedPlainWindow()).ToArray();
             NativeItemsUiWait(1000); ForceFullGc();
             Console.WriteLine("OBSERVED plainWindowClosed=6; alive=" + references.Count(r => r.IsAlive));
+            BetaHoldNegativeControlForDump(references);
             RequireCapability(references.All(r => !r.IsAlive), "Plain Avalonia windows are retained in the same test environment.");
         });
         foreach (var axaml in new[] { false, true })

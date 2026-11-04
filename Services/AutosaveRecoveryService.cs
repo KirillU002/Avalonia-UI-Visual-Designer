@@ -36,8 +36,12 @@ public sealed class AutosaveRecoveryService
         var tempPath = RecoveryFilePath + ".tmp";
         var json = JsonSerializer.Serialize(draft, JsonOptions);
         await File.WriteAllTextAsync(tempPath, json).ConfigureAwait(false);
-        File.Copy(tempPath, RecoveryFilePath, overwrite: true);
-        File.Delete(tempPath);
+        // Publish only a complete draft. Copying over the target exposes a
+        // partially written file and mutates bytes held by existing readers.
+        if (File.Exists(RecoveryFilePath))
+            File.Replace(tempPath, RecoveryFilePath, destinationBackupFileName: null);
+        else
+            File.Move(tempPath, RecoveryFilePath);
     }
 
     public async Task<RecoveryDraftFileModel?> TryLoadDraftAsync()
@@ -55,7 +59,9 @@ public sealed class AutosaveRecoveryService
         }
         catch
         {
-            TryDeleteDraft();
+            // Inspection must not destroy the last recovery copy. A sharing/IO
+            // failure can be transient; damaged JSON may still be recoverable.
+            // Deletion belongs to an explicit lifecycle decision by the caller.
             return null;
         }
     }

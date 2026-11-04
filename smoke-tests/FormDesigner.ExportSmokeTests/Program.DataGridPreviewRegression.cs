@@ -19,7 +19,7 @@ internal static partial class Program
 {
     private static int RunDataGridPreviewChecks()
     {
-        Directory.CreateDirectory(Path.Combine(FindRepositoryRoot(), "artifacts", "datagrid-preview-p0"));
+        Directory.CreateDirectory(DataGridRegressionFolder);
         var failures = 0;
         var total = 0;
         void Check(string name, Action test)
@@ -112,8 +112,8 @@ internal static partial class Program
                     var content = (Avalonia.Controls.Control)preview.Window.Content!;
                     using var bitmap = new RenderTargetBitmap(new PixelSize((int)content.Bounds.Width, (int)content.Bounds.Height));
                     bitmap.Render(content);
-                    bitmap.Save(Path.Combine(FindRepositoryRoot(), "artifacts", "datagrid-preview-p0", axaml ? "axaml-real-sql.png" : "legacy-real-sql.png"));
-                    File.WriteAllText(Path.Combine(FindRepositoryRoot(), "artifacts", "datagrid-preview-p0", axaml ? "axaml-diagnostics.json" : "legacy-diagnostics.json"), JsonSerializer.Serialize(preview.Window.DataGridDiagnostics, new JsonSerializerOptions { WriteIndented = true }));
+                    bitmap.Save(Path.Combine(DataGridRegressionFolder, axaml ? "axaml-real-sql.png" : "legacy-real-sql.png"));
+                    File.WriteAllText(Path.Combine(DataGridRegressionFolder, axaml ? "axaml-diagnostics.json" : "legacy-diagnostics.json"), JsonSerializer.Serialize(preview.Window.DataGridDiagnostics, new JsonSerializerOptions { WriteIndented = true }));
                     RequireDataGridDiagnostic(preview.Window, "DATAGRID_ITEMSSOURCE_ASSIGNED", 3);
                     RequireDataGridDiagnostic(preview.Window, "DATAGRID_PREVIEW_RENDERED", 3);
                 }

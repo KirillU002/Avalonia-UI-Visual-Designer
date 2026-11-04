@@ -21,6 +21,8 @@ mono_crash.*
 [Dd]ebugPublic/
 [Rr]elease/
 [Rr]eleases/
+!Docs/Releases/
+!Docs/Releases/Beta-0.1.md
 x64/
 x86/
 [Ww][Ii][Nn]32/

@@ -16,7 +16,8 @@ namespace FormDesigner.ExportSmokeTests;
 
 internal static partial class Program
 {
-    private static string Preview2Folder => Path.Combine(FindRepositoryRoot(), "artifacts", "preview-phase2");
+    private static string Preview2Folder => Environment.GetEnvironmentVariable("FORMDESIGNER_PREVIEW2_ARTIFACTS")
+        ?? Path.Combine(FindRepositoryRoot(), "artifacts", "preview-phase2");
     private static int RunPreviewPhase2MissingTheme(bool missingCore = false)
     {
         try

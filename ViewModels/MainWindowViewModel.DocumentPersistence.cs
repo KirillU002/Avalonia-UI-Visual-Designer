@@ -32,6 +32,12 @@ public partial class MainWindowViewModel
             || document.Controls.Any(c => c is null || c.CustomProperties is null || c.CustomProperties.Any(p => p is null))
             || document.BindingSources.Any(s => s is null || s.Fields is null || s.Fields.Any(f => f is null)) || document.Interactions.Any(i => i is null))
             throw new InvalidOperationException("Некорректная структура формы. Текущий проект не изменён.");
+        // Legacy Canvas also uses ControlId-indexed maps during ApplyDocument.
+        // Reject duplicates before disposing the working session. Missing legacy
+        // IDs remain supported: FromFileModel assigns a fresh ID on load.
+        if (document.Controls.Where(c => !string.IsNullOrWhiteSpace(c.Id))
+            .GroupBy(c => c.Id, StringComparer.OrdinalIgnoreCase).Any(g => g.Count() > 1))
+            throw new InvalidOperationException("Повторяющиеся идентификаторы компонентов. Текущий проект не изменён.");
         ValidateNativeDocument(document);
     }
 

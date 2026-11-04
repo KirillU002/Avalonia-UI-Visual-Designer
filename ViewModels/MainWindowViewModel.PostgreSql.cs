@@ -21,10 +21,16 @@ public partial class MainWindowViewModel
     public bool IsPostgreSqlSourceSelected => DataSourceIdentity.IsPostgreSql(SelectedBindingSource?.SourceKind);
     public bool IsSqlServerSourceSelected => !IsPostgreSqlSourceSelected;
     public string SelectedDatabaseProviderLabel => IsPostgreSqlSourceSelected ? "PostgreSQL" : "SQL Server";
+    // ComboBox must keep its ItemsSource identity during Inspector refresh.
+    // A fresh Where iterator resets selection and writes a transient null through
+    // the TwoWay PreviewRowMode binding, creating a false edit during Undo.
+    private System.Collections.Generic.IReadOnlyList<string>? _postgreSqlPreviewRowModes;
+    private System.Collections.Generic.IReadOnlyList<string> PostgreSqlPreviewRowModes =>
+        _postgreSqlPreviewRowModes ??= AvailablePreviewRowModes.Where(mode => mode != BindingSourceModel.PreviewRowModeSampleRows).ToArray();
     public System.Collections.Generic.IEnumerable<string> AvailableSelectedSourcePreviewRowModes =>
-        AvailablePreviewRowModes.Where(mode => !IsPostgreSqlSourceSelected || mode != BindingSourceModel.PreviewRowModeSampleRows);
+        IsPostgreSqlSourceSelected ? PostgreSqlPreviewRowModes : AvailablePreviewRowModes;
     public System.Collections.Generic.IEnumerable<string> AvailableControlPreviewRowModes =>
-        AvailablePreviewRowModes.Where(mode => !DataSourceIdentity.IsPostgreSql(SelectedBindingSourceForControl?.SourceKind) || mode != BindingSourceModel.PreviewRowModeSampleRows);
+        DataSourceIdentity.IsPostgreSql(SelectedBindingSourceForControl?.SourceKind) ? PostgreSqlPreviewRowModes : AvailablePreviewRowModes;
 
     public PostgreSqlSettingsModel CapturePostgreSqlSettings() => _postgreSqlSettings.Clone();
     public void ApplyPostgreSqlSettings(PostgreSqlSettingsModel? settings)

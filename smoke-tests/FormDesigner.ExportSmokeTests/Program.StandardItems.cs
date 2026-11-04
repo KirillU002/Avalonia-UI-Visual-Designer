@@ -97,15 +97,16 @@ internal static partial class Program
         try
         {
             window.Position = new PixelPoint(-3000, -3000); window.ShowInTaskbar = false; window.ShowActivated = false; window.Show();
-            NativeItemsUiWait(300);
-            Pump((Task)typeof(PreviewWindow).GetMethod("PreloadBindingPreviewRowsAsync", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, null)!);
+            // Test the actual Opened pipeline. A second private RenderDocument/load
+            // races the real async startup and can reset Logic after the click.
+            DropPumpUntil(() => !window.FindControl<Border>("LoadingOverlay")!.IsVisible
+                && (int)typeof(PreviewWindow).GetField("_previewActivities", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)! == 0,
+                "standard controls Preview initialization");
             if (axaml)
             {
-                Pump((Task)typeof(PreviewWindow).GetMethod("LoadExportedAxamlPreviewAsync", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, new object[] { snapshot })!);
                 var status = window.FindControl<TextBlock>("PreviewRuntimeStatusText")!.Text;
                 if (status != "AXAML Preview ready") throw new Exception("Expected native AXAML preview, got " + status);
             }
-            else typeof(PreviewWindow).GetMethod("RenderDocument", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(window, null);
             NativeItemsUiWait(80);
             var list = window.GetLogicalDescendants().OfType<ListBox>().Single();
             var rows = (list.ItemsSource ?? list.Items).Cast<object>().ToArray();

@@ -7,7 +7,7 @@ internal static partial class Program
 {
     private static int RunDataGridPreviewLiveExport()
     {
-        Directory.CreateDirectory(Path.Combine(FindRepositoryRoot(), "artifacts", "datagrid-preview-p0"));
+        Directory.CreateDirectory(DataGridRegressionFolder);
         var connection = Environment.GetEnvironmentVariable("FORMDESIGNER_TEST_SQLSERVER");
         if (string.IsNullOrEmpty(connection)) { Console.WriteLine("SKIP SQL Server generated runtime: no test connection configured."); return 0; }
         try
@@ -48,7 +48,7 @@ internal static partial class Program
             if (restore.ExitCode != 0) throw new Exception("Generated restore failed: " + restore.Output);
             DotnetBuild(project.Path);
             var name = Path.GetFileNameWithoutExtension(Directory.GetFiles(project.Path, "*.csproj").Single());
-            var resultPath = Path.Combine(FindRepositoryRoot(), "artifacts", "datagrid-preview-p0", "generated-runtime.txt");
+            var resultPath = Path.Combine(DataGridRegressionFolder, "generated-runtime.txt");
             File.WriteAllText(resultPath, "START");
             var start = new ProcessStartInfo("dotnet") { WorkingDirectory = project.Path, UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
             start.ArgumentList.Add(Path.Combine(project.Path, "bin", "Debug", "net6.0", name + ".dll"));
