@@ -37,6 +37,9 @@ public partial class StructureTreeItemModel : ObservableObject
     }
 
     public DesignControlModel? Control => _control;
+    public string CollectionOwnerId { get; init; } = "";
+    public string CollectionProperty { get; init; } = "";
+    public string CollectionItemId { get; init; } = "";
     public ObservableCollection<StructureTreeItemModel> Children { get; } = new();
 
     [ObservableProperty]
@@ -81,7 +84,7 @@ public partial class StructureTreeItemModel : ObservableObject
     [ObservableProperty]
     private int diagnosticWarningCount;
 
-    public bool IsRoot => _control is null;
+    public bool IsRoot => _control is null && string.IsNullOrEmpty(CollectionItemId);
     public bool CanRename => _control is not null;
     public bool CanActOnControl => _control is not null;
     public bool HasChildren => Children.Count > 0;

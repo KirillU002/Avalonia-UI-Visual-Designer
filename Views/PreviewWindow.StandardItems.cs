@@ -99,6 +99,17 @@ public partial class PreviewWindow
             if (actual is SplitButton split) split.Click += (_, _) => ExecuteStandardClick(model, model.Text, Refresh);
             else if (actual is DropDownButton drop) drop.Click += (_, _) => ExecuteStandardClick(model, model.Text, Refresh);
             var flyout = actual is SplitButton s ? s.Flyout : (actual as DropDownButton)?.Flyout;
+            if (flyout is MenuFlyout typedMenu)
+            {
+                var nativeItems = typedMenu.Items.OfType<Control>().SelectMany(c => c.GetLogicalDescendants().OfType<MenuItem>().Prepend(c).OfType<MenuItem>()).ToArray();
+                foreach (var item in CollectionItemsContract.Flatten(StandardItemsProperties.Menu(model)).Where(i => i.Kind != "Separator"))
+                {
+                    var virtualModel = StandardItemsProperties.MenuSource(CreateRuntimeControlModel(model), item);
+                    var target = nativeItems.FirstOrDefault(c => c.Name == Name(virtualModel.Id, virtualModel.Name));
+                    if (target is not null) target.Click += (_, _) => { if (item.Children.Count == 0) { typedMenu.Hide(); ExecuteStandardClick(StandardItemsControlFactory.Snapshot(virtualModel), item.Text, Refresh); } };
+                }
+                continue;
+            }
             if (flyout is not Flyout { Content: StackPanel stack }) continue;
             foreach (var item in StandardItemsProperties.Menu(model))
             {

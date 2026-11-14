@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Globalization;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace FormDesigner.Models;
 
@@ -12,7 +13,13 @@ public sealed partial class StandardMenuItem : ObservableObject
     [ObservableProperty] private string id = Guid.NewGuid().ToString("N");
     [ObservableProperty] private string text = "Пункт меню";
     [ObservableProperty] private bool isEnabled = true;
-    public StandardMenuItem Clone() => new() { Id = Id, Text = Text, IsEnabled = IsEnabled };
+    [ObservableProperty] private string kind = "MenuItem";
+    [ObservableProperty] private string name = "";
+    [ObservableProperty] private string content = "";
+    [ObservableProperty] private bool isExpanded;
+    public List<StandardMenuItem> Children { get; set; } = new();
+    [JsonExtensionData] public Dictionary<string, JsonElement>? ExtensionData { get; set; }
+    public StandardMenuItem Clone() => CollectionItemsContract.Clone(this);
 }
 
 // Uses the existing JSON property bag and its history/clone/document serialization.
@@ -46,12 +53,12 @@ public static class StandardItemsProperties
         if (existing is null) model.CustomProperties.Add(new() { Key = key, ValueJson = json });
         else existing.ValueJson = json;
     }
-    public static List<StandardMenuItem> Menu(DesignControlModel model) => Read(model, MenuKey, new List<StandardMenuItem>());
-    public static List<StandardMenuItem> Menu(DesignerControlFileModel model) => Read(model, MenuKey, new List<StandardMenuItem>());
+    public static List<StandardMenuItem> Menu(DesignControlModel model) => CollectionItemsContract.Read(model, MenuKey)?.Items ?? Read(model, MenuKey, new List<StandardMenuItem>());
+    public static List<StandardMenuItem> Menu(DesignerControlFileModel model) => CollectionItemsContract.Read(model, MenuKey)?.Items ?? Read(model, MenuKey, new List<StandardMenuItem>());
     public static DesignControlModel MenuSource(DesignControlModel owner, StandardMenuItem item) => new()
     {
         Id = owner.Id + ":" + item.Id, ParentId = owner.Id, Type = DesignerControlTypes.Button,
-        Name = MenuName(owner.Id, item.Id), Text = item.Text, GeneratedButtonActionKey = "None"
+        Name = string.IsNullOrEmpty(item.Name) ? MenuName(owner.Id, item.Id) : item.Name, Text = item.Text, GeneratedButtonActionKey = "None"
     };
     public static string MenuName(string ownerId, string itemId) => "MenuItem_" + Safe(ownerId) + "_" + Safe(itemId);
     private static string Safe(string value) => new(value.Select(c => char.IsLetterOrDigit(c) || c == '_' ? c : '_').ToArray());
@@ -61,7 +68,7 @@ public static class StandardItemsProperties
         {
             yield return control;
             if (IsMenuButton(control.Type))
-                foreach (var item in Menu(control)) yield return MenuSource(control, item);
+                foreach (var item in CollectionItemsContract.Flatten(Menu(control)).Where(i => i.Kind != "Separator")) yield return MenuSource(control, item);
         }
     }
 }

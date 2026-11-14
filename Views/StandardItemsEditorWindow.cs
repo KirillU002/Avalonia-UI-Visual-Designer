@@ -11,7 +11,7 @@ using System.Linq;
 
 namespace FormDesigner.Views;
 
-public sealed class StandardItemsEditorWindow : Window
+public sealed partial class StandardItemsEditorWindow : Window
 {
     public ObservableCollection<StandardMenuItem> Items { get; }
     private readonly ListBox _list;

@@ -32,7 +32,8 @@ public static class StandardItemsControlFactory
     {
         T Value<T>(string key, T fallback) => StandardItemsProperties.Read(model, key, fallback);
         Control result;
-        if (model.Type == DesignerControlTypes.ListBox)
+        if (CollectionControlFactory.IsRoot(model.Type)) result = CollectionControlFactory.Create(model);
+        else if (model.Type == DesignerControlTypes.ListBox)
         {
             Enum.TryParse<SelectionMode>(Value("SelectionMode", "Single"), out var mode);
             var list = CreateListBox(mode);
@@ -42,6 +43,8 @@ public static class StandardItemsControlFactory
                 var display = Value("ItemTemplate.DisplayField", "");
                 list.ItemTemplate = new FuncDataTemplate<object>((row, _) => new TextBlock { Text = Display(row, display) });
             }
+            else if (CollectionItemsContract.Read(model, "Items") is { } collection)
+                foreach (var item in collection.Items) list.Items.Add(CollectionControlFactory.CreateItem(model.Id, item));
             else list.ItemsSource = Value("Items", Array.Empty<string>());
             list.SelectedIndex = Value("SelectedIndex", -1);
             var selected = Value("SelectedItem", "");
@@ -52,6 +55,14 @@ public static class StandardItemsControlFactory
         }
         else
         {
+            if (CollectionItemsContract.Read(model, StandardItemsProperties.MenuKey) is { } collection)
+            {
+                var menu = new MenuFlyout(); foreach (var item in collection.Items) menu.Items.Add(CollectionControlFactory.CreateItem(model.Id, item, menuClick));
+                if (model.Type == DesignerControlTypes.SplitButton) { var split = new SplitButton { Content = model.Text, Flyout = menu }; split.Click += (_, _) => primaryClick?.Invoke(); result = split; }
+                else { var drop = new DropDownButton { Content = model.Text, Flyout = menu }; drop.Click += (_, _) => primaryClick?.Invoke(); result = drop; }
+            }
+            else
+            {
             var stack = new StackPanel { Spacing = 3 };
             var flyout = new Flyout { Content = stack };
             if (Enum.TryParse<PlacementMode>(Value("Flyout.Placement", "Bottom"), out var placement)) flyout.Placement = placement;
@@ -72,6 +83,7 @@ public static class StandardItemsControlFactory
                 var drop = new DropDownButton { Content = model.Text, Flyout = flyout };
                 drop.Click += (_, _) => primaryClick?.Invoke(); result = drop;
             }
+            }
         }
         result.Name = model.Name;
         result.Width = model.Width; result.Height = model.Height;
@@ -84,6 +96,7 @@ public static class StandardItemsControlFactory
             template.FontFamily = new FontFamily(model.FontFamily); template.FontSize = model.FontSize;
             template.FontWeight = Enum.TryParse<FontWeight>(model.FontWeight, out var weight) ? weight : FontWeight.Normal;
         }
+        CollectionControlFactory.AttachContextMenu(result, model);
         return result;
     }
     public static string Display(object? row, string path)

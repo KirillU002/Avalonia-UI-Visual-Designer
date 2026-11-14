@@ -43,6 +43,9 @@ public static class AxamlPhase4Projection
                 ExpandDirection = Enum.Parse<ExpandDirection>(Value("ExpandDirection"))
             },
             "ComboBox" => new ComboBox { PlaceholderText = Value("PlaceholderText") },
+            "Menu" => new Menu(),
+            "MenuItem" => new MenuItem { Header = Value("Header"), IsEnabled = bool.Parse(Value("IsEnabled")) },
+            "ContextMenu" => new ContextMenu(),
             "ComboBoxItem" or "String" => new ComboBoxItem { Content = Value("Content") },
             "ItemsControl" => new ItemsControl(),
             "ListBox" => BuiltIn.StandardItemsControlFactory.CreateListBox(Enum.Parse<SelectionMode>(Value("SelectionMode"))),

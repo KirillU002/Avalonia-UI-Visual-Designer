@@ -48,6 +48,8 @@ internal static partial class Program
         EnsureAvaloniaRuntimeInitialized();
         if (args.Contains("--propertygrid3a-profile")) return RunPropertyGrid3AProfile();
         if (args.Contains("--propertygrid3a-checks")) return RunPropertyGrid3AChecks();
+        if (args.Contains("--collections3b-checks")) return RunCollections3BChecks();
+        if (args.Contains("--collections3b-profile")) return RunCollections3BProfile();
         if (args.Contains("--universal-controls2-checks")) return RunUniversalControls2Checks();
         if (args.Contains("--universal-controls2-profile")) return RunUniversalControls2Profile();
         if (args.Contains("--universal-metadata-checks")) return RunUniversalMetadataChecks();

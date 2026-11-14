@@ -121,13 +121,17 @@ internal static partial class Program
             var split = window.GetLogicalDescendants().OfType<SplitButton>().Single();
             var primary = split.GetVisualDescendants().OfType<Button>().FirstOrDefault(b => b.Name == "PART_PrimaryButton");
             if (primary is null) throw new Exception("SplitButton native primary template part missing.");
-            primary.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); NativeItemsUiWait(100);
+            primary.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            DropPumpUntil(() => !window.FindControl<Border>("LoadingOverlay")!.IsVisible
+                && window.GetLogicalDescendants().OfType<TextBlock>().Any(t => t.Text == "primary action"), "primary Logic render completion");
             if (!window.GetLogicalDescendants().OfType<TextBlock>().Any(t => t.Text == "primary action")) throw new Exception("SplitButton primary Logic action failed; axaml=" + axaml + "; labels=" + string.Join("|", window.GetLogicalDescendants().OfType<TextBlock>().Select(t => t.Text)));
             split = window.GetLogicalDescendants().OfType<SplitButton>().Single();
             var secondary = split.GetVisualDescendants().OfType<Button>().First(b => b.Name == "PART_SecondaryButton");
             secondary.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); NativeItemsUiWait(80);
             if (split.Flyout is not Flyout { IsOpen: true, Content: StackPanel stack }) throw new Exception("SplitButton arrow must open a real Flyout.");
-            stack.Children.OfType<Button>().First().RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); NativeItemsUiWait(100);
+            stack.Children.OfType<Button>().First().RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            DropPumpUntil(() => !window.FindControl<Border>("LoadingOverlay")!.IsVisible
+                && window.GetLogicalDescendants().OfType<TextBlock>().Any(t => t.Text == "menu action"), "menu Logic render completion");
             if (!window.GetLogicalDescendants().OfType<TextBlock>().Any(t => t.Text == "menu action")) throw new Exception("Menu Logic must be independent of the primary action.");
             var drop = window.GetLogicalDescendants().OfType<DropDownButton>().Single();
             typeof(DropDownButton).GetMethod("OnClick", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(drop, null); NativeItemsUiWait(50);

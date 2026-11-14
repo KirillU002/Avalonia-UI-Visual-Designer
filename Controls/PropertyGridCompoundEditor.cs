@@ -27,13 +27,18 @@ public sealed class PropertyGridCompoundEditor : StackPanel
     private TextBox[] _components = Array.Empty<TextBox>();
     private readonly PropertyGridRowViewModel?[] _editing = new PropertyGridRowViewModel?[4];
     private bool _updating;
+    private bool _restoringExpansion;
     public System.Collections.Generic.IReadOnlyList<TextBox> Components => _components;
     public PropertyGridCompoundEditor()
     {
         var header = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
         _summary.Classes.Add("property-editor"); _expand.Classes.Add("property-action"); Grid.SetColumn(_expand, 1);
         header.Children.Add(_summary); header.Children.Add(_expand); Children.Add(header); Children.Add(_details);
-        _expand.IsCheckedChanged += (_, _) => { _details.IsVisible = _expand.IsChecked == true; if (_details.IsVisible) { EnsureComponents(); UpdateComponents(); } };
+        _expand.IsCheckedChanged += (_, _) =>
+        {
+            if (!_restoringExpansion && Row is { } row) Owner()?.SetPropertyGridExpanded(row, _expand.IsChecked == true);
+            _details.IsVisible = _expand.IsChecked == true; if (_details.IsVisible) { EnsureComponents(); UpdateComponents(); }
+        };
     }
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
@@ -42,6 +47,7 @@ public sealed class PropertyGridCompoundEditor : StackPanel
         if (_attached is not null) _attached.PropertyChanged -= RowChanged;
         Array.Clear(_editing); _attached = Row; _summary.Row = Row;
         if (_attached is not null) _attached.PropertyChanged += RowChanged;
+        RestoreExpansion();
         UpdateComponents();
     }
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
@@ -53,6 +59,14 @@ public sealed class PropertyGridCompoundEditor : StackPanel
     {
         base.OnAttachedToVisualTree(e);
         if (_attached is null && Row is { } row) { _attached = row; row.PropertyChanged += RowChanged; }
+        RestoreExpansion();
+    }
+    private void RestoreExpansion()
+    {
+        if (Row is not { } row || Owner() is not { } owner) return;
+        _restoringExpansion = true;
+        try { _expand.IsChecked = owner.IsPropertyGridExpanded(row); }
+        finally { _restoringExpansion = false; }
     }
     private void RowChanged(object? sender, PropertyChangedEventArgs e) { if (e.PropertyName == nameof(PropertyGridRowViewModel.Value)) UpdateComponents(); }
     public void ExpandComponents() { _expand.IsChecked = true; }

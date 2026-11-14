@@ -662,6 +662,8 @@ public partial class MainWindowViewModel : ObservableObject
             if (!SetProperty(ref selectedStructureItem, value) || _isUpdatingStructureSelection)
                 return;
 
+            if (value is { CollectionItemId.Length: > 0 }) { SelectCollectionStructureItem(value); return; }
+
             if (value?.Control is DesignControlModel control)
             {
                 SelectSingleControl(control);
@@ -4580,6 +4582,7 @@ public partial class MainWindowViewModel : ObservableObject
     [RelayCommand]
     private void SelectStructureTreeItem(StructureTreeItemModel? item)
     {
+        if (item is { CollectionItemId.Length: > 0 }) { SelectCollectionStructureItem(item); return; }
         if (item?.Control is { } control)
             SelectSingleControl(control);
     }
@@ -5516,6 +5519,7 @@ public partial class MainWindowViewModel : ObservableObject
                 }
             }
 
+            AddCollectionStructureChildren(control, node);
             var shouldInclude = !hasSearch || node.IsSearchMatch || node.Children.Count > 0;
             if (shouldInclude)
                 _structureTreeItemsByControlId[control.Id] = node;
@@ -5611,6 +5615,16 @@ public partial class MainWindowViewModel : ObservableObject
             }
         }
 
+        if (ActiveCollectionEditor is { IsCurrent: true } collection)
+        {
+            var entry = EnumerateStructureTreeItems().FirstOrDefault(n => n.CollectionOwnerId == collection.OwnerId
+                && n.CollectionProperty == collection.PropertyName && n.CollectionItemId == collection.SelectedItemId);
+            if (entry is not null)
+            {
+                selectedItem = entry;
+                foreach (var node in EnumerateStructureTreeItems()) node.IsSelected = ReferenceEquals(node, entry);
+            }
+        }
         selectedItem ??= StructureTreeItems.FirstOrDefault();
 
         var wasUpdatingSelection = _isUpdatingStructureSelection;
@@ -10640,6 +10654,11 @@ public partial class MainWindowViewModel : ObservableObject
 
     private IEnumerable<PropertyGridRowViewModel> BuildPropertyGridRows()
     {
+        if (ActiveCollectionEditor is { } collection)
+        {
+            if (collection.IsCurrent) { foreach (var row in CollectionItemRows(collection)) yield return row; yield break; }
+            ActiveCollectionEditor = null; collection.Dispose();
+        }
         var layoutOnly = IsLayoutMode;
 
         if (SelectedControlIds.Count > 1)
@@ -10811,7 +10830,7 @@ public partial class MainWindowViewModel : ObservableObject
             || string.Equals(interaction.TargetControlName, control.Name, StringComparison.OrdinalIgnoreCase));
         yield return CreateReadOnlyRow(PropertyGridCategoryInteraction, "Interactions", "Interactions", interactionCount.ToString(CultureInfo.InvariantCulture), "Rules that use this control.");
 
-        var standardRows = StandardItemsRows(control).ToList();
+        var standardRows = StandardItemsRows(control).Concat(HierarchicalCollectionRows(control)).ToList();
         foreach (var row in standardRows) yield return row;
         var descriptorProperties = GetCustomDescriptorProperties(control).Where(property => !standardRows.Any(row => row.Key == property.Key)).ToList();
         foreach (var descriptor in descriptorProperties)
@@ -18123,6 +18142,10 @@ public partial class MainWindowViewModel : ObservableObject
                 [DesignerControlTypes.DropDownButton] = (builder, control, indent) => _owner.AppendStandardItemsXaml(builder, control, indent),
                 [DesignerControlTypes.SplitButton] = (builder, control, indent) => _owner.AppendStandardItemsXaml(builder, control, indent),
                 [DesignerControlTypes.ListBox] = (builder, control, indent) => _owner.AppendStandardItemsXaml(builder, control, indent),
+                ["Menu"] = (builder, control, indent) => _owner.AppendStandardItemsXaml(builder, control, indent),
+                ["ComboBox"] = (builder, control, indent) => _owner.AppendStandardItemsXaml(builder, control, indent),
+                ["TabControl"] = (builder, control, indent) => _owner.AppendStandardItemsXaml(builder, control, indent),
+                ["TreeView"] = (builder, control, indent) => _owner.AppendStandardItemsXaml(builder, control, indent),
                 [DesignerControlTypes.TextBox] = (builder, control, indent) => _owner.AppendTextBoxXaml(builder, control, indent),
                 [DesignerControlTypes.TextBlock] = (builder, control, indent) => _owner.AppendTextBlockXaml(builder, control, indent),
                 [DesignerControlTypes.CheckBox] = (builder, control, indent) => _owner.AppendCheckBoxXaml(builder, control, indent),
@@ -18254,6 +18277,7 @@ public partial class MainWindowViewModel : ObservableObject
             or DesignerControlTypes.FlexLayout
             or DesignerControlTypes.DataGrid => true,
         _ => FormDesigner.DesignerSystem.Metadata.StandardControlProperties.SupportedTypes.ContainsKey(type)
+            || FormDesigner.DesignerSystem.BuiltIn.CollectionControlFactory.IsRoot(type)
     };
 
     private static bool IsPluginRuntimeControl(DesignControlModel control)

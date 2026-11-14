@@ -68,3 +68,24 @@ Remove-Item Env:FORMDESIGNER_PROPERTYGRID_REUSE, Env:PROPERTYGRID3A_SCENE, Env:P
 ```
 
 Сцена `representative` содержит семь типов и 30 измерений каждого после трёх полных warm-up проходов. `original` — прежняя сцена, 30 измерений. Результат сохраняется в `artifacts/universal-phase3a/<label>.json`: selection, layout, callback compositor, allocations текущего UI thread, GC, профили этапов и проверка актуального native editor context. Callback compositor не означает физическое появление пикселей на мониторе. Cold setup всего окна отделён от steady-state. `FORMDESIGNER_PROPERTYGRID_REUSE=0` — диагностический rollback presentation reuse, не пользовательская настройка и не отключение typed editors/safety. Жёстких временных CI-порогов нет.
+
+## Collections Phase 3B
+
+```powershell
+dotnet smoke-tests/FormDesigner.ExportSmokeTests/bin/Release/net8.0/FormDesigner.ExportSmokeTests.dll --collections3b-checks
+pwsh -NoProfile -File smoke-tests/UniversalMetadata/ProbeRuntime.ps1 -ProjectPath artifacts/universal-phase3b/exports/Grid -ProbeFile Phase3BRuntimeProbe.cs.txt -ResultName Grid-runtime.txt
+pwsh -NoProfile -File smoke-tests/UniversalMetadata/ProbeRuntime.ps1 -ProjectPath artifacts/universal-phase3b/exports/Canvas -ProbeFile Phase3BRuntimeProbe.cs.txt -ResultName Canvas-runtime.txt
+```
+
+Checks проверяют metadata/capability guards, native routed Toolbox/editor input, atomic Undo/Redo/selection, nested remove/Logic/rename, JSON/Multi Form/Explorer, версии/повреждённые данные/cycles/depth, readonly imported structure/no-op patches, настоящие коллекции обоих Preview, popup/selection/tab/tree interaction, освобождение session при живом закрытом Window и 20 циклов editor open/close. Фильтр одного check — `COLLECTION3B_FILTER`; перед полной матрицей удалить. Дополнительные native/UIA failures сохранять вместе с exit code и Windows Event Log, повторный PASS не отменяет первый red/crash.
+
+После builds/native suites отдельно:
+
+```powershell
+dotnet smoke-tests/FormDesigner.ExportSmokeTests/bin/Release/net8.0/FormDesigner.ExportSmokeTests.dll --collections3b-profile
+$env:UNIVERSAL2_PROFILE_LABEL='phase3b-after'
+dotnet smoke-tests/FormDesigner.ExportSmokeTests/bin/Release/net8.0/FormDesigner.ExportSmokeTests.dll --universal-controls2-profile
+Remove-Item Env:UNIVERSAL2_PROFILE_LABEL
+```
+
+Collection profile: 3 warm-up, 30 observations каждого сценария, начальные размеры 1/10/100 items, Open/Add/Reorder/Selection, NestedAdd при 100 и последовательности 10/100 отдельных Add при начальном размере 1. AddSequence сохраняет обычные отдельные Undo actions, а не выдаёт batch за одну операцию. Измеряются native editor/layout/compositor callback, UI-thread allocations, process-wide GC и stages; JSON — `artifacts/universal-phase3b/collection-performance.json`. Warm-up observations помечены отрицательным Iteration. Количество native property editors не растёт до числа всех коллекционных элементов; fields создаются только для selection. Timing thresholds в CI отсутствуют. Runtime probes запускают реальные экспортированные приложения, затем восстанавливают startup и удаляют probe.

@@ -23,13 +23,19 @@ public sealed class PropertyGridGridLengthEditor : StackPanel
     private readonly StackPanel _tracks = new() { IsVisible = false };
     private readonly ToggleButton _expand = new() { Content = "⋯", Padding = new Thickness(2), MinWidth = 22 };
     private bool _updating;
+    private bool _restoringExpansion;
     public IReadOnlyList<LayoutDefinitionEditorItem> Definitions { get; private set; } = Array.Empty<LayoutDefinitionEditorItem>();
     public PropertyGridGridLengthEditor()
     {
         var line = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
         _summary.Classes.Add("property-editor"); _expand.Classes.Add("property-action"); Grid.SetColumn(_expand, 1);
         line.Children.Add(_summary); line.Children.Add(_expand); Children.Add(line); Children.Add(_tracks);
-        _expand.IsCheckedChanged += (_, _) => { _tracks.IsVisible = _expand.IsChecked == true; if (_tracks.IsVisible) BuildTracks(); };
+        _expand.IsCheckedChanged += (_, _) =>
+        {
+            if (!_restoringExpansion && Row is { } row && (this.GetVisualRoot() as Window)?.DataContext is MainWindowViewModel owner)
+                owner.SetPropertyGridExpanded(row, _expand.IsChecked == true);
+            _tracks.IsVisible = _expand.IsChecked == true; if (_tracks.IsVisible) BuildTracks();
+        };
     }
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
@@ -38,10 +44,17 @@ public sealed class PropertyGridGridLengthEditor : StackPanel
         {
             _summary.Row = Row;
             _tracks.Children.Clear(); Definitions = Array.Empty<LayoutDefinitionEditorItem>();
+            RestoreExpansion();
             if (_tracks.IsVisible) BuildTracks();
         }
     }
     public void ExpandDefinitions() => _expand.IsChecked = true;
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e) { base.OnAttachedToVisualTree(e); RestoreExpansion(); }
+    private void RestoreExpansion()
+    {
+        if (Row is not { } row || (this.GetVisualRoot() as Window)?.DataContext is not MainWindowViewModel owner) return;
+        _restoringExpansion = true; try { _expand.IsChecked = owner.IsPropertyGridExpanded(row); } finally { _restoringExpansion = false; }
+    }
     private GridLength[] Read() => (string.IsNullOrWhiteSpace(Row?.Value) ? new[] { "*" } : Row.Value.Split(',')).Select(GridLength.Parse).ToArray();
     private void BuildTracks()
     {

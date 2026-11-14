@@ -18,7 +18,7 @@ public partial class MainWindowViewModel
     public string StandardInteractionSourceTitle(string name)
     {
         foreach (var owner in Controls.Where(c => StandardItemsProperties.IsMenuButton(c.Type)))
-            foreach (var item in StandardItemsProperties.Menu(owner))
+            foreach (var item in CollectionItemsContract.Flatten(StandardItemsProperties.Menu(owner)).Where(i => i.Kind != "Separator"))
                 if (StandardItemsProperties.MenuSource(owner, item).Name == name) return owner.Name + " → " + item.Text;
         return name;
     }
@@ -26,7 +26,7 @@ public partial class MainWindowViewModel
     private void AppendStandardFlyoutHandlers(StringBuilder sb, IReadOnlyDictionary<string, string> names)
     {
         foreach (var owner in Controls.Where(c => StandardItemsProperties.IsMenuButton(c.Type)))
-            foreach (var item in StandardItemsProperties.Menu(owner))
+            foreach (var item in CollectionItemsContract.Flatten(StandardItemsProperties.Menu(owner)).Where(i => i.Kind != "Separator"))
             {
                 var source = StandardItemsProperties.MenuSource(owner, item);
                 var name = names[source.Id];
@@ -62,7 +62,15 @@ public partial class MainWindowViewModel
         BeginUndoBatch();
         try
         {
-            if (control.Type == DesignerControlTypes.ListBox) StandardItemsProperties.Write(control, "Items", items.Select(i => i.Text).ToArray());
+            var property = control.Type == DesignerControlTypes.ListBox ? "Items" : StandardItemsProperties.MenuKey;
+            if (CollectionItemsContract.Read(control, property) is not null)
+            {
+                var values = items.Select(i => i.Clone()).ToList();
+                if (control.Type == DesignerControlTypes.ListBox) foreach (var item in values) item.Kind = "ListBoxItem";
+                var data = new CollectionItemsContract { Items = values }; CollectionItemsContract.Validate(data, CollectionItemsContract.ItemKind(control.Type, property));
+                StandardItemsProperties.Write(control, CollectionItemsContract.StorageKey(property), data);
+            }
+            else if (control.Type == DesignerControlTypes.ListBox) StandardItemsProperties.Write(control, "Items", items.Select(i => i.Text).ToArray());
             else StandardItemsProperties.Write(control, StandardItemsProperties.MenuKey, items.Select(i => i.Clone()).ToArray());
             foreach (var interaction in Interactions.Where(i => oldNames.Contains(i.SourceControlName) && !newNames.Contains(i.SourceControlName)).ToArray()) Interactions.Remove(interaction);
         }
@@ -98,7 +106,9 @@ public partial class MainWindowViewModel
         yield return CreateNumberRow(PropertyGridCategoryLayout, nameof(control.Padding), "Padding", control.Padding, "Внутренний отступ Avalonia-контрола.", value => control.Padding = Math.Max(0, value));
         if (control.Type == DesignerControlTypes.ListBox)
         {
-            yield return CreateActionRow(PropertyGridCategoryData, "Items", "Items", "", "Статические элементы списка: добавить, переименовать, удалить и переставить.", "Изменить элементы…");
+            var reason = CollectionReadOnlyReason(control, "Items");
+            yield return reason.Length == 0 ? CreateActionRow(PropertyGridCategoryData, "Items", "Items", "", "Статические элементы списка: добавить, переименовать, удалить и переставить.", "Изменить элементы…")
+                : CreateReadOnlyRow(PropertyGridCategoryData, "Items", "Items", "Read-only", reason);
             yield return CreateBindingSourceRow(control, "Настоящие строки выбранного источника. Ошибки и пустые результаты не заменяются sample rows.");
             yield return CreateActionRow(PropertyGridCategoryData, "ListBox.Refresh", "Загрузить строки", "", "Повторно прочитать реальные строки источника.", "Обновить данные");
             yield return CreateTextRow(PropertyGridCategoryData, "ItemsSource", "ItemsSource", StandardItemsProperties.Read(control, "ItemsSource", ""),
@@ -128,6 +138,10 @@ public partial class MainWindowViewModel
 
     private void AppendStandardItemsXaml(StringBuilder sb, DesignControlModel control, int indent)
     {
+        if (FormDesigner.DesignerSystem.BuiltIn.CollectionControlFactory.IsRoot(control.Type)
+            || StandardItemsProperties.IsMenuButton(control.Type) && CollectionItemsContract.Read(control, StandardItemsProperties.MenuKey) is not null
+            || control.Type == "ListBox" && string.IsNullOrEmpty(control.BindingSourceId) && string.IsNullOrEmpty(StandardItemsProperties.Read(control, "ItemsSource", "")) && CollectionItemsContract.Read(control, "Items") is not null)
+        { AppendCollectionControlXaml(sb, control, indent); return; }
         var type = control.Type;
         var name = GetExportControlName(control);
         var appearance = $"{PlacementAttributes(control)}{BackgroundAttribute(control)}{ForegroundAttribute(control)}{TextStyleAttributes(control)}{BorderStyleAttributes(control)} CornerRadius=\"{ToInvariant(control.CornerRadius)}\" Padding=\"{ToInvariant(control.Padding)}\"{CommonVisibilityAttributes(control)} IsEnabled=\"{BoolToXaml(StandardItemsProperties.Read(control, "IsEnabled", true))}\"";
@@ -154,6 +168,7 @@ public partial class MainWindowViewModel
             }
             if (!string.IsNullOrEmpty(display))
                 sb.AppendLine($"{Indent(indent + 1)}<ListBox.ItemTemplate><DataTemplate><TextBlock Text=\"{{Binding {EscapeXml(display)}}}\" /></DataTemplate></ListBox.ItemTemplate>");
+            FormDesigner.DesignerSystem.BuiltIn.CollectionControlFactory.AppendContextMenu(sb, control, indent + 1);
             sb.AppendLine($"{Indent(indent)}</ListBox>");
             return;
         }

@@ -44,6 +44,7 @@ public partial class MainWindowViewModel
     }
     private PropertyGridRowViewModel DescribeInspectorProperty(PropertyGridRowViewModel row)
     {
+        if (DescribeCollectionProperty(row)) return row;
         using var lookup = LayoutDropProfile.Stage("InspectorMetadataLookup");
         var typeName = InspectorSourceType;
         if (!InspectorStandardTypes.Value.TryGetValue(typeName, out var type)) return row;
@@ -108,6 +109,7 @@ public partial class MainWindowViewModel
     }
     private IEnumerable<PropertyGridRowViewModel> BuildMetadataReadOnlyRows()
     {
+        if (ActiveCollectionEditor is not null) yield break;
         if (SelectedControl is null || !InspectorStandardTypes.Value.TryGetValue(InspectorSourceType, out var type)) yield break;
         var names = StandardControlProperties.ReadOnlyInspectorKeys;
         foreach (var p in AvaloniaMetadataCatalog.Get(type).Properties.Where(p => names.Contains(p.Key)))
@@ -136,6 +138,7 @@ public partial class MainWindowViewModel
     }
     internal void RefreshNativeInspectorValues(Control? native)
     {
+        if (ActiveCollectionEditor is not null) return; // Item values must never be read from their owner control.
         if (native is null || !AvaloniaMetadataCatalog.IsStandard(native.GetType()) || _isEditingPropertyGrid) return;
         using var stage = LayoutDropProfile.Stage("InspectorEffectiveValueReading");
         var supported = AvaloniaMetadataCatalog.Get(native.GetType()).Properties.Select(p => p.Property).Where(p => p is not null).ToHashSet();

@@ -215,8 +215,9 @@ public sealed class PropertyGridRowViewModel : ObservableObject
         _ => IsModified ? "\u25CF " : ""
     };
 
-    public string DefaultTooltip => RemoveLocalValue is not null ? "Удалить локальное значение; восстановить Style / inheritance / metadata default"
-        : ResetBlocked ? "Unset не поддерживается этим source adapter" : HasDefaultValue ? $"Восстановить значение модели: {DefaultValue}" : "";
+    public string? ResetDescription { get; internal set; }
+    public string DefaultTooltip => ResetDescription ?? (RemoveLocalValue is not null ? "Удалить локальное значение; восстановить Style / inheritance / metadata default"
+        : ResetBlocked ? "Unset не поддерживается этим source adapter" : HasDefaultValue ? $"Восстановить значение модели: {DefaultValue}" : "");
 
     public bool HasValidationError => !string.IsNullOrWhiteSpace(ValidationMessage);
 

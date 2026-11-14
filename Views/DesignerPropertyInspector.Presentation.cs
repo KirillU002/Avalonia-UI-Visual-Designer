@@ -85,7 +85,28 @@ public partial class DesignerPropertyInspector
     }
     private void ClearPresentation()
     {
+        // UIA/compositor can retain detached native visuals. Release this cache's
+        // explicit Row/Category contexts before discarding its template instances.
+        foreach (var view in _categoryByKey.Values)
+        {
+            ReleasePresentationContexts(view.Root);
+            foreach (var slot in view.Slots.OfType<ContentControl>()) slot.Content = null;
+            view.Slots.Clear(); view.Root.DataContext = null;
+        }
         _categoryViews.Clear(); _categoryByKey.Clear(); _presentationSession = "";
+    }
+    private static void ReleasePresentationContexts(Control root)
+    {
+        var controls = root.GetVisualDescendants().OfType<Control>()
+            .Concat(root.GetLogicalDescendants().OfType<Control>()).Prepend(root).Distinct().ToArray();
+        foreach (var control in controls)
+        {
+            if (control.DataContext is PropertyGridRowViewModel or PropertyGridCategoryViewModel) control.DataContext = null;
+            if (control is PropertyGridTextEditor text) text.Row = null;
+            if (control is PropertyGridEnumEditor choice) choice.Row = null;
+            if (control is PropertyGridCompoundEditor compound) compound.Row = null;
+            if (control is PropertyGridGridLengthEditor lengths) lengths.Row = null;
+        }
     }
     private void SynchronizePresentation()
     {
@@ -111,7 +132,7 @@ public partial class DesignerPropertyInspector
         var categories = owner.PropertyGridCategories.ToArray();
         var keys = categories.Select(c => c.Key).ToHashSet(StringComparer.Ordinal);
         foreach (var key in _categoryByKey.Keys.Where(k => !keys.Contains(k)).ToArray())
-        { _categoryViews.Remove(_categoryByKey[key].Root); _categoryByKey.Remove(key); }
+        { ReleasePresentationContexts(_categoryByKey[key].Root); _categoryViews.Remove(_categoryByKey[key].Root); _categoryByKey.Remove(key); }
         for (var i = 0; i < categories.Length; i++)
         {
             var category = categories[i];
@@ -136,7 +157,11 @@ public partial class DesignerPropertyInspector
                 else view.Slots.Add(new ContentControl { Content = category.Rows[j], ContentTemplate = view.RowTemplate,
                     HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Stretch });
             }
-            while (view.Slots.Count > category.Rows.Count) view.Slots.RemoveAt(view.Slots.Count - 1);
+            while (view.Slots.Count > category.Rows.Count)
+            {
+                var slot = (ContentControl)view.Slots[^1]; ReleasePresentationContexts(slot); slot.Content = null;
+                view.Slots.RemoveAt(view.Slots.Count - 1);
+            }
         }
     }
 }

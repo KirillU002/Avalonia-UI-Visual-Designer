@@ -1,0 +1,42 @@
+using System;
+using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.VisualTree;
+
+internal static class MetadataRuntimeProbe
+{
+    private static void Require(bool value,string text){if(!value)throw new Exception(text);}
+    public static void Attach(IClassicDesktopStyleApplicationLifetime desktop,Window window)
+    {
+        window.ShowInTaskbar=false;window.ShowActivated=false;window.Position=new PixelPoint(-3500,-3500);
+        window.Opened+=async(_,_)=>
+        {
+            try
+            {
+                await Task.Delay(200);window.UpdateLayout();
+                T Root<T>(string name)where T:Control=>window.GetVisualDescendants().OfType<T>().Single(c=>c.Name==name);
+                var menu=Root<Menu>("Menu1");var combo=Root<ComboBox>("ComboBox1");var tabs=Root<TabControl>("TabControl1");
+                var tree=Root<TreeView>("TreeView1");var list=Root<ListBox>("ListBox1");var split=Root<SplitButton>("SplitButton1");
+                foreach(var root in new Control[]{menu,combo,tabs,tree,list,split})Require(root.GetVisualRoot()==window&&root.Bounds.Width>0&&root.Bounds.Height>0,"Missing native control: "+root.Name);
+                Require(menu.Items.Count==3&&menu.Items[1]is Separator,"Menu order/separator lost");
+                var file=(MenuItem)menu.Items[0]!;Require(file.Header?.ToString()=="Первый <&>"&&file.Items.Count==1,"Nested menu/header escaping lost");
+                file.IsSubMenuOpen=true;await Task.Delay(40);Require(file.IsSubMenuOpen&&file.Items[0]is MenuItem,"Submenu failed");file.IsSubMenuOpen=false;
+                Require(combo.Items.Count==2&&combo.Items[0]is ComboBoxItem,"ComboBoxItem missing");combo.IsDropDownOpen=true;await Task.Delay(30);Require(combo.IsDropDownOpen,"Combo popup failed");combo.SelectedIndex=1;combo.IsDropDownOpen=false;Require(combo.SelectedItem is ComboBoxItem,"Combo selection failed");
+                tabs.SelectedIndex=1;window.UpdateLayout();Require(tabs.SelectedItem is TabItem&&tabs.SelectedContent?.ToString()=="Содержимое вкладки","Tab content/switching failed");
+                var node=(TreeViewItem)tree.Items[0]!;node.IsExpanded=true;window.UpdateLayout();Require(node.Items.Count==1&&node.Items[0]is TreeViewItem&&node.IsExpanded,"Tree hierarchy lost");node.IsExpanded=false;
+                Require(list.Items.OfType<ListBoxItem>().Count()==5,"ListBox typed/legacy items lost");list.SelectedIndex=4;Require(list.SelectedItem is ListBoxItem,"List selection failed");
+                tree.ContextMenu!.Open(tree);await Task.Delay(30);Require(tree.ContextMenu.IsOpen&&tree.ContextMenu.Items[0]is MenuItem,"Context menu failed");tree.ContextMenu.Close();
+                Require(split.Flyout is MenuFlyout,"Typed flyout missing");split.Flyout!.ShowAt(split);await Task.Delay(30);Require(split.Flyout.IsOpen,"Flyout did not open");split.Flyout.Hide();
+                foreach(var size in new[]{new Size(800,600),new Size(1200,800),new Size(1600,900)})
+                {window.Width=size.Width;window.Height=size.Height;await Task.Delay(30);window.UpdateLayout();Require(tabs.GetVisualRoot()==window&&tree.Items.Count==2,"Resize lost collection tree");}
+                File.WriteAllText(Environment.GetEnvironmentVariable("METADATA_RUNTIME_RESULT")!,"PASS native roots=6; Menu/nested/Separator, ComboBox/ListBox items, tabs/content, tree, context menu, typed flyout and resize.");
+                desktop.Shutdown(0);
+            }
+            catch(Exception error){File.WriteAllText(Environment.GetEnvironmentVariable("METADATA_RUNTIME_RESULT")!,error.ToString());desktop.Shutdown(1);}
+        };
+    }
+}

@@ -28,7 +28,10 @@ public sealed record AvaloniaPropertyInfo(string Name, Type OwnerType, Type Prop
 }
 
 public sealed record AvaloniaTypeInfo(Type Type, string ContainerKind, string? ChildProperty,
-    bool IsVisual, bool ToolboxCandidate, string CandidateReason, IReadOnlyList<AvaloniaPropertyInfo> Properties);
+    bool IsVisual, bool ToolboxCandidate, string CandidateReason, IReadOnlyList<AvaloniaPropertyInfo> Properties)
+{
+    public IReadOnlyList<CollectionPropertyMetadata> Collections { get; init; } = Array.Empty<CollectionPropertyMetadata>();
+}
 
 /// <summary>
 /// Discovery is not a support declaration. Only the shipped Avalonia assemblies are enumerated.
@@ -115,7 +118,7 @@ public static class AvaloniaMetadataCatalog
         return new(type, container.Item1, container.Item2, typeof(Control).IsAssignableFrom(type), candidate,
             !trusted ? "Plugin boundary" : type.IsAbstract ? "Abstract" : infrastructure ? "Infrastructure" : popup ? "Popup; specialized attachment workflow"
                 : candidate ? "Candidate; pipeline verification required" : "Root/base/constructor policy",
-            properties.Values.OrderBy(p => p.Key, StringComparer.Ordinal).ToArray());
+            properties.Values.OrderBy(p => p.Key, StringComparer.Ordinal).ToArray()) { Collections = CollectionMetadataCatalog.Discover(type) };
 
         void Add(AvaloniaProperty property, bool attached)
         {

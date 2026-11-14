@@ -4722,6 +4722,10 @@ public partial class MainWindow : Window
                 [DesignerControlTypes.DropDownButton] = _owner.CreateStandardItemsPreview,
                 [DesignerControlTypes.SplitButton] = _owner.CreateStandardItemsPreview,
                 [DesignerControlTypes.ListBox] = _owner.CreateStandardItemsPreview,
+                ["Menu"] = _owner.CreateStandardItemsPreview,
+                ["ComboBox"] = _owner.CreateStandardItemsPreview,
+                ["TabControl"] = _owner.CreateStandardItemsPreview,
+                ["TreeView"] = _owner.CreateStandardItemsPreview,
                 [DesignerControlTypes.TextBox] = _owner.CreateTextBoxPreview,
                 [DesignerControlTypes.TextBlock] = _owner.CreateTextBlockPreview,
                 [DesignerControlTypes.CheckBox] = _owner.CreateCheckBoxPreview,
@@ -9912,9 +9916,9 @@ public partial class MainWindow : Window
         {
             _standardListBoxRows.Clear(); RenderDesigner(); return;
         }
-        if (row.Key is "Items" or StandardItemsProperties.MenuKey)
+        if (row.Key is "Items" or StandardItemsProperties.MenuKey or "ContextMenu.Items")
         {
-            OpenStandardItemsEditor();
+            OpenStandardItemsEditor(row.Key);
             return;
         }
 

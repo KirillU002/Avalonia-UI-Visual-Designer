@@ -54,7 +54,7 @@ public partial class MainWindow
         var result = StandardItemsControlFactory.Create(snapshot); result.IsHitTestVisible = false; return result;
     }
 
-    private async void OpenStandardItemsEditor()
+    private async void OpenStandardItemsEditor(string? property = null)
     {
         if (VM.SelectedControl is not { } control) return;
         if (VM.IsAxamlRoundTripDocument)
@@ -62,12 +62,8 @@ public partial class MainWindow
             VM.StatusText = "Элементы импортированного AXAML редактируются в исходном файле. В Inspector доступны свойства самого контрола.";
             return;
         }
-        var menu = StandardItemsProperties.IsMenuButton(control.Type);
-        var items = menu ? StandardItemsProperties.Menu(control) : StandardItemsProperties.Read(control, "Items", Array.Empty<string>()).Select(text => new StandardMenuItem { Text = text }).ToList();
-        var editor = new StandardItemsEditorWindow(items, menu, values => VM.ApplyStandardItems(control, values), item =>
-        {
-            VM.EditStandardMenuLogic(control, item); VM.WorkspaceMode = ViewModels.MainWindowViewModel.WorkspaceModeLogic;
-        });
-        await editor.ShowDialog(this);
+        var collection = VM.OpenCollectionEditor(property ?? (StandardItemsProperties.IsMenuButton(control.Type) ? StandardItemsProperties.MenuKey : "Items"));
+        if (collection is null) return;
+        await new StandardItemsEditorWindow(VM, collection).ShowDialog(this);
     }
 }

@@ -35,6 +35,9 @@ public sealed record AxamlControlMetadata(string SourceType, string ProjectionTy
         ["TabItem"] = new("TabItem", "Group", AxamlContainerKind.HeaderedContent, "Content"),
         ["Expander"] = new("Expander", "Group", AxamlContainerKind.HeaderedContent, "Content", TextContentProperty: "Content"),
         ["ComboBox"] = new("ComboBox", "Group", AxamlContainerKind.Items, "Items", "ComboBoxItem"),
+        ["Menu"] = new("Menu", "Group", AxamlContainerKind.Items, "Items", "MenuItem"),
+        ["MenuItem"] = new("MenuItem", "Group", AxamlContainerKind.Items, "Items", "MenuItem"),
+        ["ContextMenu"] = new("ContextMenu", "Group", AxamlContainerKind.Items, "Items", "MenuItem"),
         ["ComboBoxItem"] = new("ComboBoxItem", "Group", AxamlContainerKind.None, TextContentProperty: "Content"),
         ["ItemsControl"] = new("ItemsControl", "Group", AxamlContainerKind.Items, "Items"),
         ["ListBox"] = new("ListBox", "Group", AxamlContainerKind.Items, "Items"),
@@ -56,6 +59,7 @@ public sealed record AxamlControlMetadata(string SourceType, string ProjectionTy
     }
 
     public bool AcceptsItem(AxamlElementSyntax element) => ItemType is null
+        || SourceType is "Menu" or "MenuItem" or "ContextMenu" && element.LocalName == "Separator" && element.NamespaceUri is "" or "https://github.com/avaloniaui"
         || element.LocalName == ItemType && element.NamespaceUri is "" or "https://github.com/avaloniaui"
         || SourceType == "ComboBox" && FindSourceElement(element, SourceType)?.SourceType == "String";
 
@@ -75,6 +79,7 @@ public sealed record AxamlControlMetadata(string SourceType, string ProjectionTy
         : SourceType switch
     {
         "TabControl" => new[] { new AxamlLiteralProperty(nameof(TabControl.SelectedIndex), "0", IsInteger: true) },
+        "MenuItem" => new[] { new AxamlLiteralProperty(nameof(MenuItem.Header), ""), new AxamlLiteralProperty(nameof(MenuItem.IsEnabled), "True", IsBoolean: true) },
         "TabItem" => new[] { new AxamlLiteralProperty(nameof(TabItem.Header), "") },
         "Expander" => new[]
         {
