@@ -7242,6 +7242,7 @@ public partial class MainWindowViewModel : ObservableObject
         _hasDeferredPropertyGridRebuild = false;
         _deferredPropertyGridRebuildReason = "";
         _editingPropertyGridDocumentId = "";
+        _editingPropertyGridRow = null;
         _editingPropertyGridControlId = "";
         _editingPropertyGridKey = "";
         _editingPropertyGridText = "";
@@ -7302,6 +7303,8 @@ public partial class MainWindowViewModel : ObservableObject
 
         if (!_isEditingPropertyGrid && !_isPropertyGridEditUndoBatchOpen)
         {
+            // Explicit Inspector edits are logical boundaries, not timing-based typing groups.
+            _lastHistoryMutationUtc = DateTime.MinValue;
             BeginUndoBatch();
             _isPropertyGridEditUndoBatchOpen = true;
         }
@@ -7310,6 +7313,8 @@ public partial class MainWindowViewModel : ObservableObject
         _editingPropertyGridDocumentId = row.ContextDocumentId;
         _editingPropertyGridControlId = row.ContextControlId;
         _editingPropertyGridKey = row.Key;
+        _editingPropertyGridRevision = row.ContextRevision;
+        _editingPropertyGridRow = row;
         _editingPropertyGridText = text ?? string.Empty;
         OnPropertyChanged(nameof(IsPropertyEditorFocused));
         TracePropertyGridEdit(
@@ -7469,6 +7474,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     public void EndPropertyGridTextEdit(PropertyGridRowViewModel? row = null)
     {
+        if (row is { ContextRevision: > 0 } && _isEditingPropertyGrid && _editingPropertyGridRow is not null && !ReferenceEquals(row, _editingPropertyGridRow)) return;
         if (row is not null && !IsEditingPropertyGridRow(row))
         {
             TracePropertyGridEdit(
@@ -7488,6 +7494,7 @@ public partial class MainWindowViewModel : ObservableObject
         _hasDeferredPropertyGridRebuild = false;
         _deferredPropertyGridRebuildReason = "";
         _editingPropertyGridDocumentId = "";
+        _editingPropertyGridRow = null;
         _editingPropertyGridControlId = "";
         _editingPropertyGridKey = "";
         _editingPropertyGridText = "";
@@ -7513,6 +7520,8 @@ public partial class MainWindowViewModel : ObservableObject
 
     public void CancelPropertyGridTextEdit(PropertyGridRowViewModel? row = null)
     {
+        if (row is { ContextRevision: > 0 } && _isEditingPropertyGrid && _editingPropertyGridRow is not null && !ReferenceEquals(row, _editingPropertyGridRow))
+        { TracePropertyGridEdit("PROPERTY_EDIT_CANCEL_STALE_IGNORED", row, "A newer editor owns the interaction"); return; }
         if (row is not null && !IsEditingPropertyGridRow(row))
         {
             TracePropertyGridEdit(
@@ -7542,6 +7551,7 @@ public partial class MainWindowViewModel : ObservableObject
         _hasDeferredPropertyGridRebuild = false;
         _deferredPropertyGridRebuildReason = "";
         _editingPropertyGridDocumentId = "";
+        _editingPropertyGridRow = null;
         _editingPropertyGridControlId = "";
         _editingPropertyGridKey = "";
         _editingPropertyGridText = "";
@@ -7556,6 +7566,8 @@ public partial class MainWindowViewModel : ObservableObject
     private bool IsEditingPropertyGridRow(PropertyGridRowViewModel row)
     {
         return _isEditingPropertyGrid
+            && ReferenceEquals(row, _editingPropertyGridRow)
+            && row.ContextRevision == _editingPropertyGridRevision
             && string.Equals(row.ContextDocumentId, _editingPropertyGridDocumentId, StringComparison.OrdinalIgnoreCase)
             && string.Equals(row.ContextControlId, _editingPropertyGridControlId, StringComparison.OrdinalIgnoreCase)
             && string.Equals(row.Key, _editingPropertyGridKey, StringComparison.OrdinalIgnoreCase);
@@ -9488,7 +9500,7 @@ public partial class MainWindowViewModel : ObservableObject
         return new PropertyGridRowViewModel(row.Key, row.Label, row.Category, PropertyGridEditorKind.ReadOnly,
             value, "AXAML: свойство сохраняется без редактирования.", isReadOnly: true, isFavorite: row.IsFavorite,
             contextDocumentId: row.ContextDocumentId, contextControlId: row.ContextControlId,
-            contextControlName: row.ContextControlName, contextControlType: row.ContextControlType);
+            contextControlName: row.ContextControlName, contextControlType: row.ContextControlType) { ContextRevision = row.ContextRevision };
     }
 
     public AxamlPatchResult CreateActiveAxamlPatch(string? currentSourceText = null)
@@ -10116,6 +10128,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     private bool IsPropertyGridFavorite(string propertyKey)
     {
+        using var stage = LayoutDropProfile.Stage("InspectorFavoritesResolution");
         var typeKey = CurrentPropertyGridTypeKey;
         return _propertyGridUserSettings.UserCustomizedTypeKeys.Contains(typeKey)
             && GetPropertyGridFavoriteSet(typeKey, create: false).Contains(propertyKey);
@@ -10448,7 +10461,10 @@ public partial class MainWindowViewModel : ObservableObject
             _propertyGridRebuildCount++;
             var query = PropertyGridSearchText.Trim();
             var hasSearch = !string.IsNullOrWhiteSpace(query);
-            var rows = RemoveDuplicatePropertyGridRows(BuildPropertyGridRows().Select(ApplyMetadataPropertyRow).Select(ApplyAxamlPropertyCapability).ToList(), reason);
+            List<PropertyGridRowViewModel> rows;
+            using (LayoutDropProfile.Stage("InspectorPropertyRowsValuesDescriptors"))
+                rows = RemoveDuplicatePropertyGridRows(BuildPropertyGridRows().Concat(BuildMetadataReadOnlyRows())
+                    .Select(ApplyMetadataPropertyRow).Select(ApplyAxamlPropertyCapability).Select(DescribeInspectorProperty).ToList(), reason);
             LayoutDropProfile.Count("InspectorRowsCreated", rows.Count);
             if (hasSearch)
             {
@@ -10576,6 +10592,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void AddPropertyGridCategory(string key, string title, IReadOnlyList<PropertyGridRowViewModel> rows, bool forceExpanded)
     {
+        using var stage = LayoutDropProfile.Stage("InspectorCategoryGrouping");
         var category = new PropertyGridCategoryViewModel(
             key,
             title,
@@ -11145,6 +11162,7 @@ public partial class MainWindowViewModel : ObservableObject
         string actionText = "Edit...",
         string aliases = "")
     {
+        using var stage = LayoutDropProfile.Stage("InspectorRowDescriptorsDefaultsAndCreation");
         var localizedDescription = PropertyDescriptionProvider.GetDescription(label, PropertyDescriptionProvider.GetDescription(key, description));
         var defaultValue = GetPropertyGridDefaultValue(key);
         var contextDocumentId = ActiveDocumentId;
@@ -11170,6 +11188,7 @@ public partial class MainWindowViewModel : ObservableObject
                 applyValue?.Invoke(row, newValue);
                 if (row.HasValidationError)
                     return;
+                DescribeInspectorProperty(row);
 
                 TraceDocumentDebug(
                     "EditProperty",
@@ -11182,16 +11201,24 @@ public partial class MainWindowViewModel : ObservableObject
                 if (!CanApplyPropertyGridRow(row, newValue.ToString(CultureInfo.InvariantCulture)))
                     return;
 
+                if (_isEditingPropertyGrid && !IsEditingPropertyGridRow(row)) EndPropertyGridTextEdit();
+                var ownsBatch = _undoBatchDepth == 0;
+                if (ownsBatch) { _lastHistoryMutationUtc = DateTime.MinValue; BeginUndoBatch(); }
+                try
+                {
                 TraceDocumentDebug(
                     "PropertyGrid edit accepted",
                     $"target={row.ContextControlType}:{row.ContextControlName}:{row.ContextControlId}; rowDocument={row.ContextDocumentId}; key={row.Key}; value={newValue}",
                     toOutput: false);
                 applyBool?.Invoke(row, newValue);
+                DescribeInspectorProperty(row);
                 TraceDocumentDebug(
                     "EditProperty",
                     $"document={row.ContextDocumentId}; control={row.ContextControlName}:{row.ContextControlId}; key={row.Key}; new={newValue}",
                     toOutput: false);
                 RefreshFromPropertyGridEdit();
+                }
+                finally { if (ownsBatch) CommitUndoBatch(); }
             },
             boolValue,
             IsPropertyGridFavorite(key),
@@ -11203,7 +11230,7 @@ public partial class MainWindowViewModel : ObservableObject
             contextDocumentId,
             contextControlId,
             contextControlName,
-            contextControlType);
+            contextControlType) { ContextRevision = _inspectorDocumentRevision };
     }
 
     private bool CanApplyPropertyGridRow(PropertyGridRowViewModel row, string newValue)
@@ -11218,6 +11245,9 @@ public partial class MainWindowViewModel : ObservableObject
     private bool TryGetPropertyGridTargetStaleReason(PropertyGridRowViewModel row, out string reason)
     {
         reason = "";
+
+        if (row.ContextRevision != 0 && row.ContextRevision != _inspectorDocumentRevision)
+        { reason = "row belongs to a replaced document projection"; return true; }
 
         if (string.IsNullOrWhiteSpace(row.ContextDocumentId))
         {
@@ -21550,6 +21580,7 @@ public partial class MainWindowViewModel : ObservableObject
 
         _isHistorySuspended = true;
         _isApplyingDocument = true;
+        _inspectorDocumentRevision++;
         if (refreshEditorSurfaces)
         {
             ResetDocumentScopedRefreshState();
@@ -21770,6 +21801,7 @@ public partial class MainWindowViewModel : ObservableObject
         _isEditingPropertyGrid = false;
         _isPropertyGridEditUndoBatchOpen = false;
         _editingPropertyGridDocumentId = "";
+        _editingPropertyGridRow = null;
         _editingPropertyGridControlId = "";
         _editingPropertyGridKey = "";
         _editingPropertyGridText = "";

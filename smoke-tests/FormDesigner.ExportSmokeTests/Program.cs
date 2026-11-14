@@ -46,6 +46,8 @@ internal static partial class Program
         // Initialize the real UI dispatcher before any view model can create the
         // fallback dispatcher; IPC continuations must run on the actual UI thread.
         EnsureAvaloniaRuntimeInitialized();
+        if (args.Contains("--propertygrid3a-profile")) return RunPropertyGrid3AProfile();
+        if (args.Contains("--propertygrid3a-checks")) return RunPropertyGrid3AChecks();
         if (args.Contains("--universal-controls2-checks")) return RunUniversalControls2Checks();
         if (args.Contains("--universal-controls2-profile")) return RunUniversalControls2Profile();
         if (args.Contains("--universal-metadata-checks")) return RunUniversalMetadataChecks();

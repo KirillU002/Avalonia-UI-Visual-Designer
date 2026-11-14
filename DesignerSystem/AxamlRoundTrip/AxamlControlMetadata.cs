@@ -136,6 +136,14 @@ public sealed record AxamlLiteralProperty(string Key, string DefaultValue, strin
 
     public bool Write(DesignControlModel model, string value)
     {
+        // Imported explicit Infinity must remain distinguishable from absence (Reset).
+        // JSON/native layout keeps its existing unset normalization outside source import.
+        if (Metadata?.Key is "MaxWidth" or "MaxHeight" && value == "Infinity")
+        {
+            var explicitValue = model.CustomProperties.FirstOrDefault(p => p.Key == Key);
+            if (explicitValue is null) model.CustomProperties.Add(explicitValue = new DesignPropertyValueModel { Key = Key });
+            explicitValue.ValueJson = JsonSerializer.Serialize(value); return true;
+        }
         if (Metadata is not null) return StandardControlProperties.TryWriteModel(model, Metadata, value);
         if (Options is not null && !Options.Contains(value, StringComparer.Ordinal)) return false;
         if (IsInteger && (!int.TryParse(value, out var index) || index < -1)) return false;

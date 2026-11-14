@@ -1,0 +1,60 @@
+using System;
+using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Interactivity;
+using Avalonia.Input;
+using Avalonia.VisualTree;
+
+internal static class MetadataRuntimeProbe
+{
+    public static void Attach(IClassicDesktopStyleApplicationLifetime desktop, Window window)
+    {
+        window.ShowInTaskbar=false;window.ShowActivated=false;window.Position=new PixelPoint(-3500,-3500);
+        window.Opened += async (_, _) =>
+        {
+            try
+            {
+                await Task.Delay(250); window.UpdateLayout();
+                var types=new[]{typeof(RadioButton),typeof(NumericUpDown),typeof(Calendar),typeof(DatePicker),typeof(TimePicker),typeof(Separator)};
+                var controls=types.Select(t=>window.GetVisualDescendants().OfType<Control>().Single(c=>c.Name=="Universal2_"+t.Name&&c.GetType()==t)).ToArray();
+                foreach(var c in controls)Require(c.IsVisible&&c.GetVisualRoot()==window&&c.Bounds.Width>0&&c.Bounds.Height>0&&c.MinWidth==50&&c.MaxWidth==480,"Missing native/bounds/constraints "+c.Name);
+                foreach(var c in controls.Where(c=>c.GetVisualParent() is Canvas))
+                {
+                    var point=c.TranslatePoint(default,(Canvas)c.GetVisualParent()!)!.Value;
+                    Require(Math.Abs(point.X-Canvas.GetLeft(c))<1.1&&Math.Abs(point.Y-Canvas.GetTop(c))<1.1,"Theme margin changed absolute coordinates "+c.Name);
+                }
+                var radio=(RadioButton)controls[0];var numeric=(NumericUpDown)controls[1];var calendar=(Calendar)controls[2];var date=(DatePicker)controls[3];var time=(TimePicker)controls[4];
+                Require(radio.IsChecked==true&&radio.GroupName=="phase2","Radio state/group lost");
+                Require(numeric.Value==19.75m&&numeric.Increment==.25m&&numeric.FormatString=="F2","Decimal values lost");
+                Require(numeric.Padding==new Thickness(2,4,6,8)&&numeric.CornerRadius==new CornerRadius(1,3,5,7),"Typed struct order lost");
+                Require(numeric.FontStyle==Avalonia.Media.FontStyle.Italic&&numeric.FontStretch==Avalonia.Media.FontStretch.Condensed,"Font enums lost");
+                Require(numeric.BorderBrush is Avalonia.Media.ISolidColorBrush brush&&brush.Color==Avalonia.Media.Color.Parse("#80446688")&&numeric.AllowSpin,"Brush alpha/reset default lost");
+                if(window.GetVisualDescendants().OfType<Grid>().FirstOrDefault(g=>g.Name=="RootLayout") is { } rootGrid)
+                    Require(rootGrid.RowDefinitions[0].Height.IsAuto&&rootGrid.RowDefinitions[1].Height==new GridLength(2,GridUnitType.Star)&&rootGrid.RowDefinitions[2].Height==new GridLength(140),"GridLength units lost");
+                var up=numeric.GetVisualDescendants().OfType<Button>().Single(b=>b.Name?.Contains("Increase",StringComparison.OrdinalIgnoreCase)==true);
+                up.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));await Task.Delay(50);Require(numeric.Value==20m,"Native spinner interaction failed");
+                Require(calendar.SelectedDate==new DateTime(2026,11,14),"Calendar date lost");
+                calendar.RaiseEvent(new KeyEventArgs{RoutedEvent=InputElement.KeyDownEvent,Key=Key.Right});await Task.Delay(50);Require(calendar.SelectedDate==new DateTime(2026,11,15),"Calendar native keyboard failed");
+                Require(date.SelectedDate?.Date==new DateTime(2026,11,14)&&time.SelectedTime==new TimeSpan(14,30,0)&&time.MinuteIncrement==5,"Date/time values lost");
+                foreach(var picker in new Control[]{date,time})
+                {
+                    picker.GetVisualDescendants().OfType<Button>().Single(b=>b.Name=="PART_FlyoutButton").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));await Task.Delay(80);
+                    var found=false;
+                    for(var t=picker.GetType();t!=null;t=t.BaseType)
+                    foreach(var field in t.GetFields(System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.Public|System.Reflection.BindingFlags.NonPublic|System.Reflection.BindingFlags.DeclaredOnly))
+                        if(typeof(Avalonia.Controls.Primitives.Popup).IsAssignableFrom(field.FieldType)&&field.GetValue(picker) is Avalonia.Controls.Primitives.Popup popup){found|=popup.IsOpen;popup.IsOpen=false;}
+                    Require(found,"Picker popup failed "+picker.GetType().Name);
+                }
+                window.Width+=240;window.Height+=120;await Task.Delay(200);window.UpdateLayout();
+                foreach(var c in controls)Require(c.GetVisualRoot()==window&&c.Bounds.Width>0,"Resize lost "+c.Name);
+                File.WriteAllText(Environment.GetEnvironmentVariable("METADATA_RUNTIME_RESULT")!,"PASS native=6; typed structs/fonts/alpha=true; GridLength=true; reset default=true; decimal/date/time=true; interactions=true; resize=true");desktop.Shutdown(0);
+            }
+            catch(Exception e){File.WriteAllText(Environment.GetEnvironmentVariable("METADATA_RUNTIME_RESULT")!,"FAIL "+e);desktop.Shutdown(1);}
+        };
+    }
+    private static void Require(bool condition,string message){if(!condition)throw new InvalidOperationException(message);}
+}

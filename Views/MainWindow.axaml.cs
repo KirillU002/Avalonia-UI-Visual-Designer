@@ -205,6 +205,12 @@ public partial class MainWindow : Window
         DesignerPropertyInspector.ColorRequested += PropertyGridColorButton_Click;
         DesignerPropertyInspector.ResetRequested += PropertyGridResetButton_Click;
         DesignerPropertyInspector.ActionRequested += PropertyGridActionButton_Click;
+        DesignerPropertyInspector.NullRequested += (sender, _) =>
+        {
+            if (sender is Button { DataContext: PropertyGridRowViewModel row } && row.CanSetNull)
+                VM.CommitPropertyGridTextEdit(row, FormDesigner.DesignerSystem.Metadata.MetadataValueCodec.NullText);
+        };
+        DesignerPropertyInspector.NativeValuesRequested += (_, _) => VM.RefreshNativeInspectorValues(InspectorNativeControl());
         RightDockPanel.AddHandler(InputElement.PointerPressedEvent, RightInspector_PointerPressed, RoutingStrategies.Bubble, true);
         RightDockPanel.AddHandler(InputElement.PointerReleasedEvent, RightInspector_PointerReleased, RoutingStrategies.Bubble, true);
         DesignerViewportScrollViewer.SizeChanged += (_, _) => RenderMiniMap();
@@ -266,6 +272,13 @@ public partial class MainWindow : Window
     private TextBlock MiniMapStatusTextBlock => DesignerSurface.MiniMapStatus;
     private ComboBox ZoomPresetComboBox => DesignerSurface.ZoomPreset;
     private ItemsControl PropertyGridCategoriesItemsControl => DesignerPropertyInspector.CategoriesItemsControl;
+
+    private Control? InspectorNativeControl()
+    {
+        if (VM.SelectedControl is not { } model || !_wrapperByControlId.TryGetValue(model.Id, out var wrapper)
+            || !ReferenceEquals(wrapper.Tag, model)) return null;
+        return wrapper.GetVisualDescendants().OfType<Control>().FirstOrDefault(c => c.Name == model.Name);
+    }
 
     private void DesignerSurface_DiagnosticReported(object? sender, DesignerSurfaceDiagnosticEventArgs e)
     {
@@ -9886,7 +9899,7 @@ public partial class MainWindow : Window
         if (sender is not Button { DataContext: PropertyGridRowViewModel row })
             return;
 
-        row.ResetToDefault();
+        VM.ResetPropertyGridProperty(row);
         RefreshFromPropertyPanel();
     }
 

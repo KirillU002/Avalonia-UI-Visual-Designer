@@ -45,7 +45,13 @@ internal static partial class Program
             RequireCapability(second.Name=="SecondRenamed"&&f.First.Name=="FirstRenamed","Inspector retained stale context.");
             var row=f.Vm.PropertyGridCategories.SelectMany(c=>c.Rows).First(r=>r.Key=="VerticalAlignment");
             var combo=f.Window.GetVisualDescendants().OfType<DesignerPropertyInspector>().Single().GetVisualDescendants().OfType<ComboBox>().Single(c=>ReferenceEquals(c.DataContext,row));
-            combo.SelectedItem=row.Options.Single(o=>o.Value=="Center");NativeItemsUiWait(30);
+            // Exercise native input. Programmatic selection reconciliation during recycling
+            // must not write back to a different immutable Row context.
+            combo.Focus();
+            for (var i=0;i<row.Options.Count;i++) combo.RaiseEvent(new KeyEventArgs{RoutedEvent=InputElement.KeyDownEvent,Key=Key.Up});
+            foreach (var option in row.Options.TakeWhile(o=>o.Value!="Center"))
+                combo.RaiseEvent(new KeyEventArgs{RoutedEvent=InputElement.KeyDownEvent,Key=Key.Down});
+            NativeItemsUiWait(30);
             RequireCapability(second.VerticalAlignment=="Center","Enum binding was not preserved.");
         });
         Check("ReparentReuseInspectorAndUndo",()=>

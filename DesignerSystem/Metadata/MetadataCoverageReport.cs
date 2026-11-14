@@ -45,14 +45,15 @@ public static class MetadataCoverageReport
                 var contextual = descriptor is not null && property.Key is "Margin" or "HorizontalAlignment" or "VerticalAlignment" or "Grid.Row" or "Grid.Column" or "Grid.RowSpan" or "Grid.ColumnSpan" or "DockPanel.Dock" or "MinWidth" or "MinHeight" or "MaxWidth" or "MaxHeight";
                 var legacy = descriptor?.Properties.Any(p => NativeKey(p.Key, type.Name) == property.Key) == true || contextual;
                 var import = sourceProperties.Any(p => p.AttributeNames.Contains(property.Key));
-                var displayable = shared || legacy || import;
+                var readOnlyDisplay = !root && (descriptor is not null || imported is not null) && StandardControlProperties.ReadOnlyInspectorKeys.Contains(property.Key);
+                var displayable = shared || legacy || import || readOnlyDisplay;
                 var editable = !property.ReadOnly && (shared || legacy);
                 var serializable = shared || legacy || import;
                 properties.Add(Csv(type.FullName, property.Key, property.Name, property.OwnerType.FullName, property.PropertyType.FullName,
                     property.Kind, property.DefaultText, property.HasDefaultValue, property.ReadOnly, property.Nullable,
                     property.Inherited, property.InheritsValue, property.Attached, property.Bindable,
                     editable, import, shared || legacy, shared ? StandardControlProperties.EditorFor(property) : property.Editor,
-                    property.ReadOnly ? "ReadOnly" : shared ? "Editable literal; shared codec" : legacy || import ? "PartiallyEditable; legacy/source adapter" : "Opaque/preserved or not exposed",
+                    property.ReadOnly ? "ReadOnly" : shared ? "Editable literal; shared codec" : legacy || import ? "PartiallyEditable; legacy/source adapter" : readOnlyDisplay ? "ReadOnly representation; no literal adapter" : "Opaque/preserved or not exposed",
                     true, displayable, editable, serializable, import, shared || legacy, !displayable && !serializable, contextual));
             }
         }

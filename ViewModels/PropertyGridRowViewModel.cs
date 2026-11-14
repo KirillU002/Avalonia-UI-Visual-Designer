@@ -23,7 +23,8 @@ public enum PropertyGridEditorKind
     ReadOnly,
     CornerRadius,
     GridLength,
-    Font
+    Font,
+    GridDefinitions
 }
 
 public enum PropertyGridValidationState
@@ -96,9 +97,53 @@ public sealed class PropertyGridRowViewModel : ObservableObject
 
     public string Category { get; }
 
-    public PropertyGridEditorKind Editor { get; }
+    public PropertyGridEditorKind Editor { get; private set; }
     public bool UsesMetadata { get; internal set; }
     internal Func<string, string, bool>? LiteralEquals { get; set; }
+    public PropertyGridPropertyMetadata? PropertyMetadata { get; private set; }
+    public PropertyGridValueSource ValueSource { get; private set; } = PropertyGridValueSource.Model;
+    public bool? HasLocalValue { get; private set; }
+    public string EffectiveValue { get; private set; } = "";
+    public string SourceDetail { get; private set; } = "";
+    public string CurrentValue => Value;
+    internal void UseEditor(PropertyGridEditorKind kind) { if (!IsReadOnly) { Editor = kind; OnPropertyChanged(nameof(Editor)); } }
+    internal Action? RemoveLocalValue { get; private set; }
+    internal bool ResetBlocked { get; private set; }
+    public bool CanSetNull => UsesMetadata && PropertyMetadata?.IsNullable == true && !IsReadOnly;
+    public string ValueSourceLabel => ValueSource switch
+    {
+        PropertyGridValueSource.LocalValue => "Локальное значение", PropertyGridValueSource.Style => "Style",
+        PropertyGridValueSource.Binding => "Binding (сохраняется)", PropertyGridValueSource.Resource => "Resource (сохраняется)",
+        PropertyGridValueSource.Inherited => "Унаследованное значение", PropertyGridValueSource.Complex => "Сложное значение (read-only)",
+        PropertyGridValueSource.RegistrationDefault => "Metadata default", PropertyGridValueSource.Unknown => "Источник не определён",
+        _ => "Значение модели (legacy adapter)"
+    };
+    public string PresentationDescription => Description + "\nИсточник: " + ValueSourceLabel +
+        (SourceDetail.Length == 0 ? "" : "\n" + SourceDetail) + (EffectiveValue.Length == 0 ? "" : "\nNative effective: " + EffectiveValue);
+
+    internal void SetPropertyMetadata(PropertyGridPropertyMetadata metadata, PropertyGridValueSource source, bool? local,
+        string detail = "", Action? removeLocal = null, bool blockReset = false)
+    {
+        PropertyMetadata = metadata; ValueSource = source; HasLocalValue = local; SourceDetail = detail;
+        RemoveLocalValue = removeLocal; ResetBlocked = blockReset;
+        OnPropertyChanged(nameof(PropertyMetadata)); OnPropertyChanged(nameof(CanSetNull)); NotifySource();
+    }
+    internal void SetNativeValueSource(PropertyGridValueSource source, string effective)
+    {
+        ValueSource = source; EffectiveValue = effective; NotifySource();
+    }
+    internal void ProtectValue(string detail)
+    {
+        IsReadOnly = true; Editor = PropertyGridEditorKind.ReadOnly; SourceDetail = detail;
+        if (PropertyMetadata is { } metadata) PropertyMetadata = metadata with { Editable = false };
+        OnPropertyChanged(nameof(IsReadOnly)); OnPropertyChanged(nameof(Editor)); OnPropertyChanged(nameof(CanSetNull)); NotifySource();
+    }
+    private void NotifySource()
+    {
+        OnPropertyChanged(nameof(ValueSource)); OnPropertyChanged(nameof(ValueSourceLabel));
+        OnPropertyChanged(nameof(PresentationDescription)); OnPropertyChanged(nameof(EffectiveValue));
+        OnPropertyChanged(nameof(HasLocalValue)); RefreshModifiedState();
+    }
 
     public string Description { get; }
 
@@ -115,10 +160,11 @@ public sealed class PropertyGridRowViewModel : ObservableObject
     public string ContextControlName { get; }
 
     public string ContextControlType { get; }
+    public long ContextRevision { get; internal set; }
 
     public bool IsAdvanced { get; }
 
-    public bool IsReadOnly { get; }
+    public bool IsReadOnly { get; private set; }
 
     public ObservableCollection<PropertyGridOptionViewModel> Options { get; } = new();
 
@@ -156,15 +202,21 @@ public sealed class PropertyGridRowViewModel : ObservableObject
 
     public string FavoriteGlyph => IsFavorite ? "\u2605" : "\u2606";
 
-    public bool HasDefaultValue => !string.IsNullOrWhiteSpace(DefaultValue);
+    public bool HasDefaultValue => PropertyMetadata?.Native.HasDefaultValue ?? !string.IsNullOrWhiteSpace(DefaultValue);
 
-    public bool IsModified => HasDefaultValue && !ValueEqualsDefault();
+    public bool IsModified => HasLocalValue ?? (HasDefaultValue && !ValueEqualsDefault());
 
-    public bool CanResetToDefault => HasDefaultValue && IsModified && !IsReadOnly;
+    public bool CanResetToDefault => !ResetBlocked && !IsReadOnly && (RemoveLocalValue is not null ? HasLocalValue == true : HasDefaultValue && IsModified);
 
-    public string ModifiedGlyph => IsModified ? "\u25CF " : "";
+    public string ModifiedGlyph => ValueSource switch
+    {
+        PropertyGridValueSource.Binding => "ƒ ", PropertyGridValueSource.Resource => "R ",
+        PropertyGridValueSource.Style when HasLocalValue != true => "S ", PropertyGridValueSource.Inherited => "↳ ",
+        _ => IsModified ? "\u25CF " : ""
+    };
 
-    public string DefaultTooltip => HasDefaultValue ? $"Default: {DefaultValue}" : "";
+    public string DefaultTooltip => RemoveLocalValue is not null ? "Удалить локальное значение; восстановить Style / inheritance / metadata default"
+        : ResetBlocked ? "Unset не поддерживается этим source adapter" : HasDefaultValue ? $"Восстановить значение модели: {DefaultValue}" : "";
 
     public bool HasValidationError => !string.IsNullOrWhiteSpace(ValidationMessage);
 
@@ -184,6 +236,7 @@ public sealed class PropertyGridRowViewModel : ObservableObject
 
             ValueTrace?.Invoke(this, oldValue, newValue, new StackTrace(skipFrames: 1, fNeedFileInfo: false).ToString());
             RefreshModifiedState();
+            OnPropertyChanged(nameof(CurrentValue));
         }
     }
 
@@ -195,6 +248,7 @@ public sealed class PropertyGridRowViewModel : ObservableObject
             if (!SetProperty(ref _boolValue, value) || _isApplying)
                 return;
 
+            Value = value ? "True" : "False";
             _applyBool?.Invoke(this, value);
         }
     }
@@ -285,6 +339,8 @@ public sealed class PropertyGridRowViewModel : ObservableObject
     {
         if (!CanResetToDefault)
             return;
+
+        if (RemoveLocalValue is { } remove) { remove(); return; }
 
         if (IsBoolEditor && bool.TryParse(DefaultValue, out var boolValue))
         {

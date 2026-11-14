@@ -49,7 +49,8 @@ public partial class MainWindowViewModel
             $"Avalonia {property.OwnerType.Name}.{property.Name}. {StandardControlProperties.Hint(property)}",
             (item, text) =>
             {
-                if (!StandardControlProperties.TryEncode(property, text, out _))
+                if (!StandardControlProperties.TryEncode(property, text, out _)
+                    || SelectedControl is { } target && !StandardControlProperties.IsWithinModelRange(target, property, text))
                 {
                     item.ValidationMessage = "Недопустимое значение " + property.Name;
                     item.ValidationState = PropertyGridValidationState.Error;

@@ -200,6 +200,7 @@ public static partial class AxamlLayoutProjection
         if (reference is not null && reference.Capability.CanEditProperty(name))
         {
             var property = AxamlRoundTripPropertyMap.PropertiesFor(reference.Element.LocalName).FirstOrDefault(p => p.Key == name);
+            if (property?.Metadata is not null && !model.CustomProperties.Any(p => p.Key == name)) return; // Pending Reset: leave native style/inheritance intact.
             if (property is not null && reference.SnapshotValues.TryGetValue(name, out var before) && before != property.Read(model)) literal = property.Read(model);
         }
         if (double.TryParse(literal, NumberStyles.Float, CultureInfo.InvariantCulture, out var n)

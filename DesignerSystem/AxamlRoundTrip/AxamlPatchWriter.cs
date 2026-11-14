@@ -84,7 +84,7 @@ public sealed class AxamlPatchWriter
             // A new x:Null literal requires the matching namespace in the original scope.
             // Do not generate an undefined prefix or regenerate the user's document.
             var addsNull = AxamlRoundTripPropertyMap.PropertiesFor(reference.Element.LocalName).Any(p =>
-                p.Read(control) == "{x:Null}" && reference.SnapshotValues.TryGetValue(p.Key, out var beforeNull) && beforeNull != "{x:Null}");
+                !IsMetadataReset(p, reference, control) && p.Read(control) == "{x:Null}" && reference.SnapshotValues.TryGetValue(p.Key, out var beforeNull) && beforeNull != "{x:Null}");
             if (addsNull)
             {
                 var scope = reference.Element;
@@ -161,6 +161,12 @@ public sealed class AxamlPatchWriter
             if (!reference.Capability.CanEditProperty(property.Key))
                 continue;
 
+            if (IsMetadataReset(property, reference, current))
+            {
+                var removed = property.ResolveExistingAttribute(reference.Element)!;
+                edits.Add(new AxamlTextEdit(removed.FullSpan.Start, removed.FullSpan.Length, string.Empty));
+                continue;
+            }
             var currentValue = property.Read(current);
             if (!reference.SnapshotValues.TryGetValue(property.Key, out var originalValue) || string.Equals(currentValue, originalValue, StringComparison.Ordinal))
                 continue;
@@ -181,6 +187,10 @@ public sealed class AxamlPatchWriter
         var addedText = string.Concat(additions.Select(item => $" {item.Name}=\"{EscapeAttributeValue(item.Value)}\""));
         edits.Add(new AxamlTextEdit(insertion, 0, addedText));
     }
+
+    private static bool IsMetadataReset(AxamlRoundTripProperty property, AxamlSourceReference reference, DesignControlModel current) =>
+        property.Metadata is not null && reference.Capability.CanEditProperty(property.Key)
+        && property.ResolveExistingAttribute(reference.Element) is not null && !current.CustomProperties.Any(p => p.Key == property.Key);
 
     private static void AppendNewControlInsert(
         string source,

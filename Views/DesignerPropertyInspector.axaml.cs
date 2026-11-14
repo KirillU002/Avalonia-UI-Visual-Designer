@@ -18,6 +18,7 @@ public partial class DesignerPropertyInspector : UserControl
     public DesignerPropertyInspector()
     {
         InitializeComponent();
+        InitializePresentation();
     }
 
     public object? Context
@@ -39,9 +40,12 @@ public partial class DesignerPropertyInspector : UserControl
     public event EventHandler<RoutedEventArgs>? ResetRequested;
     public event EventHandler<RoutedEventArgs>? ActionRequested;
     public event EventHandler<RoutedEventArgs>? FavoriteRequested;
+    public event EventHandler<RoutedEventArgs>? NullRequested;
+    public event EventHandler? NativeValuesRequested;
 
     private void PropertyGridFavoriteButton_Click(object? sender, RoutedEventArgs e) => FavoriteRequested?.Invoke(sender, e);
     private void PropertyGridColorButton_Click(object? sender, RoutedEventArgs e) => ColorRequested?.Invoke(sender, e);
     private void PropertyGridResetButton_Click(object? sender, RoutedEventArgs e) => ResetRequested?.Invoke(sender, e);
     private void PropertyGridActionButton_Click(object? sender, RoutedEventArgs e) => ActionRequested?.Invoke(sender, e);
+    private void PropertyGridNullButton_Click(object? sender, RoutedEventArgs e) => NullRequested?.Invoke(sender, e);
 }

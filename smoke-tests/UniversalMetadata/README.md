@@ -44,3 +44,27 @@ Remove-Item Env:UNIVERSAL2_PROFILE_SCENE, Env:UNIVERSAL2_PROFILE_LABEL
 ```
 
 По умолчанию профиль сохраняет прежнюю Phase 1 сцену для сравнения: три warm-up и 30 переключений. `new` — отдельная сцена с шестью новыми controls, шесть warm-up и 30 измерений. JSON содержит median/P95, allocations, GC, counts/stages и размер native Inspector tree. Измеряется синхронный selection/Inspector/layout; compositor/физическая мышь не измеряются. Производительность новых шести controls не сравнивается напрямую с исходными тремя.
+
+## Universal PropertyGrid Phase 3A
+
+```powershell
+dotnet smoke-tests/FormDesigner.ExportSmokeTests/bin/Release/net8.0/FormDesigner.ExportSmokeTests.dll --propertygrid3a-checks
+pwsh -NoProfile -File smoke-tests/UniversalMetadata/ProbeRuntime.ps1 -ProjectPath artifacts/universal-phase3a/exports/Grid -ProbeFile Phase3ARuntimeProbe.cs.txt -ResultName Grid-runtime.txt
+pwsh -NoProfile -File smoke-tests/UniversalMetadata/ProbeRuntime.ps1 -ProjectPath artifacts/universal-phase3a/exports/Canvas -ProbeFile Phase3ARuntimeProbe.cs.txt -ResultName Canvas-runtime.txt
+```
+
+Проверяются native типизированные значения и редакторы, Value Source, Reset с удалением локального значения, минимальные source patches, защищённые Binding/Resource/Gradient, атомарный Undo/Redo, JSON, Multi Form, stale Row callbacks, повторный ввод после Enter и WeakReference на старые Row/session. Фильтр — `PROPERTYGRID3A_FILTER`; для полного прогона убрать. Runtime probes проверяют реальный visual tree, decimal/spinner, порядок Thickness/CornerRadius, brush alpha, fonts, GridLength units и resize. SQL/Preview memory/VSIX проверяются отдельными существующими suites.
+
+Benchmark запускать последовательно, после завершения builds и других native suites:
+
+```powershell
+$env:PROPERTYGRID3A_SCENE='representative'
+$env:PROPERTYGRID3A_LABEL='representative-after'
+dotnet smoke-tests/FormDesigner.ExportSmokeTests/bin/Release/net8.0/FormDesigner.ExportSmokeTests.dll --propertygrid3a-profile
+$env:FORMDESIGNER_PROPERTYGRID_REUSE='0'
+$env:PROPERTYGRID3A_LABEL='representative-disabled'
+dotnet smoke-tests/FormDesigner.ExportSmokeTests/bin/Release/net8.0/FormDesigner.ExportSmokeTests.dll --propertygrid3a-profile
+Remove-Item Env:FORMDESIGNER_PROPERTYGRID_REUSE, Env:PROPERTYGRID3A_SCENE, Env:PROPERTYGRID3A_LABEL
+```
+
+Сцена `representative` содержит семь типов и 30 измерений каждого после трёх полных warm-up проходов. `original` — прежняя сцена, 30 измерений. Результат сохраняется в `artifacts/universal-phase3a/<label>.json`: selection, layout, callback compositor, allocations текущего UI thread, GC, профили этапов и проверка актуального native editor context. Callback compositor не означает физическое появление пикселей на мониторе. Cold setup всего окна отделён от steady-state. `FORMDESIGNER_PROPERTYGRID_REUSE=0` — диагностический rollback presentation reuse, не пользовательская настройка и не отключение typed editors/safety. Жёстких временных CI-порогов нет.

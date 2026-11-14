@@ -261,8 +261,10 @@ internal static partial class Program
     private static void DumpRetainedPreviewIfRequested()
     {
         if (Environment.GetEnvironmentVariable("FORMDESIGNER_MEMORY_DUMP_ON_RETAINED") != "1") return;
-        var folder = Path.Combine(FindRepositoryRoot(), "artifacts", "preview-memory");
-        var start = new ProcessStartInfo(Path.Combine(folder, "tools", "dotnet-dump.exe")) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true };
+        var folder = Environment.GetEnvironmentVariable("FORMDESIGNER_MEMORY_DUMP_DIR") ?? Path.Combine(FindRepositoryRoot(), "artifacts", "preview-memory");
+        Directory.CreateDirectory(folder);
+        var tool = Environment.GetEnvironmentVariable("FORMDESIGNER_MEMORY_DUMP_TOOL") ?? Path.Combine(folder, "tools", "dotnet-dump.exe");
+        var start = new ProcessStartInfo(tool) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true };
         foreach (var arg in new[] { "collect", "-p", Environment.ProcessId.ToString(), "--type", "Heap", "-o", Path.Combine(folder, "retained-" + Guid.NewGuid().ToString("N") + ".dmp") }) start.ArgumentList.Add(arg);
         using var dump = Process.Start(start)!;
         if (!dump.WaitForExit(30000)) dump.Kill();

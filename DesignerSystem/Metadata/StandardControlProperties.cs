@@ -17,6 +17,8 @@ namespace FormDesigner.DesignerSystem.Metadata;
 /// </summary>
 public static class StandardControlProperties
 {
+    public static readonly IReadOnlySet<string> ReadOnlyInspectorKeys = new HashSet<string>(StringComparer.Ordinal)
+        { "Styles", "Resources", "Template", "DataTemplates", "DataContext", "ItemsSource", "ItemTemplate", "ContextMenu", "ContextFlyout", "Flyout", "SelectedItem" };
     public static readonly IReadOnlyDictionary<string, Type> PilotTypes = new System.Collections.ObjectModel.ReadOnlyDictionary<string, Type>(
         new Dictionary<string, Type>(StringComparer.Ordinal)
         { ["Slider"] = typeof(Slider), ["ProgressBar"] = typeof(ProgressBar), ["ToggleSwitch"] = typeof(ToggleSwitch) });
@@ -169,7 +171,7 @@ public static class StandardControlProperties
     }
     public static bool TryWriteModel(DesignControlModel model, AvaloniaPropertyInfo property, string value)
     {
-        if (!TryEncode(property, value, out var json)) return false;
+        if (!TryEncode(property, value, out var json) || !IsWithinModelRange(model, property, value)) return false;
         var stored = model.CustomProperties.FirstOrDefault(p => p.Key == property.Key);
         if (property.Key is "MaxWidth" or "MaxHeight" && value == "Infinity")
         {
@@ -178,5 +180,22 @@ public static class StandardControlProperties
         }
         if (stored is null) model.CustomProperties.Add(stored = new DesignPropertyValueModel { Key = property.Key });
         stored.ValueJson = json; return true;
+    }
+    public static bool IsWithinModelRange(DesignControlModel model, AvaloniaPropertyInfo property, string text)
+    {
+        if (model.Type is not ("Slider" or "ProgressBar" or "NumericUpDown") || property.Key is not ("Value" or "Minimum" or "Maximum")) return true;
+        if (!TryParseValue(property, text, out var candidate)) return false;
+        if (candidate is null) return true;
+        object? Bound(string key)
+        {
+            var p = Find(model.Type, key);
+            if (p is null) return null;
+            try { return TryParseValue(p, Read(p, model.CustomProperties.FirstOrDefault(v => v.Key == key)?.ValueJson), out var result) ? result : null; }
+            catch (Exception error) when (error is JsonException or FormatException) { return null; }
+        }
+        if (candidate is not IComparable comparable) return true;
+        var minimum = Bound("Minimum"); var maximum = Bound("Maximum");
+        return (property.Key == "Minimum" || minimum is null || comparable.CompareTo(minimum) >= 0)
+            && (property.Key == "Maximum" || maximum is null || comparable.CompareTo(maximum) <= 0);
     }
 }

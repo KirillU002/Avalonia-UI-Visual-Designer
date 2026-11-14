@@ -91,6 +91,8 @@ public sealed class PropertyGridTextEditor : TextBox
 
     protected override void OnKeyDown(KeyEventArgs e)
     {
+        if (e.Key is Key.Back or Key.Delete || e.KeyModifiers.HasFlag(KeyModifiers.Control) && e.Key is Key.V or Key.X)
+            BeginUserInputAfterCommit();
         if (e.Key == Key.Enter)
         {
             CommitEdit();
@@ -107,6 +109,17 @@ public sealed class PropertyGridTextEditor : TextBox
 
         base.OnKeyDown(e);
     }
+    protected override void OnTextInput(TextInputEventArgs e)
+    {
+        BeginUserInputAfterCommit();
+        base.OnTextInput(e);
+    }
+    private void BeginUserInputAfterCommit()
+    {
+        if (_isEditing || _isApplyingText || _isCancelling || GetCurrentRow() is not { IsReadOnly: false } row) return;
+        _isEditing = true; _initialText = row.Value;
+        GetViewModel()?.BeginPropertyGridTextEdit(row, _initialText);
+    }
 
     private void AttachCurrentRow()
     {
@@ -114,6 +127,12 @@ public sealed class PropertyGridTextEditor : TextBox
         if (ReferenceEquals(row, _attachedRow))
             return;
 
+        // Recycled views must never commit text belonging to the previous immutable context.
+        if (_isEditing)
+        {
+            _isEditing = false;
+            if (_attachedRow is { } previous) GetViewModel()?.CancelPropertyGridTextEdit(previous);
+        }
         DetachRow();
         _attachedRow = row;
         if (_attachedRow is not null)

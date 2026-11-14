@@ -474,16 +474,19 @@ internal sealed class AxamlRoundTripProperty
     private readonly Func<DesignControlModel, string, bool> _write;
     private readonly bool _allowNullLiteral;
 
-    public AxamlRoundTripProperty(string key, IEnumerable<string> attributeNames, Func<DesignControlModel, string> read, Func<DesignControlModel, string, bool> write, bool allowNullLiteral = false)
+    public AxamlRoundTripProperty(string key, IEnumerable<string> attributeNames, Func<DesignControlModel, string> read, Func<DesignControlModel, string, bool> write, bool allowNullLiteral = false,
+        FormDesigner.DesignerSystem.Metadata.AvaloniaPropertyInfo? metadata = null)
     {
         Key = key;
         AttributeNames = attributeNames.ToArray();
         _read = read;
         _write = write;
         _allowNullLiteral = allowNullLiteral;
+        Metadata = metadata;
     }
 
     public string Key { get; }
+    public FormDesigner.DesignerSystem.Metadata.AvaloniaPropertyInfo? Metadata { get; }
     public IReadOnlyList<string> AttributeNames { get; }
     public string PreferredAttributeName => AttributeNames[0];
     public string Read(DesignControlModel control) => _read(control);
@@ -569,7 +572,7 @@ internal static class AxamlRoundTripPropertyMap
             .Concat(literals.Select(p => new AxamlRoundTripProperty(p.Key,
                 new[] { p.Key, controlType + "." + p.Key },
                 c => p.Metadata is not null && p.Read(c) == FormDesigner.DesignerSystem.Metadata.MetadataValueCodec.NullText ? "{x:Null}" : p.Read(c), p.Write,
-                allowNullLiteral: p.Metadata?.Nullable == true))).ToArray();
+                allowNullLiteral: p.Metadata?.Nullable == true, metadata: p.Metadata))).ToArray();
     }
 
     private static IReadOnlyList<AxamlRoundTripProperty> StandardPropertiesFor(string controlType) => controlType switch
