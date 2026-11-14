@@ -97,6 +97,8 @@ public sealed class PropertyGridRowViewModel : ObservableObject
     public string Category { get; }
 
     public PropertyGridEditorKind Editor { get; }
+    public bool UsesMetadata { get; internal set; }
+    internal Func<string, string, bool>? LiteralEquals { get; set; }
 
     public string Description { get; }
 
@@ -336,12 +338,13 @@ public sealed class PropertyGridRowViewModel : ObservableObject
     {
         if (!HasDefaultValue)
             return true;
+        if (LiteralEquals is not null) return LiteralEquals(Value, DefaultValue);
 
         if (IsNumberEditor
             && double.TryParse(Value, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var valueNumber)
             && double.TryParse(DefaultValue, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var defaultNumber))
         {
-            return Math.Abs(valueNumber - defaultNumber) < 0.0001;
+            return valueNumber.Equals(defaultNumber) || Math.Abs(valueNumber - defaultNumber) < 0.0001;
         }
 
         return string.Equals(Value, DefaultValue, StringComparison.OrdinalIgnoreCase);

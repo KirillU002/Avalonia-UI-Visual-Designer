@@ -46,6 +46,8 @@ internal static partial class Program
         // Initialize the real UI dispatcher before any view model can create the
         // fallback dispatcher; IPC continuations must run on the actual UI thread.
         EnsureAvaloniaRuntimeInitialized();
+        if (args.Contains("--universal-controls2-checks")) return RunUniversalControls2Checks();
+        if (args.Contains("--universal-controls2-profile")) return RunUniversalControls2Profile();
         if (args.Contains("--universal-metadata-checks")) return RunUniversalMetadataChecks();
         if (args.Contains("--universal-metadata-profile")) return RunUniversalMetadataProfile();
         if (args.Contains("--rc-package-checks")) return RunReleaseCandidatePackageChecks();

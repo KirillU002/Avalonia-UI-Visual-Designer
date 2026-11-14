@@ -46,7 +46,7 @@ public sealed record AxamlControlMetadata(string SourceType, string ProjectionTy
     };
 
     public static AxamlControlMetadata? Find(string sourceType) => Known.TryGetValue(sourceType, out var value) ? value
-        : StandardControlProperties.PilotTypes.ContainsKey(sourceType) ? new(sourceType, "Group", AxamlContainerKind.None) : null;
+        : StandardControlProperties.SupportedTypes.ContainsKey(sourceType) ? new(sourceType, "Group", AxamlContainerKind.None) : null;
     public static AxamlControlMetadata? FindSourceElement(AxamlElementSyntax element, string parentType)
     {
         if (element.LocalName == "String")
@@ -68,9 +68,9 @@ public sealed record AxamlControlMetadata(string SourceType, string ProjectionTy
         && (element.LocalName == SourceType + "." + ChildProperty
             || ContainerKind == AxamlContainerKind.Items && element.LocalName == "ItemsControl.Items");
 
-    public IReadOnlyList<AxamlLiteralProperty> LiteralProperties => StandardControlProperties.PilotTypes.ContainsKey(SourceType)
+    public IReadOnlyList<AxamlLiteralProperty> LiteralProperties => StandardControlProperties.SupportedTypes.ContainsKey(SourceType)
         ? StandardControlProperties.PropertiesFor(SourceType).Select(p => new AxamlLiteralProperty(p.Key, p.DefaultText,
-            Options: p.Editor == MetadataEditor.Enumeration ? StandardControlProperties.Options(p).ToArray() : null,
+            Options: StandardControlProperties.EditorFor(p) == MetadataEditor.Enumeration ? StandardControlProperties.Options(p).ToArray() : null,
             IsBoolean: p.Editor == MetadataEditor.Boolean, IsNumber: p.Editor == MetadataEditor.Number, Metadata: p)).ToArray()
         : SourceType switch
     {

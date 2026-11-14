@@ -18,7 +18,7 @@ public static class MetadataCoverageReport
         var descriptors = registry.GetControls().Where(d => d.GetType().Assembly == typeof(MetadataCoverageReport).Assembly).ToArray();
         var aliases = new Dictionary<string, string> { ["Grid"] = "Grid", ["StackPanel"] = "StackPanel", ["WrapPanel"] = "WrapPanel", ["Canvas"] = "Group", ["DockPanel"] = "Group" };
         var controls = new List<string> { Csv("Type", "Namespace", "BaseType", "Visual", "Abstract", "ContainerKind", "ChildProperty", "LayoutSemantics", "ToolboxCandidate", "CandidateReason", "Toolbox", "ToolboxEntry", "Designer", "Inspector", "AxamlImport", "LegacyPreview", "AxamlPreview", "Export") };
-        var properties = new List<string> { Csv("Control", "Key", "Name", "OwnerType", "PropertyType", "Kind", "DefaultValue", "HasDefault", "ReadOnly", "Nullable", "InheritedFromBase", "InheritsValue", "Attached", "BindableTarget", "DesignerEditable", "ImportSupported", "ExportSupported", "EditorType", "SupportState") };
+        var properties = new List<string> { Csv("Control", "Key", "Name", "OwnerType", "PropertyType", "Kind", "DefaultValue", "HasDefault", "ReadOnly", "Nullable", "InheritedFromBase", "InheritsValue", "Attached", "BindableTarget", "DesignerEditable", "ImportSupported", "ExportSupported", "EditorType", "SupportState", "Discovered", "Displayable", "Editable", "Serializable", "Importable", "Exportable", "Unsupported", "ContextualLayout") };
         var types = AvaloniaMetadataCatalog.DiscoverControls();
         foreach (var type in types)
         {
@@ -42,13 +42,18 @@ public static class MetadataCoverageReport
             foreach (var property in metadata.Properties)
             {
                 var shared = StandardControlProperties.Find(type.Name, property.Key) is not null;
-                var legacy = descriptor?.Properties.Any(p => NativeKey(p.Key, type.Name) == property.Key) == true;
+                var contextual = descriptor is not null && property.Key is "Margin" or "HorizontalAlignment" or "VerticalAlignment" or "Grid.Row" or "Grid.Column" or "Grid.RowSpan" or "Grid.ColumnSpan" or "DockPanel.Dock" or "MinWidth" or "MinHeight" or "MaxWidth" or "MaxHeight";
+                var legacy = descriptor?.Properties.Any(p => NativeKey(p.Key, type.Name) == property.Key) == true || contextual;
                 var import = sourceProperties.Any(p => p.AttributeNames.Contains(property.Key));
+                var displayable = shared || legacy || import;
+                var editable = !property.ReadOnly && (shared || legacy);
+                var serializable = shared || legacy || import;
                 properties.Add(Csv(type.FullName, property.Key, property.Name, property.OwnerType.FullName, property.PropertyType.FullName,
                     property.Kind, property.DefaultText, property.HasDefaultValue, property.ReadOnly, property.Nullable,
                     property.Inherited, property.InheritsValue, property.Attached, property.Bindable,
-                    !property.ReadOnly && (shared || legacy), import, shared || legacy, property.Editor,
-                    property.ReadOnly ? "ReadOnly" : shared ? "Editable literal; shared codec" : legacy || import ? "PartiallyEditable; legacy/source adapter" : "Opaque/preserved or not exposed"));
+                    editable, import, shared || legacy, shared ? StandardControlProperties.EditorFor(property) : property.Editor,
+                    property.ReadOnly ? "ReadOnly" : shared ? "Editable literal; shared codec" : legacy || import ? "PartiallyEditable; legacy/source adapter" : "Opaque/preserved or not exposed",
+                    true, displayable, editable, serializable, import, shared || legacy, !displayable && !serializable, contextual));
             }
         }
         File.WriteAllLines(Path.Combine(directory, "UniversalControlCoverage.csv"), controls, new UTF8Encoding(false));
@@ -60,7 +65,7 @@ public static class MetadataCoverageReport
     }
     private static string NativeKey(string key, string type) => key switch
     {
-        "Text" when type is "Button" or "CheckBox" or "ToggleSwitch" => "Content",
+        "Text" when type is "Button" or "CheckBox" or "ToggleSwitch" or "RadioButton" => "Content",
         "X" => "Canvas.Left", "Y" => "Canvas.Top", "LayoutOrientation" => "Orientation", "LayoutSpacing" => "Spacing",
         "GridRowDefinitions" => "RowDefinitions", "GridColumnDefinitions" => "ColumnDefinitions", _ => key
     };

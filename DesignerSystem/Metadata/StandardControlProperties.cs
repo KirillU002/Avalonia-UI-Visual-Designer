@@ -11,7 +11,7 @@ using System.Text.Json;
 namespace FormDesigner.DesignerSystem.Metadata;
 
 /// <summary>
-/// Reviewed support policy on top of discovery. This list enables three complete vertical
+/// Reviewed support policy on top of discovery. This list enables complete vertical
 /// slices, not every discovered control/property. The same metadata/codec owns Inspector,
 /// native creation, literal AXAML import and exported attributes.
 /// </summary>
@@ -20,26 +20,44 @@ public static class StandardControlProperties
     public static readonly IReadOnlyDictionary<string, Type> PilotTypes = new System.Collections.ObjectModel.ReadOnlyDictionary<string, Type>(
         new Dictionary<string, Type>(StringComparer.Ordinal)
         { ["Slider"] = typeof(Slider), ["ProgressBar"] = typeof(ProgressBar), ["ToggleSwitch"] = typeof(ToggleSwitch) });
+    public static readonly IReadOnlyDictionary<string, Type> SupportedTypes = new System.Collections.ObjectModel.ReadOnlyDictionary<string, Type>(
+        PilotTypes.Concat(new Dictionary<string, Type>(StringComparer.Ordinal)
+        {
+            ["RadioButton"] = typeof(RadioButton), ["NumericUpDown"] = typeof(NumericUpDown), ["Calendar"] = typeof(Avalonia.Controls.Calendar),
+            ["DatePicker"] = typeof(DatePicker), ["TimePicker"] = typeof(TimePicker), ["Separator"] = typeof(Separator)
+        }).ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal));
+    private static readonly string[] CommonSafeKeys = { "IsEnabled", "MinWidth", "MinHeight", "MaxWidth", "MaxHeight", "Padding", "BorderBrush", "BorderThickness",
+        "CornerRadius", "HorizontalContentAlignment", "VerticalContentAlignment", "FontStyle", "FontStretch", "ClipToBounds" };
     private static readonly IReadOnlyDictionary<string, string[]> Keys = new Dictionary<string, string[]>(StringComparer.Ordinal)
     {
         ["Slider"] = new[] { "Minimum", "Maximum", "Value", "SmallChange", "LargeChange", "Orientation", "IsSnapToTickEnabled", "TickFrequency", "TickPlacement", "IsEnabled", "Padding" },
         ["ProgressBar"] = new[] { "Minimum", "Maximum", "Value", "IsIndeterminate", "Orientation", "ShowProgressText", "IsEnabled", "Padding" },
-        ["ToggleSwitch"] = new[] { "IsChecked", "IsThreeState", "IsEnabled", "Padding", "CornerRadius" }
+        ["ToggleSwitch"] = new[] { "IsChecked", "IsThreeState", "IsEnabled", "Padding", "CornerRadius" },
+        ["RadioButton"] = new[] { "IsChecked", "GroupName" },
+        ["NumericUpDown"] = new[] { "Minimum", "Maximum", "Value", "Increment", "FormatString", "AllowSpin", "ShowButtonSpinner", "IsReadOnly" },
+        ["Calendar"] = new[] { "DisplayDate", "DisplayDateStart", "DisplayDateEnd", "SelectedDate", "FirstDayOfWeek", "IsTodayHighlighted", "DisplayMode" },
+        ["DatePicker"] = new[] { "SelectedDate", "MinYear", "MaxYear", "YearVisible", "MonthVisible", "DayVisible", "YearFormat", "MonthFormat", "DayFormat" },
+        ["TimePicker"] = new[] { "SelectedTime", "ClockIdentifier", "MinuteIncrement" },
+        ["Separator"] = Array.Empty<string>()
     };
     // Cache only non-collectible, explicitly shipped types; never plugin Type/Assembly keys.
     private static readonly Lazy<IReadOnlyDictionary<string, IReadOnlyList<AvaloniaPropertyInfo>>> Supported = new(() =>
-        PilotTypes.ToDictionary(pair => pair.Key, pair => (IReadOnlyList<AvaloniaPropertyInfo>)Keys[pair.Key]
+        SupportedTypes.ToDictionary(pair => pair.Key, pair => (IReadOnlyList<AvaloniaPropertyInfo>)Keys[pair.Key].Concat(PilotTypes.ContainsKey(pair.Key) ? Array.Empty<string>() : CommonSafeKeys).Distinct(StringComparer.Ordinal)
             .Select(key => AvaloniaMetadataCatalog.Get(pair.Value).Properties.FirstOrDefault(p => p.Key == key))
             .Where(p => p is { ReadOnly: false, Property: not null }).Cast<AvaloniaPropertyInfo>().ToArray(), StringComparer.Ordinal));
     public static IReadOnlyList<AvaloniaPropertyInfo> PropertiesFor(string? type) =>
         type is not null && Supported.Value.TryGetValue(type, out var properties) ? properties : Array.Empty<AvaloniaPropertyInfo>();
     public static AvaloniaPropertyInfo? Find(string? type, string key) => PropertiesFor(type).FirstOrDefault(p => p.Key == key);
-    public static string CategoryFor(AvaloniaPropertyInfo property) => property.Editor is MetadataEditor.Thickness or MetadataEditor.CornerRadius ? "Layout" : "Behavior";
+    public static MetadataEditor EditorFor(AvaloniaPropertyInfo property) => property.OwnerType == typeof(TimePicker) && property.Key == "ClockIdentifier"
+        ? MetadataEditor.Enumeration : property.Editor;
+    public static string CategoryFor(AvaloniaPropertyInfo property) => property.Key is "MinWidth" or "MinHeight" or "MaxWidth" or "MaxHeight"
+        || property.Editor is MetadataEditor.Thickness or MetadataEditor.CornerRadius ? "Layout"
+        : property.Editor is MetadataEditor.Color or MetadataEditor.Font || property.Key.StartsWith("Font", StringComparison.Ordinal) ? "Appearance" : "Behavior";
     public static DesignPropertyDescriptor Descriptor(AvaloniaPropertyInfo property) => new()
     {
         Key = property.Key, Title = property.Name, Category = CategoryFor(property),
         Description = $"Avalonia {property.OwnerType.Name}.{property.Name}. {Hint(property)}",
-        Editor = property.Editor switch
+        Editor = EditorFor(property) switch
         {
             MetadataEditor.Boolean => PropertyEditorKind.Bool, MetadataEditor.Enumeration => PropertyEditorKind.Enum,
             MetadataEditor.Number => PropertyEditorKind.Number, MetadataEditor.Color => PropertyEditorKind.Color, _ => PropertyEditorKind.Text
@@ -52,11 +70,15 @@ public static class StandardControlProperties
         MetadataEditor.Thickness => "Отступы в DIP: одно, два или четыре числа (left,top,right,bottom).",
         MetadataEditor.CornerRadius => "Радиусы углов в DIP; значение проверяется Avalonia.",
         MetadataEditor.GridLength => "Размер Grid: Auto, *, 2* или число DIP.",
+        MetadataEditor.DateTime => "Дата ISO 8601: yyyy-MM-dd или дата/время с offset. Для nullable доступно (null).",
+        MetadataEditor.TimeSpan => "Время/интервал: hh:mm:ss (например 14:30:00); (null) очищает nullable значение.",
+        MetadataEditor.Number => "Число с десятичной точкой; для nullable доступно (null). MaxWidth/MaxHeight допускают Infinity.",
         _ when property.Nullable => "Допускается явное значение (null). Bindings редактируются отдельным механизмом.",
         _ => "Типизированное литеральное свойство; недопустимое значение не изменяет документ."
     };
     public static IReadOnlyList<string> Options(AvaloniaPropertyInfo property)
     {
+        if (property.OwnerType == typeof(TimePicker) && property.Key == "ClockIdentifier") return new[] { "12HourClock", "24HourClock" };
         var type = Nullable.GetUnderlyingType(property.PropertyType) ?? property.PropertyType;
         var options = type.IsEnum ? Enum.GetNames(type).ToList() : type == typeof(bool) ? new List<string> { "False", "True" } : new();
         if (Nullable.GetUnderlyingType(property.PropertyType) is not null) options.Insert(0, MetadataValueCodec.NullText);
@@ -78,21 +100,35 @@ public static class StandardControlProperties
     public static bool TryEncode(AvaloniaPropertyInfo property, string text, out string json)
     {
         json = "null";
-        if (property.ReadOnly || !MetadataValueCodec.TryParse(property.PropertyType, text, out var value)
+        if (property.ReadOnly || !TryParseValue(property, text, out var value)
             || property.Property?.IsValidValue(value) == false) return false;
+        if (property.OwnerType == typeof(TimePicker) && property.Key == "ClockIdentifier" && !Options(property).Contains(text, StringComparer.Ordinal)) return false;
+        try
+        {
+            if (property.OwnerType == typeof(NumericUpDown) && property.Key == "FormatString" && value is string numberFormat) _ = 0m.ToString(numberFormat, CultureInfo.InvariantCulture);
+            if (property.OwnerType == typeof(DatePicker) && property.Key is "YearFormat" or "MonthFormat" or "DayFormat" && value is string dateFormat) _ = DateTime.UnixEpoch.ToString(dateFormat, CultureInfo.InvariantCulture);
+        }
+        catch (FormatException) { return false; }
         json = Encode(value); return true;
     }
     private static string Encode(object? value) => value switch
     {
         null => "null", bool flag => JsonSerializer.Serialize(flag), double number when double.IsFinite(number) => JsonSerializer.Serialize(number),
-        int number => JsonSerializer.Serialize(number), long number => JsonSerializer.Serialize(number),
+        int number => JsonSerializer.Serialize(number), long number => JsonSerializer.Serialize(number), decimal number => JsonSerializer.Serialize(number),
         _ => JsonSerializer.Serialize(MetadataValueCodec.Display(value))
     };
-    public static string Attributes(string type, IReadOnlyDictionary<string, string> values, Func<string, string> escape)
+    public static bool TryParseValue(AvaloniaPropertyInfo property, string text, out object? value)
+    {
+        if (property.Key is "MaxWidth" or "MaxHeight" && text == "Infinity") { value = double.PositiveInfinity; return true; }
+        return MetadataValueCodec.TryParse(property.PropertyType, text, out value);
+    }
+    public static bool HasLiteralContent(string type) => type is "ToggleSwitch" or "RadioButton";
+    public static string Attributes(string type, IReadOnlyDictionary<string, string> values, Func<string, string> escape, bool placementOwnsConstraints = false)
     {
         var result = new System.Text.StringBuilder();
         foreach (var property in PropertiesFor(type))
         {
+            if (placementOwnsConstraints && LayoutPlacementProperties.SizeConstraintKeys.Contains(property.Key)) continue;
             if (!values.TryGetValue(property.Key, out var json)) continue;
             var text = Read(property, json);
             if (!TryEncode(property, text, out _)) throw new FormatException("Invalid Avalonia property: " + property.Key);
@@ -103,9 +139,13 @@ public static class StandardControlProperties
     public static Control Create(IDesignControlNode node, string? sourceType = null, bool applyCommon = true, Func<string, bool>? commonFilter = null)
     {
         var type = sourceType ?? node.TypeKey;
-        if (!PilotTypes.TryGetValue(type, out var clrType)) throw new NotSupportedException(type);
+        if (!SupportedTypes.TryGetValue(type, out var clrType)) throw new NotSupportedException(type);
         var control = (Control)Activator.CreateInstance(clrType)!;
         control.Name = node.Name;
+        // Placement adapters own Margin. In legacy Canvas the native view lives at
+        // (0,0) inside a positioned wrapper; a theme margin must not add another offset.
+        // Native/source layout adapters subsequently apply the authored model margin.
+        control.Margin = default;
         // Old model fields remain authoritative; placement belongs to existing layout adapters.
         var common = new[] { "Width", "Height", "Opacity", "IsVisible", "Background", "Foreground", "FontFamily", "FontSize", "FontWeight" };
         foreach (var name in applyCommon ? common : Array.Empty<string>())
@@ -116,12 +156,12 @@ public static class StandardControlProperties
             if (property is not null && MetadataValueCodec.TryParse(property.PropertyType, MetadataValueCodec.Display(value), out var parsed))
                 control.SetValue(property.Property!, parsed);
         }
-        if (control is ToggleSwitch toggle) toggle.Content = node.GetString("Text", "Переключатель");
+        if (HasLiteralContent(type) && control is ContentControl content) content.Content = node.GetString("Text", type);
         foreach (var property in PropertiesFor(type))
         {
             if (!node.CustomProperties.TryGetValue(property.Key, out var json)) continue;
             var text = Read(property, json);
-            if (!TryEncode(property, text, out _) || !MetadataValueCodec.TryParse(property.PropertyType, text, out var value))
+            if (!TryEncode(property, text, out _) || !TryParseValue(property, text, out var value))
                 throw new FormatException("Invalid Avalonia property: " + property.Key);
             control.SetValue(property.Property!, value);
         }
@@ -131,6 +171,11 @@ public static class StandardControlProperties
     {
         if (!TryEncode(property, value, out var json)) return false;
         var stored = model.CustomProperties.FirstOrDefault(p => p.Key == property.Key);
+        if (property.Key is "MaxWidth" or "MaxHeight" && value == "Infinity")
+        {
+            if (stored is not null) model.CustomProperties.Remove(stored);
+            return true;
+        }
         if (stored is null) model.CustomProperties.Add(stored = new DesignPropertyValueModel { Key = property.Key });
         stored.ValueJson = json; return true;
     }

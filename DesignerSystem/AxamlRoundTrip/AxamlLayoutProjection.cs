@@ -181,10 +181,10 @@ public static partial class AxamlLayoutProjection
         try { view.Margin = Thickness.Parse(model.Margin); } catch (FormatException) { }
         if (Enum.TryParse<HorizontalAlignment>(model.HorizontalAlignment, out var horizontal)) view.HorizontalAlignment = horizontal;
         if (Enum.TryParse<VerticalAlignment>(model.VerticalAlignment, out var vertical)) view.VerticalAlignment = vertical;
-        ApplyConstraint(reference, "MinWidth", v => view.MinWidth = v);
-        ApplyConstraint(reference, "MinHeight", v => view.MinHeight = v);
-        ApplyConstraint(reference, "MaxWidth", v => view.MaxWidth = v);
-        ApplyConstraint(reference, "MaxHeight", v => view.MaxHeight = v);
+        ApplyConstraint(reference, model, "MinWidth", v => view.MinWidth = v);
+        ApplyConstraint(reference, model, "MinHeight", v => view.MinHeight = v);
+        ApplyConstraint(reference, model, "MaxWidth", v => view.MaxWidth = v);
+        ApplyConstraint(reference, model, "MaxHeight", v => view.MaxHeight = v);
     }
 
     private static bool IsExplicitOrChanged(AxamlSourceReference reference, DesignControlModel model, string key)
@@ -194,9 +194,16 @@ public static partial class AxamlLayoutProjection
             || reference.SnapshotValues.TryGetValue(key, out var before) && before != property.Read(model));
     }
 
-    private static void ApplyConstraint(AxamlSourceReference? reference, string name, Action<double> apply)
+    private static void ApplyConstraint(AxamlSourceReference? reference, DesignControlModel model, string name, Action<double> apply)
     {
-        if (double.TryParse(reference?.Element.GetAttributeValue(name), NumberStyles.Float, CultureInfo.InvariantCulture, out var n) && double.IsFinite(n) && n >= 0) apply(n);
+        var literal = reference?.Element.GetAttributeValue(name);
+        if (reference is not null && reference.Capability.CanEditProperty(name))
+        {
+            var property = AxamlRoundTripPropertyMap.PropertiesFor(reference.Element.LocalName).FirstOrDefault(p => p.Key == name);
+            if (property is not null && reference.SnapshotValues.TryGetValue(name, out var before) && before != property.Read(model)) literal = property.Read(model);
+        }
+        if (double.TryParse(literal, NumberStyles.Float, CultureInfo.InvariantCulture, out var n)
+            && (double.IsFinite(n) || name.StartsWith("Max", StringComparison.Ordinal) && double.IsPositiveInfinity(n)) && n >= 0) apply(n);
     }
 
     private static void ApplyDefinitionConstraints(AxamlSourceReference? reference, Grid grid)

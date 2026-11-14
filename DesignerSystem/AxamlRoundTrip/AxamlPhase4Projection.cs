@@ -18,7 +18,7 @@ public static class AxamlPhase4Projection
     public static Control? Create(AxamlSourceReference? reference, DesignControlModel model, bool isDesignMode = false)
     {
         var type = reference?.Element.LocalName;
-        if (type is not null && StandardControlProperties.PilotTypes.ContainsKey(type))
+        if (type is not null && StandardControlProperties.SupportedTypes.ContainsKey(type))
         {
             var native = StandardControlProperties.Create(new DesignControlNodeAdapter(model), type, commonFilter: key =>
             {

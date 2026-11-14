@@ -4877,6 +4877,13 @@ public partial class MainWindowViewModel : ObservableObject
         var metadataProperty = SelectedMetadataProperty(descriptor.Key);
         if (metadataProperty is not null)
         {
+            if (metadataProperty.Key is "MaxWidth" or "MaxHeight" && value == "Infinity" && SelectedControl is { } target)
+            {
+                var stored = target.CustomProperties.FirstOrDefault(p => p.Key == descriptor.Key);
+                if (stored is not null) target.CustomProperties.Remove(stored);
+                NotifyDesignerStateChanged();
+                return;
+            }
             if (FormDesigner.DesignerSystem.Metadata.StandardControlProperties.TryEncode(metadataProperty, value, out var encoded))
                 ApplyDescriptorCustomPropertyJson(descriptor, encoded);
             return;
@@ -10441,7 +10448,7 @@ public partial class MainWindowViewModel : ObservableObject
             _propertyGridRebuildCount++;
             var query = PropertyGridSearchText.Trim();
             var hasSearch = !string.IsNullOrWhiteSpace(query);
-            var rows = RemoveDuplicatePropertyGridRows(BuildPropertyGridRows().Select(ApplyAxamlPropertyCapability).ToList(), reason);
+            var rows = RemoveDuplicatePropertyGridRows(BuildPropertyGridRows().Select(ApplyMetadataPropertyRow).Select(ApplyAxamlPropertyCapability).ToList(), reason);
             LayoutDropProfile.Count("InspectorRowsCreated", rows.Count);
             if (hasSearch)
             {
@@ -18101,12 +18108,15 @@ public partial class MainWindowViewModel : ObservableObject
         public void AppendXaml(string typeKey, IXamlWriter writer, IDesignControlNode control, int indentLevel, IXamlExportContext context)
         {
             if (control is DesignControlNodeAdapter metadataNode
-                && FormDesigner.DesignerSystem.Metadata.StandardControlProperties.PilotTypes.ContainsKey(typeKey))
+                && FormDesigner.DesignerSystem.Metadata.StandardControlProperties.SupportedTypes.ContainsKey(typeKey))
             {
                 var model = metadataNode.Model;
-                var attributes = FormDesigner.DesignerSystem.Metadata.StandardControlProperties.Attributes(typeKey, control.CustomProperties, EscapeXml);
-                var content = typeKey == "ToggleSwitch" ? " Content=\"" + EscapeXml(model.Text.StartsWith("{", StringComparison.Ordinal) ? "{}" + model.Text : model.Text) + "\"" : "";
-                writer.WriteLine(indentLevel, $"<{typeKey} x:Name=\"{EscapeXml(_owner.GetExportControlName(model))}\" {_owner.PlacementAttributes(model)}{_owner.BackgroundAttribute(model)}{_owner.ForegroundAttribute(model)}{TextStyleAttributes(model)}{CommonVisibilityAttributes(model)}{attributes}{content} />");
+                var attributes = FormDesigner.DesignerSystem.Metadata.StandardControlProperties.Attributes(typeKey, control.CustomProperties, EscapeXml, placementOwnsConstraints: _owner.UsesNativeLayout);
+                var content = FormDesigner.DesignerSystem.Metadata.StandardControlProperties.HasLiteralContent(typeKey) ? " Content=\"" + EscapeXml(model.Text.StartsWith("{", StringComparison.Ordinal) ? "{}" + model.Text : model.Text) + "\"" : "";
+                // Legacy absolute placement uses wrapper bounds and ignores control margins.
+                // Override theme margins (e.g. Separator) to preserve those same Canvas coordinates.
+                var absoluteMargin = !_owner.UsesNativeLayout && DesignerLayoutModes.IsAbsolute(_owner.GetExportLayoutModeForParent(model.ParentId)) ? " Margin=\"0\"" : "";
+                writer.WriteLine(indentLevel, $"<{typeKey} x:Name=\"{EscapeXml(_owner.GetExportControlName(model))}\" {_owner.PlacementAttributes(model)}{absoluteMargin}{_owner.BackgroundAttribute(model)}{_owner.ForegroundAttribute(model)}{TextStyleAttributes(model)}{CommonVisibilityAttributes(model)}{attributes}{content} />");
                 return;
             }
             if (control is not DesignControlNodeAdapter adapter || !_appenders.TryGetValue(typeKey, out var appender))
@@ -18213,7 +18223,7 @@ public partial class MainWindowViewModel : ObservableObject
             or DesignerControlTypes.LayoutGrid
             or DesignerControlTypes.FlexLayout
             or DesignerControlTypes.DataGrid => true,
-        _ => FormDesigner.DesignerSystem.Metadata.StandardControlProperties.PilotTypes.ContainsKey(type)
+        _ => FormDesigner.DesignerSystem.Metadata.StandardControlProperties.SupportedTypes.ContainsKey(type)
     };
 
     private static bool IsPluginRuntimeControl(DesignControlModel control)

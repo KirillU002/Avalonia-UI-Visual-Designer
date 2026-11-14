@@ -1,5 +1,5 @@
 #Requires -Version 7.0
-param([Parameter(Mandatory=$true)][string]$ProjectPath)
+param([Parameter(Mandatory=$true)][string]$ProjectPath,[string]$ProbeFile='MetadataRuntimeProbe.cs.txt',[string]$ResultName='generated-runtime.txt')
 $ErrorActionPreference='Stop'
 $root=(Resolve-Path -LiteralPath $ProjectPath).Path
 $project=@(Get-ChildItem -LiteralPath $root -File -Filter '*.csproj')
@@ -7,13 +7,14 @@ if($project.Count -ne 1){throw 'Expected one generated project'}
 $entry=Join-Path $root 'App.axaml.cs';$probe=Join-Path $root 'MetadataRuntimeProbe.cs'
 if(Test-Path -LiteralPath $probe){throw 'Fresh generated project required'}
 $saved=[IO.File]::ReadAllBytes($entry)
-$env:METADATA_RUNTIME_RESULT=Join-Path (Split-Path -Parent $root) 'generated-runtime.txt'
+if($ProbeFile -notmatch '^[A-Za-z0-9.-]+\.cs\.txt$' -or $ResultName -notmatch '^[A-Za-z0-9.-]+\.txt$'){throw 'Invalid probe/result filename'}
+$env:METADATA_RUNTIME_RESULT=Join-Path (Split-Path -Parent $root) $ResultName
 if(Test-Path -LiteralPath $env:METADATA_RUNTIME_RESULT){Remove-Item -LiteralPath $env:METADATA_RUNTIME_RESULT}
 try{
  $source=[Text.Encoding]::UTF8.GetString($saved);$marker='desktop.MainWindow = new MainWindow();'
  if(-not $source.Contains($marker)){throw 'Generated startup marker missing'}
  [IO.File]::WriteAllText($entry,$source.Replace($marker,'{ '+$marker+' global::MetadataRuntimeProbe.Attach(desktop, desktop.MainWindow); }'),[Text.UTF8Encoding]::new($false))
- Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'MetadataRuntimeProbe.cs.txt') -Destination $probe
+ Copy-Item -LiteralPath (Join-Path $PSScriptRoot $ProbeFile) -Destination $probe
  & dotnet restore $project[0].FullName -v:q;if($LASTEXITCODE -ne 0){throw 'Generated restore failed'}
  & dotnet build $project[0].FullName -c Release --no-restore -m:1 -v:q;if($LASTEXITCODE -ne 0){throw 'Generated build failed'}
  [xml]$xml=Get-Content -LiteralPath $project[0].FullName -Raw

@@ -574,7 +574,7 @@ internal static class AxamlRoundTripPropertyMap
 
     private static IReadOnlyList<AxamlRoundTripProperty> StandardPropertiesFor(string controlType) => controlType switch
     {
-        DesignerControlTypes.Button or DesignerControlTypes.DropDownButton or DesignerControlTypes.SplitButton or "ToggleSwitch" => Button,
+        DesignerControlTypes.Button or DesignerControlTypes.DropDownButton or DesignerControlTypes.SplitButton or "ToggleSwitch" or "RadioButton" => Button,
         DesignerControlTypes.TextBox => TextBox,
         DesignerControlTypes.TextBlock => TextBlock,
         DesignerControlTypes.CheckBox => CheckBox,
@@ -595,7 +595,7 @@ internal static class AxamlRoundTripPropertyMap
                 c.LayoutSpacing = n; return true;
             })
         }).ToArray(),
-        _ => FormDesigner.DesignerSystem.Metadata.StandardControlProperties.PilotTypes.ContainsKey(controlType) ? Common : Array.Empty<AxamlRoundTripProperty>()
+        _ => FormDesigner.DesignerSystem.Metadata.StandardControlProperties.SupportedTypes.ContainsKey(controlType) ? Common : Array.Empty<AxamlRoundTripProperty>()
     };
 
     private static AxamlRoundTripProperty Integer(string key, string attribute, Func<DesignControlModel, int> read, Action<DesignControlModel, int> write, int minimum) =>

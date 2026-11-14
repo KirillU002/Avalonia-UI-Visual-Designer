@@ -13,7 +13,7 @@ using System.Threading;
 
 namespace FormDesigner.DesignerSystem.Metadata;
 
-public enum MetadataEditor { Text, Boolean, Enumeration, Number, Color, Thickness, CornerRadius, GridLength, Font, Collection, ReadOnly }
+public enum MetadataEditor { Text, Boolean, Enumeration, Number, Color, Thickness, CornerRadius, GridLength, Font, Collection, ReadOnly, DateTime, TimeSpan }
 
 public sealed record AvaloniaPropertyInfo(string Name, Type OwnerType, Type PropertyType,
     AvaloniaProperty? Property, PropertyInfo? ClrProperty, object? DefaultValue, bool HasDefaultValue,
@@ -154,6 +154,8 @@ public static class MetadataValueCodec
         if (type == typeof(CornerRadius)) return MetadataEditor.CornerRadius;
         if (type == typeof(GridLength)) return MetadataEditor.GridLength;
         if (type == typeof(FontFamily)) return MetadataEditor.Font;
+        if (type == typeof(DateTime) || type == typeof(DateTimeOffset)) return MetadataEditor.DateTime;
+        if (type == typeof(TimeSpan)) return MetadataEditor.TimeSpan;
         return typeof(IEnumerable).IsAssignableFrom(type) ? MetadataEditor.Collection : MetadataEditor.ReadOnly;
     }
     public static string Display(object? value) => value switch
@@ -166,6 +168,7 @@ public static class MetadataValueCodec
         CornerRadius radius => radius.ToString(), GridLength length => length.ToString(), FontFamily font => font.Name,
         Rect rect => rect.ToString(), Size size => size.ToString(), Point point => point.ToString(), Vector vector => vector.ToString(),
         TimeSpan time => time.ToString("c", CultureInfo.InvariantCulture),
+        DateTime date => date.ToString("O", CultureInfo.InvariantCulture), DateTimeOffset date => date.ToString("O", CultureInfo.InvariantCulture),
         _ => "<" + value.GetType().Name + ">"
     };
     public static bool TryParse(Type declared, string text, out object? value)
@@ -178,7 +181,7 @@ public static class MetadataValueCodec
         {
             if (type == typeof(string)) { value = text; return !text.TrimStart().StartsWith("{", StringComparison.Ordinal); }
             if (type == typeof(bool)) value = bool.Parse(text);
-            else if (type.IsEnum) { value = Enum.Parse(type, text, false); if (!Enum.IsDefined(type, value) && !type.IsDefined(typeof(FlagsAttribute), false)) return false; }
+            else if (type.IsEnum) { value = Enum.Parse(type, text, true); if (!Enum.IsDefined(type, value) && !type.IsDefined(typeof(FlagsAttribute), false)) return false; }
             else if (type == typeof(double)) { var n = double.Parse(text, NumberStyles.Float, CultureInfo.InvariantCulture); if (!double.IsFinite(n)) return false; value = n; }
             else if (type == typeof(float)) { var n = float.Parse(text, NumberStyles.Float, CultureInfo.InvariantCulture); if (!float.IsFinite(n)) return false; value = n; }
             else if (type == typeof(int)) value = int.Parse(text, CultureInfo.InvariantCulture);
@@ -203,6 +206,9 @@ public static class MetadataValueCodec
                 var length = GridLength.Parse(text); if (!double.IsFinite(length.Value)) return false; value = length;
             }
             else if (type == typeof(FontFamily)) value = new FontFamily(text);
+            else if (type == typeof(DateTime)) value = DateTime.ParseExact(text, new[] { "yyyy-MM-dd", "O" }, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);
+            else if (type == typeof(DateTimeOffset)) value = DateTimeOffset.ParseExact(text, new[] { "yyyy-MM-dd", "O" }, CultureInfo.InvariantCulture, DateTimeStyles.None);
+            else if (type == typeof(TimeSpan)) value = TimeSpan.ParseExact(text, "c", CultureInfo.InvariantCulture);
             else return false;
             return true;
         }
