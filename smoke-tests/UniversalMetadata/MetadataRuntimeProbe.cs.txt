@@ -1,0 +1,45 @@
+using System;
+using System.IO;
+using System.Threading.Tasks;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.VisualTree;
+
+internal static class MetadataRuntimeProbe
+{
+    public static void Attach(IClassicDesktopStyleApplicationLifetime desktop, Window window)
+    {
+        window.Opened += async (_, _) =>
+        {
+            try
+            {
+                await Task.Delay(250);
+                window.UpdateLayout();
+                var slider = window.FindControl<Slider>("Metadata_Slider");
+                var progress = window.FindControl<ProgressBar>("Metadata_ProgressBar");
+                var toggle = window.FindControl<ToggleSwitch>("Metadata_ToggleSwitch");
+                Require(slider is not null && progress is not null && toggle is not null, "Native controls missing");
+                foreach (var control in new Control[] { slider!, progress!, toggle! })
+                    Require(control.GetVisualRoot() is not null && control.IsVisible && control.Bounds.Width > 0 && control.Bounds.Height > 0, "Unattached/empty native control");
+                Require(slider!.Value == 37 && progress!.Value == 37 && toggle!.IsChecked == true, "Scalar properties lost");
+                Require(slider.Padding == new Thickness(2, 3, 4, 5), "Thickness lost");
+                Require(Grid.GetRow(slider) == 0 && Grid.GetRow(progress) == 1 && Grid.GetRow(toggle) == 2, "Grid placement lost");
+                var grid = window.FindControl<Grid>("RootLayout")!;
+                var before = grid.Bounds.Width;
+                window.Width += 240; window.Height += 120;
+                await Task.Delay(180); window.UpdateLayout();
+                Require(grid.Bounds.Width > before, "Grid did not resize with client area");
+                Require(slider.Value == 37 && toggle.IsChecked == true, "Resize changed authored values");
+                File.WriteAllText(Environment.GetEnvironmentVariable("METADATA_RUNTIME_RESULT")!, "PASS native=Slider,ProgressBar,ToggleSwitch; attached=true; values=true; Thickness=true; GridPlacement=true; resize=true");
+                desktop.Shutdown(0);
+            }
+            catch (Exception error)
+            {
+                File.WriteAllText(Environment.GetEnvironmentVariable("METADATA_RUNTIME_RESULT")!, "FAIL " + error);
+                desktop.Shutdown(1);
+            }
+        };
+    }
+    private static void Require(bool condition, string message) { if (!condition) throw new InvalidOperationException(message); }
+}

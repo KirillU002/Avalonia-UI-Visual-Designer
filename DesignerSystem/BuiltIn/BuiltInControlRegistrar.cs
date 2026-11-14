@@ -22,6 +22,7 @@ public static partial class BuiltInControlRegistrar
     public static void Register(IDesignerRegistry registry)
     {
         RegisterStandardItems(registry);
+        RegisterMetadataControls(registry);
         RegisterSimple(registry, DesignerControlTypes.Button, "Button", "Ввод", "Кнопка для запуска действий.", false, DesignerLayoutModes.Absolute,
             CreateCommonProperties(includeText: true, includeBackground: true, includeBorder: true, includeForeground: true, includeFont: true, includePadding: true),
             context =>

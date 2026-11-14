@@ -1,3 +1,5 @@
+using FormDesigner.DesignerSystem.Metadata;
+using FormDesigner.DesignerSystem.Infrastructure;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Layout;
@@ -13,9 +15,23 @@ namespace FormDesigner.DesignerSystem.AxamlRoundTrip;
 // Only trusted Avalonia controls and imported literal values; never evaluates user bindings.
 public static class AxamlPhase4Projection
 {
-    public static Control? Create(AxamlSourceReference? reference, DesignControlModel model)
+    public static Control? Create(AxamlSourceReference? reference, DesignControlModel model, bool isDesignMode = false)
     {
         var type = reference?.Element.LocalName;
+        if (type is not null && StandardControlProperties.PilotTypes.ContainsKey(type))
+        {
+            var native = StandardControlProperties.Create(new DesignControlNodeAdapter(model), type, commonFilter: key =>
+            {
+                if (reference is null || key is "Width" or "Height") return false;
+                var property = AxamlRoundTripPropertyMap.PropertiesFor(type).FirstOrDefault(p => p.Key == key);
+                return property is not null && reference.Capability.CanEditProperty(key)
+                    && (property.ResolveExistingAttribute(reference.Element) is not null
+                        || reference.SnapshotValues.TryGetValue(key, out var before) && before != property.Read(model));
+            });
+            if (isDesignMode) native.IsHitTestVisible = false;
+            AxamlLayoutProjection.ApplySourceLayout(reference, model, native);
+            return native;
+        }
         string Value(string key) => AxamlControlMetadata.Find(type!)!.LiteralProperties.Single(p => p.Key == key).Read(model);
         Control? control = type switch
         {

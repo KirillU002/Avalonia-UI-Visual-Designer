@@ -21,7 +21,8 @@ public sealed class PropertyGridEditorTemplates:IValueConverter
     private static readonly IDataTemplate Empty=new FuncDataTemplate<object>((_,_)=>new Border());
     public object Convert(object? value,Type targetType,object? parameter,CultureInfo culture)=>value switch
     {
-        PropertyGridEditorKind.Text or PropertyGridEditorKind.Number=>Text??Empty,
+        PropertyGridEditorKind.Text or PropertyGridEditorKind.Number or PropertyGridEditorKind.Thickness
+            or PropertyGridEditorKind.CornerRadius or PropertyGridEditorKind.GridLength or PropertyGridEditorKind.Font=>Text??Empty,
         PropertyGridEditorKind.Bool=>Boolean??Empty,
         PropertyGridEditorKind.Enum or PropertyGridEditorKind.BindingSource=>Enumeration??Empty,
         PropertyGridEditorKind.Color=>Color??Empty,

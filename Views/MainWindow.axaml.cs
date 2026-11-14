@@ -4290,7 +4290,7 @@ public partial class MainWindow : Window
             preview.Width = renderedWidth; preview.Height = renderedHeight;
         }
         if (VM.ActiveAxamlSourceDocument?.SourceMap.TryGet(model.Id, out var phase4Reference) == true
-            && AxamlPhase4Projection.Create(phase4Reference, model) is { } nativePreview)
+            && AxamlPhase4Projection.Create(phase4Reference, model, isDesignMode: !VM.IsUserPreviewMode) is { } nativePreview)
         {
             preview = nativePreview;
             preview.Width = renderedWidth;

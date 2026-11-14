@@ -1,3 +1,4 @@
+using FormDesigner.DesignerSystem.Metadata;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Layout;
@@ -44,7 +45,8 @@ public sealed record AxamlControlMetadata(string SourceType, string ProjectionTy
         ["String"] = new("String", "Group", AxamlContainerKind.None, TextContentProperty: "Content")
     };
 
-    public static AxamlControlMetadata? Find(string sourceType) => Known.TryGetValue(sourceType, out var value) ? value : null;
+    public static AxamlControlMetadata? Find(string sourceType) => Known.TryGetValue(sourceType, out var value) ? value
+        : StandardControlProperties.PilotTypes.ContainsKey(sourceType) ? new(sourceType, "Group", AxamlContainerKind.None) : null;
     public static AxamlControlMetadata? FindSourceElement(AxamlElementSyntax element, string parentType)
     {
         if (element.LocalName == "String")
@@ -66,7 +68,11 @@ public sealed record AxamlControlMetadata(string SourceType, string ProjectionTy
         && (element.LocalName == SourceType + "." + ChildProperty
             || ContainerKind == AxamlContainerKind.Items && element.LocalName == "ItemsControl.Items");
 
-    public IReadOnlyList<AxamlLiteralProperty> LiteralProperties => SourceType switch
+    public IReadOnlyList<AxamlLiteralProperty> LiteralProperties => StandardControlProperties.PilotTypes.ContainsKey(SourceType)
+        ? StandardControlProperties.PropertiesFor(SourceType).Select(p => new AxamlLiteralProperty(p.Key, p.DefaultText,
+            Options: p.Editor == MetadataEditor.Enumeration ? StandardControlProperties.Options(p).ToArray() : null,
+            IsBoolean: p.Editor == MetadataEditor.Boolean, IsNumber: p.Editor == MetadataEditor.Number, Metadata: p)).ToArray()
+        : SourceType switch
     {
         "TabControl" => new[] { new AxamlLiteralProperty(nameof(TabControl.SelectedIndex), "0", IsInteger: true) },
         "TabItem" => new[] { new AxamlLiteralProperty(nameof(TabItem.Header), "") },
@@ -117,11 +123,12 @@ public sealed record AxamlControlMetadata(string SourceType, string ProjectionTy
 }
 
 // Uses the existing serialized property bag; no new JSON schema or plugin ABI.
-public sealed record AxamlLiteralProperty(string Key, string DefaultValue, string[]? Options = null, bool IsInteger = false, bool IsBoolean = false, bool IsNumber = false)
+public sealed record AxamlLiteralProperty(string Key, string DefaultValue, string[]? Options = null, bool IsInteger = false, bool IsBoolean = false, bool IsNumber = false, AvaloniaPropertyInfo? Metadata = null)
 {
     public string Read(DesignControlModel model)
     {
         var stored = model.CustomProperties.FirstOrDefault(p => p.Key == Key);
+        if (Metadata is not null) return StandardControlProperties.Read(Metadata, stored?.ValueJson);
         if (stored is null) return DefaultValue;
         try { return JsonSerializer.Deserialize<string>(stored.ValueJson) ?? DefaultValue; }
         catch (JsonException) { return stored.ValueJson; }
@@ -129,6 +136,7 @@ public sealed record AxamlLiteralProperty(string Key, string DefaultValue, strin
 
     public bool Write(DesignControlModel model, string value)
     {
+        if (Metadata is not null) return StandardControlProperties.TryWriteModel(model, Metadata, value);
         if (Options is not null && !Options.Contains(value, StringComparer.Ordinal)) return false;
         if (IsInteger && (!int.TryParse(value, out var index) || index < -1)) return false;
         if (IsNumber && (!double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var number) || !double.IsFinite(number))) return false;

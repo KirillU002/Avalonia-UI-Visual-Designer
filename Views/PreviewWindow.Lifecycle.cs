@@ -6,13 +6,15 @@ using System.Diagnostics;
 using System.Text.Json;
 using System.Threading;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
+using System.Linq;
 using FormDesigner.Services;
 
 namespace FormDesigner.Views;
 
 public partial class PreviewWindow
 {
-    private const string KnownGcRoots = "SOS verified: (1) MediaContextClock -> loading indicator animation -> PreviewWindow; (2) native UIA COM handle -> RootAutomationNode -> WindowAutomationPeer -> PreviewWindow. Stop owned loading animation and disconnect only the closing window provider.";
+    private const string KnownGcRoots = "SOS verified: (1) MediaContextClock -> indeterminate ProgressBar animator/key-frame ancestor binding -> composition target -> PreviewWindow; (2) native UIA COM handle -> RootAutomationNode -> WindowAutomationPeer -> PreviewWindow. Stop owned loading/content progress animations and disconnect only the closing window provider.";
     private static int _activePreviewWindows, _rootDiagnosticLogged;
     private readonly string _previewId = Guid.NewGuid().ToString("N");
     private readonly string _previewLifecycleMode;
@@ -62,6 +64,11 @@ public partial class PreviewWindow
     {
         if (_databasePreviewClosed) return;
         _databasePreviewClosed = true;
+        // Closed is committed, including when an owner closes its children. Closing can
+        // still be cancelled by the owner after the child's Closing event has returned.
+        // End only this preview's template animations; never mutate document controls.
+        foreach (var progress in this.GetVisualDescendants().OfType<ProgressBar>())
+            if (progress.IsIndeterminate) progress.IsIndeterminate = false;
         // Hiding an ancestor doesn't end the indeterminate template's infinite clock subscription.
         LoadingProgress.IsIndeterminate = false;
         _databasePreviewCancellation?.Cancel();

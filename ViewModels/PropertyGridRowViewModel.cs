@@ -20,7 +20,10 @@ public enum PropertyGridEditorKind
     Interaction,
     Asset,
     Action,
-    ReadOnly
+    ReadOnly,
+    CornerRadius,
+    GridLength,
+    Font
 }
 
 public enum PropertyGridValidationState
@@ -117,7 +120,8 @@ public sealed class PropertyGridRowViewModel : ObservableObject
 
     public ObservableCollection<PropertyGridOptionViewModel> Options { get; } = new();
 
-    public bool IsTextEditor => Editor == PropertyGridEditorKind.Text;
+    public bool IsTextEditor => Editor is PropertyGridEditorKind.Text or PropertyGridEditorKind.Thickness
+        or PropertyGridEditorKind.CornerRadius or PropertyGridEditorKind.GridLength or PropertyGridEditorKind.Font;
 
     public bool IsNumberEditor => Editor == PropertyGridEditorKind.Number;
 

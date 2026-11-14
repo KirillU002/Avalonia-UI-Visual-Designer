@@ -472,13 +472,15 @@ internal sealed class AxamlRoundTripProperty
 {
     private readonly Func<DesignControlModel, string> _read;
     private readonly Func<DesignControlModel, string, bool> _write;
+    private readonly bool _allowNullLiteral;
 
-    public AxamlRoundTripProperty(string key, IEnumerable<string> attributeNames, Func<DesignControlModel, string> read, Func<DesignControlModel, string, bool> write)
+    public AxamlRoundTripProperty(string key, IEnumerable<string> attributeNames, Func<DesignControlModel, string> read, Func<DesignControlModel, string, bool> write, bool allowNullLiteral = false)
     {
         Key = key;
         AttributeNames = attributeNames.ToArray();
         _read = read;
         _write = write;
+        _allowNullLiteral = allowNullLiteral;
     }
 
     public string Key { get; }
@@ -488,7 +490,7 @@ internal sealed class AxamlRoundTripProperty
 
     public bool TryWrite(DesignControlModel control, string value)
     {
-        if (value.TrimStart().StartsWith("{", StringComparison.Ordinal)) return false;
+        if (value.TrimStart().StartsWith("{", StringComparison.Ordinal) && !(_allowNullLiteral && value == "{x:Null}")) return false;
         value = WebUtility.HtmlDecode(value);
         try
         {
@@ -559,14 +561,20 @@ internal static class AxamlRoundTripPropertyMap
         Text("Text", "Content", control => control.Text, (control, value) => control.Text = value)
     }).ToArray();
 
-    public static IReadOnlyList<AxamlRoundTripProperty> PropertiesFor(string controlType) => StandardPropertiesFor(controlType)
-        .Concat(AxamlControlMetadata.Find(controlType)?.LiteralProperties.Select(p => new AxamlRoundTripProperty(p.Key,
-            new[] { p.Key, controlType + "." + p.Key }, p.Read, p.Write))
-            ?? Enumerable.Empty<AxamlRoundTripProperty>()).ToArray();
+    public static IReadOnlyList<AxamlRoundTripProperty> PropertiesFor(string controlType)
+    {
+        var literals = AxamlControlMetadata.Find(controlType)?.LiteralProperties ?? Array.Empty<AxamlLiteralProperty>();
+        var keys = literals.Select(p => p.Key).ToHashSet(StringComparer.Ordinal);
+        return StandardPropertiesFor(controlType).Where(p => !keys.Contains(p.Key))
+            .Concat(literals.Select(p => new AxamlRoundTripProperty(p.Key,
+                new[] { p.Key, controlType + "." + p.Key },
+                c => p.Metadata is not null && p.Read(c) == FormDesigner.DesignerSystem.Metadata.MetadataValueCodec.NullText ? "{x:Null}" : p.Read(c), p.Write,
+                allowNullLiteral: p.Metadata?.Nullable == true))).ToArray();
+    }
 
     private static IReadOnlyList<AxamlRoundTripProperty> StandardPropertiesFor(string controlType) => controlType switch
     {
-        DesignerControlTypes.Button or DesignerControlTypes.DropDownButton or DesignerControlTypes.SplitButton => Button,
+        DesignerControlTypes.Button or DesignerControlTypes.DropDownButton or DesignerControlTypes.SplitButton or "ToggleSwitch" => Button,
         DesignerControlTypes.TextBox => TextBox,
         DesignerControlTypes.TextBlock => TextBlock,
         DesignerControlTypes.CheckBox => CheckBox,
@@ -587,7 +595,7 @@ internal static class AxamlRoundTripPropertyMap
                 c.LayoutSpacing = n; return true;
             })
         }).ToArray(),
-        _ => Array.Empty<AxamlRoundTripProperty>()
+        _ => FormDesigner.DesignerSystem.Metadata.StandardControlProperties.PilotTypes.ContainsKey(controlType) ? Common : Array.Empty<AxamlRoundTripProperty>()
     };
 
     private static AxamlRoundTripProperty Integer(string key, string attribute, Func<DesignControlModel, int> read, Action<DesignControlModel, int> write, int minimum) =>

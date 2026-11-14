@@ -18,10 +18,11 @@ internal static partial class Program
     private static MainWindowViewModel AllRegistryScene(bool native)
     {
         var vm=CreateViewModel("RegistryAudit");
-        vm.LoadDocumentJson(JsonSerializer.Serialize(new DesignerDocumentFileModel{LayoutSemanticsVersion=native?2:1,
-            SurfaceLayoutMode=native?DesignerLayoutModes.Grid:DesignerLayoutModes.Absolute,SurfaceLayoutColumns=4,SurfaceLayoutRows=4,
-            SurfaceGridColumnDefinitions="*,*,*,*",SurfaceGridRowDefinitions="*,*,*,*",DesignWidth=1200,DesignHeight=800}));
         var entries=vm.Registry.GetControls().ToArray();
+        var rowCount=(entries.Length+3)/4;
+        vm.LoadDocumentJson(JsonSerializer.Serialize(new DesignerDocumentFileModel{LayoutSemanticsVersion=native?2:1,
+            SurfaceLayoutMode=native?DesignerLayoutModes.Grid:DesignerLayoutModes.Absolute,SurfaceLayoutColumns=4,SurfaceLayoutRows=rowCount,
+            SurfaceGridColumnDefinitions="*,*,*,*",SurfaceGridRowDefinitions=string.Join(",",Enumerable.Repeat("*",rowCount)),DesignWidth=1200,DesignHeight=Math.Max(800,rowCount*190)}));
         for(var i=0;i<entries.Length;i++)
         {
             var c=vm.CreateControl(entries[i].TypeKey,0,0);c.Name="Audit_"+entries[i].TypeKey;c.StackOrder=i;
@@ -52,6 +53,8 @@ internal static partial class Program
                 {
                     var model=vm.Controls[i];Control? view=views.FirstOrDefault(c=>c.Name==model.Name);
                     if(view is null&&!native&&!axaml&&preview.Window.FindControl<Canvas>("PreviewCanvas")!.Children.ElementAtOrDefault(i) is Border{Child:Canvas frame})view=frame.Children.FirstOrDefault();
+                    RequireCapability(view is {IsVisible:true} && view.GetVisualRoot()!=null && view.Bounds.Width>0 && view.Bounds.Height>0,
+                        "Registry control missing from native visual tree: "+model.Type+" / "+scene+" / "+axaml);
                     var point=view?.TranslatePoint(default,host);
                     rows.Add(new{Name=model.Name,model.Type,NativeType=view?.GetType().FullName,Attached=view?.GetVisualRoot()!=null,Visible=view?.IsVisible,
                         X=point?.X,Y=point?.Y,Width=view?.Bounds.Width,Height=view?.Bounds.Height,Parent=view?.GetVisualParent()?.GetType().Name});

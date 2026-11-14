@@ -81,6 +81,25 @@ public sealed class AxamlPatchWriter
                 diagnostics.Add(new("AXAML_PATCH_BLOCKED", AxamlDiagnosticSeverity.Warning, $"element={control.Name}; reason=OpaquePropertyOrHierarchyChange"));
                 return AxamlPatchResult.Unsafe(source, diagnostics);
             }
+            // A new x:Null literal requires the matching namespace in the original scope.
+            // Do not generate an undefined prefix or regenerate the user's document.
+            var addsNull = AxamlRoundTripPropertyMap.PropertiesFor(reference.Element.LocalName).Any(p =>
+                p.Read(control) == "{x:Null}" && reference.SnapshotValues.TryGetValue(p.Key, out var beforeNull) && beforeNull != "{x:Null}");
+            if (addsNull)
+            {
+                var scope = reference.Element;
+                string? xNamespace = null;
+                while (scope is not null)
+                {
+                    if (scope.FindAttribute("xmlns:x") is { } declaration) { xNamespace = declaration.Value; break; }
+                    scope = scope.Parent;
+                }
+                if (xNamespace != "http://schemas.microsoft.com/winfx/2006/xaml")
+                {
+                    diagnostics.Add(new("AXAML_PATCH_BLOCKED", AxamlDiagnosticSeverity.Warning, "reason=NullNamespaceUnavailable; declare xmlns:x before using null"));
+                    return AxamlPatchResult.Unsafe(source, diagnostics);
+                }
+            }
             AppendPropertyEdits(source, reference, control, edits);
         }
 

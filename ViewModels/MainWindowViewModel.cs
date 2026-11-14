@@ -4745,6 +4745,14 @@ public partial class MainWindowViewModel : ObservableObject
     {
         if (control is null)
             return string.Empty;
+        var metadataProperty = SelectedMetadataProperty(descriptor.Key);
+        if (metadataProperty is not null)
+        {
+            try { return FormDesigner.DesignerSystem.Metadata.StandardControlProperties.Read(metadataProperty,
+                TryReadCustomPropertyJson(control, descriptor.Key, out var metadataJson) ? metadataJson : null); }
+            catch (Exception error) when (error is JsonException or FormatException)
+            { return "<некорректное сохранённое значение>"; }
+        }
 
         var fallbackJson = string.IsNullOrWhiteSpace(descriptor.DefaultValueJson)
             ? "null"
@@ -4866,6 +4874,13 @@ public partial class MainWindowViewModel : ObservableObject
 
     internal void SetDescriptorCustomPropertyFromString(DesignPropertyDescriptor descriptor, string value)
     {
+        var metadataProperty = SelectedMetadataProperty(descriptor.Key);
+        if (metadataProperty is not null)
+        {
+            if (FormDesigner.DesignerSystem.Metadata.StandardControlProperties.TryEncode(metadataProperty, value, out var encoded))
+                ApplyDescriptorCustomPropertyJson(descriptor, encoded);
+            return;
+        }
         string valueJson;
         switch (descriptor.Editor)
         {
@@ -10787,6 +10802,11 @@ public partial class MainWindowViewModel : ObservableObject
                 if (standardRows.Any(row => row.Key == property.Key)) continue;
                 descriptorKeys.Add(property.Key);
                 void SetValue(string value) { if (property.Write(control, value)) NotifyDesignerStateChanged(); }
+                if (property.Metadata is not null)
+                {
+                    yield return CreateMetadataPropertyRow(property.Metadata, property.Read(control), SetValue);
+                    continue;
+                }
                 if (property.IsBoolean)
                     yield return CreateBoolRow(PropertyGridCategoryCommon, property.Key, property.Key,
                         bool.Parse(property.Read(control)), "Avalonia " + property.Key, value => SetValue(value ? "True" : "False"));
@@ -10972,6 +10992,9 @@ public partial class MainWindowViewModel : ObservableObject
 
     private PropertyGridRowViewModel CreateDescriptorPropertyRow(DesignPropertyDescriptor descriptor)
     {
+        if (SelectedMetadataProperty(descriptor.Key) is { } metadata)
+            return CreateMetadataPropertyRow(metadata, GetDescriptorCustomPropertyString(descriptor),
+                value => SetDescriptorCustomPropertyFromString(descriptor, value));
         var category = string.IsNullOrWhiteSpace(descriptor.Category) ? PropertyGridCategoryAdvanced : NormalizePropertyGridCategory(descriptor.Category);
         var value = GetDescriptorCustomPropertyString(descriptor);
         var description = GetPropertyGridDescriptorDescription(descriptor);
@@ -11281,8 +11304,9 @@ public partial class MainWindowViewModel : ObservableObject
         StatusText = "PropertyGrid stale context rejected. Select the control again.";
     }
 
-    private static string GetPropertyGridDefaultValue(string key)
+    private string GetPropertyGridDefaultValue(string key)
     {
+        if (SelectedMetadataProperty(key) is { } metadata) return metadata.DefaultText;
         return key switch
         {
             nameof(DesignControlModel.X) or nameof(DesignControlModel.Y) => "0",
@@ -18076,6 +18100,15 @@ public partial class MainWindowViewModel : ObservableObject
 
         public void AppendXaml(string typeKey, IXamlWriter writer, IDesignControlNode control, int indentLevel, IXamlExportContext context)
         {
+            if (control is DesignControlNodeAdapter metadataNode
+                && FormDesigner.DesignerSystem.Metadata.StandardControlProperties.PilotTypes.ContainsKey(typeKey))
+            {
+                var model = metadataNode.Model;
+                var attributes = FormDesigner.DesignerSystem.Metadata.StandardControlProperties.Attributes(typeKey, control.CustomProperties, EscapeXml);
+                var content = typeKey == "ToggleSwitch" ? " Content=\"" + EscapeXml(model.Text.StartsWith("{", StringComparison.Ordinal) ? "{}" + model.Text : model.Text) + "\"" : "";
+                writer.WriteLine(indentLevel, $"<{typeKey} x:Name=\"{EscapeXml(_owner.GetExportControlName(model))}\" {_owner.PlacementAttributes(model)}{_owner.BackgroundAttribute(model)}{_owner.ForegroundAttribute(model)}{TextStyleAttributes(model)}{CommonVisibilityAttributes(model)}{attributes}{content} />");
+                return;
+            }
             if (control is not DesignControlNodeAdapter adapter || !_appenders.TryGetValue(typeKey, out var appender))
             {
                 writer.WriteLine(indentLevel, $"<!-- No built-in exporter for {EscapeXml(typeKey)} -->");
@@ -18180,7 +18213,7 @@ public partial class MainWindowViewModel : ObservableObject
             or DesignerControlTypes.LayoutGrid
             or DesignerControlTypes.FlexLayout
             or DesignerControlTypes.DataGrid => true,
-        _ => false
+        _ => FormDesigner.DesignerSystem.Metadata.StandardControlProperties.PilotTypes.ContainsKey(type)
     };
 
     private static bool IsPluginRuntimeControl(DesignControlModel control)
