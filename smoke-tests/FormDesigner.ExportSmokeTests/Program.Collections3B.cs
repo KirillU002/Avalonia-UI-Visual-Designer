@@ -246,12 +246,15 @@ internal static partial class Program
     {var s=OpenCollection(vm,"Menu");s.Add();var window=new StandardItemsEditorWindow(vm,s){ShowInTaskbar=false};window.Show();NativeItemsUiWait(40);vm.PropertyGridSearchText="Name";window.UpdateLayout();window.Close();return(window,new WeakReference(s));}
     private static int RunCollections3BProfile()
     {
-        Directory.CreateDirectory(Collection3BFolder);var samples=new List<object>();
+        var profileFolder=Environment.GetEnvironmentVariable("COLLECTION3B_PROFILE_OUTPUT")??Collection3BFolder;
+        Directory.CreateDirectory(profileFolder);var samples=new List<object>();
         var vm=GridFirstVm();var menu=vm.CreateControl("Menu",0,0);menu.Width=600;menu.Height=60;menu.WidthMode=menu.HeightMode="Fixed";
         var main=Phase3Show(vm);
         var selectionOnly=Environment.GetEnvironmentVariable("COLLECTION3B_PROFILE_SELECTION_ONLY")=="1";
         var outputName=selectionOnly?"collection-selection-performance":"collection-performance";
-        foreach(var count in selectionOnly?new[]{1}:new[]{1,10,100})
+        var counts=Environment.GetEnvironmentVariable("COLLECTION3B_PROFILE_COUNTS") is { } values?values.Split(',').Select(int.Parse).ToArray():selectionOnly?new[]{1}:new[]{1,10,100};
+        if(counts.Any(n=>n<1||n>1000))throw new ArgumentOutOfRangeException(nameof(counts));
+        foreach(var count in counts)
         {
             var contract=new CollectionItemsContract { Items=Enumerable.Range(0,count).Select(i=>new StandardMenuItem{Text="Элемент "+i}).ToList() };
             StandardItemsProperties.Write(menu,CollectionItemsContract.StorageKey("Items"),contract);var seed=vm.ExportWorkspaceJson();
@@ -272,7 +275,7 @@ internal static partial class Program
                         GcCollections=Enumerable.Range(0,3).Select(g=>GC.CollectionCount(g)-gc[g]).ToArray(),Profile=profile.Stages,Nodes=session!.Count,
                         NativeEditors=editor.GetVisualDescendants().OfType<PropertyGridTextEditor>().Count()};
                     samples.Add(sample);
-                    File.AppendAllText(Path.Combine(Collection3BFolder,outputName+"-progress.jsonl"),JsonSerializer.Serialize(sample)+Environment.NewLine);
+                    File.AppendAllText(Path.Combine(profileFolder,outputName+"-progress.jsonl"),JsonSerializer.Serialize(sample)+Environment.NewLine);
                 }
                 Measure("Open",()=>{session=vm.OpenCollectionEditor("Items")!;editor=new StandardItemsEditorWindow(vm,session){ShowInTaskbar=false};editor.Show();});
                 Measure("Add",()=>RequireCapability(session!.Add(),"Add failed."));
@@ -292,7 +295,7 @@ internal static partial class Program
             }
         }
         foreach(var w in SmokeWindows)w.CloseForExternalHost();SmokeWindows.Clear();
-        File.WriteAllText(Path.Combine(Collection3BFolder,outputName+".json"),JsonSerializer.Serialize(new{Warmup=3,MeasuredPerScenario=30,RenderScaling=main.RenderScaling,Samples=samples},new JsonSerializerOptions{WriteIndented=true}));
+        File.WriteAllText(Path.Combine(profileFolder,outputName+".json"),JsonSerializer.Serialize(new{Warmup=3,MeasuredPerScenario=30,RenderScaling=main.RenderScaling,Samples=samples},new JsonSerializerOptions{WriteIndented=true}));
         Console.WriteLine("COLLECTION3B_PROFILE samples="+samples.Count+"; warm-up retained; no timing thresholds.");return 0;
     }
 }
