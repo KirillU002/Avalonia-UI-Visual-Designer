@@ -652,7 +652,9 @@ internal static class AxamlRoundTripPropertyMap
     {
         var literals = AxamlControlMetadata.Find(controlType)?.LiteralProperties ?? Array.Empty<AxamlLiteralProperty>();
         var keys = literals.Select(p => p.Key).ToHashSet(StringComparer.Ordinal);
-        return StandardPropertiesFor(controlType).Where(p => !keys.Contains(p.Key))
+        return StandardPropertiesFor(controlType).Where(p => !keys.Contains(p.Key)
+            && (!FormDesigner.DesignerSystem.Metadata.StandardControlProperties.IsShape(controlType)
+                || FormDesigner.DesignerSystem.Metadata.StandardControlProperties.HasNativeProperty(controlType,p.Key=="Name"?"Name":p.PreferredAttributeName)))
             .Concat(literals.Select(p => new AxamlRoundTripProperty(p.Key,
                 new[] { p.Key, controlType + "." + p.Key },
                 c => ReadLiteral(p, c), p.Write,
@@ -667,7 +669,7 @@ internal static class AxamlRoundTripPropertyMap
 
     private static IReadOnlyList<AxamlRoundTripProperty> StandardPropertiesFor(string controlType) => controlType switch
     {
-        DesignerControlTypes.Button or DesignerControlTypes.DropDownButton or DesignerControlTypes.SplitButton or "ToggleSwitch" or "RadioButton" => Button,
+        DesignerControlTypes.Button or DesignerControlTypes.DropDownButton or DesignerControlTypes.SplitButton or "ToggleSwitch" or "RadioButton" or "HyperlinkButton" or "RepeatButton" => Button,
         DesignerControlTypes.TextBox => TextBox,
         DesignerControlTypes.TextBlock => TextBlock,
         DesignerControlTypes.CheckBox => CheckBox,

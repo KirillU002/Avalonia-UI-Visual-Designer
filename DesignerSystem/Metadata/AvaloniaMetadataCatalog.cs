@@ -42,7 +42,8 @@ public sealed record AvaloniaTypeInfo(Type Type, string ContainerKind, string? C
 public static class AvaloniaMetadataCatalog
 {
     private static readonly ConditionalWeakTable<Type, Lazy<AvaloniaTypeInfo>> Cache = new();
-    private static readonly Assembly[] StandardAssemblies = { typeof(Control).Assembly, typeof(AvaloniaObject).Assembly, typeof(DataGrid).Assembly };
+    private static readonly Assembly[] StandardAssemblies = { typeof(Control).Assembly, typeof(AvaloniaObject).Assembly, typeof(DataGrid).Assembly,
+        typeof(ColorPicker).Assembly, typeof(ItemsRepeater).Assembly };
     private static readonly Lazy<IReadOnlySet<AvaloniaProperty>> AttachedIndex = new(CreateAttachedIndex);
     private static int _buildCount;
     public static int BuildCount => Volatile.Read(ref _buildCount);
@@ -99,12 +100,13 @@ public static class AvaloniaMetadataCatalog
                 MetadataValueCodec.EditorFor(property.PropertyType));
         }
         var container = typeof(Panel).IsAssignableFrom(type) ? ("Children", "Children")
+            : type == typeof(Viewbox) ? ("Decorator", "Child")
             : typeof(Decorator).IsAssignableFrom(type) ? ("Decorator", "Child")
             : typeof(HeaderedContentControl).IsAssignableFrom(type) ? ("HeaderedContent", "Content")
             : typeof(ItemsControl).IsAssignableFrom(type) ? ("Items", "Items")
             : typeof(ContentControl).IsAssignableFrom(type) ? ("Content", "Content")
             : ("None", (string?)null);
-        var infrastructure = type.Namespace?.Contains(".Primitives", StringComparison.Ordinal) == true
+        var infrastructure = type.Namespace?.Contains(".Primitives", StringComparison.Ordinal) == true && type != typeof(ScrollBar)
             || type.Namespace?.Contains(".Presenters", StringComparison.Ordinal) == true
             || type.Name.EndsWith("Presenter", StringComparison.Ordinal) || type.Name.EndsWith("Panel", StringComparison.Ordinal) && type.Name.Contains("Virtualiz", StringComparison.Ordinal)
             || type.Name is "CaptionButtons" or "TitleBar" or "EmbeddableControlRoot" or "NativeControlHost" or "NativeMenuBar"
@@ -148,7 +150,7 @@ public static class MetadataValueCodec
     public static MetadataEditor EditorFor(Type declared)
     {
         var type = Nullable.GetUnderlyingType(declared) ?? declared;
-        if (type == typeof(string)) return MetadataEditor.Text;
+        if (type == typeof(string) || type == typeof(Uri)) return MetadataEditor.Text;
         if (type == typeof(bool)) return Nullable.GetUnderlyingType(declared) is null ? MetadataEditor.Boolean : MetadataEditor.Enumeration;
         if (type.IsEnum) return MetadataEditor.Enumeration;
         if (type == typeof(int) || type == typeof(double) || type == typeof(float) || type == typeof(long) || type == typeof(decimal)) return MetadataEditor.Number;
@@ -163,7 +165,7 @@ public static class MetadataValueCodec
     }
     public static string Display(object? value) => value switch
     {
-        null => NullText, string text => text, bool flag => flag ? "True" : "False",
+        null => NullText, string text => text, Uri uri => uri.OriginalString, bool flag => flag ? "True" : "False",
         Enum item => item.ToString(), double number => number.ToString("R", CultureInfo.InvariantCulture),
         float number => number.ToString("R", CultureInfo.InvariantCulture), int number => number.ToString(CultureInfo.InvariantCulture),
         long number => number.ToString(CultureInfo.InvariantCulture), decimal number => number.ToString(CultureInfo.InvariantCulture),
@@ -183,6 +185,11 @@ public static class MetadataValueCodec
         try
         {
             if (type == typeof(string)) { value = text; return !text.TrimStart().StartsWith("{", StringComparison.Ordinal); }
+            if (type == typeof(Uri))
+            {
+                if (text.Length > 8192 || !Uri.TryCreate(text, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https")) return false;
+                value=uri; return true;
+            }
             if (type == typeof(bool)) value = bool.Parse(text);
             else if (type.IsEnum) { value = Enum.Parse(type, text, true); if (!Enum.IsDefined(type, value) && !type.IsDefined(typeof(FlagsAttribute), false)) return false; }
             else if (type == typeof(double)) { var n = double.Parse(text, NumberStyles.Float, CultureInfo.InvariantCulture); if (!double.IsFinite(n)) return false; value = n; }

@@ -1,0 +1,57 @@
+using System;
+using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
+using Avalonia.Controls.Shapes;
+using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Input;
+using Avalonia.VisualTree;
+
+internal static class MetadataRuntimeProbe
+{
+    public static void Attach(IClassicDesktopStyleApplicationLifetime desktop,Window window)
+    {
+        window.ShowInTaskbar=false;window.ShowActivated=false;window.Position=new PixelPoint(-3500,-3500);
+        window.Opened+=async(_,_)=>{
+            try{
+                await Task.Delay(200);window.UpdateLayout();
+                var names=new[]{"ScrollBar","GridSplitter","Rectangle","Ellipse","HyperlinkButton","RepeatButton"};
+                var views=names.Select(name=>window.GetVisualDescendants().OfType<Control>().Single(c=>c.Name=="Phase5A_"+name&&c.GetType().Name==name)).ToArray();
+                foreach(var c in views){
+                    Require(c.GetVisualRoot()==window&&c.Bounds.Width>0&&c.Bounds.Height>0,"Missing native "+c.Name);
+                    Require(Math.Abs(c.Bounds.Width-(c is GridSplitter?8:220))<=1&&Math.Abs(c.Bounds.Height-(c is ScrollBar?25:90))<=1,"Authored dimensions lost "+c.Name);
+                }
+                Require(views[0]is ScrollBar{Value:25,ViewportSize:10},"ScrollBar range/viewport lost");
+                var rectangle=(Rectangle)views[2];var ellipse=(Ellipse)views[3];
+                Require(rectangle.RadiusX==12&&rectangle.RadiusY==7&&rectangle.StrokeThickness==3&&rectangle.Fill?.ToString()=="#ff123456"&&ellipse.Stroke?.ToString()=="#ffabcdef","Shape geometry/brushes lost");
+                var link=(HyperlinkButton)views[4];Require(link.IsVisited&&link.NavigateUri?.OriginalString=="https://example.invalid/docs?a=1&b=2","URI/state lost");
+                // No external navigation is performed by the probe.
+                var repeat=(RepeatButton)views[5];Require(repeat.Delay==200&&repeat.Interval==60,"Repeat timings lost");var clicks=0;repeat.Click+=(_,_)=>clicks++;
+                repeat.Focus();repeat.RaiseEvent(new KeyEventArgs{RoutedEvent=InputElement.KeyDownEvent,Key=Key.Space});await Task.Delay(380);
+                repeat.RaiseEvent(new KeyEventArgs{RoutedEvent=InputElement.KeyUpEvent,Key=Key.Space});Require(clicks>=2,"Native repeated Click did not occur");
+                var stopped=clicks;await Task.Delay(120);Require(clicks==stopped,"Repeat timer did not stop on release");
+                foreach(var size in new[]{new Size(800,600),new Size(1200,800),new Size(1600,900)}){
+                    window.Width=size.Width;window.Height=size.Height;await Task.Delay(40);window.UpdateLayout();
+                    foreach(var c in views)Require(c.GetVisualRoot()==window&&c.Bounds.Width>0,"Resize lost "+c.Name);
+                    foreach(var c in views.Where(c=>c.GetVisualParent()is Canvas)){
+                        var point=c.TranslatePoint(default,(Canvas)c.GetVisualParent()!)!.Value;
+                        Require(Math.Abs(point.X-Canvas.GetLeft(c))<=1&&Math.Abs(point.Y-Canvas.GetTop(c))<=1,"Canvas positioning changed");
+                    }
+                }
+                var splitterResized=false;
+                if(views[1].GetVisualParent()is Grid grid){
+                    var splitter=(GridSplitter)views[1];grid.ColumnDefinitions=ColumnDefinitions.Parse("*,8,*");Grid.SetColumn(splitter,1);window.UpdateLayout();
+                    var before=grid.ColumnDefinitions[0].ActualWidth;var next=grid.ColumnDefinitions[2].ActualWidth;
+                    splitter.RaiseEvent(new KeyEventArgs{RoutedEvent=InputElement.KeyDownEvent,Key=Key.Right});window.UpdateLayout();
+                    Require(grid.ColumnDefinitions[0].ActualWidth>before&&grid.ColumnDefinitions[2].ActualWidth<next,"Generated GridSplitter failed to resize");
+                    splitterResized=true;
+                }
+                File.WriteAllText(Environment.GetEnvironmentVariable("METADATA_RUNTIME_RESULT")!,"PASS native=6; authored bounds=true; shapes/URI/range=true; RepeatButton repeat/release=true; GridSplitter="+(splitterResized?"resized":"Canvas: no Grid parent")+"; resize=3");desktop.Shutdown(0);
+            }catch(Exception e){File.WriteAllText(Environment.GetEnvironmentVariable("METADATA_RUNTIME_RESULT")!,"FAIL "+e);desktop.Shutdown(1);}
+        };
+    }
+    private static void Require(bool value,string message){if(!value)throw new InvalidOperationException(message);}
+}

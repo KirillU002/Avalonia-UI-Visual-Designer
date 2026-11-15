@@ -4393,7 +4393,8 @@ public partial class MainWindow : Window
             Width = renderedWidth,
             Height = renderedHeight,
             ClipToBounds = false,
-            Opacity = VM.ActiveAxamlSourceDocument?.SourceMap.TryGet(model.Id, out var opacityReference) == true
+            Opacity = FormDesigner.DesignerSystem.Metadata.StandardControlProperties.SupportedTypes.TryGetValue(model.Type, out var metadataNativeType)
+                && metadataNativeType.IsInstanceOfType(preview) || VM.ActiveAxamlSourceDocument?.SourceMap.TryGet(model.Id, out var opacityReference) == true
                 && AxamlControlMetadata.Find(opacityReference.Element.LocalName)?.NativeType?.IsInstanceOfType(preview) == true
                     ? 1 : Math.Clamp(model.Opacity, 0, 1)
         };
@@ -8087,8 +8088,8 @@ public partial class MainWindow : Window
             containerWidth = parentBounds.Width;
             containerHeight = parentBounds.Height;
         }
-        var maxWidth = Math.Max(40, containerWidth - _resizingModel.X);
-        var maxHeight = Math.Max(24, containerHeight - _resizingModel.Y);
+        var maxWidth = Math.Max(_resizingModel.MinimumDesignerWidth, containerWidth - _resizingModel.X);
+        var maxHeight = Math.Max(_resizingModel.MinimumDesignerHeight, containerHeight - _resizingModel.Y);
 
         var keyModifiers = e.KeyModifiers;
         if (VM.UsesNativeLayout) _resizingModel.WidthMode = _resizingModel.HeightMode = "Fixed";
@@ -8131,8 +8132,8 @@ public partial class MainWindow : Window
             var parent = VM.GetControl(_resizingModel.ParentId);
             var containerWidth = parent?.Width ?? VM.PreviewFormWidth;
             var containerHeight = parent?.Height ?? VM.PreviewFormHeight;
-            _resizingModel.Width = Math.Clamp(ApplyGridSnap(_resizingModel.Width, e.KeyModifiers), 40, Math.Max(40, containerWidth - _resizingModel.X));
-            _resizingModel.Height = Math.Clamp(ApplyGridSnap(_resizingModel.Height, e.KeyModifiers), 24, Math.Max(24, containerHeight - _resizingModel.Y));
+            _resizingModel.Width = Math.Clamp(ApplyGridSnap(_resizingModel.Width, e.KeyModifiers), _resizingModel.MinimumDesignerWidth, Math.Max(_resizingModel.MinimumDesignerWidth, containerWidth - _resizingModel.X));
+            _resizingModel.Height = Math.Clamp(ApplyGridSnap(_resizingModel.Height, e.KeyModifiers), _resizingModel.MinimumDesignerHeight, Math.Max(_resizingModel.MinimumDesignerHeight, containerHeight - _resizingModel.Y));
         }
 
         _isResizing = false;
@@ -8918,10 +8919,10 @@ public partial class MainWindow : Window
                     control.Y = Math.Max(0, value);
                     break;
                 case nameof(DesignControlModel.Width):
-                    control.Width = Math.Max(40, value);
+                    control.Width = Math.Max(control.MinimumDesignerWidth, value);
                     break;
                 case nameof(DesignControlModel.Height):
-                    control.Height = Math.Max(24, value);
+                    control.Height = Math.Max(control.MinimumDesignerHeight, value);
                     break;
                 case nameof(DesignControlModel.Opacity):
                     control.Opacity = Math.Clamp(value, 0, 1);
@@ -9405,10 +9406,10 @@ public partial class MainWindow : Window
                 target.Y = Math.Max(0, number);
                 break;
             case nameof(DesignControlModel.Width):
-                target.Width = Math.Max(40, number);
+                target.Width = Math.Max(target.MinimumDesignerWidth, number);
                 break;
             case nameof(DesignControlModel.Height):
-                target.Height = Math.Max(24, number);
+                target.Height = Math.Max(target.MinimumDesignerHeight, number);
                 break;
             case nameof(DesignControlModel.Opacity):
                 target.Opacity = Math.Clamp(number, 0, 1);

@@ -7,6 +7,13 @@ namespace FormDesigner.ViewModels;
 
 public partial class MainWindowViewModel
 {
+    private bool IsMetadataRowApplicable(PropertyGridRowViewModel row)
+    {
+        if (SelectedControl is null || row.Category != PropertyGridCategoryAppearance) return true;
+        var type=SelectedControl.Type;
+        if(_activeAxamlRoundTripDocument?.SourceMap.TryGet(SelectedControl.Id,out var reference)==true)type=reference.Element.LocalName;
+        return !StandardControlProperties.IsShape(type) || StandardControlProperties.HasNativeProperty(type,row.Key);
+    }
     private PropertyGridRowViewModel ApplyMetadataPropertyRow(PropertyGridRowViewModel row)
     {
         if (row.UsesMetadata || row.IsReadOnly || SelectedControl is not { } target || SelectedMetadataProperty(row.Key) is not { } property

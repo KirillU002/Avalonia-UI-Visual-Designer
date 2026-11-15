@@ -13,4 +13,9 @@ public class ToolboxItem
     public string ProviderId { get; set; } = "";
 
     public string ProviderBadge { get; set; } = "";
+    public string Icon => Type switch
+    {
+        "ScrollBar" => "↕", "GridSplitter" => "⋮", "Rectangle" => "▭", "Ellipse" => "○",
+        "HyperlinkButton" => "↗", "RepeatButton" => "↻", _ => ProviderBadge
+    };
 }

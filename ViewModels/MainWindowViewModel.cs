@@ -3399,6 +3399,8 @@ public partial class MainWindowViewModel : ObservableObject
 
     private ToolboxProviderInfo ResolveToolboxProvider(IControlDescriptor descriptor)
     {
+        if (descriptor.TypeKey is "ScrollBar" or "GridSplitter" or "Rectangle" or "Ellipse" or "HyperlinkButton" or "RepeatButton")
+            return new ToolboxProviderInfo("Avalonia", descriptor.Category, "AV", 10);
         if (descriptor is IDesignerControlProviderMetadata metadata
             && !string.IsNullOrWhiteSpace(metadata.ProviderId))
         {
@@ -10485,7 +10487,7 @@ public partial class MainWindowViewModel : ObservableObject
             List<PropertyGridRowViewModel> rows;
             using (LayoutDropProfile.Stage("InspectorPropertyRowsValuesDescriptors"))
                 rows = RemoveDuplicatePropertyGridRows(BuildPropertyGridRows().Concat(BuildMetadataReadOnlyRows())
-                    .Select(ApplyMetadataPropertyRow).Select(ApplyAxamlPropertyCapability).Select(DescribeInspectorProperty).ToList(), reason);
+                    .Where(IsMetadataRowApplicable).Select(ApplyMetadataPropertyRow).Select(ApplyAxamlPropertyCapability).Select(DescribeInspectorProperty).ToList(), reason);
             LayoutDropProfile.Count("InspectorRowsCreated", rows.Count);
             if (hasSearch)
             {
@@ -18176,7 +18178,8 @@ public partial class MainWindowViewModel : ObservableObject
                 // Legacy absolute placement uses wrapper bounds and ignores control margins.
                 // Override theme margins (e.g. Separator) to preserve those same Canvas coordinates.
                 var absoluteMargin = !_owner.UsesNativeLayout && DesignerLayoutModes.IsAbsolute(_owner.GetExportLayoutModeForParent(model.ParentId)) ? " Margin=\"0\"" : "";
-                writer.WriteLine(indentLevel, $"<{typeKey} x:Name=\"{EscapeXml(_owner.GetExportControlName(model))}\" {_owner.PlacementAttributes(model)}{absoluteMargin}{_owner.BackgroundAttribute(model)}{_owner.ForegroundAttribute(model)}{TextStyleAttributes(model)}{CommonVisibilityAttributes(model)}{attributes}{content} />");
+                var appearance=FormDesigner.DesignerSystem.Metadata.StandardControlProperties.IsShape(typeKey)?"":_owner.BackgroundAttribute(model)+_owner.ForegroundAttribute(model)+TextStyleAttributes(model);
+                writer.WriteLine(indentLevel, $"<{typeKey} x:Name=\"{EscapeXml(_owner.GetExportControlName(model))}\" {_owner.PlacementAttributes(model)}{absoluteMargin}{appearance}{CommonVisibilityAttributes(model)}{attributes}{content} />");
                 return;
             }
             if (control is not DesignControlNodeAdapter adapter || !_appenders.TryGetValue(typeKey, out var appender))

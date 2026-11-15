@@ -1,5 +1,7 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
+using Avalonia.Controls.Shapes;
 using FormDesigner.Models;
 using FormDesigner.PluginContracts;
 using System;
@@ -18,7 +20,7 @@ namespace FormDesigner.DesignerSystem.Metadata;
 public static class StandardControlProperties
 {
     public static readonly IReadOnlySet<string> ReadOnlyInspectorKeys = new HashSet<string>(StringComparer.Ordinal)
-        { "Styles", "Resources", "Template", "DataTemplates", "DataContext", "ItemsSource", "ItemTemplate", "ContextMenu", "ContextFlyout", "Flyout", "SelectedItem" };
+        { "Styles", "Resources", "Template", "DataTemplates", "DataContext", "ItemsSource", "ItemTemplate", "ContextMenu", "ContextFlyout", "Flyout", "SelectedItem", "Command", "CommandParameter", "StrokeDashArray" };
     public static readonly IReadOnlyDictionary<string, Type> PilotTypes = new System.Collections.ObjectModel.ReadOnlyDictionary<string, Type>(
         new Dictionary<string, Type>(StringComparer.Ordinal)
         { ["Slider"] = typeof(Slider), ["ProgressBar"] = typeof(ProgressBar), ["ToggleSwitch"] = typeof(ToggleSwitch) });
@@ -26,7 +28,9 @@ public static class StandardControlProperties
         PilotTypes.Concat(new Dictionary<string, Type>(StringComparer.Ordinal)
         {
             ["RadioButton"] = typeof(RadioButton), ["NumericUpDown"] = typeof(NumericUpDown), ["Calendar"] = typeof(Avalonia.Controls.Calendar),
-            ["DatePicker"] = typeof(DatePicker), ["TimePicker"] = typeof(TimePicker), ["Separator"] = typeof(Separator)
+            ["DatePicker"] = typeof(DatePicker), ["TimePicker"] = typeof(TimePicker), ["Separator"] = typeof(Separator),
+            ["ScrollBar"] = typeof(ScrollBar), ["GridSplitter"] = typeof(GridSplitter), ["Rectangle"] = typeof(Rectangle),
+            ["Ellipse"] = typeof(Ellipse), ["HyperlinkButton"] = typeof(HyperlinkButton), ["RepeatButton"] = typeof(RepeatButton)
         }).ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal));
     private static readonly string[] CommonSafeKeys = { "IsEnabled", "MinWidth", "MinHeight", "MaxWidth", "MaxHeight", "Padding", "BorderBrush", "BorderThickness",
         "CornerRadius", "HorizontalContentAlignment", "VerticalContentAlignment", "FontStyle", "FontStretch", "ClipToBounds" };
@@ -40,15 +44,25 @@ public static class StandardControlProperties
         ["Calendar"] = new[] { "DisplayDate", "DisplayDateStart", "DisplayDateEnd", "SelectedDate", "FirstDayOfWeek", "IsTodayHighlighted", "DisplayMode" },
         ["DatePicker"] = new[] { "SelectedDate", "MinYear", "MaxYear", "YearVisible", "MonthVisible", "DayVisible", "YearFormat", "MonthFormat", "DayFormat" },
         ["TimePicker"] = new[] { "SelectedTime", "ClockIdentifier", "MinuteIncrement" },
-        ["Separator"] = Array.Empty<string>()
+        ["Separator"] = Array.Empty<string>(),
+        ["ScrollBar"] = new[]{"Minimum","Maximum","Value","Orientation","ViewportSize","SmallChange","LargeChange"},
+        ["GridSplitter"] = new[]{"ResizeDirection","ResizeBehavior","ShowsPreview","DragIncrement","KeyboardIncrement"},
+        ["Rectangle"] = new[]{"Fill","Stroke","StrokeThickness","Stretch","RadiusX","RadiusY","StrokeDashOffset","StrokeLineCap","StrokeJoin"},
+        ["Ellipse"] = new[]{"Fill","Stroke","StrokeThickness","Stretch","StrokeDashOffset","StrokeLineCap","StrokeJoin"},
+        ["HyperlinkButton"] = new[]{"NavigateUri","IsVisited","ClickMode"},
+        ["RepeatButton"] = new[]{"Delay","Interval","ClickMode"}
     };
     // Cache only non-collectible, explicitly shipped types; never plugin Type/Assembly keys.
-    private static readonly Lazy<IReadOnlyDictionary<string, IReadOnlyList<AvaloniaPropertyInfo>>> Supported = new(() =>
-        SupportedTypes.ToDictionary(pair => pair.Key, pair => (IReadOnlyList<AvaloniaPropertyInfo>)Keys[pair.Key].Concat(PilotTypes.ContainsKey(pair.Key) ? Array.Empty<string>() : CommonSafeKeys).Distinct(StringComparer.Ordinal)
+    private sealed record SupportEntry(IReadOnlyList<AvaloniaPropertyInfo> Properties, IReadOnlySet<string> NativeKeys);
+    private static readonly Lazy<IReadOnlyDictionary<string, SupportEntry>> Supported = new(() =>
+        SupportedTypes.ToDictionary(pair => pair.Key, pair => new SupportEntry(Keys[pair.Key].Concat(PilotTypes.ContainsKey(pair.Key) ? Array.Empty<string>() : CommonSafeKeys).Distinct(StringComparer.Ordinal)
             .Select(key => AvaloniaMetadataCatalog.Get(pair.Value).Properties.FirstOrDefault(p => p.Key == key))
-            .Where(p => p is { ReadOnly: false, Property: not null }).Cast<AvaloniaPropertyInfo>().ToArray(), StringComparer.Ordinal));
+            .Where(p => p is { ReadOnly: false, Property: not null }).Cast<AvaloniaPropertyInfo>().ToArray(),
+            AvaloniaMetadataCatalog.Get(pair.Value).Properties.Where(p=>p.Property is not null).Select(p=>p.Key).ToHashSet(StringComparer.Ordinal)), StringComparer.Ordinal));
     public static IReadOnlyList<AvaloniaPropertyInfo> PropertiesFor(string? type) =>
-        type is not null && Supported.Value.TryGetValue(type, out var properties) ? properties : Array.Empty<AvaloniaPropertyInfo>();
+        type is not null && Supported.Value.TryGetValue(type, out var entry) ? entry.Properties : Array.Empty<AvaloniaPropertyInfo>();
+    public static bool HasNativeProperty(string type, string key) => Supported.Value.TryGetValue(type,out var entry) && entry.NativeKeys.Contains(key);
+    public static bool IsShape(string type) => SupportedTypes.TryGetValue(type,out var native) && typeof(Shape).IsAssignableFrom(native);
     public static AvaloniaPropertyInfo? Find(string? type, string key) => PropertiesFor(type).FirstOrDefault(p => p.Key == key);
     public static MetadataEditor EditorFor(AvaloniaPropertyInfo property) => property.OwnerType == typeof(TimePicker) && property.Key == "ClockIdentifier"
         ? MetadataEditor.Enumeration : property.Editor;
@@ -67,14 +81,16 @@ public static class StandardControlProperties
         DefaultValueJson = Encode(property.DefaultValue), IsBindable = property.Bindable,
         Options = Options(property).Select(text => new PropertyOption { Value = text, Title = text == MetadataValueCodec.NullText ? "Не задано (null)" : text }).ToArray()
     };
-    public static string Hint(AvaloniaPropertyInfo property) => property.Editor switch
+    public static string Hint(AvaloniaPropertyInfo property) => IsViewport(property) ? "Размер видимой области. NaN — нативный автоматический режим ScrollBar; конечное число должно быть неотрицательным." : property.Editor switch
     {
+        _ when property.OwnerType == typeof(RepeatButton) && property.Key is "Delay" or "Interval" => "Интервал в миллисекундах, не меньше нуля. Отрицательные значения недопустимы для нативного таймера.",
         MetadataEditor.Thickness => "Отступы в DIP: одно, два или четыре числа (left,top,right,bottom).",
         MetadataEditor.CornerRadius => "Радиусы углов в DIP; значение проверяется Avalonia.",
         MetadataEditor.GridLength => "Размер Grid: Auto, *, 2* или число DIP.",
         MetadataEditor.DateTime => "Дата ISO 8601: yyyy-MM-dd или дата/время с offset. Для nullable доступно (null).",
         MetadataEditor.TimeSpan => "Время/интервал: hh:mm:ss (например 14:30:00); (null) очищает nullable значение.",
         MetadataEditor.Number => "Число с десятичной точкой; для nullable доступно (null). MaxWidth/MaxHeight допускают Infinity.",
+        _ when property.PropertyType == typeof(Uri) => "Абсолютный HTTP/HTTPS URI. Переход выполняется только при нажатии HyperlinkButton; (null) очищает ссылку.",
         _ when property.Nullable => "Допускается явное значение (null). Bindings редактируются отдельным механизмом.",
         _ => "Типизированное литеральное свойство; недопустимое значение не изменяет документ."
     };
@@ -104,6 +120,9 @@ public static class StandardControlProperties
         json = "null";
         if (property.ReadOnly || !TryParseValue(property, text, out var value)
             || property.Property?.IsValidValue(value) == false) return false;
+        // Avalonia accepts negative RepeatButton values at registration level,
+        // but its DispatcherTimer throws when a press starts that interval.
+        if (property.OwnerType == typeof(RepeatButton) && property.Key is "Delay" or "Interval" && value is int timing && timing < 0) return false;
         if (property.OwnerType == typeof(TimePicker) && property.Key == "ClockIdentifier" && !Options(property).Contains(text, StringComparer.Ordinal)) return false;
         try
         {
@@ -121,10 +140,12 @@ public static class StandardControlProperties
     };
     public static bool TryParseValue(AvaloniaPropertyInfo property, string text, out object? value)
     {
+        if (IsViewport(property) && text == "NaN") { value=double.NaN; return true; }
         if (property.Key is "MaxWidth" or "MaxHeight" && text == "Infinity") { value = double.PositiveInfinity; return true; }
         return MetadataValueCodec.TryParse(property.PropertyType, text, out value);
     }
-    public static bool HasLiteralContent(string type) => type is "ToggleSwitch" or "RadioButton";
+    private static bool IsViewport(AvaloniaPropertyInfo property) => property.OwnerType == typeof(ScrollBar) && property.Key == "ViewportSize";
+    public static bool HasLiteralContent(string type) => type is "ToggleSwitch" or "RadioButton" or "HyperlinkButton" or "RepeatButton";
     public static string Attributes(string type, IReadOnlyDictionary<string, string> values, Func<string, string> escape, bool placementOwnsConstraints = false)
     {
         var result = new System.Text.StringBuilder();
@@ -183,7 +204,7 @@ public static class StandardControlProperties
     }
     public static bool IsWithinModelRange(DesignControlModel model, AvaloniaPropertyInfo property, string text)
     {
-        if (model.Type is not ("Slider" or "ProgressBar" or "NumericUpDown") || property.Key is not ("Value" or "Minimum" or "Maximum")) return true;
+        if (model.Type is not ("Slider" or "ProgressBar" or "NumericUpDown" or "ScrollBar") || property.Key is not ("Value" or "Minimum" or "Maximum")) return true;
         if (!TryParseValue(property, text, out var candidate)) return false;
         if (candidate is null) return true;
         object? Bound(string key)

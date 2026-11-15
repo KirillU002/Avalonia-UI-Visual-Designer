@@ -12,6 +12,10 @@ public partial class DesignControlModel : ObservableObject
 {
     [System.Text.Json.Serialization.JsonIgnore]
     public bool UsesSourceLayout { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore]
+    public double MinimumDesignerWidth => Type is "GridSplitter" or "ScrollBar" or "Rectangle" or "Ellipse" ? 1 : 40;
+    [System.Text.Json.Serialization.JsonIgnore]
+    public double MinimumDesignerHeight => Type is "GridSplitter" or "ScrollBar" or "Rectangle" or "Ellipse" ? 1 : 24;
     public const string DataGridTextAlignmentLeft = "Left";
     public const string DataGridTextAlignmentCenter = "Center";
     public const string DataGridTextAlignmentRight = "Right";
@@ -290,15 +294,15 @@ public partial class DesignControlModel : ObservableObject
     // Ограничения снизу нужны, чтобы элемент не становился совсем неуловимым для мыши.
     partial void OnWidthChanged(double value)
     {
-        if (!UsesSourceLayout && value < 40)
-            Width = 40;
+        if (!UsesSourceLayout && value < MinimumDesignerWidth)
+            Width = MinimumDesignerWidth;
     }
 
     // Минимальная высота подбирается так, чтобы у контрола оставалась видимая зона ресайза.
     partial void OnHeightChanged(double value)
     {
-        if (!UsesSourceLayout && value < 24)
-            Height = 24;
+        if (!UsesSourceLayout && value < MinimumDesignerHeight)
+            Height = MinimumDesignerHeight;
     }
 
     partial void OnBorderThicknessChanged(double value)
