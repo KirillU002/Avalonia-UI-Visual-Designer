@@ -25,7 +25,9 @@ internal static partial class Program
         var observations = new List<object>(); var weak = new List<WeakReference>();
         var watch = Stopwatch.StartNew();
         var vm = scenario.StartsWith("preview") ? MemoryPreviewModel("NoDataGrid") : GridFirstVm();
-        if (scenario is "editor" or "mutations" or "undo" or "forms" or "project") vm.CreateControl("TreeView", 0, 0);
+        var collectionType = Environment.GetEnvironmentVariable("UIA_STRESS_CONTROL") ?? "TreeView";
+        if (collectionType is not ("Menu" or "ContextMenu" or "Flyout" or "TreeView" or "TabControl" or "ComboBox" or "ListBox")) throw new ArgumentException("Unsupported diagnostic collection type.");
+        if (scenario is "editor" or "mutations" or "undo" or "forms" or "project") vm.CreateControl(UiaCollectionOwner(), 0, 0);
         string? alternateForm = null;
         if (scenario == "forms")
         {
@@ -33,7 +35,7 @@ internal static partial class Program
         }
         MainWindow? main = scenario is "editor" or "mutations" or "undo" or "forms" or "project" ? Phase3Show(vm) : null;
         NativeCrashDiagnostics.CaptureModules("uia-stress-start");
-        Write("START", new { scenario, cycles, ExternalClient = client is not null, AmbientUiaClient = "uncontrolled", Apartment = Thread.CurrentThread.GetApartmentState().ToString(), UiAccess = Dispatcher.UIThread.CheckAccess(), Runtime = System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription });
+        Write("START", new { scenario, cycles, collectionType, ExternalClient = client is not null, AmbientUiaClient = "uncontrolled", Apartment = Thread.CurrentThread.GetApartmentState().ToString(), UiAccess = Dispatcher.UIThread.CheckAccess(), Runtime = System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription });
         try
         {
             for (var cycle = 0; cycle < cycles; cycle++)
@@ -108,8 +110,10 @@ internal static partial class Program
         }
         else if (scenario is "editor" or "mutations" or "undo" or "forms" or "project")
         {
-            vm.SelectSingleControl(vm.Controls.Single(c => c.Type == "TreeView"));
-            session = vm.OpenCollectionEditor("Items")!;
+            vm.SelectSingleControl(vm.Controls.Single(c => c.Type == UiaCollectionOwner()));
+            var kind = Environment.GetEnvironmentVariable("UIA_STRESS_CONTROL") ?? "TreeView";
+            session = vm.OpenCollectionEditor(kind == "ContextMenu" ? "ContextMenu.Items" : kind == "Flyout" ? FormDesigner.Models.StandardItemsProperties.MenuKey : "Items")
+                ?? throw new InvalidOperationException("Diagnostic collection setup rejected: " + vm.StatusText);
             window = new StandardItemsEditorWindow(vm, session) { ShowInTaskbar = false };
             window.Show();
         }
@@ -156,8 +160,12 @@ internal static partial class Program
         if (scenario is "mutations" or "undo")
         {
             RequireCapability(session!.Add(), "Add failed"); var root = session.SelectedItemId;
-            RequireCapability(session.Add(nested: true), "Nested add failed");
-            RequireCapability(session.Add(nested: true), "Deep add failed");
+            var kind = Environment.GetEnvironmentVariable("UIA_STRESS_CONTROL") ?? "TreeView";
+            if (kind is "Menu" or "ContextMenu" or "Flyout" or "TreeView")
+            {
+                RequireCapability(session.Add(nested: true), "Nested add failed");
+                RequireCapability(session.Add(nested: true), "Deep add failed");
+            }
             session.Select(root); RequireCapability(session.Add(), "Sibling add failed");
             RequireCapability(session.Move(-1), "Reorder failed");
             RequireCapability(session.Remove(), "Subtree removal failed");
@@ -167,11 +175,16 @@ internal static partial class Program
         var references = new List<WeakReference> { new(window) };
         if (session is not null) references.Add(new(session));
         if (scenario == "forms") { var form = vm.ActiveDocumentId; vm.SetActiveForm(alternateForm!, "uia-stress"); vm.SetActiveForm(form, "uia-stress"); }
-        if (scenario == "project") { vm.NewProjectEditorCommand!.Execute(null); vm.CreateControl("TreeView", 0, 0); }
+        if (scenario == "project") { vm.NewProjectEditorCommand!.Execute(null); vm.CreateControl(UiaCollectionOwner(), 0, 0); }
         // Intentionally close with popup/menu open; do not hide lifecycle defects.
         window.Close(); preview?.Dispose();
         if (completed is not null) { DropPumpUntil(() => completed.IsCompleted, "UIA query completion"); RequireCapability(completed.Result?.StartsWith("DONE ") == true, "UIA query client lost completion."); NativeCrashDiagnostics.Write("UIA_STRESS_CLIENT_DONE", reason: completed.Result!); }
         RequireCapability(!window.IsVisible, "Window is still visible after Close.");
         return references.ToArray();
     }
+
+    private static string UiaCollectionOwner() => (Environment.GetEnvironmentVariable("UIA_STRESS_CONTROL") ?? "TreeView") switch
+    {
+        "ContextMenu" => "Menu", "Flyout" => "SplitButton", var type => type
+    };
 }

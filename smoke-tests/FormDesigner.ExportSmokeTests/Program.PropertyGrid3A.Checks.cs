@@ -55,7 +55,7 @@ internal static partial class Program
             GetPropertyGridRow(vm,"Value").ResetToDefault();var patch=vm.CreateActiveAxamlPatch();
             RequireCapability(patch.CanApply&&patch.Edits.Count==1&&patch.PatchedText==before.Replace("Value='12.5'",""),"Reset was not a single attribute removal: "+patch.PatchedText);
             RequireCapability(vm.ActiveSession.UndoSnapshots.Count==count+1,"Reset was not atomic.");
-            GridEditorUndo(vm);RequireCapability(!vm.CreateActiveAxamlPatch().HasChanges,"Undo reset lost original literal.");
+            GridEditorUndo(vm);RequireCapability(!vm.CreateActiveAxamlPatch().HasChanges,"Undo reset lost original literal: "+vm.CreateActiveAxamlPatch().PatchedText);
             GridEditorUndo(vm,true);var redo=vm.CreateActiveAxamlPatch();RequireCapability(redo.CanApply&&redo.PatchedText==patch.PatchedText,"Redo reset lost deletion: "+JsonSerializer.Serialize(new{redo.CanApply,redo.PatchedText,Properties=vm.Controls.Single(c=>c.Name=="Source3").CustomProperties.Select(p=>p.Key).ToArray(),Undo=vm.ActiveSession.UndoSnapshots.Count,Redo=vm.ActiveSession.RedoSnapshots.Count}));
         });
         Check("SelectionDoesNotWriteOrInvalidateRedo",()=>

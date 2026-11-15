@@ -251,6 +251,7 @@ internal static partial class Program
         var vm=GridFirstVm();var menu=vm.CreateControl("Menu",0,0);menu.Width=600;menu.Height=60;menu.WidthMode=menu.HeightMode="Fixed";
         var main=Phase3Show(vm);
         var selectionOnly=Environment.GetEnvironmentVariable("COLLECTION3B_PROFILE_SELECTION_ONLY")=="1";
+        var fullOperations=Environment.GetEnvironmentVariable("COLLECTION3B_PROFILE_FULL_OPERATIONS")=="1";
         var outputName=selectionOnly?"collection-selection-performance":"collection-performance";
         var counts=Environment.GetEnvironmentVariable("COLLECTION3B_PROFILE_COUNTS") is { } values?values.Split(',').Select(int.Parse).ToArray():selectionOnly?new[]{1}:new[]{1,10,100};
         if(counts.Any(n=>n<1||n>1000))throw new ArgumentOutOfRangeException(nameof(counts));
@@ -280,8 +281,13 @@ internal static partial class Program
                 Measure("Open",()=>{session=vm.OpenCollectionEditor("Items")!;editor=new StandardItemsEditorWindow(vm,session){ShowInTaskbar=false};editor.Show();});
                 Measure("Add",()=>RequireCapability(session!.Add(),"Add failed."));
                 Measure("Reorder",()=>RequireCapability(session!.Move(-1),"Reorder failed."));
+                if(fullOperations)Measure("Remove",()=>RequireCapability(session!.Remove(),"Remove failed."));
                 Measure("Selection",()=>session!.Select(session.Roots.First(n=>n.Id!=session.SelectedItemId).Id));
-                if(count==100)Measure("NestedAdd",()=>RequireCapability(session!.Add(nested:true),"Nested add failed."));
+                if(count==100||fullOperations)
+                {
+                    Measure("NestedAdd",()=>RequireCapability(session!.Add(nested:true),"Nested add failed."));
+                    if(fullOperations)Measure("NestedRemove",()=>RequireCapability(session!.Remove(),"Nested remove failed."));
+                }
                 editor!.Close();RequireCapability(session!.IsDisposed,"Profile leaked session.");
                 if(count==1&&!selectionOnly)
                 {

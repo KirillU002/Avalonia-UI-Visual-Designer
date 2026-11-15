@@ -10,6 +10,7 @@ internal static class Program
     private static int Main(string[] args)
     {
         var targetPid = uint.Parse(args[0]);
+        var depthLimit=Math.Clamp(int.Parse(Environment.GetEnvironmentVariable("UIA_TREE_DEPTH")??"8"),1,32);
         Console.WriteLine("READY"); Console.Out.Flush();
         while (Console.ReadLine() is { } request && request != "STOP")
         {
@@ -19,7 +20,7 @@ internal static class Program
             var nodes = new List<AutomationElement>();
             void Walk(AutomationElement item, int depth)
             {
-                if (nodes.Count >= 128 || depth > 8) return;
+                if (nodes.Count >= 128 || depth > depthLimit) return;
                 nodes.Add(item);
                 try
                 {
