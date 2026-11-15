@@ -1,0 +1,39 @@
+using System;
+using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.VisualTree;
+
+internal static class MetadataRuntimeProbe
+{
+    private static void Require(bool value,string message) { if(!value)throw new Exception(message); }
+    public static void Attach(IClassicDesktopStyleApplicationLifetime desktop,Window window)
+    {
+        window.ShowInTaskbar=false; window.ShowActivated=false; window.Position=new PixelPoint(-3500,-3500);
+        window.Opened+=async(_,_)=>
+        {
+            try
+            {
+                await Task.Delay(200);window.UpdateLayout();
+                T Native<T>(string name)where T:Control=>window.GetVisualDescendants().OfType<T>().Single(c=>c.Name==name);
+                var button=Native<Button>("Target");
+                Require(button.Padding==new Thickness(4,3,2,1)&&button.FontStyle==Avalonia.Media.FontStyle.Italic&&button.FontFamily.Name=="Arial","Scalar source patches missing in generated native control");
+                var menu=Native<Menu>("MainMenu");var file=(MenuItem)menu.Items[0]!;file.IsSubMenuOpen=true;await Task.Delay(50);
+                var action=file.Items.OfType<MenuItem>().Single();Require(action.GetVisualRoot()!=null&&action.Header?.ToString()=="New & text"&&file.Items[1]is Separator,"Nested Menu/escaping/order lost");file.IsSubMenuOpen=false;
+                var combo=Native<ComboBox>("Choices");combo.IsDropDownOpen=true;await Task.Delay(50);
+                Require(combo.Items.OfType<ComboBoxItem>().All(i=>i.GetVisualRoot()!=null)&&combo.Items.Count==2,"Combo items missing from popup visual tree");combo.SelectedIndex=1;combo.IsDropDownOpen=false;
+                Require(combo.SelectedItem is ComboBoxItem selected&&selected.Content?.ToString()=="Two","Combo selection failed");
+                var tabs=Native<TabControl>("Pages");tabs.SelectedIndex=1;window.UpdateLayout();Require(tabs.SelectedContent is TextBlock text&&text.GetVisualRoot()==window&&text.Text=="Other","Tab content/switch failed");
+                var tree=Native<TreeView>("Nodes");var branch=(TreeViewItem)tree.Items[0]!;Require(branch.IsExpanded&&branch.Items.Count==1,"Tree patch/hierarchy lost");branch.IsExpanded=false;branch.IsExpanded=true;window.UpdateLayout();
+                Require(((TreeViewItem)branch.Items[0]!).GetVisualRoot()==window,"Nested TreeViewItem absent from visual tree");
+                foreach(var size in new[]{new Size(800,600),new Size(1200,800),new Size(1600,900)})
+                {window.Width=size.Width;window.Height=size.Height;await Task.Delay(30);window.UpdateLayout();Require(button.GetVisualRoot()==window&&button.Bounds.Width>0,"Resize lost Button");}
+                File.WriteAllText(Environment.GetEnvironmentVariable("METADATA_RUNTIME_RESULT")!,"PASS Phase4A patched source: scalar values, Menu/nested/Separator, Combo popup/selection, Tab content, Tree hierarchy, resize 3 sizes.");desktop.Shutdown(0);
+            }
+            catch(Exception error){File.WriteAllText(Environment.GetEnvironmentVariable("METADATA_RUNTIME_RESULT")!,error.ToString());desktop.Shutdown(1);}
+        };
+    }
+}

@@ -4375,6 +4375,9 @@ public partial class MainWindow : Window
             }
         }
 
+        if (VM.ActiveAxamlSourceDocument?.SourceMap.TryGet(model.Id, out var scalarReference) == true)
+            AxamlControlMetadata.ApplySourceScalars(scalarReference, model, preview, isDesignMode: !VM.IsUserPreviewMode);
+
         var root = new Canvas
         {
             Width = renderedWidth,

@@ -94,7 +94,10 @@ internal static partial class Program
         var source = CapabilitySource(CapabilityButton.Replace(" />", " Background=\"{Binding Accent}\" Padding=\"1,2,3,4\" />"), styles);
         var result = new AxamlImportService().Import(source);
         var button = CapabilityFor(result, "Button1");
-        RequireCapability(button.CanEditProperty("Text") && !button.CanEditProperty("Background") && !button.CanEditProperty("Padding"), "Binding or unsupported literal needs a property-level restriction.");
+        RequireCapability(button.CanEditProperty("Text") && !button.CanEditProperty("Background") && button.CanEditProperty("Padding"), "Binding must stay protected while typed Thickness is editable.");
+        var unsupported = new AxamlImportService().Import(source.Replace("Padding=\"1,2,3,4\"", "Padding=\"invalid\""));
+        RequireCapability(!CapabilityFor(unsupported, "Button1").CanEditProperty("Padding"), "Unsupported Thickness literal must stay protected.");
+        RequireIdentity(unsupported);
         RequireIdentity(result);
         result.Document.Controls.Single().Text = "New";
         var patch = new AxamlPatchWriter().CreatePatch(result.RoundTripDocument, result.Document, source);

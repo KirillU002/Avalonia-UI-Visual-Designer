@@ -50,6 +50,7 @@ public sealed record AxamlControlMetadata(string SourceType, string ProjectionTy
 
     public static AxamlControlMetadata? Find(string sourceType) => Known.TryGetValue(sourceType, out var value) ? value
         : StandardControlProperties.SupportedTypes.ContainsKey(sourceType) ? new(sourceType, "Group", AxamlContainerKind.None) : null;
+    internal static System.Collections.Generic.IEnumerable<string> SourceTypeNames => Known.Keys.Concat(StandardControlProperties.SupportedTypes.Keys).Distinct(StringComparer.Ordinal);
     public static AxamlControlMetadata? FindSourceElement(AxamlElementSyntax element, string parentType)
     {
         if (element.LocalName == "String")
@@ -72,7 +73,50 @@ public sealed record AxamlControlMetadata(string SourceType, string ProjectionTy
         && (element.LocalName == SourceType + "." + ChildProperty
             || ContainerKind == AxamlContainerKind.Items && element.LocalName == "ItemsControl.Items");
 
-    public IReadOnlyList<AxamlLiteralProperty> LiteralProperties => StandardControlProperties.SupportedTypes.ContainsKey(SourceType)
+    // A reviewed source policy, not discovery-as-support. Types here are shipped framework
+    // types only; collectible plugin types are never keys in this immutable cache.
+    private static readonly string[] SourceScalarKeys = { "IsEnabled", "IsHitTestVisible", "Focusable", "ClipToBounds",
+        "MinWidth", "MinHeight", "MaxWidth", "MaxHeight", "Padding", "BorderThickness", "CornerRadius",
+        "FontFamily", "FontStyle", "FontStretch", "HorizontalContentAlignment", "VerticalContentAlignment", "DockPanel.Dock" };
+    private static readonly Lazy<IReadOnlyDictionary<string, Type>> SourceTypes = new(() =>
+        AvaloniaMetadataCatalog.DiscoverControls()
+            .ToDictionary(t => t.Name, StringComparer.Ordinal));
+    private static readonly Lazy<IReadOnlyDictionary<string, IReadOnlyList<AxamlLiteralProperty>>> SourceLiterals = new(() =>
+        Known.Keys.Concat(StandardControlProperties.SupportedTypes.Keys).Distinct(StringComparer.Ordinal).ToDictionary(key => key,
+            key => BuildSourceLiterals(Find(key)!), StringComparer.Ordinal));
+
+    public Type? NativeType => SourceTypes.Value.TryGetValue(SourceType, out var type) ? type : null;
+    internal static Type? ResolveNativeType(string sourceType) => SourceTypes.Value.TryGetValue(sourceType, out var type) ? type : null;
+    public IReadOnlyList<AxamlLiteralProperty> LiteralProperties => SourceLiterals.Value[SourceType];
+
+    public static void ApplySourceScalars(AxamlSourceReference reference, DesignControlModel model, Control native, bool isDesignMode = false)
+    {
+        var metadata = Find(reference.Element.LocalName);
+        if (metadata?.NativeType?.IsInstanceOfType(native) != true) return; // A design backdrop is not the user's native type.
+        foreach (var literal in metadata.LiteralProperties.Where(p => p.Metadata is not null))
+        {
+            if (!reference.Capability.CanEditProperty(literal.Key) || !model.CustomProperties.Any(p => p.Key == literal.Key)) continue;
+            if (isDesignMode && literal.Key is "IsHitTestVisible" or "Focusable") continue;
+            if (StandardControlProperties.TryParseValue(literal.Metadata!, literal.Read(model), out var value))
+                native.SetValue(literal.Metadata!.Property!, value);
+        }
+    }
+
+    private static IReadOnlyList<AxamlLiteralProperty> BuildSourceLiterals(AxamlControlMetadata control)
+    {
+        var legacy = control.LegacyLiteralProperties;
+        var properties = control.NativeType is { } type ? AvaloniaMetadataCatalog.Get(type).Properties : Array.Empty<AvaloniaPropertyInfo>();
+        AxamlLiteralProperty Literal(AvaloniaPropertyInfo property) => new(property.Key, property.DefaultText,
+            Options: StandardControlProperties.EditorFor(property) == MetadataEditor.Enumeration ? StandardControlProperties.Options(property).ToArray() : null,
+            IsBoolean: property.Editor == MetadataEditor.Boolean, IsNumber: property.Editor == MetadataEditor.Number, Metadata: property);
+        var reviewed = SourceScalarKeys.Select(key => properties.FirstOrDefault(p => p.Key == key && !p.ReadOnly && p.Property is not null))
+            .Where(p => p is not null).Cast<AvaloniaPropertyInfo>().ToDictionary(p => p.Key, StringComparer.Ordinal);
+        // Preserve ordering of specialized accessors (SelectedIndex/Header etc.).
+        return legacy.Select(p => reviewed.TryGetValue(p.Key, out var replacement) ? Literal(replacement) : p)
+            .Concat(reviewed.Values.Where(p => !legacy.Any(l => l.Key == p.Key)).Select(Literal)).ToArray();
+    }
+
+    private IReadOnlyList<AxamlLiteralProperty> LegacyLiteralProperties => StandardControlProperties.SupportedTypes.ContainsKey(SourceType)
         ? StandardControlProperties.PropertiesFor(SourceType).Select(p => new AxamlLiteralProperty(p.Key, p.DefaultText,
             Options: StandardControlProperties.EditorFor(p) == MetadataEditor.Enumeration ? StandardControlProperties.Options(p).ToArray() : null,
             IsBoolean: p.Editor == MetadataEditor.Boolean, IsNumber: p.Editor == MetadataEditor.Number, Metadata: p)).ToArray()
@@ -133,8 +177,8 @@ public sealed record AxamlLiteralProperty(string Key, string DefaultValue, strin
     public string Read(DesignControlModel model)
     {
         var stored = model.CustomProperties.FirstOrDefault(p => p.Key == Key);
+        if (stored is null) return DefaultValue; // Immutable registration default already formatted by the source policy.
         if (Metadata is not null) return StandardControlProperties.Read(Metadata, stored?.ValueJson);
-        if (stored is null) return DefaultValue;
         try { return JsonSerializer.Deserialize<string>(stored.ValueJson) ?? DefaultValue; }
         catch (JsonException) { return stored.ValueJson; }
     }

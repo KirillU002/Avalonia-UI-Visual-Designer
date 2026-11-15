@@ -89,3 +89,37 @@ Remove-Item Env:UNIVERSAL2_PROFILE_LABEL
 ```
 
 Collection profile: 3 warm-up, 30 observations каждого сценария, начальные размеры 1/10/100 items, Open/Add/Reorder/Selection, NestedAdd при 100 и последовательности 10/100 отдельных Add при начальном размере 1. AddSequence сохраняет обычные отдельные Undo actions, а не выдаёт batch за одну операцию. Измеряются native editor/layout/compositor callback, UI-thread allocations, process-wide GC и stages; JSON — `artifacts/universal-phase3b/collection-performance.json`. Warm-up observations помечены отрицательным Iteration. Количество native property editors не растёт до числа всех коллекционных элементов; fields создаются только для selection. Timing thresholds в CI отсутствуют. Runtime probes запускают реальные экспортированные приложения, затем восстанавливают startup и удаляют probe.
+
+## Universal Controls Phase 4A
+
+Production versions/TFM не меняются. После Release build runner поддерживает:
+
+* `--universal4a-checks` — 38 source/default/null/namespace/readonly/nested/native/memory checks. Model-based Preview limitations проверяются как предупреждения, а не как visual consistency PASS.
+* `--universal4a-inventory` — исходный `Views/MainWindow.axaml`, metadata/source capabilities/property elements/collections. Node coverage не является property-editor coverage.
+* `--universal4a-inspector-audit` — выбирает каждый imported control в прежнем PropertyGrid, сопоставляет X/Y с Canvas.Left/Top, считает реальные editable rows и проверяет no-op source после selection.
+* `--universal4a-profile` — 3 warm-up + 30 measured import/patch для 10/100 NumericUpDown и MainWindow; parse/source-map stages, thread allocations, GC, managed/working-set snapshots.
+* `--universal4a-ui-profile` — 20/100 controls, 3 warm-up + 30 selection/edit/patch/Undo/Redo; synchronous action + UpdateLayout, не first physical paint. История — один pending change, не H30.
+
+Для inventory/profile/audit задать `UNIVERSAL4A_OUTPUT` (путь JSON); использовать отдельное имя для каждого прогона. Пример локального process-only capture (PowerShell из корня repository):
+
+```powershell
+$runner=(Resolve-Path smoke-tests/FormDesigner.ExportSmokeTests/bin/Release/net8.0/FormDesigner.ExportSmokeTests.dll).Path
+$capture=(Resolve-Path smoke-tests/UiaStability/NativeCapture/bin/Release/net8.0/NativeCapture.dll).Path
+$output=Join-Path (Get-Location) ('artifacts/phase4a-'+[guid]::NewGuid().ToString('N'))
+$env:UNIVERSAL4A_OUTPUT=$output+'.json'
+dotnet $capture ($output+'-capture') (Get-Command dotnet).Source -- $runner --universal4a-inventory
+```
+
+Capture output должен быть новым; при ненулевом exit/Captured/CaptureFailed остановиться и исследовать evidence. Не удалять старый capture и не считать повторный PASS исправлением native AV. Проверки Named Pipes и LocalDB требуют поддерживаемых normal permissions; sandbox AccessDenied не исправляется изменением IPC.
+
+`Universal4APropertyElementIpc` — отдельный scenario общего smoke runner: property-element text edit, attribute addition, nested Header, version/checksum, Apply/ACK и no phantom patch. Можно выбрать через обычный `SMOKE_SCENARIO_NAMES_FILE`.
+
+`--universal4a-generated` требует новый `UNIVERSAL4A_GENERATED_DIR`: создаёт существующий generated project и помещает в него patched AXAML fixture с техническим x:Class. Затем:
+
+```powershell
+pwsh -NoProfile -File smoke-tests/UniversalMetadata/ProbeRuntime.ps1 -ProjectPath artifacts/phase4a-generated -ProbeFile Phase4ARuntimeProbe.cs.txt -ResultName phase4a-runtime.txt
+```
+
+Probe проверяет настоящие Button values, Menu/nested/Separator, ComboBox popup/selection, Tab content/switch, Tree hierarchy и три resize. Это проверка patched source, не доказательство воспроизведения произвольного AXAML модельным Preview.
+
+Для baseline сравнения использовать отдельный git archive исходного commit с теми же profile methods/fixtures. Полный текущий checks file зависит от новых production capabilities и не переносится в старый checkout целиком. Не запускать builds, SQL, другие UI suites параллельно с benchmark; debugger mode и функциональный объём должны быть явно указаны. Raw timing не является pass/fail threshold. Итоги и ограничения: [Phase 4A](../../Docs/UniversalControlsAndPropertiesPhase4A.md).

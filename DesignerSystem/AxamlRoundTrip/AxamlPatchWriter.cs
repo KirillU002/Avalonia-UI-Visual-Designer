@@ -84,7 +84,8 @@ public sealed class AxamlPatchWriter
             // A new x:Null literal requires the matching namespace in the original scope.
             // Do not generate an undefined prefix or regenerate the user's document.
             var addsNull = AxamlRoundTripPropertyMap.PropertiesFor(reference.Element.LocalName).Any(p =>
-                !IsMetadataReset(p, reference, control) && p.Read(control) == "{x:Null}" && reference.SnapshotValues.TryGetValue(p.Key, out var beforeNull) && beforeNull != "{x:Null}");
+                !IsMetadataReset(p, reference, control) && p.Read(control) == "{x:Null}" && reference.SnapshotValues.TryGetValue(p.Key, out var beforeNull)
+                    && (beforeNull != "{x:Null}" || AddsMetadataLocal(p, reference, control)));
             if (addsNull)
             {
                 var scope = reference.Element;
@@ -163,16 +164,20 @@ public sealed class AxamlPatchWriter
 
             if (IsMetadataReset(property, reference, current))
             {
-                var removed = property.ResolveExistingAttribute(reference.Element)!;
-                edits.Add(new AxamlTextEdit(removed.FullSpan.Start, removed.FullSpan.Length, string.Empty));
+                var span = reference.PropertyElements.TryGetValue(property.Key, out var resetElement)
+                    ? resetElement.Element.ElementSpan : property.ResolveExistingAttribute(reference.Element)!.FullSpan;
+                edits.Add(new AxamlTextEdit(span.Start, span.Length, string.Empty));
                 continue;
             }
             var currentValue = property.Read(current);
-            if (!reference.SnapshotValues.TryGetValue(property.Key, out var originalValue) || string.Equals(currentValue, originalValue, StringComparison.Ordinal))
+            if (!reference.SnapshotValues.TryGetValue(property.Key, out var originalValue)
+                || string.Equals(currentValue, originalValue, StringComparison.Ordinal) && !AddsMetadataLocal(property, reference, current))
                 continue;
 
             var attribute = property.ResolveExistingAttribute(reference.Element);
-            if (attribute is not null)
+            if (reference.PropertyElements.TryGetValue(property.Key, out var scalar) && scalar.ValueSpan is { } valueSpan)
+                edits.Add(new AxamlTextEdit(valueSpan.Start, valueSpan.Length, EscapeAttributeValue(currentValue)));
+            else if (attribute is not null)
                 edits.Add(new AxamlTextEdit(attribute.ValueSpan.Start, attribute.ValueSpan.Length, EscapeAttributeValue(currentValue, attribute.Quote)));
             else
                 additions.Add((property.PreferredAttributeName, currentValue));
@@ -190,7 +195,13 @@ public sealed class AxamlPatchWriter
 
     private static bool IsMetadataReset(AxamlRoundTripProperty property, AxamlSourceReference reference, DesignControlModel current) =>
         property.Metadata is not null && reference.Capability.CanEditProperty(property.Key)
-        && property.ResolveExistingAttribute(reference.Element) is not null && !current.CustomProperties.Any(p => p.Key == property.Key);
+        && (property.ResolveExistingAttribute(reference.Element) is not null || reference.PropertyElements.ContainsKey(property.Key))
+        && !current.CustomProperties.Any(p => p.Key == property.Key);
+
+    private static bool AddsMetadataLocal(AxamlRoundTripProperty property, AxamlSourceReference reference, DesignControlModel current) =>
+        property.Metadata is not null && current.CustomProperties.Any(p => p.Key == property.Key)
+        && reference.Capability.CanEditProperty(property.Key) && property.ResolveExistingAttribute(reference.Element) is null
+        && !reference.PropertyElements.ContainsKey(property.Key);
 
     private static void AppendNewControlInsert(
         string source,

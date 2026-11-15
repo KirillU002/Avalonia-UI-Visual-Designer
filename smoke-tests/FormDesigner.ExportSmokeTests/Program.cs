@@ -46,6 +46,12 @@ internal static partial class Program
         // Initialize the real UI dispatcher before any view model can create the
         // fallback dispatcher; IPC continuations must run on the actual UI thread.
         EnsureAvaloniaRuntimeInitialized();
+        if (args.Contains("--universal4a-inventory")) return RunUniversal4AInventory();
+        if (args.Contains("--universal4a-checks")) return RunUniversal4AChecks();
+        if (args.Contains("--universal4a-profile")) return RunUniversal4AProfile();
+        if (args.Contains("--universal4a-ui-profile")) return RunUniversal4AUiProfile();
+        if (args.Contains("--universal4a-generated")) return GenerateUniversal4ARuntime();
+        if (args.Contains("--universal4a-inspector-audit")) return RunUniversal4AInspectorAudit();
         if (args.Contains("--stabilization3b3-checks")) return RunStabilization3B3Checks();
         if (args.Contains("--uia-differential")) return RunUiaDifferential();
         if (args.Contains("--uia-stability")) return RunUiaStability();
@@ -429,6 +435,9 @@ internal static partial class Program
             new("AxamlLayoutRebaseUnnamedSiblings", ConfigureSimpleFormExport, AssertLayoutRebaseUnnamedSiblings),
             new("AxamlLayoutSimpleGreenBaseline", ConfigureSimpleFormExport, AssertLayoutSimpleGreenBaseline),
             new("AxamlCoverageTabs", ConfigureSimpleFormExport, AssertCoverageTabs),
+            new("Universal4APropertyElementIpc", ConfigureSimpleFormExport, context => AssertAxamlIpcEdits(context,
+                "<Window xmlns='https://github.com/avaloniaui' xmlns:custom=\"using:X\"><Grid><!-- KEEP --><Button Name='Target' FontFamily='Arial' custom:Unknown=\"KEEP\"><Button.Padding>1,2,3,4</Button.Padding></Button><TreeView><TreeViewItem Name='Node' Header='Old'/></TreeView></Grid></Window>",
+                new[] { ("Target", "Padding", "4,3,2,1"), ("Target", "FontFamily", "Tahoma"), ("Node", "Header", "IPC header") })),
             new("AxamlCoverageContent", ConfigureSimpleFormExport, AssertCoverageContent),
             new("AxamlCoverageWrap", ConfigureSimpleFormExport, AssertCoverageWrap),
             new("AxamlCoveragePreserved", ConfigureSimpleFormExport, AssertCoveragePreserved),

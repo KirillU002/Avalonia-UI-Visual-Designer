@@ -26,7 +26,7 @@ public partial class MainWindowViewModel
         if (SelectedControl is null) return null;
         var sourceType = SelectedControl.Type;
         if (_activeAxamlRoundTripDocument?.SourceMap.TryGet(SelectedControl.Id, out var source) == true)
-            sourceType = source.Element.LocalName;
+            return FormDesigner.DesignerSystem.AxamlRoundTrip.AxamlControlMetadata.Find(source.Element.LocalName)?.LiteralProperties.FirstOrDefault(p => p.Key == key)?.Metadata;
         return StandardControlProperties.Find(sourceType, key);
     }
 

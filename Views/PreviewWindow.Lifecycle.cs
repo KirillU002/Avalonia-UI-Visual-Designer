@@ -76,6 +76,7 @@ public partial class PreviewWindow
         _isRenderDocumentScheduled = false;
         _previewBuildGeneration++;
         _builtPreviewControls.Clear();
+        _importedSourceScalarGaps.Clear();
         if (_previewWasOpened) Interlocked.Decrement(ref _activePreviewWindows);
         TracePreviewLifecycle("PREVIEW_LIFECYCLE_CLOSED");
         CompletePreviewLifetimeIfIdle();

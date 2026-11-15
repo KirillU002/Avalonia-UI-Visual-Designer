@@ -75,7 +75,7 @@ public static partial class AxamlLayoutProjection
                 Grid.SetRowSpan(childView, Math.Max(1, child.GridRowSpan)); Grid.SetColumnSpan(childView, Math.Max(1, child.GridColumnSpan));
                 Canvas.SetLeft(childView, child.X); Canvas.SetTop(childView, child.Y);
                 if (source.SourceMap.TryGet(child.Id, out var childReference)
-                    && Enum.TryParse<Dock>(childReference.Element.GetAttributeValue("DockPanel.Dock"), out var dock)) DockPanel.SetDock(childView, dock);
+                    && childReference.Capability.CanEditProperty("DockPanel.Dock")) DockPanel.SetDock(childView, LayoutPlacementProperties.GetDock(child));
                 if (view is ItemsControl items) items.Items.Add(childView);
                 else if (view is Panel panel) panel.Children.Add(childView);
                 else if (view is Border host) host.Child = childView;
@@ -185,6 +185,7 @@ public static partial class AxamlLayoutProjection
         ApplyConstraint(reference, model, "MinHeight", v => view.MinHeight = v);
         ApplyConstraint(reference, model, "MaxWidth", v => view.MaxWidth = v);
         ApplyConstraint(reference, model, "MaxHeight", v => view.MaxHeight = v);
+        if (reference is not null) AxamlControlMetadata.ApplySourceScalars(reference, model, view);
     }
 
     private static bool IsExplicitOrChanged(AxamlSourceReference reference, DesignControlModel model, string key)

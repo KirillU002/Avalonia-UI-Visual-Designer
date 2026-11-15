@@ -9509,7 +9509,14 @@ public partial class MainWindowViewModel : ObservableObject
         if (SelectedControl is { } control && _activeAxamlRoundTripDocument.SourceMap.TryGet(control.Id, out var reference))
         {
             var property = reference.Capability.Properties.FirstOrDefault(p => p.Key == key);
-            value = property is null ? value : reference.Element.GetAttributeValue(property.SourceName) ?? value;
+            if (property is not null)
+            {
+                var element = _activeAxamlRoundTripDocument.CapabilityReport.PropertyElements.FirstOrDefault(p => p.Element.Parent == reference.Element
+                    && p.PropertyName == property.SourceName.Split('.').Last());
+                value = reference.Element.GetAttributeValue(property.SourceName)
+                    ?? (element?.ValueSpan is { } span ? _activeAxamlRoundTripDocument.OriginalText.Substring(span.Start, span.Length) : value);
+                value = System.Net.WebUtility.HtmlDecode(value);
+            }
         }
         return new PropertyGridRowViewModel(row.Key, row.Label, row.Category, PropertyGridEditorKind.ReadOnly,
             value, "AXAML: свойство сохраняется без редактирования.", isReadOnly: true, isFavorite: row.IsFavorite,

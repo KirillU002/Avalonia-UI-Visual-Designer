@@ -45,6 +45,7 @@ public sealed class AxamlCapabilityReport
     public AxamlImportStructureReport? Structure { get; internal set; }
     public List<AxamlCapabilityEntry> Entries { get; } = new();
     public List<AxamlElementCapability> Elements { get; } = new();
+    public List<AxamlPropertyElementInfo> PropertyElements { get; } = new();
     public AxamlCapabilityLevel Level { get; private set; } = AxamlCapabilityLevel.FullyEditable;
     public bool CanSafelyPatch => Level is AxamlCapabilityLevel.FullyEditable or AxamlCapabilityLevel.PartiallyEditable;
     public bool CanOpen => Level != AxamlCapabilityLevel.UnsafeToSave;
@@ -100,6 +101,7 @@ public sealed class AxamlSourceReference
     public string? ParentId { get; internal set; }
     public AxamlElementSyntax Element { get; }
     public Dictionary<string, string> SnapshotValues { get; } = new(StringComparer.Ordinal);
+    public Dictionary<string, AxamlPropertyElementInfo> PropertyElements { get; } = new(StringComparer.Ordinal);
     public AxamlElementCapability Capability { get; }
     public IEnumerable<string> EditableProperties => Capability.Properties
         .Where(p => p.Mode == AxamlPropertyCapabilityMode.Editable).Select(p => p.Key);

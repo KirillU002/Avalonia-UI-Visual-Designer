@@ -26,6 +26,7 @@ public partial class PreviewWindow
     private readonly HashSet<string> _failedPreviewProviders = new(StringComparer.Ordinal);
     private readonly List<PreviewControlDiagnostic> _previewControlDiagnostics = new();
     private readonly Dictionary<string, string> _importedSourceTypes = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string[]> _importedSourceScalarGaps = new(StringComparer.Ordinal);
     private bool _importedSourceHasResources;
     private long _previewBuildGeneration;
     private string _actualPreviewBuildMode = "";
@@ -38,8 +39,18 @@ public partial class PreviewWindow
     public void SetImportedSourceContext(FormDesigner.DesignerSystem.AxamlRoundTrip.AxamlRoundTripDocument source)
     {
         _importedSourceTypes.Clear();
+        _importedSourceScalarGaps.Clear();
         foreach (var reference in source.SourceMap.Controls)
+        {
             _importedSourceTypes[reference.ControlId] = reference.Element.LocalName;
+            // Model-based Preview does not preserve source-only typed values in legacy
+            // scalar fields. Copy keys only; never keep source maps, controls or sessions.
+            var metadata = FormDesigner.DesignerSystem.AxamlRoundTrip.AxamlControlMetadata.Find(reference.Element.LocalName);
+            _importedSourceScalarGaps[reference.ControlId] = (metadata?.LiteralProperties ?? Array.Empty<FormDesigner.DesignerSystem.AxamlRoundTrip.AxamlLiteralProperty>())
+                .Where(p => p.Metadata is not null && p.Key is "FontFamily" or "FontStyle" or "FontStretch" or "Padding" or "BorderThickness" or "CornerRadius")
+                .Where(p => FormDesigner.DesignerSystem.Metadata.StandardControlProperties.Find(reference.Element.LocalName, p.Key) is null)
+                .Select(p => p.Key).ToArray();
+        }
         _importedSourceHasResources = XDocument.Parse(source.OriginalText).Descendants()
             .Any(e => e.Name.LocalName.EndsWith(".Resources", StringComparison.Ordinal) || e.Name.LocalName.EndsWith(".Styles", StringComparison.Ordinal));
     }
@@ -70,6 +81,12 @@ public partial class PreviewWindow
                 } : model.Type;
                 if (sourceType != projectedType)
                     ReportPreviewFailure(model, "UnsupportedControl", $"Компонент {model.Name} ({sourceType}) представлен упрощённой моделью {projectedType}. Preview и экспорт модели не воспроизводят исходный тип AXAML.");
+                else if (_importedSourceScalarGaps.TryGetValue(model.Id, out var gaps))
+                {
+                    var authored = gaps.Where(key => model.CustomProperties.Any(p => p.Key == key)).ToArray();
+                    if (authored.Length > 0)
+                        ReportPreviewFailure(model, "UnsupportedSourceProperty", $"Preview модели не гарантирует перенос source-свойств {model.Name}: {string.Join(", ", authored)}. Исходный AXAML сохраняется минимальным patch; проверьте его в приложении.", code: "PREVIEW_SOURCE_PROPERTY_PARTIAL");
+                }
             }
         }
         if (_importedSourceHasResources)
@@ -152,7 +169,7 @@ public partial class PreviewWindow
         var visible = view is not null && view.IsVisible && view.Opacity > 0 && view.GetVisualAncestors().OfType<Control>().All(c => c.IsVisible && c.Opacity > 0);
         var record = new PreviewControlDiagnostic(code, string.IsNullOrEmpty(_currentFormId) ? "standalone-preview" : _currentFormId,
             model?.Id ?? "", model?.Type ?? "", model?.ParentId ?? "", _actualPreviewBuildMode,
-            view is not null && !_previewControlFailures.ContainsKey(model?.Id ?? ""), view?.GetVisualRoot() == this, visible,
+            view is not null && (!_previewControlFailures.TryGetValue(model?.Id ?? "", out var failure) || failure == "UnsupportedSourceProperty"), view?.GetVisualRoot() == this, visible,
             point.X, point.Y, view?.Bounds.Width ?? 0, view?.Bounds.Height ?? 0, view?.GetType().FullName ?? "", reason);
         _previewControlDiagnostics.Add(record);
         Trace.WriteLine(code + " " + JsonSerializer.Serialize(record));

@@ -35,6 +35,14 @@ public static class AxamlPhase4Projection
         string Value(string key) => AxamlControlMetadata.Find(type!)!.LiteralProperties.Single(p => p.Key == key).Read(model);
         Control? control = type switch
         {
+            "Button" when !reference!.Element.Children.Any(e => !AxamlImportStructureReport.IsPropertyElement(e)
+                || AxamlControlMetadata.Find("Button")!.IsChildProperty(e) && e.Children.Count > 0) => new Button
+            {
+                Content = model.Text, FontSize = model.FontSize, Opacity = model.Opacity, IsVisible = model.IsVisible,
+                FontWeight = Enum.TryParse<Avalonia.Media.FontWeight>(model.FontWeight, out var weight) ? weight : Avalonia.Media.FontWeight.Normal,
+                Background = Avalonia.Media.Brush.Parse(model.Background), Foreground = Avalonia.Media.Brush.Parse(model.Foreground),
+                BorderBrush = Avalonia.Media.Brush.Parse(model.BorderBrush)
+            },
             "DropDownButton" or "SplitButton" => BuiltIn.StandardItemsControlFactory.Create(BuiltIn.StandardItemsControlFactory.Snapshot(model)),
             "Expander" => new Expander
             {
@@ -76,7 +84,7 @@ public static class AxamlPhase4Projection
             control.MinWidth = 24;
             control.MinHeight = 24;
         }
-        if (phase5 && control is not null) AxamlLayoutProjection.ApplySourceLayout(reference, model, control);
+        if ((phase5 || type == "Button") && control is not null) AxamlLayoutProjection.ApplySourceLayout(reference, model, control);
         return control;
     }
 

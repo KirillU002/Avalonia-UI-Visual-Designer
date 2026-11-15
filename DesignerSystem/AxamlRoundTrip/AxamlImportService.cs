@@ -34,7 +34,8 @@ public sealed class AxamlImportService
         try
         {
             DesignerDocumentFormat.Validate(sourceText ?? string.Empty, DesignerDocumentKind.AxamlRoundTrip, nameof(AxamlImportService));
-            syntax = AxamlSyntaxDocument.Parse(sourceText ?? string.Empty);
+            using (FormDesigner.Services.LayoutDropProfile.Stage("AXAML.SyntaxParse"))
+                syntax = AxamlSyntaxDocument.Parse(sourceText ?? string.Empty);
         }
         catch (Exception ex) when (ex is AxamlSyntaxException or ArgumentException)
         {
@@ -52,9 +53,16 @@ public sealed class AxamlImportService
         var rootType = syntax.Root.LocalName;
         diagnostics.Add(new AxamlRoundTripDiagnostic("AXAML_IMPORT_ROOT_RESOLVED", AxamlDiagnosticSeverity.Information, $"type={rootType}"));
         var supportedRoot = IsAvaloniaElement(syntax.Root) && rootType is "Window" or "UserControl";
-        var canvases = syntax.Root.Children.Where(element => IsAvaloniaElement(element) && element.LocalName == "Canvas").ToArray();
         // Do not flatten layouts across an unknown parent or choose one of several content roots.
-        var contentRoots = syntax.Root.Children.Where(element => !element.LocalName.Contains('.')).ToArray();
+        var directRoots = syntax.Root.Children.Where(element => !element.LocalName.Contains('.')).ToArray();
+        var contentWrappers = syntax.Root.Children.Where(element => AxamlImportStructureReport.IsPropertyElement(element)
+            && element.LocalName.EndsWith(".Content", StringComparison.Ordinal)).ToArray();
+        var rootContent = supportedRoot && directRoots.Length == 0 && contentWrappers.Length == 1 && contentWrappers[0].Children.Count == 1
+            && !HasUnsupportedInnerContent(syntax.Text, contentWrappers[0], ignoreChildElements: true)
+            && !syntax.Root.Attributes.Any(a => a.Name == "Content" || a.Name.EndsWith(".Content", StringComparison.Ordinal))
+            && AxamlPropertyElementInfo.Inspect(contentWrappers[0], syntax.Text).Metadata?.Name == "Content" ? contentWrappers[0] : null;
+        var contentRoots = contentWrappers.Length == 0 ? directRoots : rootContent?.Children.ToArray() ?? Array.Empty<AxamlElementSyntax>();
+        var canvases = contentRoots.Where(element => IsAvaloniaElement(element) && element.LocalName == "Canvas").ToArray();
         var canvas = supportedRoot && canvases.Length == 1 && contentRoots.Length == 1 ? canvases[0] : null;
         var document = CreateDocument(rootType, syntax.Root);
         var sourceMap = new AxamlSourceMap(canvas);
@@ -67,7 +75,10 @@ public sealed class AxamlImportService
         {
             report.AddElement(CreateContainerCapability(syntax.Root));
             foreach (var child in syntax.Root.Children.Where(AxamlImportStructureReport.IsPropertyElement))
-                AddOpaqueSubtree(child, "PropertyElementPreserved", report, diagnostics);
+                if (child == rootContent) report.AddElement(CreateContainerCapability(child));
+                else AddOpaqueSubtree(child, "PropertyElementPreserved", report, diagnostics);
+            if (contentWrappers.Length > 0 && rootContent is null)
+                foreach (var child in directRoots) AddOpaqueSubtree(child, "AmbiguousContentRoots", report, diagnostics);
             if (canvas is not null)
                 report.AddElement(CreateContainerCapability(canvas));
         }
@@ -107,6 +118,16 @@ public sealed class AxamlImportService
 
             var capability = new AxamlElementCapability(element, AxamlElementCapabilityMode.Editable);
             var control = CreateControl(controlType, element, knownControlIdsByName, diagnostics, capability);
+            var scalarElements = new Dictionary<string, AxamlPropertyElementInfo>(StringComparer.Ordinal);
+            foreach (var property in AxamlRoundTripPropertyMap.PropertiesFor(controlType).Where(p => p.Metadata is not null))
+            {
+                var candidates = element.Children.Where(e => AxamlImportStructureReport.IsPropertyElement(e)
+                    && e.LocalName.EndsWith("." + property.Metadata!.Name, StringComparison.Ordinal)).ToArray();
+                if (candidates.Length != 1 || property.ResolveExistingAttribute(element) is not null) continue;
+                var info = AxamlPropertyElementInfo.Inspect(candidates[0], syntax.Text);
+                if (info.Metadata != property.Metadata || info.ValueSpan is not { } span || !property.TryWrite(control, syntax.Text.Substring(span.Start, span.Length))) continue;
+                scalarElements.Add(property.Key, info with { Mode = AxamlPropertyCapabilityMode.Editable, Reason = "ScalarTextSpan" });
+            }
             if (StandardItemsProperties.IsMenuButton(controlType)) ImportStaticFlyout(control, element);
             if (hasTextContent)
             {
@@ -130,6 +151,7 @@ public sealed class AxamlImportService
             foreach (var property in capability.Properties.ToArray())
             {
                 var incompatible = property.Key.StartsWith("Canvas.", StringComparison.Ordinal) && parentType != "Canvas"
+                    || property.Key == "DockPanel.Dock" && parentType != "DockPanel"
                     || property.Key.StartsWith("Grid", StringComparison.Ordinal) && property.Key is "GridRow" or "GridColumn" or "GridRowSpan" or "GridColumnSpan" && parentType != "Grid";
                 if (incompatible)
                     capability.Properties[capability.Properties.IndexOf(property)] = property with { Mode = AxamlPropertyCapabilityMode.Unsupported, Reason = "ParentLayout:" + parentType };
@@ -139,10 +161,11 @@ public sealed class AxamlImportService
             {
                 var sourceName = propertyElement.LocalName.Split('.').Last();
                 foreach (var property in capability.Properties.Where(p => p.SourceName == sourceName || p.SourceName.EndsWith("." + sourceName, StringComparison.Ordinal)).ToArray())
-                    capability.Properties[capability.Properties.IndexOf(property)] = property with { Mode = AxamlPropertyCapabilityMode.Preserved, Reason = "PropertyElementValue" };
+                    if (!scalarElements.ContainsKey(property.Key))
+                        capability.Properties[capability.Properties.IndexOf(property)] = property with { Mode = AxamlPropertyCapabilityMode.Preserved, Reason = "PropertyElementValue" };
             }
             foreach (var property in capability.Properties.Where(p => p.Mode == AxamlPropertyCapabilityMode.Editable).ToArray())
-                if (element.FindAttribute(property.SourceName) is null && AxamlControlMetadata.HasSourceValue(element, property.SourceName))
+                if (!scalarElements.ContainsKey(property.Key) && element.FindAttribute(property.SourceName) is null && AxamlControlMetadata.HasSourceValue(element, property.SourceName))
                     capability.Properties[capability.Properties.IndexOf(property)] = property with { Mode = AxamlPropertyCapabilityMode.Preserved, Reason = "QualifiedSourceValuePreserved" };
             if (visualChildren.Length > 0 && metadata.ContainerKind is AxamlContainerKind.SingleContent or AxamlContainerKind.HeaderedContent)
                 foreach (var property in capability.Properties.Where(p => p.SourceName == metadata.ChildProperty).ToArray())
@@ -158,6 +181,7 @@ public sealed class AxamlImportService
             importedControls.Add((ToFileModel(control), zIndex, sourceOrder));
             sourceOrder++;
             var reference = new AxamlSourceReference(control.Id, control.Type, element, capability) { ParentId = parentId };
+            foreach (var scalar in scalarElements) reference.PropertyElements.Add(scalar.Key, scalar.Value);
             foreach (var property in AxamlRoundTripPropertyMap.PropertiesFor(controlType))
             {
                 reference.SnapshotValues[property.Key] = property.Read(control);
@@ -185,24 +209,33 @@ public sealed class AxamlImportService
                     foreach (var item in child.Children) ImportChild(item);
                 }
                 else if (AxamlImportStructureReport.IsPropertyElement(child))
-                    AddOpaqueSubtree(child, "PropertyElementPreserved", report, diagnostics);
+                {
+                    if (scalarElements.Values.Any(p => p.Element == child)) report.AddElement(CreateContainerCapability(child));
+                    else AddOpaqueSubtree(child, "PropertyElementPreserved", report, diagnostics);
+                }
                 else ImportChild(child);
             }
         }
 
-        if (supportedRoot)
+        using (FormDesigner.Services.LayoutDropProfile.Stage("AXAML.SourceMapProjection"))
         {
-            if (canvas is not null)
-                foreach (var child in canvas.Children) ImportElement(child, null, "Canvas");
-            else if (contentRoots.Length == 1)
-                ImportElement(contentRoots[0], null, rootType);
-            else
-                foreach (var child in contentRoots) AddOpaqueSubtree(child, "AmbiguousContentRoots", report, diagnostics);
+            if (supportedRoot)
+            {
+                if (canvas is not null)
+                    foreach (var child in canvas.Children) ImportElement(child, null, "Canvas");
+                else if (contentRoots.Length == 1)
+                    ImportElement(contentRoots[0], null, rootType);
+                else
+                    foreach (var child in contentRoots) AddOpaqueSubtree(child, "AmbiguousContentRoots", report, diagnostics);
+            }
         }
 
         foreach (var imported in importedControls.OrderBy(item => item.ZIndex).ThenBy(item => item.SourceOrder))
             document.Controls.Add(imported.Control);
 
+        foreach (var element in AxamlImportStructureReport.Descendants(syntax.Root).Where(AxamlImportStructureReport.IsPropertyElement))
+            report.PropertyElements.Add(sourceMap.Controls.SelectMany(r => r.PropertyElements.Values).FirstOrDefault(p => p.Element == element)
+                ?? AxamlPropertyElementInfo.Inspect(element, syntax.Text));
         report.Structure = AxamlImportStructureReport.Create(sourcePath, syntax, sourceMap, report, diagnostics);
         foreach (var type in new[] { "Expander", "ComboBox", "ItemsControl", "ListBox", "TreeView", "ProgressBar" })
         {
@@ -304,10 +337,11 @@ public sealed class AxamlImportService
         foreach (var property in AxamlRoundTripPropertyMap.PropertiesFor(controlType))
         {
             var attribute = property.ResolveExistingAttribute(element);
-            var editable = attribute is null || property.TryWrite(control, attribute.Value);
+            var ambiguous = element.Attributes.Count(a => property.AttributeNames.Contains(a.Name)) > 1;
+            var editable = !ambiguous && (attribute is null || property.TryWrite(control, attribute.Value));
             capability.Properties.Add(new(property.Key, attribute?.Name ?? property.PreferredAttributeName,
                 editable ? AxamlPropertyCapabilityMode.Editable : AxamlPropertyCapabilityMode.Preserved,
-                editable ? "" : IsMarkupExtension(attribute!.Value) ? "MarkupExtension" : "UnsupportedValue"));
+                editable ? "" : ambiguous ? "AmbiguousAttributeAliases" : IsMarkupExtension(attribute!.Value) ? "MarkupExtension" : "UnsupportedValue"));
         }
 
         if (string.IsNullOrWhiteSpace(control.Name))
@@ -451,7 +485,7 @@ public sealed class AxamlImportService
     internal static DesignControlModel CreateSourceControlDefaults(string controlType) =>
         new() { UsesSourceLayout = true, Type = controlType, VerticalAlignment = "Stretch", Padding = 0 };
 
-    private static bool HasUnsupportedInnerContent(string source, AxamlElementSyntax element)
+    private static bool HasUnsupportedInnerContent(string source, AxamlElementSyntax element, bool ignoreChildElements = false)
     {
         if (element.IsSelfClosing || element.EndTagSpan.IsEmpty)
             return false;
@@ -461,7 +495,7 @@ public sealed class AxamlImportService
             return false;
 
         var content = source.Substring(element.ContentStart, contentLength);
-        foreach (var child in element.Children.Where(AxamlImportStructureReport.IsPropertyElement).OrderByDescending(c => c.ElementSpan.Start))
+        foreach (var child in element.Children.Where(e => ignoreChildElements || AxamlImportStructureReport.IsPropertyElement(e)).OrderByDescending(c => c.ElementSpan.Start))
             content = content.Remove(child.ElementSpan.Start - element.ContentStart, child.ElementSpan.Length);
         content = Regex.Replace(content, "<!--.*?-->", string.Empty, RegexOptions.Singleline);
         return !string.IsNullOrWhiteSpace(content);
@@ -495,9 +529,14 @@ internal sealed class AxamlRoundTripProperty
     {
         if (value.TrimStart().StartsWith("{", StringComparison.Ordinal) && !(_allowNullLiteral && value == "{x:Null}")) return false;
         value = WebUtility.HtmlDecode(value);
+        if (value.TrimStart().StartsWith("{", StringComparison.Ordinal) && !(_allowNullLiteral && value == "{x:Null}")) return false;
+        // The Inspector's null marker is not an AXAML string literal null. Preserve
+        // that source spelling rather than silently turning e.g. GroupName into null.
+        if (Metadata?.PropertyType == typeof(string) && value == FormDesigner.DesignerSystem.Metadata.MetadataValueCodec.NullText) return false;
         try
         {
             if (Key == "Margin") _ = Avalonia.Thickness.Parse(value);
+            if (Metadata is null && (Key is "Background" or "Foreground" or "BorderBrush")) _ = Avalonia.Media.Brush.Parse(value);
             if (Key == "GridRowDefinitions") _ = Avalonia.Controls.RowDefinitions.Parse(value);
             if (Key == "GridColumnDefinitions") _ = Avalonia.Controls.ColumnDefinitions.Parse(value);
             if (Key == "HorizontalAlignment" && !Enum.TryParse<Avalonia.Layout.HorizontalAlignment>(value, out _)) return false;
@@ -564,15 +603,27 @@ internal static class AxamlRoundTripPropertyMap
         Text("Text", "Content", control => control.Text, (control, value) => control.Text = value)
     }).ToArray();
 
-    public static IReadOnlyList<AxamlRoundTripProperty> PropertiesFor(string controlType)
+    private static readonly Lazy<IReadOnlyDictionary<string, IReadOnlyList<AxamlRoundTripProperty>>> SourceProperties = new(() =>
+        AxamlControlMetadata.SourceTypeNames.Append("Group").ToDictionary(type => type, BuildPropertiesFor, StringComparer.Ordinal));
+
+    public static IReadOnlyList<AxamlRoundTripProperty> PropertiesFor(string controlType) =>
+        SourceProperties.Value.TryGetValue(controlType, out var properties) ? properties : Array.Empty<AxamlRoundTripProperty>();
+
+    private static IReadOnlyList<AxamlRoundTripProperty> BuildPropertiesFor(string controlType)
     {
         var literals = AxamlControlMetadata.Find(controlType)?.LiteralProperties ?? Array.Empty<AxamlLiteralProperty>();
         var keys = literals.Select(p => p.Key).ToHashSet(StringComparer.Ordinal);
         return StandardPropertiesFor(controlType).Where(p => !keys.Contains(p.Key))
             .Concat(literals.Select(p => new AxamlRoundTripProperty(p.Key,
                 new[] { p.Key, controlType + "." + p.Key },
-                c => p.Metadata is not null && p.Read(c) == FormDesigner.DesignerSystem.Metadata.MetadataValueCodec.NullText ? "{x:Null}" : p.Read(c), p.Write,
+                c => ReadLiteral(p, c), p.Write,
                 allowNullLiteral: p.Metadata?.Nullable == true, metadata: p.Metadata))).ToArray();
+    }
+
+    private static string ReadLiteral(AxamlLiteralProperty property, DesignControlModel control)
+    {
+        var text = property.Read(control);
+        return property.Metadata is not null && text == FormDesigner.DesignerSystem.Metadata.MetadataValueCodec.NullText ? "{x:Null}" : text;
     }
 
     private static IReadOnlyList<AxamlRoundTripProperty> StandardPropertiesFor(string controlType) => controlType switch

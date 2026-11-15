@@ -55,7 +55,7 @@ public partial class MainWindowViewModel
         if (row.Key == "Margin" && property.PropertyType == typeof(Thickness)) row.UseEditor(PropertyGridEditorKind.Thickness);
         if (row.Key is "GridRowDefinitions" or "GridColumnDefinitions" or "SurfaceGridRowDefinitions" or "SurfaceGridColumnDefinitions")
             row.UseEditor(PropertyGridEditorKind.GridDefinitions);
-        var reviewed = StandardControlProperties.Find(typeName, row.Key);
+        var reviewed = SelectedMetadataProperty(row.Key);
         bool? local = null; var sourceKind = PropertyGridValueSource.Model; var detail = "";
         if (row.IsReadOnly && property.Editor is MetadataEditor.Collection or MetadataEditor.ReadOnly) sourceKind = PropertyGridValueSource.Complex;
         Action? reset = null; var sourceProperty = false;
@@ -82,13 +82,21 @@ public partial class MainWindowViewModel
                 var attribute = mapped?.ResolveExistingAttribute(reference.Element) ?? reference.Element.FindAttribute(nativeKey);
                 if (attribute is not null)
                 {
-                    var expression = ClassifySourceExpression(attribute.Value);
+                    var expression = ClassifySourceExpression(System.Net.WebUtility.HtmlDecode(attribute.Value));
                     if (reviewed is not null && local == false && expression == PropertyGridValueSource.LocalValue && reference.Capability.CanEditProperty(row.Key))
                     { sourceKind = PropertyGridValueSource.RegistrationDefault; detail = "Локальный attribute будет удалён минимальным patch."; }
                     else { local = true; sourceKind = expression; detail = "Исходный attribute; минимальный patch."; }
                 }
+                else if (reference.PropertyElements.ContainsKey(row.Key))
+                { sourceKind = local == false ? PropertyGridValueSource.RegistrationDefault : PropertyGridValueSource.LocalValue;
+                  detail = "Литерал property element; минимальный text-span patch. Reset удаляет только этот property element."; }
                 else if (reference.Element.Children.Any(c => c.LocalName.EndsWith("." + property.Name, StringComparison.Ordinal)))
-                { sourceKind = PropertyGridValueSource.Complex; detail = "Property element сохраняется без регенерации."; }
+                {
+                    local = true;
+                    sourceKind = ClassifySourceExpression(row.Value);
+                    if (sourceKind == PropertyGridValueSource.LocalValue) sourceKind = PropertyGridValueSource.Complex;
+                    detail = "Property element сохраняется без регенерации; expressions не вычисляются.";
+                }
                 else if (reference.Element.Children.Where(c => c.LocalName.EndsWith(".Styles", StringComparison.Ordinal))
                     .SelectMany(AxamlImportStructureReport.Descendants).FirstOrDefault(e => e.LocalName == "Setter" && e.GetAttributeValue("Property") == nativeKey) is { } setter)
                 {
