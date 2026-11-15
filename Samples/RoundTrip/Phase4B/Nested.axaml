@@ -1,0 +1,12 @@
+<Window xmlns="https://github.com/avaloniaui" Width="800" Height="600">
+  <Grid RowDefinitions="Auto,*" ColumnDefinitions="2*,*">
+    <DockPanel Name="Dock" Grid.ColumnSpan="2" Height="80" Margin="4">
+      <TextBlock Name="Left" DockPanel.Dock="Left" Text="Left" Width="100"/>
+      <WrapPanel Name="Wrap" Orientation="Horizontal"><Button Name="Wrapped" Content="Wrap" Width="80" Height="32"/><TextBox Text="Other" Width="80"/></WrapPanel>
+    </DockPanel>
+    <ScrollViewer Name="Scroll" Grid.Row="1" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+      <StackPanel Name="Stack" Spacing="9" Margin="5"><Button Name="NestedButton"><Button.Content><StackPanel><TextBlock Name="NestedText" Text="Nested" FontSize="18"/></StackPanel></Button.Content></Button><Border Name="NestedBorder" Padding="5,7,9,11"><Border.Child><TextBox Name="NestedInput" Text="Value"/></Border.Child></Border></StackPanel>
+    </ScrollViewer>
+    <Canvas Name="Canvas" Grid.Row="1" Grid.Column="1" Background="#FFF0DD"><Button Name="Absolute" Content="Canvas" Canvas.Left="23" Canvas.Top="37" Width="120" Height="35"/></Canvas>
+  </Grid>
+</Window>

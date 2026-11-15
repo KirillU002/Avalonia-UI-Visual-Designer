@@ -110,18 +110,26 @@ public sealed class AxamlSourceReference
 public sealed class AxamlSourceMap
 {
     private readonly Dictionary<string, AxamlSourceReference> _byControlId = new(StringComparer.Ordinal);
+    private readonly List<AxamlSourceReference> _controls = new();
+    private readonly IReadOnlyList<AxamlSourceReference> _controlsView;
 
     public AxamlSourceMap(AxamlElementSyntax? canvasElement)
     {
         CanvasElement = canvasElement;
+        _controlsView = _controls.AsReadOnly();
     }
 
     public AxamlElementSyntax? CanvasElement { get; }
     public bool CanInsertControls => CanvasElement is { IsSelfClosing: false } canvas && !canvas.EndTagSpan.IsEmpty;
     public IReadOnlyDictionary<string, AxamlSourceReference> ByControlId => _byControlId;
-    public IReadOnlyList<AxamlSourceReference> Controls => _byControlId.Values.ToList();
+    public IReadOnlyList<AxamlSourceReference> Controls => _controlsView;
 
-    public void Add(AxamlSourceReference reference) => _byControlId[reference.ControlId] = reference;
+    public void Add(AxamlSourceReference reference)
+    {
+        if (_byControlId.TryGetValue(reference.ControlId, out var previous)) _controls[_controls.IndexOf(previous)] = reference;
+        else _controls.Add(reference);
+        _byControlId[reference.ControlId] = reference;
+    }
     public bool TryGet(string controlId, out AxamlSourceReference reference) => _byControlId.TryGetValue(controlId, out reference!);
 }
 

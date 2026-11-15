@@ -4376,7 +4376,10 @@ public partial class MainWindow : Window
         }
 
         if (VM.ActiveAxamlSourceDocument?.SourceMap.TryGet(model.Id, out var scalarReference) == true)
+        {
             AxamlControlMetadata.ApplySourceScalars(scalarReference, model, preview, isDesignMode: !VM.IsUserPreviewMode);
+            preview.Margin = default; // The wrapper already owns the measured source frame.
+        }
 
         var root = new Canvas
         {
@@ -4390,7 +4393,9 @@ public partial class MainWindow : Window
             Width = renderedWidth,
             Height = renderedHeight,
             ClipToBounds = false,
-            Opacity = Math.Clamp(model.Opacity, 0, 1)
+            Opacity = VM.ActiveAxamlSourceDocument?.SourceMap.TryGet(model.Id, out var opacityReference) == true
+                && AxamlControlMetadata.Find(opacityReference.Element.LocalName)?.NativeType?.IsInstanceOfType(preview) == true
+                    ? 1 : Math.Clamp(model.Opacity, 0, 1)
         };
 
         visualLayer.Children.Add(preview);

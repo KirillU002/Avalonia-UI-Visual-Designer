@@ -46,6 +46,11 @@ internal static partial class Program
         // Initialize the real UI dispatcher before any view model can create the
         // fallback dispatcher; IPC continuations must run on the actual UI thread.
         EnsureAvaloniaRuntimeInitialized();
+        if (args.Contains("--universal4b-profile")) return RunUniversal4BProfile();
+        if (args.Contains("--universal4b-interactions")) return RunUniversal4BInteractions();
+        if (args.Contains("--universal4b-large-stages")) return RunUniversal4BLargeStages();
+        if (args.Contains("--universal4b-ack-profile")) return RunUniversal4BAckProfile();
+        if (args.Contains("--universal4b-checks")) return RunUniversal4BChecks();
         if (args.Contains("--universal4a-inventory")) return RunUniversal4AInventory();
         if (args.Contains("--universal4a-checks")) return RunUniversal4AChecks();
         if (args.Contains("--universal4a-profile")) return RunUniversal4AProfile();

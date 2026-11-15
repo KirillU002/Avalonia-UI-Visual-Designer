@@ -19,18 +19,29 @@ public static partial class AxamlLayoutProjection
     {
         Avalonia.Styling.IStyleHost? Avalonia.Styling.IStyleHost.StylingParent => Application.Current;
     }
-    public static IReadOnlyDictionary<string, Rect> Arrange(AxamlRoundTripDocument source,
-        IEnumerable<DesignControlModel> controls, double width, double height)
+    // Shared native tree for safe imported Preview and off-screen measurement.
+    // No imported bindings, templates or user constructors are evaluated.
+    public static (Control Root, IReadOnlyDictionary<string, Control> Controls) CreateNativeTree(AxamlRoundTripDocument source,
+        IEnumerable<DesignControlModel> controls)
+    {
+        var tree = BuildNativeTree(source, controls, forPreview: true);
+        return (tree.Root, tree.Native);
+    }
+
+    private static (Panel Root, Dictionary<string, Control> Native, Dictionary<string, DesignControlModel> Models,
+        Dictionary<string, string> SelectedTabs) BuildNativeTree(AxamlRoundTripDocument source, IEnumerable<DesignControlModel> controls, bool forPreview)
     {
         var models = controls.ToDictionary(c => c.Id);
         var native = new Dictionary<string, Control>();
+        var byParent = models.Values.ToLookup(c => c.ParentId ?? "");
         var selectedTabs = new Dictionary<string, string>();
         Control Build(DesignControlModel model)
         {
             source.SourceMap.TryGet(model.Id, out var reference);
             var type = reference?.Element.LocalName ?? model.Type;
             string Literal(string key) => AxamlControlMetadata.Find(type)!.LiteralProperties.First(p => p.Key == key).Read(model);
-            Control view = AxamlPhase4Projection.Create(reference, model) ?? type switch
+            var projected = AxamlPhase4Projection.Create(reference, model, realizeOffscreen: !forPreview);
+            Control view = projected ?? type switch
             {
                 "Grid" => new Grid(), "StackPanel" => new StackPanel
                 {
@@ -53,21 +64,14 @@ public static partial class AxamlLayoutProjection
                 _ => new TextBlock { Text = model.Text }
             };
             native[model.Id] = view;
-            if (view is TextBlock text) text.FontSize = model.FontSize;
-            if (view is Avalonia.Controls.Primitives.TemplatedControl templated) templated.FontSize = model.FontSize;
-            ApplySourceLayout(reference, model, view);
             if (view is Grid grid)
             {
                 try { grid.RowDefinitions = RowDefinitions.Parse(model.GridRowDefinitions); } catch (FormatException) { }
                 try { grid.ColumnDefinitions = ColumnDefinitions.Parse(model.GridColumnDefinitions); } catch (FormatException) { }
                 ApplyDefinitionConstraints(reference, grid);
             }
-            if (view is Border border)
-            {
-                border.Padding = new Thickness(Math.Max(0, model.Padding));
-                border.BorderThickness = reference?.Element.FindAttribute("BorderThickness") is null ? new Thickness(0) : new Thickness(Math.Max(0, model.BorderThickness));
-            }
-            var children = models.Values.Where(c => c.ParentId == model.Id).OrderBy(c => SourceOrder(c.Id)).ToArray();
+            if (projected is null) ApplySourceLayout(reference, model, view);
+            var children = byParent[model.Id].OrderBy(c => SourceOrder(c.Id)).ToArray();
             foreach (var child in children)
             {
                 var childView = Build(child);
@@ -81,7 +85,7 @@ public static partial class AxamlLayoutProjection
                 else if (view is Border host) host.Child = childView;
                 else if (view is ContentControl content) content.Content = childView;
             }
-            if (view is TabItem tabItem)
+            if (!forPreview && view is TabItem tabItem)
             {
                 var child = tabItem.Content as Control;
                 tabItem.Content = null;
@@ -103,15 +107,30 @@ public static partial class AxamlLayoutProjection
 
         int SourceOrder(string id) => source.SourceMap.TryGet(id, out var r) ? r.Element.ElementSpan.Start : int.MaxValue;
         Panel root = source.SourceMap.CanvasElement is not null ? new Canvas() : new Grid();
-        foreach (var model in models.Values.Where(c => string.IsNullOrEmpty(c.ParentId)).OrderBy(c => SourceOrder(c.Id)))
+        if (source.SourceMap.CanvasElement is { } canvas) AxamlControlMetadata.ApplyRootLiterals(canvas, root);
+        if (!root.IsSet(Panel.BackgroundProperty)) AxamlControlMetadata.ApplyRootLiterals(source.Syntax.Root, root, windowRoot: true);
+        foreach (var model in byParent[""].OrderBy(c => SourceOrder(c.Id)))
         {
             var child = Build(model);
             if (root is Canvas) { Canvas.SetLeft(child, model.X); Canvas.SetTop(child, model.Y); }
             root.Children.Add(child);
         }
+        return (root, native, models, selectedTabs);
+    }
+
+    public static IReadOnlyDictionary<string, Rect> Arrange(AxamlRoundTripDocument source,
+        IEnumerable<DesignControlModel> controls, double width, double height)
+    {
+        var (root, native, models, selectedTabs) = BuildNativeTree(source, controls, forPreview: false);
         // A logical styling root lets native controls create templates and measure Auto content,
         // without creating a second window or executing the imported document's styles.
         var measurementRoot = new MeasurementRoot { Child = root };
+        // A Decorator has no Window theme. Carry the existing host theme's inherited
+        // typography into off-screen measure, rather than forcing per-control literals.
+        if (Application.Current?.TryGetResource("ControlContentThemeFontSize", null, out var fontSize) == true && fontSize is double size)
+            measurementRoot.SetValue(Avalonia.Controls.Documents.TextElement.FontSizeProperty, size);
+        if (Application.Current?.TryGetResource("ContentControlThemeFontFamily", null, out var fontFamily) == true && fontFamily is Avalonia.Media.FontFamily family)
+            measurementRoot.SetValue(Avalonia.Controls.Documents.TextElement.FontFamilyProperty, family);
         try
         {
             // ScrollContentPresenter normally connects to its owner on visual-root attachment.
@@ -178,14 +197,17 @@ public static partial class AxamlLayoutProjection
     {
         if (reference is null || IsExplicitOrChanged(reference, model, "Width")) view.Width = Math.Max(0, model.Width);
         if (reference is null || IsExplicitOrChanged(reference, model, "Height")) view.Height = Math.Max(0, model.Height);
-        try { view.Margin = Thickness.Parse(model.Margin); } catch (FormatException) { }
-        if (Enum.TryParse<HorizontalAlignment>(model.HorizontalAlignment, out var horizontal)) view.HorizontalAlignment = horizontal;
-        if (Enum.TryParse<VerticalAlignment>(model.VerticalAlignment, out var vertical)) view.VerticalAlignment = vertical;
+        if (reference is null || IsExplicitOrChanged(reference, model, "Margin"))
+            try { view.Margin = Thickness.Parse(model.Margin); } catch (FormatException) { }
+        if ((reference is null || IsExplicitOrChanged(reference, model, "HorizontalAlignment"))
+            && Enum.TryParse<HorizontalAlignment>(model.HorizontalAlignment, out var horizontal)) view.HorizontalAlignment = horizontal;
+        if ((reference is null || IsExplicitOrChanged(reference, model, "VerticalAlignment"))
+            && Enum.TryParse<VerticalAlignment>(model.VerticalAlignment, out var vertical)) view.VerticalAlignment = vertical;
         ApplyConstraint(reference, model, "MinWidth", v => view.MinWidth = v);
         ApplyConstraint(reference, model, "MinHeight", v => view.MinHeight = v);
         ApplyConstraint(reference, model, "MaxWidth", v => view.MaxWidth = v);
         ApplyConstraint(reference, model, "MaxHeight", v => view.MaxHeight = v);
-        if (reference is not null) AxamlControlMetadata.ApplySourceScalars(reference, model, view);
+        AxamlControlMetadata.ApplySourceScalars(reference, model, view);
     }
 
     private static bool IsExplicitOrChanged(AxamlSourceReference reference, DesignControlModel model, string key)

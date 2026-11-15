@@ -91,7 +91,9 @@ public sealed class AxamlImportService
                 AddOpaqueSubtree(element, "PropertyElementPreserved", report, diagnostics);
                 return;
             }
-            var metadata = AxamlControlMetadata.FindSourceElement(element, parentType);
+            AxamlControlMetadata? metadata;
+            using (FormDesigner.Services.LayoutDropProfile.Stage("AXAML.TypeResolution"))
+                metadata = AxamlControlMetadata.FindSourceElement(element, parentType);
             if (metadata is null)
             {
                 AddOpaqueSubtree(element, IsAvaloniaElement(element) ? "UnsupportedControl" : "UnsupportedCustomControl", report, diagnostics);
@@ -119,7 +121,9 @@ public sealed class AxamlImportService
             var capability = new AxamlElementCapability(element, AxamlElementCapabilityMode.Editable);
             var control = CreateControl(controlType, element, knownControlIdsByName, diagnostics, capability);
             var scalarElements = new Dictionary<string, AxamlPropertyElementInfo>(StringComparer.Ordinal);
-            foreach (var property in AxamlRoundTripPropertyMap.PropertiesFor(controlType).Where(p => p.Metadata is not null))
+            using (FormDesigner.Services.LayoutDropProfile.Stage("AXAML.PropertyElements"))
+            {
+            foreach (var property in element.Children.Count == 0 ? Array.Empty<AxamlRoundTripProperty>() : AxamlRoundTripPropertyMap.PropertiesFor(controlType).Where(p => p.Metadata is not null))
             {
                 var candidates = element.Children.Where(e => AxamlImportStructureReport.IsPropertyElement(e)
                     && e.LocalName.EndsWith("." + property.Metadata!.Name, StringComparison.Ordinal)).ToArray();
@@ -127,6 +131,7 @@ public sealed class AxamlImportService
                 var info = AxamlPropertyElementInfo.Inspect(candidates[0], syntax.Text);
                 if (info.Metadata != property.Metadata || info.ValueSpan is not { } span || !property.TryWrite(control, syntax.Text.Substring(span.Start, span.Length))) continue;
                 scalarElements.Add(property.Key, info with { Mode = AxamlPropertyCapabilityMode.Editable, Reason = "ScalarTextSpan" });
+            }
             }
             if (StandardItemsProperties.IsMenuButton(controlType)) ImportStaticFlyout(control, element);
             if (hasTextContent)
@@ -178,8 +183,11 @@ public sealed class AxamlImportService
             var zIndex = int.TryParse(element.GetAttributeValue("Canvas.ZIndex"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedZIndex)
                 ? parsedZIndex
                 : sourceOrder;
-            importedControls.Add((ToFileModel(control), zIndex, sourceOrder));
+            using (FormDesigner.Services.LayoutDropProfile.Stage("AXAML.FileModelConstruction"))
+                importedControls.Add((ToFileModel(control), zIndex, sourceOrder));
             sourceOrder++;
+            using (FormDesigner.Services.LayoutDropProfile.Stage("AXAML.SourceReferenceGeneration"))
+            {
             var reference = new AxamlSourceReference(control.Id, control.Type, element, capability) { ParentId = parentId };
             foreach (var scalar in scalarElements) reference.PropertyElements.Add(scalar.Key, scalar.Value);
             foreach (var property in AxamlRoundTripPropertyMap.PropertiesFor(controlType))
@@ -190,6 +198,7 @@ public sealed class AxamlImportService
 
             sourceMap.Add(reference);
             report.AddElement(capability);
+            }
             diagnostics.Add(new AxamlRoundTripDiagnostic(
                 "AXAML_IMPORT_CONTROL",
                 AxamlDiagnosticSeverity.Information,
@@ -236,7 +245,8 @@ public sealed class AxamlImportService
         foreach (var element in AxamlImportStructureReport.Descendants(syntax.Root).Where(AxamlImportStructureReport.IsPropertyElement))
             report.PropertyElements.Add(sourceMap.Controls.SelectMany(r => r.PropertyElements.Values).FirstOrDefault(p => p.Element == element)
                 ?? AxamlPropertyElementInfo.Inspect(element, syntax.Text));
-        report.Structure = AxamlImportStructureReport.Create(sourcePath, syntax, sourceMap, report, diagnostics);
+        using (FormDesigner.Services.LayoutDropProfile.Stage("AXAML.StructureReport"))
+            report.Structure = AxamlImportStructureReport.Create(sourcePath, syntax, sourceMap, report, diagnostics, detailedDiagnostics);
         foreach (var type in new[] { "Expander", "ComboBox", "ItemsControl", "ListBox", "TreeView", "ProgressBar" })
         {
             var references = sourceMap.Controls.Where(r => r.Element.LocalName == type).ToArray();
@@ -333,12 +343,22 @@ public sealed class AxamlImportService
         ICollection<AxamlRoundTripDiagnostic> diagnostics,
         AxamlElementCapability capability)
     {
-        var control = CreateSourceControlDefaults(controlType);
-        foreach (var property in AxamlRoundTripPropertyMap.PropertiesFor(controlType))
+        DesignControlModel control;
+        using (FormDesigner.Services.LayoutDropProfile.Stage("AXAML.ModelConstruction")) control = CreateSourceControlDefaults(controlType);
+        IReadOnlyList<AxamlRoundTripProperty> properties;
+        using (FormDesigner.Services.LayoutDropProfile.Stage("AXAML.MetadataLookup")) properties = AxamlRoundTripPropertyMap.PropertiesFor(controlType);
+        foreach (var property in properties)
         {
-            var attribute = property.ResolveExistingAttribute(element);
-            var ambiguous = element.Attributes.Count(a => property.AttributeNames.Contains(a.Name)) > 1;
-            var editable = !ambiguous && (attribute is null || property.TryWrite(control, attribute.Value));
+            AxamlAttributeSyntax? attribute;
+            bool ambiguous;
+            using (FormDesigner.Services.LayoutDropProfile.Stage("AXAML.PropertyResolution"))
+            {
+                attribute = property.ResolveExistingAttribute(element);
+                ambiguous = property.HasAmbiguousAttribute(element);
+            }
+            var editable = !ambiguous;
+            if (editable && attribute is not null)
+                using (FormDesigner.Services.LayoutDropProfile.Stage("AXAML.ValueConversion")) editable = property.TryWrite(control, attribute.Value);
             capability.Properties.Add(new(property.Key, attribute?.Name ?? property.PreferredAttributeName,
                 editable ? AxamlPropertyCapabilityMode.Editable : AxamlPropertyCapabilityMode.Preserved,
                 editable ? "" : ambiguous ? "AmbiguousAttributeAliases" : IsMarkupExtension(attribute!.Value) ? "MarkupExtension" : "UnsupportedValue"));
@@ -351,9 +371,7 @@ public sealed class AxamlImportService
         if (knownControlIdsByName is not null && knownControlIdsByName.TryGetValue(identity, out var existingId))
             control.Id = existingId;
 
-        var knownAttributeNames = AxamlRoundTripPropertyMap.PropertiesFor(controlType)
-            .SelectMany(property => property.AttributeNames)
-            .ToHashSet(StringComparer.Ordinal);
+        var knownAttributeNames = AxamlRoundTripPropertyMap.AttributeNamesFor(controlType);
         foreach (var attribute in element.Attributes.Where(attribute => !knownAttributeNames.Contains(attribute.Name) && !IsNamespace(attribute)))
         {
             capability.Properties.Add(new(attribute.Name, attribute.Name, AxamlPropertyCapabilityMode.Preserved, "UnknownAttribute"));
@@ -547,8 +565,21 @@ internal sealed class AxamlRoundTripProperty
         catch (Exception ex) when (ex is FormatException or ArgumentException or OverflowException) { return false; }
     }
 
-    public AxamlAttributeSyntax? ResolveExistingAttribute(AxamlElementSyntax element) =>
-        AttributeNames.Select(element.FindAttribute).FirstOrDefault(attribute => attribute is not null);
+    public AxamlAttributeSyntax? ResolveExistingAttribute(AxamlElementSyntax element)
+    {
+        for (var i = 0; i < AttributeNames.Count; i++)
+            if (element.FindAttribute(AttributeNames[i]) is { } attribute) return attribute;
+        return null;
+    }
+
+    public bool HasAmbiguousAttribute(AxamlElementSyntax element)
+    {
+        var count = 0;
+        foreach (var attribute in element.Attributes)
+            for (var i = 0; i < AttributeNames.Count; i++)
+                if (attribute.Name == AttributeNames[i] && ++count > 1) return true;
+        return false;
+    }
 }
 
 internal static class AxamlRoundTripPropertyMap
@@ -603,11 +634,19 @@ internal static class AxamlRoundTripPropertyMap
         Text("Text", "Content", control => control.Text, (control, value) => control.Text = value)
     }).ToArray();
 
-    private static readonly Lazy<IReadOnlyDictionary<string, IReadOnlyList<AxamlRoundTripProperty>>> SourceProperties = new(() =>
-        AxamlControlMetadata.SourceTypeNames.Append("Group").ToDictionary(type => type, BuildPropertiesFor, StringComparer.Ordinal));
+    private sealed record PropertySet(IReadOnlyList<AxamlRoundTripProperty> Properties, IReadOnlySet<string> AttributeNames);
+    private static readonly IReadOnlySet<string> EmptyNames = new HashSet<string>(StringComparer.Ordinal);
+    private static readonly Lazy<IReadOnlyDictionary<string, PropertySet>> SourceProperties = new(() =>
+        AxamlControlMetadata.SourceTypeNames.Append("Group").ToDictionary(type => type, type =>
+        {
+            var properties = BuildPropertiesFor(type);
+            return new PropertySet(properties, properties.SelectMany(p => p.AttributeNames).ToHashSet(StringComparer.Ordinal));
+        }, StringComparer.Ordinal));
 
     public static IReadOnlyList<AxamlRoundTripProperty> PropertiesFor(string controlType) =>
-        SourceProperties.Value.TryGetValue(controlType, out var properties) ? properties : Array.Empty<AxamlRoundTripProperty>();
+        SourceProperties.Value.TryGetValue(controlType, out var set) ? set.Properties : Array.Empty<AxamlRoundTripProperty>();
+    public static IReadOnlySet<string> AttributeNamesFor(string controlType) =>
+        SourceProperties.Value.TryGetValue(controlType, out var set) ? set.AttributeNames : EmptyNames;
 
     private static IReadOnlyList<AxamlRoundTripProperty> BuildPropertiesFor(string controlType)
     {

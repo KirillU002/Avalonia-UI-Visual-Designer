@@ -94,7 +94,7 @@ Collection profile: 3 warm-up, 30 observations каждого сценария, 
 
 Production versions/TFM не меняются. После Release build runner поддерживает:
 
-* `--universal4a-checks` — 38 source/default/null/namespace/readonly/nested/native/memory checks. Model-based Preview limitations проверяются как предупреждения, а не как visual consistency PASS.
+* `--universal4a-checks` — 38 source/default/null/namespace/readonly/nested/native/memory checks. С Phase 4B imported Preview проверяет реальные source Padding/FontFamily; opaque values по-прежнему требуют предупреждения.
 * `--universal4a-inventory` — исходный `Views/MainWindow.axaml`, metadata/source capabilities/property elements/collections. Node coverage не является property-editor coverage.
 * `--universal4a-inspector-audit` — выбирает каждый imported control в прежнем PropertyGrid, сопоставляет X/Y с Canvas.Left/Top, считает реальные editable rows и проверяет no-op source после selection.
 * `--universal4a-profile` — 3 warm-up + 30 measured import/patch для 10/100 NumericUpDown и MainWindow; parse/source-map stages, thread allocations, GC, managed/working-set snapshots.
@@ -123,3 +123,15 @@ pwsh -NoProfile -File smoke-tests/UniversalMetadata/ProbeRuntime.ps1 -ProjectPat
 Probe проверяет настоящие Button values, Menu/nested/Separator, ComboBox popup/selection, Tab content/switch, Tree hierarchy и три resize. Это проверка patched source, не доказательство воспроизведения произвольного AXAML модельным Preview.
 
 Для baseline сравнения использовать отдельный git archive исходного commit с теми же profile methods/fixtures. Полный текущий checks file зависит от новых production capabilities и не переносится в старый checkout целиком. Не запускать builds, SQL, другие UI suites параллельно с benchmark; debugger mode и функциональный объём должны быть явно указаны. Raw timing не является pass/fail threshold. Итоги и ограничения: [Phase 4A](../../Docs/UniversalControlsAndPropertiesPhase4A.md).
+
+## Universal Controls Phase 4B
+
+* `--universal4b-checks` — native fidelity 21 типов, геометрия Login/Nested при трёх размерах (1 DIP, одинаковый client area), existing fixtures, SourceMap/report integrity, imported Preview/ACK, native collections и 20+20 закрытий Preview/документа с WeakReference на source map. Закрытые окна специально удерживаются; освобождение metadata не зависит от GC Window/UIA.
+* `--universal4b-profile` — 5 warm-up + 30 import/real patch для Small/Medium/MainWindow. `UNIVERSAL4B_OUTPUT` задаёт новый JSON; `UNIVERSAL4B_STAGES=0` отключает детальную instrumentation при измерении общей скорости. Без этой переменной — duration/bytes/GC/calls отдельных стадий. Вложенные стадии нельзя суммировать.
+* `--universal4b-interactions` — 5 warm-up + 100 selection/edit/patch/Undo/Redo по N0…N99, затем 5 warm-up + 30 Initialization/Preview. Export snapshot и loading overlay входят в Preview latency; UI action включает UpdateLayout, а не время физического показа кадра. Один pending edit, без накопленной H30 истории.
+* `--universal4b-large-stages` — 5 warm-up + 30 ApplyDocument/Inspector initialization, native Measure/Arrange и 100 индексированных SourceMap lookup на настоящем MainWindow. Off-screen projection — тот же метод, которым пользуется DesignerSurface; это не benchmark полного физического показа 1502 wrappers.
+* `--universal4b-ack-profile` — 5 warm-up + 100 последовательных Edit/Patch/core ACK с настоящим rebase source baseline, без IPC/физического render. Проверяет сохранение ControlId и отсутствие phantom patch после каждого ACK; результат в `UNIVERSAL4B_OUTPUT`.
+
+Используйте тот же process-local `NativeCapture`, что в примере Phase 4A; для длинного профиля `UIA_CAPTURE_TIMEOUT_SECONDS=1800`. Не перезаписывайте результаты и не запускайте benchmarks параллельно с тестами/сборками. Before/After используют один harness, Avalonia/.NET, fixture, debugger mode и конфигурацию Release. Metadata reflection после warm-up проверяется счётчиком BuildCount. JSON Designer Preview/Export не переключаются на imported projection.
+
+Imported Preview использует прежний native builder `AxamlLayoutProjection`: это безопасная проекция доверенных framework controls. Произвольные Styles/Resources/Templates/Bindings не исполняются, ограничения агрегируются в существующей диагностике. Нативный runtime исходного AXAML и проекция сравниваются только на доверенных fixtures. Итоги и границы: [Phase 4B](../../Docs/UniversalControlsAndPropertiesPhase4B.md).

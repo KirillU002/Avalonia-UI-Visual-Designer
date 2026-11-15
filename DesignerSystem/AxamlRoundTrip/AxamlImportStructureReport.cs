@@ -8,6 +8,17 @@ namespace FormDesigner.DesignerSystem.AxamlRoundTrip;
 /// <summary>Source inventory, separate from the smaller, safe visual projection.</summary>
 public sealed class AxamlImportStructureReport
 {
+    // Detailed text is requested by the report UI, not by every import/property edit.
+    // The closure owns syntax/value metadata only; it never captures a VM or native control.
+    private sealed class DeferredLines : IReadOnlyList<string>
+    {
+        private readonly Lazy<IReadOnlyList<string>> _value;
+        public DeferredLines(Func<IReadOnlyList<string>> build) => _value = new(build);
+        public int Count => _value.Value.Count;
+        public string this[int index] => _value.Value[index];
+        public IEnumerator<string> GetEnumerator() => _value.Value.GetEnumerator();
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+    }
     public string DocumentPath { get; init; } = "";
     public string RootType { get; init; } = "";
     public string VisualRoot { get; init; } = "";
@@ -52,8 +63,11 @@ public sealed class AxamlImportStructureReport
 
     public static string PathOf(AxamlElementSyntax element)
     {
-        var siblings = element.Parent?.Children.Where(e => e.Name == element.Name).ToList();
-        var suffix = siblings?.Count > 1 ? $"[{siblings.IndexOf(element) + 1}]" : "";
+        var count = 0; var ordinal = 0;
+        if (element.Parent is { } parent)
+            foreach (var sibling in parent.Children)
+                if (sibling.Name == element.Name) { count++; if (ReferenceEquals(sibling, element)) ordinal = count; }
+        var suffix = count > 1 ? $"[{ordinal}]" : "";
         return (element.Parent is null ? "" : PathOf(element.Parent) + "/") + element.Name + suffix;
     }
 
@@ -83,7 +97,7 @@ public sealed class AxamlImportStructureReport
     }
 
     internal static AxamlImportStructureReport Create(string? path, AxamlSyntaxDocument syntax, AxamlSourceMap map,
-        AxamlCapabilityReport capability, ICollection<AxamlRoundTripDiagnostic> diagnostics)
+        AxamlCapabilityReport capability, ICollection<AxamlRoundTripDiagnostic> diagnostics, bool detailed = false)
     {
         var elements = Descendants(syntax.Root).ToList();
         var visual = elements.Where(IsVisualCandidate).ToList();
@@ -92,19 +106,31 @@ public sealed class AxamlImportStructureReport
         var opaque = capability.Elements.Where(e => e.Mode == AxamlElementCapabilityMode.Opaque).ToDictionary(e => e.Element);
         var blockers = elements.Where(e => opaque.ContainsKey(e) && (e.Parent is null || !opaque.ContainsKey(e.Parent))
             && Descendants(e).Any(IsVisualCandidate)).ToList();
-        var lines = new List<string>();
-        lines.AddRange(syntax.Root.Attributes.Where(a => a.Name == "xmlns" || a.Name.StartsWith("xmlns:")).Select(a => $"Namespace: {a.Name}={a.Value}"));
-        lines.Add("Top-level property elements: " + string.Join(", ", syntax.Root.Children.Where(IsPropertyElement).Select(e => e.Name)));
-        lines.AddRange(elements.GroupBy(e => e.Name).OrderByDescending(g => g.Count()).Select(g => $"XML count: {g.Key}={g.Count()}; visual={g.Count(IsVisualCandidate)}"));
-        foreach (var element in elements)
+        string Detail(AxamlElementSyntax element)
         {
             var mode = imported.Contains(element) ? "Imported" : opaque.ContainsKey(element) ? "Opaque" : "Metadata";
             var reason = opaque.TryGetValue(element, out var entry) ? entry.Reason : "";
-            var detail = $"path={PathOf(element)}; type={element.Name}; namespace={element.NamespaceUri}; capability={mode}; reason={reason}";
-            diagnostics.Add(new("AXAML_ELEMENT_DISCOVERED", AxamlDiagnosticSeverity.Information, detail));
-            diagnostics.Add(new(mode == "Imported" ? "AXAML_ELEMENT_IMPORTED" : "AXAML_ELEMENT_OPAQUE", AxamlDiagnosticSeverity.Information, detail));
-            lines.Add(detail);
+            return $"path={PathOf(element)}; type={element.Name}; namespace={element.NamespaceUri}; capability={mode}; reason={reason}";
         }
+        IReadOnlyList<string> BuildLines()
+        {
+            var lines = new List<string>();
+            lines.AddRange(syntax.Root.Attributes.Where(a => a.Name == "xmlns" || a.Name.StartsWith("xmlns:")).Select(a => $"Namespace: {a.Name}={a.Value}"));
+            lines.Add("Top-level property elements: " + string.Join(", ", syntax.Root.Children.Where(IsPropertyElement).Select(e => e.Name)));
+            lines.AddRange(elements.GroupBy(e => e.Name).OrderByDescending(g => g.Count()).Select(g => $"XML count: {g.Key}={g.Count()}; visual={g.Count(IsVisualCandidate)}"));
+            foreach (var element in elements)
+            {
+                lines.Add(Detail(element));
+            }
+            return lines;
+        }
+        if (detailed)
+            foreach (var element in elements)
+            {
+                var detail = Detail(element);
+                diagnostics.Add(new("AXAML_ELEMENT_DISCOVERED", AxamlDiagnosticSeverity.Information, detail));
+                diagnostics.Add(new(imported.Contains(element) ? "AXAML_ELEMENT_IMPORTED" : "AXAML_ELEMENT_OPAQUE", AxamlDiagnosticSeverity.Information, detail));
+            }
         foreach (var blocker in blockers)
             diagnostics.Add(new("AXAML_SUBTREE_SKIPPED", AxamlDiagnosticSeverity.Information,
                 $"root={PathOf(blocker)}; descendantCount={Descendants(blocker).Count() - 1}; reason={opaque[blocker].Reason}"));
@@ -128,7 +154,7 @@ public sealed class AxamlImportStructureReport
             ResourceElements = elements.Count(e => e.LocalName is "Resources" or "ResourceDictionary" or "ResourceInclude" || e.LocalName.EndsWith(".Resources", StringComparison.Ordinal)),
             Blockers = AxamlBlockerImpact.Analyze(syntax, capability),
             FirstBlocker = blockers.FirstOrDefault() is { } first ? $"{PathOf(first)}: {opaque[first].Reason}" : "none",
-            Lines = lines
+            Lines = new DeferredLines(BuildLines)
         };
         diagnostics.Add(new("AXAML_ROOT_DETECTED", AxamlDiagnosticSeverity.Information, $"type={result.RootType}"));
         diagnostics.Add(new("AXAML_VISUAL_ROOT_DETECTED", AxamlDiagnosticSeverity.Information, $"path={result.VisualRoot}"));

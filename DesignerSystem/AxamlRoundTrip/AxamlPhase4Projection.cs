@@ -15,7 +15,7 @@ namespace FormDesigner.DesignerSystem.AxamlRoundTrip;
 // Only trusted Avalonia controls and imported literal values; never evaluates user bindings.
 public static class AxamlPhase4Projection
 {
-    public static Control? Create(AxamlSourceReference? reference, DesignControlModel model, bool isDesignMode = false)
+    public static Control? Create(AxamlSourceReference? reference, DesignControlModel model, bool isDesignMode = false, bool realizeOffscreen = true)
     {
         var type = reference?.Element.LocalName;
         if (type is not null && StandardControlProperties.SupportedTypes.ContainsKey(type))
@@ -35,14 +35,11 @@ public static class AxamlPhase4Projection
         string Value(string key) => AxamlControlMetadata.Find(type!)!.LiteralProperties.Single(p => p.Key == key).Read(model);
         Control? control = type switch
         {
-            "Button" when !reference!.Element.Children.Any(e => !AxamlImportStructureReport.IsPropertyElement(e)
-                || AxamlControlMetadata.Find("Button")!.IsChildProperty(e) && e.Children.Count > 0) => new Button
-            {
-                Content = model.Text, FontSize = model.FontSize, Opacity = model.Opacity, IsVisible = model.IsVisible,
-                FontWeight = Enum.TryParse<Avalonia.Media.FontWeight>(model.FontWeight, out var weight) ? weight : Avalonia.Media.FontWeight.Normal,
-                Background = Avalonia.Media.Brush.Parse(model.Background), Foreground = Avalonia.Media.Brush.Parse(model.Foreground),
-                BorderBrush = Avalonia.Media.Brush.Parse(model.BorderBrush)
-            },
+            "Button" => new Button { Content = reference!.Capability.CanEditProperty("Text") ? model.Text : null },
+            "TextBox" => new TextBox(),
+            "TextBlock" => new TextBlock(),
+            "CheckBox" => new CheckBox(),
+            "Border" => new Border(),
             "DropDownButton" or "SplitButton" => BuiltIn.StandardItemsControlFactory.Create(BuiltIn.StandardItemsControlFactory.Snapshot(model)),
             "Expander" => new Expander
             {
@@ -74,7 +71,7 @@ public static class AxamlPhase4Projection
         if (phase5 && control is not null) control.DataContext = null;
         // The design projection realizes static items off-screen as well. User ItemsPanel templates
         // are preserved, not executed; Avalonia's StackPanel still owns item layout (no flattening).
-        if (control is ItemsControl items && type is "ItemsControl" or "ListBox" or "TreeView" or "TreeViewItem")
+        if (realizeOffscreen && control is ItemsControl items && type is "ItemsControl" or "ListBox" or "TreeView" or "TreeViewItem")
             items.ItemsPanel = new FuncTemplate<Panel?>(() => new StackPanel());
         // Bound collections stay empty. A small design-time extent keeps their owner selectable,
         // without executing a template, supplying fake data or writing dimensions to the source.
@@ -84,7 +81,7 @@ public static class AxamlPhase4Projection
             control.MinWidth = 24;
             control.MinHeight = 24;
         }
-        if ((phase5 || type == "Button") && control is not null) AxamlLayoutProjection.ApplySourceLayout(reference, model, control);
+        if (control is not null) AxamlLayoutProjection.ApplySourceLayout(reference, model, control);
         return control;
     }
 

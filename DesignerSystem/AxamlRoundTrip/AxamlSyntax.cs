@@ -26,6 +26,7 @@ public sealed class AxamlElementSyntax
     internal AxamlElementSyntax(string name, AxamlTextSpan openingTagSpan, bool isSelfClosing)
     {
         Name = name;
+        LocalName = AxamlSyntaxDocument.GetLocalName(name);
         OpeningTagSpan = openingTagSpan;
         IsSelfClosing = isSelfClosing;
         ContentStart = openingTagSpan.End;
@@ -34,7 +35,7 @@ public sealed class AxamlElementSyntax
     }
 
     public string Name { get; }
-    public string LocalName => AxamlSyntaxDocument.GetLocalName(Name);
+    public string LocalName { get; }
     public string NamespaceUri
     {
         get
@@ -56,8 +57,12 @@ public sealed class AxamlElementSyntax
     public List<AxamlElementSyntax> Children { get; } = new();
     public List<AxamlAttributeSyntax> Attributes { get; } = new();
 
-    public AxamlAttributeSyntax? FindAttribute(string name) =>
-        Attributes.FirstOrDefault(attribute => string.Equals(attribute.Name, name, StringComparison.Ordinal));
+    public AxamlAttributeSyntax? FindAttribute(string name)
+    {
+        foreach (var attribute in Attributes)
+            if (string.Equals(attribute.Name, name, StringComparison.Ordinal)) return attribute;
+        return null;
+    }
 
     public string? GetAttributeValue(string name) => FindAttribute(name)?.Value;
 }

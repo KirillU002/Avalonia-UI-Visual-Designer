@@ -47,7 +47,22 @@ internal static partial class Program
         var grid = vm.Controls.Single(c => c.Type == "Grid");
         RequireCapability(grid.GridRowDefinitions == "Auto,*" && grid.GridColumnDefinitions == "100,2*,*", "Definition syntax missing.");
         var action = LayoutBounds(vm, "Action");
-        Near(action.X, 100, "Grid column"); Near(action.Y, 30, "Auto row"); Near(action.Width, 500, "Column span"); Near(action.Height, 370, "Star row");
+        // Grid cells stretch; a themed Button can be vertically centered inside its cell.
+        // Compare the authored control with native runtime rather than imposing model defaults.
+        var runtime = (Window)FormDesigner.Services.RuntimeAxamlPreviewLoader.Load(result.RoundTripDocument.OriginalText);
+        try
+        {
+            runtime.SystemDecorations=SystemDecorations.None;runtime.Width=600;runtime.Height=400;
+            runtime.ShowInTaskbar=false;runtime.Position=new PixelPoint(-4000,-4000);runtime.Show();NativeItemsUiWait(40);runtime.UpdateLayout();
+            var nativeGrid=(Grid)runtime.Content!;var native=runtime.GetVisualDescendants().OfType<Button>().Single(c=>c.Name=="Action");
+            var point=native.TranslatePoint(default,nativeGrid)!.Value;
+            Near(nativeGrid.RowDefinitions[0].ActualHeight,30,"Auto row extent");Near(nativeGrid.RowDefinitions[1].ActualHeight,370,"Star row extent");
+            Console.WriteLine($"GRID_NATIVE_REFERENCE source={point}/{native.Bounds.Size}; projection={action}");
+            foreach(var key in new[]{"ControlContentThemeFontSize","ContentControlThemeFontFamily"})
+                Console.WriteLine($"GRID_THEME_REFERENCE {key}: found={Application.Current!.TryGetResource(key,null,out var resource)}; value={resource}; nativeFont={native.FontSize}/{native.FontFamily}; windowFont={runtime.FontSize}/{runtime.FontFamily}");
+            RequireCapability(Math.Abs(action.X-point.X)<=1&&Math.Abs(action.Y-point.Y)<=1&&Math.Abs(action.Width-native.Bounds.Width)<=1&&Math.Abs(action.Height-native.Bounds.Height)<=1,"Grid control bounds differ from source runtime.");
+        }
+        finally {runtime.Close();}
         vm.Controls.Single(c => c.Name == "Action").GridColumnSpan = 1;
         var patch = vm.CreateActiveAxamlPatch();
         RequireCapability(patch.CanApply && patch.Edits.Count == 1 && !patch.PatchedText.Contains("Canvas.Left"), "Grid attached property patch lost semantics.");

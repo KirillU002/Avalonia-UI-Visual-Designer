@@ -202,7 +202,7 @@ internal static partial class Program
             finally { native.Close(); }
             vm.RedoEditorCommand!.Execute(null); RequireCapability(vm.CreateActiveAxamlPatch().PatchedText == saved, "Redo after ACK did not restore Reset.");
         });
-        foreach (var axaml in new[] { false, true }) Check("ModelPreviewReportsSourceScalarLimit_" + axaml, () =>
+        foreach (var axaml in new[] { false, true }) Check("ImportedPreviewAppliesSourceScalar_" + axaml, () =>
         {
             var diagnostics = Environment.GetEnvironmentVariable("FORMDESIGNER_PREVIEW_DIAGNOSTICS");
             try
@@ -210,12 +210,12 @@ internal static partial class Program
             Environment.SetEnvironmentVariable("FORMDESIGNER_PREVIEW_DIAGNOSTICS", "1");
             var vm = Universal4AVm("<a:Button x:Name='Target' FontFamily='Arial'><a:Button.Padding>1,2,3,4</a:Button.Padding></a:Button>");
             using var preview = ShowDataGridRegressionPreview(vm, axaml);
-            RequireCapability(preview.Window.BuildIssues.Any(d => d.Message.Contains("Padding") && d.Message.Contains("source")), "Model Preview silently omitted a source-only property.");
             var host = preview.Window.FindControl<Border>("PreviewSurfaceBorder")!;
             var native = ((Control)host.Child!).GetVisualDescendants().Prepend((Control)host.Child!).OfType<Button>().Single();
+            RequireCapability(native.Padding == new Thickness(1,2,3,4) && native.FontFamily.Name == "Arial", "Imported Preview omitted source literals.");
             RequireCapability(native.GetVisualRoot() == preview.Window && native.Bounds.Width > 0
                 && preview.Window.ControlDiagnostics.Any(d => d.ControlId == vm.Controls.Single().Id && d.Created && d.Attached), "Preview warning hid standard Button.");
-            Console.WriteLine($"OBSERVED_SOURCE_PREVIEW mode={(axaml ? "AXAML" : "Legacy")}; padding={native!.Padding}; expected=1,2,3,4; warning=true");
+            Console.WriteLine($"OBSERVED_SOURCE_PREVIEW mode={(axaml ? "AXAML" : "Legacy")}; padding={native!.Padding}; expected=1,2,3,4");
             RequireCapability(!vm.CreateActiveAxamlPatch().HasChanges, "Model Preview modified imported source.");
             }
             finally { Environment.SetEnvironmentVariable("FORMDESIGNER_PREVIEW_DIAGNOSTICS", diagnostics); }

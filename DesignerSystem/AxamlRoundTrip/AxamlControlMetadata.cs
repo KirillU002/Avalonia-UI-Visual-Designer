@@ -2,6 +2,7 @@ using FormDesigner.DesignerSystem.Metadata;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Layout;
+using Avalonia;
 using FormDesigner.Models;
 using System;
 using System.Collections.Generic;
@@ -64,9 +65,16 @@ public sealed record AxamlControlMetadata(string SourceType, string ProjectionTy
         || element.LocalName == ItemType && element.NamespaceUri is "" or "https://github.com/avaloniaui"
         || SourceType == "ComboBox" && FindSourceElement(element, SourceType)?.SourceType == "String";
 
-    public static bool HasSourceValue(AxamlElementSyntax element, string property) => element.Attributes.Any(a => a.Name == property
-            || a.Name.EndsWith("." + property, StringComparison.Ordinal))
-        || element.Children.Any(c => c.LocalName.EndsWith("." + property, StringComparison.Ordinal));
+    public static bool HasSourceValue(AxamlElementSyntax element, string property)
+    {
+        static bool Qualified(string name, string key) => name.Length > key.Length
+            && name[name.Length - key.Length - 1] == '.' && name.EndsWith(key, StringComparison.Ordinal);
+        foreach (var attribute in element.Attributes)
+            if (attribute.Name == property || Qualified(attribute.Name, property)) return true;
+        foreach (var child in element.Children)
+            if (Qualified(child.LocalName, property)) return true;
+        return false;
+    }
 
     public bool IsChildProperty(AxamlElementSyntax element) => ChildProperty is not null
         && element.NamespaceUri is "" or "https://github.com/avaloniaui"
@@ -89,16 +97,47 @@ public sealed record AxamlControlMetadata(string SourceType, string ProjectionTy
     internal static Type? ResolveNativeType(string sourceType) => SourceTypes.Value.TryGetValue(sourceType, out var type) ? type : null;
     public IReadOnlyList<AxamlLiteralProperty> LiteralProperties => SourceLiterals.Value[SourceType];
 
-    public static void ApplySourceScalars(AxamlSourceReference reference, DesignControlModel model, Control native, bool isDesignMode = false)
+    public static void ApplySourceScalars(AxamlSourceReference? reference, DesignControlModel model, Control native, bool isDesignMode = false)
     {
-        var metadata = Find(reference.Element.LocalName);
+        // Pending Canvas insertions have no source reference until ApplyPatch/ACK.
+        // They still use these same reviewed accessors/codecs for common model values.
+        var sourceType = reference?.Element.LocalName ?? model.Type;
+        var metadata = Find(sourceType);
         if (metadata?.NativeType?.IsInstanceOfType(native) != true) return; // A design backdrop is not the user's native type.
+        var schema = AvaloniaMetadataCatalog.Get(metadata.NativeType);
+        foreach (var accessor in AxamlRoundTripPropertyMap.PropertiesFor(sourceType))
+        {
+            if (accessor.Metadata is not null || reference is not null && !reference.Capability.CanEditProperty(accessor.Key)) continue;
+            var text = accessor.Read(model);
+            if (reference is not null && accessor.ResolveExistingAttribute(reference.Element) is null
+                && reference.SnapshotValues.TryGetValue(accessor.Key, out var before) && before == text) continue;
+            var nativeKey = accessor.Key == "Name" ? "Name" : accessor.PreferredAttributeName;
+            var property = schema.Properties.FirstOrDefault(p => p.Key == nativeKey && !p.ReadOnly && p.Property is not null);
+            if (property is null) continue;
+            object? value;
+            if (property.PropertyType == typeof(object) && property.Name is "Content" or "Header" or "Watermark") value = text;
+            else if (!MetadataValueCodec.TryParse(property.PropertyType, text, out value)) continue;
+            if (property.Property!.IsValidValue(value)) native.SetValue(property.Property, value);
+        }
         foreach (var literal in metadata.LiteralProperties.Where(p => p.Metadata is not null))
         {
-            if (!reference.Capability.CanEditProperty(literal.Key) || !model.CustomProperties.Any(p => p.Key == literal.Key)) continue;
+            if (reference is not null && !reference.Capability.CanEditProperty(literal.Key) || !model.CustomProperties.Any(p => p.Key == literal.Key)) continue;
             if (isDesignMode && literal.Key is "IsHitTestVisible" or "Focusable") continue;
             if (StandardControlProperties.TryParseValue(literal.Metadata!, literal.Read(model), out var value))
                 native.SetValue(literal.Metadata!.Property!, value);
+        }
+    }
+
+    internal static void ApplyRootLiterals(AxamlElementSyntax source, Control native, bool windowRoot = false)
+    {
+        var schema = AvaloniaMetadataCatalog.Get(native.GetType());
+        foreach (var key in windowRoot ? new[] { "Background" } : new[] { "Background", "Width", "Height", "Margin", "MinWidth", "MinHeight", "MaxWidth", "MaxHeight", "Opacity", "IsVisible", "ClipToBounds", "HorizontalAlignment", "VerticalAlignment" })
+        {
+            var raw = source.GetAttributeValue(key);
+            if (raw is null || raw.TrimStart().StartsWith('{')) continue;
+            var property = schema.Properties.FirstOrDefault(p => p.Key == key && !p.ReadOnly && p.Property is not null);
+            if (property is not null && MetadataValueCodec.TryParse(property.PropertyType, System.Net.WebUtility.HtmlDecode(raw), out var value)
+                && property.Property!.IsValidValue(value)) native.SetValue(property.Property, value);
         }
     }
 

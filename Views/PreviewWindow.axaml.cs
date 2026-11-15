@@ -258,6 +258,12 @@ public partial class PreviewWindow : Window
 
     private async Task LoadExportedAxamlPreviewAsync(ExportedAxamlPreviewModel preview)
     {
+        if (_importedNativeSource is not null)
+        {
+            TracePreviewMode("AXAML_PREVIEW_START", "TrustedImportedNativeProjection");
+            TracePreviewMode(RenderImportedSource() ? "AXAML_PREVIEW_SUCCESS" : "AXAML_PREVIEW_FAILED", "TrustedImportedNativeProjection");
+            return;
+        }
         TracePreviewMode("AXAML_PREVIEW_START", preview.SourceKind == "ImportedAxaml" ? "ExperimentalImportedModelSnapshot" : "GeneratedJsonExportSnapshot");
         BeginPreviewBuild();
         var stopwatch = Stopwatch.StartNew();
@@ -1227,6 +1233,7 @@ public partial class PreviewWindow : Window
 
     private void RenderDocument()
     {
+        if (_importedNativeSource is not null) { RenderImportedSource(); return; }
         if (_isRenderingDocument)
         {
             _renderDocumentAgainRequested = true;

@@ -27,7 +27,8 @@ public sealed class LayoutDropProfile : IDisposable
     public double ElapsedMs { get; private set; }
     public long AllocatedBytes { get; private set; }
     public sealed record StageResult(string Stage, int Calls, double ElapsedMs, long AllocatedBytes, long CreatedTrackedObjects, long UpdatedControls)
-    {public double EndMs {get;init;} public long AffectedControls {get;init;}}
+    {public double EndMs {get;init;} public long AffectedControls {get;init;}
+        public int GC0 {get;init;} public int GC1 {get;init;} public int GC2 {get;init;}}
     private long CreatedTrackedObjects => _counters.GetValueOrDefault("PreviewControlsCreated") + _counters.GetValueOrDefault("DesignerWrappersCreated")
         + _counters.GetValueOrDefault("ContextMenusCreated") + _counters.GetValueOrDefault("InspectorRowsCreated");
 
@@ -62,6 +63,7 @@ public sealed class LayoutDropProfile : IDisposable
         private readonly LayoutDropProfile _owner;
         private readonly string _name;
         private readonly long _time = Stopwatch.GetTimestamp(), _bytes = GC.GetAllocatedBytesForCurrentThread();
+        private readonly int _gc0 = GC.CollectionCount(0), _gc1 = GC.CollectionCount(1), _gc2 = GC.CollectionCount(2);
         private readonly long _created, _updated;
         private HashSet<string>? _affected;
         public void Affect(string id)=>(_affected??=new()).Add(id);
@@ -75,7 +77,8 @@ public sealed class LayoutDropProfile : IDisposable
                 AllocatedBytes = previous.AllocatedBytes + GC.GetAllocatedBytesForCurrentThread() - _bytes,
                 CreatedTrackedObjects = previous.CreatedTrackedObjects + _owner.CreatedTrackedObjects - _created,
                 UpdatedControls = previous.UpdatedControls + _owner._counters.GetValueOrDefault("DesignerWrappersUpdated") - _updated,
-                EndMs=Stopwatch.GetElapsedTime(_owner._started).TotalMilliseconds,AffectedControls=previous.AffectedControls+(_affected?.Count??0) };
+                EndMs=Stopwatch.GetElapsedTime(_owner._started).TotalMilliseconds,AffectedControls=previous.AffectedControls+(_affected?.Count??0),
+                GC0=previous.GC0+GC.CollectionCount(0)-_gc0, GC1=previous.GC1+GC.CollectionCount(1)-_gc1, GC2=previous.GC2+GC.CollectionCount(2)-_gc2 };
             _owner._openStages.Remove(this);
             LayoutDropEventSource.Log.Stage(_owner.Id,_name,Stopwatch.GetElapsedTime(_time).TotalMilliseconds);
         }
