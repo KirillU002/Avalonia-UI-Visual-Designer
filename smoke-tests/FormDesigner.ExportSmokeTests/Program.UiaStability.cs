@@ -151,7 +151,9 @@ internal static partial class Program
         Task<string?>? completed = null;
         if (client is not null)
         {
-            client.StandardInput.WriteLine(window.TryGetPlatformHandle()!.Handle.ToInt64() + " 100"); client.StandardInput.Flush();
+            // Undo helper pumps for 520 ms; a 100 ms client lease would finish
+            // before navigation and would not exercise concurrent UIA access.
+            client.StandardInput.WriteLine(window.TryGetPlatformHandle()!.Handle.ToInt64() + (scenario=="undo"?" 2000":" 100")); client.StandardInput.Flush();
             var acquired = client.StandardOutput.ReadLineAsync(); DropPumpUntil(() => acquired.IsCompleted, "UIA node acquisition");
             RequireCapability(acquired.Result?.StartsWith("ACQUIRED 00000000") == true, "External UIA node acquisition failed: " + acquired.Result);
             NativeCrashDiagnostics.Write("UIA_STRESS_CLIENT_ACQUIRED", reason: acquired.Result!);
@@ -169,7 +171,14 @@ internal static partial class Program
             session.Select(root); RequireCapability(session.Add(), "Sibling add failed");
             RequireCapability(session.Move(-1), "Reorder failed");
             RequireCapability(session.Remove(), "Subtree removal failed");
-            if (scenario == "undo") { GridEditorUndo(vm); GridEditorUndo(vm, true); }
+            if (scenario == "undo")
+            {
+                var afterRemoval=session.Count;
+                RequireCapability(completed is null||!completed.IsCompleted,"UIA query lease ended before Undo.");
+                GridEditorUndo(vm);RequireCapability(session.Count>afterRemoval,"UIA stress Undo did not restore the removed subtree.");
+                GridEditorUndo(vm,true);RequireCapability(session.Count==afterRemoval,"UIA stress Redo did not repeat subtree removal.");
+                RequireCapability(completed is null||!completed.IsCompleted,"UIA query lease ended before Redo completed.");
+            }
             foreach (var id in session.Roots.Select(n => n.Id).ToArray()) { session.Select(id); session.Remove(); }
         }
         var references = new List<WeakReference> { new(window) };

@@ -29,7 +29,17 @@ internal static class Program
     private static int Main(string[] args)
     {
         if(args is ["--fault"]) { RtlFillMemory(IntPtr.Zero,1,0x42); return 99; }
-        try { return Run(args); }
+        try
+        {
+            if(args is ["--evidence-checks",var checks])return EvidenceStore.Checks(checks);
+            if(args.Length>=3&&args[0]=="--preserve")
+            {
+                var vault=new EvidenceStore(args[1]);
+                foreach(var file in args.Skip(2))Console.WriteLine(JsonSerializer.Serialize(vault.Preserve(file)));
+                return 0;
+            }
+            return Run(args);
+        }
         catch(Exception error) { Console.Error.WriteLine(error); return 2; }
     }
     private static int Run(string[] args)
@@ -39,6 +49,12 @@ internal static class Program
         var folder=Path.GetFullPath(args[0]);
         if (Directory.Exists(folder) && Directory.EnumerateFileSystemEntries(folder).Any()) throw new IOException("Use a fresh capture directory.");
         Directory.CreateDirectory(folder);
+        var runId=Guid.NewGuid().ToString("N");
+        EvidenceStore.WriteNew(Path.Combine(folder,"run.json"),new{RunId=runId,StartedUtc=DateTimeOffset.UtcNow,Executable=Path.GetFileName(args[1]),EntryPoint=Path.GetFileName(args[3]),ArgumentCount=args.Length-3});
+        var vault=new EvidenceStore(Environment.GetEnvironmentVariable("UIA_EVIDENCE_ROOT")??Path.Combine("artifacts","uia-evidence-vault"));
+        vault.RequireSpace();
+        if(new DriveInfo(Path.GetPathRoot(folder)!).AvailableFreeSpace<EvidenceStore.ReserveBytes)throw new IOException("Insufficient capture disk reserve; target not launched.");
+        EvidenceStore.WriteNew(Path.Combine(folder,"preserved-before-launch.json"),vault.ProtectWer());
         var executable=Path.GetFullPath(args[1]);
         var selfTest=args.Skip(3).Contains("--fault");
         var command=new StringBuilder(string.Join(" ",new[]{executable}.Concat(args.Skip(3)).Select(Quote)));
@@ -56,7 +72,7 @@ internal static class Program
         }
         finally {foreach(var handle in inherited)CloseHandle(handle);}
         var data=Marshal.AllocHGlobal(176);
-        var captured=false; var exited=false; var timeout=false; var initialBreakpoint=false; var exitCode=0;
+        var captured=false; var captureAttempted=false; var captureFailed=false; var exited=false; var timeout=false; var initialBreakpoint=false; var exitCode=0;
         var modules=new List<object>(); ulong uiaStart=0,uiaEnd=0;
         var timer=Stopwatch.StartNew();
         var limit=int.Parse(Environment.GetEnvironmentVariable("UIA_CAPTURE_TIMEOUT_SECONDS")??"300");
@@ -95,22 +111,36 @@ internal static class Program
                     var code=(uint)Marshal.ReadInt32(data,16); var address=(ulong)Marshal.ReadInt64(data,32); var first=Marshal.ReadInt32(data,168)!=0;
                     disposition=0x80010001;
                     if(code==0x80000003&&!initialBreakpoint){initialBreakpoint=true;disposition=0x00010002;}
-                    if(code==0xC0000005 && !captured && (selfTest || address>=uiaStart && address<uiaEnd || !first))
+                    if(code==0xC0000005 && !captureAttempted && (selfTest || address>=uiaStart && address<uiaEnd || !first))
                     {
-                        var dump=Path.Combine(folder,$"av-{pid}-{tid}.dmp");
-                        WriteFullDump(dump,child.Process,pid,tid,data);
-                        captured=true;
-                        File.WriteAllText(Path.Combine(folder,"modules.json"),JsonSerializer.Serialize(modules,new JsonSerializerOptions{WriteIndented=true}));
-                        Write("FULL_DUMP_WRITTEN",new {pid,tid,FirstChance=first,Code=$"0x{code:X}",Address=$"0x{address:X}",Offset=uiaStart==0?null:$"0x{address-uiaStart:X}",Dump=dump,Bytes=new FileInfo(dump).Length});
+                        captureAttempted=true;
+                        var dump=Path.Combine(folder,$"av-{DateTime.UtcNow:yyyyMMddTHHmmssfffZ}-{pid}-{tid}-{runId}.dmp");
+                        try
+                        {
+                            using var own=Process.GetProcessById((int)pid);
+                            vault.RequireSpace(checked(own.PrivateMemorySize64*2));
+                            WriteFullDump(dump,child.Process,pid,tid,data);
+                            captured=true;
+                            var preserved=vault.Preserve(dump);
+                            EvidenceStore.WriteNew(Path.Combine(folder,"modules-at-capture.json"),modules);
+                            EvidenceStore.WriteNew(Path.Combine(folder,"dump-manifest.json"),new{RunId=runId,pid,tid,FirstChance=first,ExceptionCode=$"0x{code:X}",Address=$"0x{address:X}",Dump=dump,preserved.Bytes,preserved.SHA256,preserved.ProtectedPath,CreatedUtc=DateTimeOffset.UtcNow,FullMemoryOptions="0x1926"});
+                            Write("FULL_DUMP_WRITTEN",new {pid,tid,FirstChance=first,Code=$"0x{code:X}",Address=$"0x{address:X}",Offset=uiaStart==0||address<uiaStart||address>=uiaEnd?null:$"0x{address-uiaStart:X}",Dump=dump,preserved.Bytes,preserved.SHA256,preserved.ProtectedPath});
+                        }
+                        catch(Exception error)
+                        {
+                            captureFailed=true;
+                            EvidenceStore.WriteNew(Path.Combine(folder,"capture-failure.json"),new{RunId=runId,Dump=dump,Error=error.ToString(),Utc=DateTimeOffset.UtcNow});
+                            Write("CAPTURE_FAILED",new{Dump=dump,Reason=error.Message});
+                        }
                     }
                 }
                 if(kind==5) { exitCode=Marshal.ReadInt32(data,16); exited=true; }
                 Check(ContinueDebugEvent(pid,tid,disposition));
             }
-            var result=new {Pid=child.Pid,ExitCode=exitCode,TimedOut=timeout,Captured=captured,ElapsedMs=timer.ElapsedMilliseconds};
-            File.WriteAllText(Path.Combine(folder,"modules.json"),JsonSerializer.Serialize(modules,new JsonSerializerOptions{WriteIndented=true}));
-            File.WriteAllText(Path.Combine(folder,"result.json"),JsonSerializer.Serialize(result,new JsonSerializerOptions{WriteIndented=true}));
-            Write("EXIT",result); return timeout?124:exitCode;
+            var result=new {RunId=runId,Pid=child.Pid,ExitCode=exitCode,TimedOut=timeout,Captured=captured,CaptureFailed=captureFailed,ElapsedMs=timer.ElapsedMilliseconds};
+            EvidenceStore.WriteNew(Path.Combine(folder,"modules.json"),modules);
+            EvidenceStore.WriteNew(Path.Combine(folder,"result.json"),result);
+            Write("EXIT",result); return timeout?124:captureFailed&&exitCode==0?2:exitCode;
         }
         finally { if(!exited)TerminateProcess(child.Process,0xDEAD); Marshal.FreeHGlobal(data); CloseHandle(child.Thread); CloseHandle(child.Process); }
         void Write(string code,object value) => File.AppendAllText(Path.Combine(folder,"capture.jsonl"),JsonSerializer.Serialize(new{Code=code,Utc=DateTimeOffset.UtcNow,Value=value})+Environment.NewLine);

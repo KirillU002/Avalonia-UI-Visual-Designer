@@ -1,4 +1,4 @@
-# UI Automation stability diagnostics — Phases 3B.1 / 3B.2
+# UI Automation stability diagnostics — Phases 3B.1–3B.3
 
 Windows-only diagnostic projects; production NuGet/TFM are unchanged. Build the
 Release smoke runner, `UiaClient` (net8.0) and `UiaTreeClient` (net8.0-windows;
@@ -10,6 +10,7 @@ Run from the repository root, sequentially after builds:
 ```powershell
 dotnet build smoke-tests/UiaStability/UiaClient -c Release
 dotnet build smoke-tests/UiaStability/UiaTreeClient -c Release
+dotnet build smoke-tests/UiaStability/NativeCapture -c Release
 dotnet build smoke-tests/FormDesigner.ExportSmokeTests -c Release -m:1
 pwsh -NoProfile -File smoke-tests/UiaStability/RunStress.ps1 -Scenarios plain -Cycles 100
 pwsh -NoProfile -File smoke-tests/UiaStability/RunStress.ps1 -Scenarios preview-axaml -Cycles 100 -Client
@@ -37,6 +38,49 @@ released-client observations; don't rename a former retention failure a pass.
 Collection session and active-context assertions stay enabled. Plain/collection
 Window retention is recorded separately from Preview collectibility. Test-only
 GC does not run in production.
+
+## Evidence protection — Phase 3B.3
+
+Both `RunCaptured.ps1` and `RunStress.ps1` now launch through NativeCapture.
+Build it before using either driver. Captured exceptions (even a first-chance
+exception followed by exit 0), capture failures and missing final records stop
+the driver; no retry is performed.
+
+Before launching a target, NativeCapture preserves existing matching
+`dotnet.exe.*.dmp`, `FormDesigner.exe.*.dmp`, and `AvaloniaDesigner.VsHost.exe.*.dmp`
+from the current user's CrashDumps directory. The separate default vault is
+`artifacts/uia-evidence-vault` (override only for diagnostics with
+`UIA_EVIDENCE_ROOT`). It must be outside WER and cannot traverse reparse points.
+Preflight failures abort before target launch. Every newly captured dump is
+copied to this vault before the AV is forwarded.
+
+Raw dump names contain UTC, PID, TID and a GUID run ID. Each capture directory is
+fresh and has an exclusive `run.json` marker; metadata uses CreateNew. Vault
+entries are content addressed by SHA-256: an existing copy is rehashed, never
+overwritten. Corrupt copies fail closed and remain available for investigation.
+Source writes/deletion are denied during copying; destination contents are
+flushed and rehashed. `dump-manifest.json` stores hash, size, source, protected
+path and exception identity. `preserved-before-launch.json` records preflight
+copies. CLI argument values are not logged. Per-driver aggregate progress JSON
+is mutable within its new run; immutable per-case records remain authoritative.
+
+There is a 2 GiB free-space reserve, with additional space checked for each copy
+and before full capture. There is **no automatic deletion, expiry, overwrite or
+pruning**. Review storage manually; low disk space stops capture instead of
+deleting older evidence. No WER registry changes, no cleanup of other folders,
+and no dump publication. `.dmp` files must stay in ignored/private storage.
+
+Preserve important dumps outside WER explicitly as well:
+
+```powershell
+dotnet $capture --preserve artifacts/uia-evidence-vault $importantDump
+dotnet $capture --evidence-checks artifacts/uia-storage-checks-new
+```
+
+The storage checks use synthetic copy fixtures, not native crash evidence.
+Actual capture validation uses the intentional `--fault` self-test below; its
+AV is expected and must not be reported as a Designer crash. Original WER files
+lost in Phase 3B.2 are not recovered by this protection.
 
 `UIA_STRESS_HOLD_MEMORY=1` writes `dump-ready.json` and pumps for at most 60 seconds
 until `release.txt`. The existing smoke dump-on-retained opt-in is also supported.

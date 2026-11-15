@@ -45,11 +45,12 @@ try{
         & $dotnet $capture ($case+'-capture') $dotnet -- @arguments *> ($case+'.log')
         $exitCode=$LASTEXITCODE
         $summary=if(Test-Path -LiteralPath (Join-Path $case 'result.json')){Get-Content -LiteralPath (Join-Path $case 'result.json') -Raw | ConvertFrom-Json}else{$null}
-        $entry=[pscustomobject]@{Scenario=$Scenario;Control=$kind;ExitCode=$exitCode;Result=$summary}
+        $captureResult=if(Test-Path -LiteralPath ($case+'-capture/result.json')){Get-Content -LiteralPath ($case+'-capture/result.json') -Raw|ConvertFrom-Json}else{$null}
+        $entry=[pscustomobject]@{Scenario=$Scenario;Control=$kind;ExitCode=$exitCode;Result=$summary;Capture=$captureResult}
         $results+=$entry
         $results|ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $folder 'results.json') -Encoding utf8
         Write-Output ($Scenario+'/'+$kind+': exit='+$exitCode+' completed='+$summary.Completed)
-        if($exitCode -ne 0 -or $null -eq $summary -or $summary.Completed -ne $Cycles){throw 'Stopped on first failed observation. See original log and capture result.'}
+        if($exitCode -ne 0 -or $null -eq $summary -or $summary.Completed -ne $Cycles -or $null -eq $captureResult -or $captureResult.CaptureFailed -or $captureResult.Captured){throw 'Stopped on first failed observation or captured exception. See original log and capture result.'}
     }
 }finally{
     Remove-Item Env:UIA_PROBE_OUTPUT,Env:UIA_PROBE_CONTROL,Env:UIA_PROBE_CLOSE,Env:UIA_PROBE_SCOPE,Env:UIA_PROBE_CYCLES,Env:UIA_STRESS_CONTROL,Env:UIA_STRESS_SCENARIO,Env:UIA_STRESS_OUTPUT,Env:UIA_STRESS_CYCLES,Env:UIA_STRESS_RELEASE_CLIENT_FIRST,Env:UIA_STRESS_CLIENT,Env:FORMDESIGNER_NATIVE_DIAGNOSTICS_DIRECTORY -ErrorAction SilentlyContinue

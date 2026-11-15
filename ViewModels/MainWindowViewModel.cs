@@ -22342,6 +22342,10 @@ public partial class MainWindowViewModel : ObservableObject
     private void RaiseDocumentStateProperties()
     {
         RebuildUndoRedoHistoryItems();
+        // History navigation must be usable in the same UI turn as Reset/edit.
+        // The general command refresh is debounced and can be postponed by logs.
+        UndoEditorCommand?.RefreshState();
+        RedoEditorCommand?.RefreshState();
         OnPropertyChanged(nameof(HasUndo));
         OnPropertyChanged(nameof(HasRedo));
         OnPropertyChanged(nameof(HasUndoRedoHistory));
