@@ -18223,7 +18223,8 @@ public partial class MainWindowViewModel : ObservableObject
             foreach (var line in builder.ToString().Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n'))
             {
                 if (line.Length > 0)
-                    writer.WriteLine(0, line);
+                    writer.WriteLine(0, line.Contains(" x:Name=\""+EscapeXml(_owner.GetExportControlName(adapter.Model))+"\"",StringComparison.Ordinal)
+                        ? FormDesigner.DesignerSystem.Metadata.StandardControlProperties.ApplyAdditionalGeneratedAttributes(line,typeKey,control,EscapeXml) : line);
             }
         }
     }

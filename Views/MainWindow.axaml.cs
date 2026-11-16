@@ -4551,10 +4551,11 @@ public partial class MainWindow : Window
         {
             ToolTip.SetTip(wrapper, model.Name + " · " + model.Type);
             var contextDocumentId = VM.ActiveDocumentId;
+            var contextSessionId = VM.DocumentSessionId;
             wrapper.ContextRequested += (_, args) =>
             {
                 args.Handled = true;
-                OpenCurrentControlContextMenu(model.Id, contextDocumentId);
+                OpenControlContextMenuRequest(model.Id, contextDocumentId, contextSessionId);
             };
             wrapper.PointerPressed += Control_PointerPressed;
             wrapper.PointerMoved += Control_PointerMoved;
@@ -4759,7 +4760,10 @@ public partial class MainWindow : Window
             if (control is not DesignControlNodeAdapter adapter || !_builders.TryGetValue(typeKey, out var builder))
                 return _owner.CreateMissingPreview(new DesignControlModel { Type = typeKey, Width = 180, Height = 48 });
 
-            return builder(adapter.Model);
+            var native=builder(adapter.Model);
+            FormDesigner.DesignerSystem.Metadata.StandardControlProperties.ApplyAdditional(native,control);
+            if(context.Mode == DesignerPreviewMode.Designer) native.IsHitTestVisible=false;
+            return native;
         }
     }
 
@@ -7270,8 +7274,19 @@ public partial class MainWindow : Window
         };
     }
 
+    private void OpenControlContextMenuRequest(string controlId, string documentId, string sessionId)
+    {
+        if (VM.DocumentSessionId == sessionId) OpenCurrentControlContextMenu(controlId, documentId);
+    }
+
     private void OpenCurrentControlContextMenu(string controlId, string documentId)
     {
+        // A selection render is timer-coalesced. Opening before that render leaves
+        // the Popup owned by a shell that the pending tick will detach and close.
+        // Complete already scheduled work once; do not delay/retry popup creation.
+        if (VM.ActiveDocumentId != documentId || VM.GetControl(controlId) is null) return;
+        if (_isDesignerRenderScheduled && _scheduledDesignerRenderSessionId == VM.DocumentSessionId)
+            RenderDesigner();
         // Selection/render can retire a shell while a routed context request is in
         // flight. Resolve the active shell, never attach a popup to the old visual.
         if (VM.ActiveDocumentId != documentId || VM.GetControl(controlId) is not { } model
@@ -7964,7 +7979,8 @@ public partial class MainWindow : Window
             VM.EndPropertyGridLiveGesture();
 
             var contextDocumentId = VM.ActiveDocumentId;
-            Dispatcher.UIThread.Post(() => OpenCurrentControlContextMenu(releasedModel.Id, contextDocumentId), DispatcherPriority.Input);
+            var contextSessionId = VM.DocumentSessionId;
+            Dispatcher.UIThread.Post(() => OpenControlContextMenuRequest(releasedModel.Id, contextDocumentId, contextSessionId), DispatcherPriority.Input);
 
             e.Handled = true;
             return;

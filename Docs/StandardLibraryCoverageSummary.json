@@ -14,7 +14,7 @@
       "Unsupported": 0,
       "FullPercent": 0,
       "PartialPercent": 79.16666666666667,
-      "VerifiedScalarPipelines": 25
+      "VerifiedScalarPipelines": 0
     },
     {
       "Assembly": "Avalonia.Controls.ColorPicker",

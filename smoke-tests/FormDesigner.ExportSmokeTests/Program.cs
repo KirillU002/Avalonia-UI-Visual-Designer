@@ -47,6 +47,10 @@ internal static partial class Program
         // fallback dispatcher; IPC continuations must run on the actual UI thread.
         EnsureAvaloniaRuntimeInitialized();
         if (args.Contains("--universal5a-audit")) return RunUniversal5AAudit();
+        if (args.Contains("--universal5e-audit")) return RunUniversal5EAudit();
+        if (args.Contains("--universal5e-checks")) return RunUniversal5EChecks();
+        if (args.Contains("--universal5e-generated")) return GenerateUniversal5EProjects();
+        if (args.Contains("--universal5e-context")) return RunUniversal5EContextChecks();
         if (args.Contains("--universal5d-checks")) return RunUniversal5DChecks();
         if (args.Contains("--universal5d-generated")) return GenerateUniversal5DProjects();
         if (args.Contains("--universal5d-audit")) return RunUniversal5DAudit();

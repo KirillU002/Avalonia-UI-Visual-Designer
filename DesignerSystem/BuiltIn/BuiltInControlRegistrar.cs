@@ -262,7 +262,7 @@ public static partial class BuiltInControlRegistrar
             isContainer: canHostChildren,
             canHostChildren: canHostChildren,
             childLayoutMode: childLayoutMode,
-            properties: properties,
+            properties: properties.Concat(FormDesigner.DesignerSystem.Metadata.StandardControlProperties.PropertiesFor(typeKey).Where(p=>!properties.Any(existing=>existing.Key==p.Key)).Select(FormDesigner.DesignerSystem.Metadata.StandardControlProperties.Descriptor)).ToArray(),
             defaultFactory: defaultFactory,
             previewBuilder: BuildPreviewFromBridge,
             xamlBuilder: AppendXamlFromBridge));

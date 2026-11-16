@@ -150,6 +150,8 @@ public static class MetadataValueCodec
     public static MetadataEditor EditorFor(Type declared)
     {
         var type = Nullable.GetUnderlyingType(declared) ?? declared;
+        if (type == typeof(BoxShadows)) return MetadataEditor.Text;
+        if(type == typeof(TextTrimming)) return MetadataEditor.Enumeration;
         if (type == typeof(string) || type == typeof(char) || type == typeof(Uri) || type == typeof(Point)) return MetadataEditor.Text;
         if (type == typeof(bool)) return Nullable.GetUnderlyingType(declared) is null ? MetadataEditor.Boolean : MetadataEditor.Enumeration;
         if (type.IsEnum) return MetadataEditor.Enumeration;
@@ -165,6 +167,11 @@ public static class MetadataValueCodec
     }
     public static string Display(object? value) => value switch
     {
+        TextTrimming trimming when ReferenceEquals(trimming,TextTrimming.None) => "None",
+        TextTrimming trimming when ReferenceEquals(trimming,TextTrimming.CharacterEllipsis) => "CharacterEllipsis",
+        TextTrimming trimming when ReferenceEquals(trimming,TextTrimming.WordEllipsis) => "WordEllipsis",
+        TextTrimming => "<TextTrimming>",
+        BoxShadows shadows => shadows.ToString(),
         null => NullText, string text => text, char character => character.ToString(), Uri uri => uri.OriginalString, bool flag => flag ? "True" : "False",
         Enum item => item.ToString(), double number => number.ToString("R", CultureInfo.InvariantCulture),
         float number => number.ToString("R", CultureInfo.InvariantCulture), int number => number.ToString(CultureInfo.InvariantCulture),
@@ -190,7 +197,15 @@ public static class MetadataValueCodec
                 if (text.Length > 8192 || !Uri.TryCreate(text, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https")) return false;
                 value=uri; return true;
             }
-            if (type == typeof(char)) { if(text.Length != 1 || char.IsSurrogate(text[0])) return false; value=text[0]; }
+            if(type==typeof(TextTrimming)) { value=text switch {"None"=>TextTrimming.None,"CharacterEllipsis"=>TextTrimming.CharacterEllipsis,"WordEllipsis"=>TextTrimming.WordEllipsis,_=>null};return value is not null; }
+            if(type==typeof(BoxShadows))
+            {
+                if(text.Length>4096)return false;
+                var shadows=BoxShadows.Parse(text);if(shadows.Count>16)return false;
+                for(var i=0;i<shadows.Count;i++){var shadow=shadows[i];if(!double.IsFinite(shadow.OffsetX)||!double.IsFinite(shadow.OffsetY)||!double.IsFinite(shadow.Blur)||!double.IsFinite(shadow.Spread)||shadow.Blur<0||Math.Abs(shadow.OffsetX)>1e6||Math.Abs(shadow.OffsetY)>1e6||shadow.Blur>1e6||Math.Abs(shadow.Spread)>1e6)return false;}
+                value=shadows;
+            }
+            else if (type == typeof(char)) { if(text.Length != 1 || char.IsSurrogate(text[0])) return false; value=text[0]; }
             else if (type == typeof(bool)) value = bool.Parse(text);
             else if (type.IsEnum) { value = Enum.Parse(type, text, true); if (!Enum.IsDefined(type, value) && !type.IsDefined(typeof(FlagsAttribute), false)) return false; }
             else if (type == typeof(double)) { var n = double.Parse(text, NumberStyles.Float, CultureInfo.InvariantCulture); if (!double.IsFinite(n)) return false; value = n; }

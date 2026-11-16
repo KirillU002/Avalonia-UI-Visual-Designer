@@ -113,14 +113,20 @@ public partial class MainWindow
             };
     }
 
-    private Control CreateNativeContainerBackdrop(DesignControlModel model) => new Border
+    private Control CreateNativeContainerBackdrop(DesignControlModel model)
     {
+        var view=new Border
+        {
         Width = model.Width, Height = model.Height,
         Background = ParseBrush(model.Background, "Transparent"),
         BorderBrush = ParseBrush(model.BorderBrush, "Transparent"),
         BorderThickness = new Thickness(model.BorderThickness),
         CornerRadius = new CornerRadius(model.CornerRadius), IsHitTestVisible = false
-    };
+        };
+        FormDesigner.DesignerSystem.Metadata.StandardControlProperties.ApplyAdditional(view,new FormDesigner.DesignerSystem.Infrastructure.DesignControlNodeAdapter(model));
+        view.IsHitTestVisible=false;
+        return view;
+    }
 
     private void AddNativeSelectionFrame(Canvas root, Border wrapper, bool selected, double width, double height)
     {

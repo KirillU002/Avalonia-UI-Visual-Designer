@@ -198,6 +198,33 @@ public partial class MainWindowViewModel
                     .Select(c => f.Name + "/" + c.Name))).ToArray();
         if (failures.Length != 0)
             throw new NotSupportedException("Экспорт остановлен: внешний ItemsSource не поддерживается локальным collection adapter: " + string.Join(", ", failures) + ". Исходные данные сохранены.");
+        foreach(var control in Controls) ValidateReviewedExportContract(StandardItemsControlFactory.Snapshot(control));
+        foreach(var form in CurrentProject.Forms.Where(f=>f.Id!=ActiveDocumentId))
+            foreach(var control in form.Document.Controls) ValidateReviewedExportContract(control);
+    }
+    private static void ValidateReviewedExportContract(DesignerControlFileModel model)
+    {
+        var type=StandardControlProperties.PropertyTypeFor(model.Type);
+        if(type is null)return; // Plugins/DataGrid keep their existing specialized validators.
+        foreach(var value in model.CustomProperties)
+        {
+            try
+            {
+                if(value.Key.EndsWith(".Collection",StringComparison.Ordinal))
+                { _=CollectionItemsContract.Read(model,value.Key[..^".Collection".Length]);continue; }
+                if(StandardControlProperties.Find(model.Type,value.Key) is {} property)
+                { if(!StandardControlProperties.TryEncode(property,StandardControlProperties.Read(property,value.ValueJson),out _))throw new FormatException("Invalid literal");continue; }
+                var native=AvaloniaMetadataCatalog.Get(type).Properties.FirstOrDefault(p=>p.Key==value.Key);
+                if(native is null)continue;
+                if(model.Type=="ListBox"&&value.Key is "Items" or "ItemsSource" or "SelectedItem")continue;
+                using var json=JsonDocument.Parse(value.ValueJson);
+                if(json.RootElement.ValueKind is JsonValueKind.Object or JsonValueKind.Array
+                    ||json.RootElement.ValueKind==JsonValueKind.String&&ClassifySourceExpression(json.RootElement.GetString()) is PropertyGridValueSource.Binding or PropertyGridValueSource.Resource or PropertyGridValueSource.Complex)
+                    throw new NotSupportedException("Нет безопасного export adapter для этого сложного значения");
+            }
+            catch(Exception error)when(error is FormatException or JsonException or NotSupportedException)
+            { throw new NotSupportedException("Экспорт остановлен: "+model.Name+"."+value.Key+" — "+error.Message+". Исходное значение сохранено.",error); }
+        }
     }
     private void AppendCollectionControlXaml(StringBuilder sb, DesignControlModel control, int indent)
     {

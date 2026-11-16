@@ -1,4 +1,4 @@
-﻿using FormDesigner.Models;
+using FormDesigner.Models;
 using FormDesigner.PluginContracts;
 using System;
 using System.Collections.Generic;
@@ -283,18 +283,23 @@ public sealed partial class ExportPipelineService
         await LogAsync(logAsync, $"MANUAL_RESTORE_COMMAND_HINT command=dotnet restore; workingDirectory={targetFolder}").ConfigureAwait(false);
     }
 
-    public async Task ExportZipAsync(
-        ExportResult result,
-        string zipPath,
-        CancellationToken cancellationToken = default)
+    public async Task ExportZipAsync(ExportResult result, string zipPath, CancellationToken cancellationToken = default)
     {
-        var directory = Path.GetDirectoryName(zipPath);
-        if (!string.IsNullOrWhiteSpace(directory))
-            Directory.CreateDirectory(directory);
+        cancellationToken.ThrowIfCancellationRequested();
+        var target=Path.GetFullPath(zipPath);
+        Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+        var staging=target+"."+Guid.NewGuid().ToString("N")+".tmp";
+        try
+        {
+            await WriteZipArchiveAsync(result,staging,cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            File.Move(staging,target,overwrite:true);
+        }
+        finally { if(File.Exists(staging))File.Delete(staging); }
+    }
 
-        if (File.Exists(zipPath))
-            File.Delete(zipPath);
-
+    private async Task WriteZipArchiveAsync(ExportResult result,string zipPath,CancellationToken cancellationToken)
+    {
         await using var stream = File.Create(zipPath);
         using var archive = new ZipArchive(stream, ZipArchiveMode.Create);
         foreach (var file in BuildZipProjectFiles(result))

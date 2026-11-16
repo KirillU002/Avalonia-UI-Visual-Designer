@@ -1667,6 +1667,7 @@ public partial class PreviewWindow : Window
             ? preview!
             : CreateMissingPreview(control, failure);
         created.IsEnabled = IsRuntimeControlEnabled(control);
+        FormDesigner.DesignerSystem.Metadata.StandardControlProperties.NativePropertyTarget(created,control.Type).IsEnabled=IsRuntimeControlEnabled(control);
         TrackPreviewControl(control, created);
         return created;
     }
@@ -1875,7 +1876,9 @@ public partial class PreviewWindow : Window
             if (control is not DesignControlFileNodeAdapter adapter || !_builders.TryGetValue(typeKey, out var builder))
                 return _owner.CreateMissingPreview(new DesignerControlFileModel { Type = typeKey, Width = 180, Height = 48 });
 
-            return builder(adapter.Model);
+            var native=builder(adapter.Model);
+            FormDesigner.DesignerSystem.Metadata.StandardControlProperties.ApplyAdditional(native,control);
+            return native;
         }
     }
 

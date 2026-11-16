@@ -165,7 +165,7 @@ public sealed record AxamlControlMetadata(string SourceType, string ProjectionTy
         AxamlLiteralProperty Literal(AvaloniaPropertyInfo property) => new(property.Key, property.DefaultText,
             Options: StandardControlProperties.EditorFor(property) == MetadataEditor.Enumeration ? StandardControlProperties.Options(property).ToArray() : null,
             IsBoolean: property.Editor == MetadataEditor.Boolean, IsNumber: property.Editor == MetadataEditor.Number, Metadata: property);
-        var reviewed = SourceScalarKeys.Concat(control.SourceType is "Carousel" or "TabStrip" ? new[]{"SelectedIndex"} : Array.Empty<string>()).Select(key => properties.FirstOrDefault(p => p.Key == key && !p.ReadOnly && p.Property is not null))
+        var reviewed = SourceScalarKeys.Concat(StandardControlProperties.PropertiesFor(control.SourceType).Select(p=>p.Key)).Concat(control.SourceType is "Carousel" or "TabStrip" ? new[]{"SelectedIndex"} : Array.Empty<string>()).Distinct(StringComparer.Ordinal).Select(key => properties.FirstOrDefault(p => p.Key == key && !p.ReadOnly && p.Property is not null))
             .Where(p => p is not null).Cast<AvaloniaPropertyInfo>().ToDictionary(p => p.Key, StringComparer.Ordinal);
         // Preserve ordering of specialized accessors (SelectedIndex/Header etc.).
         return legacy.Select(p => reviewed.TryGetValue(p.Key, out var replacement) ? Literal(replacement) : p)

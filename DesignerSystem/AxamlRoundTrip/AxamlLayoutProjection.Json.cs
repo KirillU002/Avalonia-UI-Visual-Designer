@@ -128,6 +128,7 @@ public static partial class AxamlLayoutProjection
                 if (panel is Grid grid) grids[model.Id] = grid;
                 if (panel is DockPanel dock) dock.LastChildFill = LayoutPlacementProperties.LastChildFill(model);
                 panels[model.Id] = panel;
+                FormDesigner.DesignerSystem.Metadata.StandardControlProperties.ApplyAdditional(panel,new FormDesigner.DesignerSystem.Infrastructure.DesignControlNodeAdapter(model));
                 AddChildren(panel, children);
                 view = model.Type == DesignerControlTypes.Group ? panel : new Border
                 {
@@ -141,6 +142,7 @@ public static partial class AxamlLayoutProjection
                 if (children.Count != 0) throw new InvalidOperationException("Layout: вложенные элементы этого компонента пока не поддерживаются: " + model.Name);
                 view = leafFactory(model);
             }
+            if(isContainer)FormDesigner.DesignerSystem.Metadata.StandardControlProperties.ApplyAdditional(view,new FormDesigner.DesignerSystem.Infrastructure.DesignControlNodeAdapter(model));
             ApplyJsonLayout(model, view, includeHidden);
             adaptPlacement?.Invoke(model, view);
             views.Add(model.Id, view);
