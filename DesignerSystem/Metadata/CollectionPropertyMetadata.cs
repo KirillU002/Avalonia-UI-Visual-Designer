@@ -1,3 +1,4 @@
+using Avalonia.Controls.Primitives;
 using Avalonia.Controls;
 using System;
 using System.Collections;
@@ -21,7 +22,7 @@ public static class CollectionMetadataCatalog
         .Select(p =>
         {
             var item = p.PropertyType.GetInterfaces().Prepend(p.PropertyType).FirstOrDefault(t => t.IsGenericType && t.GetGenericTypeDefinition() == typeof(IEnumerable<>))?.GetGenericArguments()[0] ?? typeof(object);
-            var items = p.Name == "Items" && (type == typeof(Menu) || type == typeof(MenuItem) || type == typeof(MenuFlyout) || type == typeof(ContextMenu) || type == typeof(ComboBox) || type == typeof(ListBox) || type == typeof(TabControl) || type == typeof(TreeView) || type == typeof(TreeViewItem));
+            var items = p.Name == "Items" && (type == typeof(Menu) || type == typeof(MenuItem) || type == typeof(MenuFlyout) || type == typeof(ContextMenu) || type == typeof(ComboBox) || type == typeof(ListBox) || type == typeof(TabControl) || type == typeof(ItemsControl) || type == typeof(Carousel) || type == typeof(TabStrip) || type == typeof(TreeView) || type == typeof(TreeViewItem));
             var columns = type == typeof(DataGrid) && p.Name == "Columns";
             var children = p.Name == "Children" && (type == typeof(Grid) || type == typeof(Canvas) || type == typeof(StackPanel) || type == typeof(WrapPanel) || type == typeof(DockPanel) || type == typeof(Avalonia.Controls.Primitives.UniformGrid));
             var editable = items || columns || children;

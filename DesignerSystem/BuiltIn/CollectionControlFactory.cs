@@ -9,7 +9,7 @@ namespace FormDesigner.DesignerSystem.BuiltIn;
 
 public static class CollectionControlFactory
 {
-    public static bool IsRoot(string type) => type is "Menu" or "ComboBox" or "TabControl" or "TreeView";
+    public static bool IsRoot(string type) => type is "Menu" or "ComboBox" or "TabControl" or "TreeView" or "ItemsControl" or "Carousel" or "TabStrip";
     public static bool Supports(string type) => IsRoot(type) || type == "ListBox" || StandardItemsProperties.IsMenuButton(type);
     public static string NativeName(string ownerId, StandardMenuItem item) => string.IsNullOrEmpty(item.Name) ? StandardItemsProperties.MenuName(ownerId, item.Id) : item.Name;
     public static Control Create(DesignerControlFileModel owner)
@@ -17,7 +17,7 @@ public static class CollectionControlFactory
         if (CollectionItemsContract.HasExternalSource(owner))
             throw new NotSupportedException("Этот adapter поддерживает локальные Items; внешний ItemsSource сохранён и не заменён. Используйте существующий ListBox BindingSource workflow.");
         var values = CollectionItemsContract.Read(owner, "Items")?.Items ?? new();
-        ItemsControl root = owner.Type switch { "Menu" => new Menu(), "ComboBox" => new ComboBox(), "TabControl" => new TabControl(), "TreeView" => new TreeView(), _ => throw new InvalidOperationException("Unsupported collection root") };
+        ItemsControl root = owner.Type switch { "ItemsControl" => new ItemsControl(), "Carousel" => new Carousel(), "TabStrip" => new TabStrip(), "Menu" => new Menu(), "ComboBox" => new ComboBox(), "TabControl" => new TabControl(), "TreeView" => new TreeView(), _ => throw new InvalidOperationException("Unsupported collection root") };
         foreach (var item in values) root.Items.Add(CreateItem(owner.Id, item));
         if (root is SelectingItemsControl selecting) selecting.SelectedIndex = StandardItemsProperties.Read(owner, "SelectedIndex", owner.Type == "TabControl" ? 0 : -1);
         if (root is TreeView tree && Enum.TryParse<SelectionMode>(StandardItemsProperties.Read(owner, "SelectionMode", "Single"), out var mode)) tree.SelectionMode = mode;
@@ -27,6 +27,8 @@ public static class CollectionControlFactory
     {
         Control result = item.Kind switch
         {
+            "ContentControl" => new ContentControl { Content = item.Text },
+            "TabStripItem" => new TabStripItem { Content = item.Text },
             "Separator" => new Separator(),
             "MenuItem" => new MenuItem { Header = item.Text },
             "ComboBoxItem" => new ComboBoxItem { Content = item.Text },

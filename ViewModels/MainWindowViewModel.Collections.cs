@@ -1,3 +1,4 @@
+using Avalonia.Controls.Primitives;
 using Avalonia.Controls;
 using FormDesigner.DesignerSystem.BuiltIn;
 using FormDesigner.DesignerSystem.Metadata;
@@ -27,7 +28,7 @@ public partial class MainWindowViewModel
         if (SelectedControl is not { } control || !CollectionControlFactory.Supports(control.Type)
             || row.Key is not ("Items" or "ContextMenu.Items" or "Flyout.Items")) return false;
         var type = row.Key == "ContextMenu.Items" ? typeof(ContextMenu) : row.Key == "Flyout.Items" ? typeof(MenuFlyout)
-            : control.Type switch { "Menu" => typeof(Menu), "ComboBox" => typeof(ComboBox), "TabControl" => typeof(TabControl), "TreeView" => typeof(TreeView), _ => typeof(ListBox) };
+            : control.Type switch { "ItemsControl" => typeof(ItemsControl), "Carousel" => typeof(Carousel), "TabStrip" => typeof(TabStrip), "Menu" => typeof(Menu), "ComboBox" => typeof(ComboBox), "TabControl" => typeof(TabControl), "TreeView" => typeof(TreeView), _ => typeof(ListBox) };
         if (AvaloniaMetadataCatalog.Get(type).Properties.FirstOrDefault(p => p.Key == "Items") is not { } native) return false;
         var local = control.CustomProperties.Any(p => p.Key == CollectionItemsContract.StorageKey(row.Key) || p.Key == row.Key);
         var bound = row.Key == "Items" && CollectionItemsContract.HasExternalSource(control);
@@ -148,7 +149,7 @@ public partial class MainWindowViewModel
             yield return ("IsEnabled", item.IsEnabled.ToString(), true);
             if (item.Kind == "TreeViewItem") yield return ("IsExpanded", item.IsExpanded.ToString(), true);
         }
-        var type = item.Kind switch { "MenuItem" => typeof(MenuItem), "ComboBoxItem" => typeof(ComboBoxItem), "ListBoxItem" => typeof(ListBoxItem), "TabItem" => typeof(TabItem), "TreeViewItem" => typeof(TreeViewItem), _ => typeof(Separator) };
+        var type = item.Kind switch { "ContentControl" => typeof(ContentControl), "TabStripItem" => typeof(TabStripItem), "MenuItem" => typeof(MenuItem), "ComboBoxItem" => typeof(ComboBoxItem), "ListBoxItem" => typeof(ListBoxItem), "TabItem" => typeof(TabItem), "TreeViewItem" => typeof(TreeViewItem), _ => typeof(Separator) };
         foreach (var value in Values())
         {
             var key = value.Key;
@@ -183,8 +184,20 @@ public partial class MainWindowViewModel
         }
         if (!CollectionControlFactory.IsRoot(control.Type)) yield break;
         yield return CreateBoolRow(PropertyGridCategoryBehavior, "IsEnabled", "IsEnabled", StandardItemsProperties.Read(control, "IsEnabled", true), "Доступность Avalonia control.", v => { StandardItemsProperties.Write(control, "IsEnabled", v); NotifyDesignerStateChanged(); });
-        if (control.Type is "ComboBox" or "TabControl") yield return CreateNumberRow(PropertyGridCategoryBehavior, "SelectedIndex", "SelectedIndex", StandardItemsProperties.Read(control, "SelectedIndex", control.Type == "TabControl" ? 0 : -1), "Индекс выбранного элемента, -1 — нет выбора.", v => { StandardItemsProperties.Write(control, "SelectedIndex", Math.Max(-1, (int)v)); NotifyDesignerStateChanged(); });
+        if (control.Type is "ComboBox" or "TabControl" or "Carousel" or "TabStrip") yield return CreateNumberRow(PropertyGridCategoryBehavior, "SelectedIndex", "SelectedIndex", StandardItemsProperties.Read(control, "SelectedIndex", control.Type == "TabControl" ? 0 : -1), "Индекс выбранного элемента, -1 — нет выбора.", v => { StandardItemsProperties.Write(control, "SelectedIndex", Math.Max(-1, (int)v)); NotifyDesignerStateChanged(); });
         if (control.Type == "TreeView") yield return CreateEnumRow(PropertyGridCategoryBehavior, "SelectionMode", "SelectionMode", StandardItemsProperties.Read(control, "SelectionMode", "Single"), new[] { "Single", "Multiple", "Toggle", "AlwaysSelected" }, "Режим выбора TreeView.", v => { StandardItemsProperties.Write(control, "SelectionMode", v); NotifyDesignerStateChanged(); });
+    }
+    // The per-control exporter records diagnostics and can keep an incomplete preview.
+    // Distribution exports must reject the known unsupported source before writing files,
+    // including sources on inactive forms. ListBox's existing BindingSource adapter is separate.
+    private void EnsureLocalItemsSourcesExportable()
+    {
+        var failures = Controls.Where(c => CollectionControlFactory.IsRoot(c.Type) && CollectionItemsContract.HasExternalSource(c))
+            .Select(c => c.Name).Concat(CurrentProject.Forms.Where(f => !string.Equals(f.Id, ActiveDocumentId, StringComparison.OrdinalIgnoreCase))
+                .SelectMany(f => f.Document.Controls.Where(c => CollectionControlFactory.IsRoot(c.Type) && CollectionItemsContract.HasExternalSource(c))
+                    .Select(c => f.Name + "/" + c.Name))).ToArray();
+        if (failures.Length != 0)
+            throw new NotSupportedException("Экспорт остановлен: внешний ItemsSource не поддерживается локальным collection adapter: " + string.Join(", ", failures) + ". Исходные данные сохранены.");
     }
     private void AppendCollectionControlXaml(StringBuilder sb, DesignControlModel control, int indent)
     {
@@ -196,7 +209,7 @@ public partial class MainWindowViewModel
         var attributes = $"x:Name=\"{GetExportControlName(control)}\" {PlacementAttributes(control)}{BackgroundAttribute(control)}{ForegroundAttribute(control)}{TextStyleAttributes(control)}{BorderStyleAttributes(control)} Padding=\"{ToInvariant(control.Padding)}\"{CommonVisibilityAttributes(control)} IsEnabled=\"{BoolToXaml(StandardItemsProperties.Read(control, "IsEnabled", true))}\"";
         attributes += $" CornerRadius=\"{ToInvariant(control.CornerRadius)}\"";
         if (flyout) attributes += $" Content=\"{StandardContentLiteral(control.Text)}\"";
-        if (type is "ComboBox" or "TabControl" or "ListBox") attributes += $" SelectedIndex=\"{StandardItemsProperties.Read(control, "SelectedIndex", type == "TabControl" ? 0 : -1)}\"";
+        if (type is "ComboBox" or "TabControl" or "ListBox" or "Carousel" or "TabStrip") attributes += $" SelectedIndex=\"{StandardItemsProperties.Read(control, "SelectedIndex", type == "TabControl" ? 0 : -1)}\"";
         if (type is "ListBox" or "TreeView") attributes += $" SelectionMode=\"{EscapeXml(StandardItemsProperties.Read(control, "SelectionMode", "Single"))}\"";
         if (flyout && HasConfiguredInteractionEvent(control, InteractionModel.EventButtonClick)) attributes += $" Click=\"{GetExportControlName(control)}Click\"";
         sb.AppendLine($"{pad}<{type} {attributes}>");

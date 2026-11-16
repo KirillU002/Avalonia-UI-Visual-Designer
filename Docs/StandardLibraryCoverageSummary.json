@@ -8,13 +8,13 @@
       "Standalone": 66,
       "ChildOnly": 6,
       "FullySupported": 0,
-      "PartiallySupported": 52,
-      "AxamlImportOnly": 1,
-      "MetadataOnly": 19,
+      "PartiallySupported": 57,
+      "AxamlImportOnly": 0,
+      "MetadataOnly": 15,
       "Unsupported": 0,
       "FullPercent": 0,
-      "PartialPercent": 72.22222222222223,
-      "VerifiedScalarPipelines": 20
+      "PartialPercent": 79.16666666666667,
+      "VerifiedScalarPipelines": 25
     },
     {
       "Assembly": "Avalonia.Controls.ColorPicker",

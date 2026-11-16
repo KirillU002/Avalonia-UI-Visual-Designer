@@ -1,4 +1,4 @@
-﻿using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Avalonia.Threading;
 using FormDesigner.DesignerSystem;
@@ -13627,6 +13627,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void EnsureExportPipelineResultFresh()
     {
+        EnsureLocalItemsSourcesExportable();
         if (GeneratedFiles.Count == 0 || IsExportCacheStale)
             GenerateXaml();
     }
@@ -18171,6 +18172,9 @@ public partial class MainWindowViewModel : ObservableObject
                 ["Menu"] = (builder, control, indent) => _owner.AppendStandardItemsXaml(builder, control, indent),
                 ["ComboBox"] = (builder, control, indent) => _owner.AppendStandardItemsXaml(builder, control, indent),
                 ["TabControl"] = (builder, control, indent) => _owner.AppendStandardItemsXaml(builder, control, indent),
+                ["ItemsControl"] = (builder, control, indent) => _owner.AppendStandardItemsXaml(builder, control, indent),
+                ["Carousel"] = (builder, control, indent) => _owner.AppendStandardItemsXaml(builder, control, indent),
+                ["TabStrip"] = (builder, control, indent) => _owner.AppendStandardItemsXaml(builder, control, indent),
                 ["TreeView"] = (builder, control, indent) => _owner.AppendStandardItemsXaml(builder, control, indent),
                 [DesignerControlTypes.TextBox] = (builder, control, indent) => _owner.AppendTextBoxXaml(builder, control, indent),
                 [DesignerControlTypes.TextBlock] = (builder, control, indent) => _owner.AppendTextBlockXaml(builder, control, indent),
@@ -18190,9 +18194,10 @@ public partial class MainWindowViewModel : ObservableObject
                 && FormDesigner.DesignerSystem.Metadata.StandardControlProperties.SupportedTypes.ContainsKey(typeKey))
             {
                 var model = metadataNode.Model;
-                var attributes = FormDesigner.DesignerSystem.Metadata.StandardControlProperties.Attributes(typeKey, control.CustomProperties, EscapeXml, placementOwnsConstraints: _owner.UsesNativeLayout);
+                var attributes = FormDesigner.DesignerSystem.Metadata.StandardControlProperties.Attributes(typeKey, control.CustomProperties, EscapeXml, placementOwnsConstraints: _owner.UsesNativeLayout, filter: p => typeKey != "MaskedTextBox" || p.Key is not ("SelectionStart" or "SelectionEnd"));
                 var textProperty = FormDesigner.DesignerSystem.Metadata.StandardControlProperties.TextPropertyName(typeKey);
                 var content = textProperty is not null ? " "+textProperty+"=\"" + EscapeXml(model.Text.StartsWith("{", StringComparison.Ordinal) ? "{}" + model.Text : model.Text) + "\"" : "";
+                if(typeKey == "MaskedTextBox") content += FormDesigner.DesignerSystem.Metadata.StandardControlProperties.Attributes(typeKey, control.CustomProperties, EscapeXml, filter: p => p.Key is "SelectionStart" or "SelectionEnd");
                 // Legacy absolute placement uses wrapper bounds and ignores control margins.
                 // Override theme margins (e.g. Separator) to preserve those same Canvas coordinates.
                 var absoluteMargin = !_owner.UsesNativeLayout && DesignerLayoutModes.IsAbsolute(_owner.GetExportLayoutModeForParent(model.ParentId)) ? " Margin=\"0\"" : "";

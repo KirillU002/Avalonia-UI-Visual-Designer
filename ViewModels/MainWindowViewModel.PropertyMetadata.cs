@@ -26,7 +26,7 @@ public partial class MainWindowViewModel
         ? source.Element.LocalName : SelectedControl?.Type == "Group" ? "Canvas" : SelectedControl?.Type ?? "Window";
     private static string NativeInspectorKey(string key, string type) => key switch
     {
-        "Text" when type is "Button" or "RadioButton" or "CheckBox" or "ToggleSwitch" or "SplitButton" or "DropDownButton" => "Content",
+        "Text" when type is "Button" or "CheckBox" or "SplitButton" or "DropDownButton" || StandardControlProperties.HasLiteralContent(type) => "Content",
         "X" => "Canvas.Left", "Y" => "Canvas.Top", "GridRow" => "Grid.Row", "GridColumn" => "Grid.Column",
         "GridRowSpan" => "Grid.RowSpan", "GridColumnSpan" => "Grid.ColumnSpan", "LayoutOrientation" => "Orientation",
         "LayoutSpacing" => "Spacing", "GridRowDefinitions" or "SurfaceGridRowDefinitions" => "RowDefinitions",

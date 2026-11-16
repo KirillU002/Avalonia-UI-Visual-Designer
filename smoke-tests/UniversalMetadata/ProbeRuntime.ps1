@@ -1,5 +1,5 @@
 #Requires -Version 7.0
-param([Parameter(Mandatory=$true)][string]$ProjectPath,[string]$ProbeFile='MetadataRuntimeProbe.cs.txt',[string]$ResultName='generated-runtime.txt')
+param([Parameter(Mandatory=$true)][string]$ProjectPath,[string]$ProbeFile='MetadataRuntimeProbe.cs.txt',[string]$ResultName='generated-runtime.txt',[string]$CaptureDirectory='')
 $ErrorActionPreference='Stop'
 $root=(Resolve-Path -LiteralPath $ProjectPath).Path
 $project=@(Get-ChildItem -LiteralPath $root -File -Filter '*.csproj')
@@ -19,7 +19,14 @@ try{
  & dotnet build $project[0].FullName -c Release --no-restore -m:1 -v:q;if($LASTEXITCODE -ne 0){throw 'Generated build failed'}
  [xml]$xml=Get-Content -LiteralPath $project[0].FullName -Raw
  $dll=Join-Path $root ('bin/Release/'+[string]$xml.Project.PropertyGroup.TargetFramework+'/'+$project[0].BaseName+'.dll')
- $process=Start-Process -FilePath (Get-Command dotnet).Source -ArgumentList ('"'+$dll+'"') -WorkingDirectory $root -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $root 'runtime.stdout.log') -RedirectStandardError (Join-Path $root 'runtime.stderr.log')
+ $runtimeArguments=('"'+$dll+'"')
+ if($CaptureDirectory){
+  $capture=(Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '../UiaStability/NativeCapture/bin/Release/net8.0/NativeCapture.dll')).Path
+  $captureOutput=[IO.Path]::GetFullPath($CaptureDirectory)
+  if(Test-Path -LiteralPath $captureOutput){throw 'Fresh native capture directory required'}
+  $runtimeArguments='"'+$capture+'" "'+$captureOutput+'" "'+(Get-Command dotnet).Source+'" -- "'+$dll+'"'
+ }
+ $process=Start-Process -FilePath (Get-Command dotnet).Source -ArgumentList $runtimeArguments -WorkingDirectory $root -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $root 'runtime.stdout.log') -RedirectStandardError (Join-Path $root 'runtime.stderr.log')
  if(-not $process.WaitForExit(45000)){$process.Kill();$process.WaitForExit();throw 'Generated native runtime timed out'}
  $process.WaitForExit()
  if($process.ExitCode -ne 0 -or -not(Test-Path -LiteralPath $env:METADATA_RUNTIME_RESULT)){throw 'Generated native runtime failed'}

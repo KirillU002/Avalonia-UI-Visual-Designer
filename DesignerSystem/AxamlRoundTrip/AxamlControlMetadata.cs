@@ -45,6 +45,10 @@ public sealed record AxamlControlMetadata(string SourceType, string ProjectionTy
         ["MenuItem"] = new("MenuItem", "Group", AxamlContainerKind.Items, "Items", "MenuItem"),
         ["ContextMenu"] = new("ContextMenu", "Group", AxamlContainerKind.Items, "Items", "MenuItem"),
         ["ComboBoxItem"] = new("ComboBoxItem", "Group", AxamlContainerKind.None, TextContentProperty: "Content"),
+        ["ContentControl"] = new("ContentControl", "Group", AxamlContainerKind.SingleContent, "Content", TextContentProperty: "Content"),
+        ["Carousel"] = new("Carousel", "Group", AxamlContainerKind.Items, "Items"),
+        ["TabStrip"] = new("TabStrip", "Group", AxamlContainerKind.Items, "Items", "TabStripItem"),
+        ["TabStripItem"] = new("TabStripItem", "Group", AxamlContainerKind.SingleContent, "Content", TextContentProperty: "Content"),
         ["ItemsControl"] = new("ItemsControl", "Group", AxamlContainerKind.Items, "Items"),
         ["ListBox"] = new("ListBox", "Group", AxamlContainerKind.Items, "Items"),
         ["ListBoxItem"] = new("ListBoxItem", "Group", AxamlContainerKind.SingleContent, "Content", TextContentProperty: "Content"),
@@ -161,7 +165,7 @@ public sealed record AxamlControlMetadata(string SourceType, string ProjectionTy
         AxamlLiteralProperty Literal(AvaloniaPropertyInfo property) => new(property.Key, property.DefaultText,
             Options: StandardControlProperties.EditorFor(property) == MetadataEditor.Enumeration ? StandardControlProperties.Options(property).ToArray() : null,
             IsBoolean: property.Editor == MetadataEditor.Boolean, IsNumber: property.Editor == MetadataEditor.Number, Metadata: property);
-        var reviewed = SourceScalarKeys.Select(key => properties.FirstOrDefault(p => p.Key == key && !p.ReadOnly && p.Property is not null))
+        var reviewed = SourceScalarKeys.Concat(control.SourceType is "Carousel" or "TabStrip" ? new[]{"SelectedIndex"} : Array.Empty<string>()).Select(key => properties.FirstOrDefault(p => p.Key == key && !p.ReadOnly && p.Property is not null))
             .Where(p => p is not null).Cast<AvaloniaPropertyInfo>().ToDictionary(p => p.Key, StringComparer.Ordinal);
         // Preserve ordering of specialized accessors (SelectedIndex/Header etc.).
         return legacy.Select(p => reviewed.TryGetValue(p.Key, out var replacement) ? Literal(replacement) : p)
@@ -172,9 +176,11 @@ public sealed record AxamlControlMetadata(string SourceType, string ProjectionTy
         ? StandardControlProperties.PropertiesFor(SourceType).Select(p => new AxamlLiteralProperty(p.Key, p.DefaultText,
             Options: StandardControlProperties.EditorFor(p) == MetadataEditor.Enumeration ? StandardControlProperties.Options(p).ToArray() : null,
             IsBoolean: p.Editor == MetadataEditor.Boolean, IsNumber: p.Editor == MetadataEditor.Number, Metadata: p))
-            .Concat(SourceType=="Expander"?new[]{new AxamlLiteralProperty("Content","")}:Array.Empty<AxamlLiteralProperty>()).ToArray()
+            .Concat(SourceType is "Expander" or "ContentControl"?new[]{new AxamlLiteralProperty("Content","")}:Array.Empty<AxamlLiteralProperty>()).ToArray()
         : SourceType switch
     {
+        "Carousel" or "TabStrip" => new[] { new AxamlLiteralProperty("SelectedIndex", "-1", IsInteger: true) },
+        "TabStripItem" => new[] { new AxamlLiteralProperty("Content", "") },
         "TabControl" => new[] { new AxamlLiteralProperty(nameof(TabControl.SelectedIndex), "0", IsInteger: true) },
         "MenuItem" => new[] { new AxamlLiteralProperty(nameof(MenuItem.Header), ""), new AxamlLiteralProperty(nameof(MenuItem.IsEnabled), "True", IsBoolean: true) },
         "TabItem" => new[] { new AxamlLiteralProperty(nameof(TabItem.Header), "") },

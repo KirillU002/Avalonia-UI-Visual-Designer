@@ -1,0 +1,24 @@
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Controls.Primitives;
+using Avalonia.VisualTree;
+using System;
+using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
+internal static class MetadataRuntimeProbe
+{
+ public static void Attach(IClassicDesktopStyleApplicationLifetime desktop,Window window){window.ShowInTaskbar=false;window.ShowActivated=false;window.Position=new PixelPoint(-3500,-3500);window.Opened+=async(_,_)=>{try{await Task.Delay(180);window.UpdateLayout();Control Get(string name)=>window.GetVisualDescendants().OfType<Control>().Single(c=>c.Name==name);
+  Require(Get("Phase5D_ContentControl").GetType()==typeof(ContentControl),"Wrong ContentControl");Require(((ContentControl)Get("Phase5D_ContentControl")).Content is TextBox {Text:"Nested & content"},"Nested Content lost");
+  foreach(var type in new[]{"ItemsControl","Carousel","TabStrip"}){var root=(ItemsControl)Get("Phase5D_"+type);Require(root.GetType().Name==type&&root.Items.Count==3&&root.Bounds.Width>0&&root.Bounds.Height>0,"Native root/items missing "+type);Require(root.Items.Cast<ContentControl>().Select(c=>(string)c.Content!).SequenceEqual(new[]{"Item 0","Item 1","Item 2"}),"Item text/order lost "+type);
+   var visible=root is Carousel?root.Items.Cast<Control>().Skip(1).Take(1):root.Items.Cast<Control>();Require(visible.All(c=>c.GetVisualRoot()is not null&&c.Bounds.Width>0&&c.Bounds.Height>0&&c.GetVisualDescendants().OfType<TextBlock>().Any(t=>t.Text==((ContentControl)c).Content as string)),"Native item text is not visible "+type);
+  }
+  var carousel=(Carousel)Get("Phase5D_Carousel");Require(carousel.SelectedIndex==1,"Carousel initial selection lost");carousel.Next();await Task.Delay(100);Require(carousel.SelectedIndex==2&&carousel.GetVisualDescendants().OfType<ContentControl>().Any(c=>Equals(c.Content,"Item 2")&&c.Bounds.Width>0),"Carousel Next not visible");carousel.Previous();Require(carousel.SelectedIndex==1,"Carousel Previous failed");
+  var strip=(TabStrip)Get("Phase5D_TabStrip");Require(strip.SelectedIndex==1,"TabStrip initial selection lost");strip.SelectedIndex=2;await Task.Delay(30);Require(((TabStripItem)strip.Items[2]!).IsSelected,"TabStrip selection not applied");
+  var mask=(MaskedTextBox)Get("Mask5D");Require(mask.Text=="123-456"&&mask.Mask=="000-000"&&mask.PromptChar=='#',"Mask state lost");Require(mask.SelectionStart==1&&mask.SelectionEnd==3,"Authored selection lost "+mask.SelectionStart+":"+mask.SelectionEnd);
+  foreach(var size in new[]{new Size(800,600),new Size(1400,900)}){window.Width=size.Width;window.Height=size.Height;await Task.Delay(30);window.UpdateLayout();Require(new[]{"ContentControl","ItemsControl","Carousel","TabStrip"}.All(t=>Get("Phase5D_"+t).Bounds.Width>0),"Resize lost controls");}
+  File.WriteAllText(Environment.GetEnvironmentVariable("METADATA_RUNTIME_RESULT")!,"PASS native=4; native item types/content/order=true; Carousel Next/Previous visible=true; TabStrip selection=true; Mask/Prompt/Selection=true; resize=2");
+ }catch(Exception e){File.WriteAllText(Environment.GetEnvironmentVariable("METADATA_RUNTIME_RESULT")!,"FAIL "+e);}finally{window.Close();desktop.Shutdown();}};}
+ private static void Require(bool condition,string message){if(!condition)throw new InvalidOperationException(message);}
+}

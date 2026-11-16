@@ -17,7 +17,7 @@ public static class StandardLibraryCoverageReport
     private static readonly HashSet<string> Associated = new(StringComparer.Ordinal) { "ContextMenu","ToolTip","Popup" };
     private static readonly HashSet<string> UsablePrimitives = new(StringComparer.Ordinal) { "AccessText","ToggleButton","ToggleSplitButton","ScrollBar","GridSplitter","UniformGrid","TabStrip","TabStripItem","HeaderedItemsControl" };
     private static readonly HashSet<string> Bases = new(StringComparer.Ordinal) { "Control","Panel","Decorator","HeaderedContentControl","TemplatedControl","SelectingItemsControl","Spinner","RangeBase","WindowBase" };
-    private static readonly HashSet<string> CollectionItems = new(StringComparer.Ordinal) { "ComboBoxItem","ListBoxItem","MenuItem","TabItem","TreeViewItem" };
+    private static readonly HashSet<string> CollectionItems = new(StringComparer.Ordinal) { "ComboBoxItem","ListBoxItem","MenuItem","TabItem","TreeViewItem","TabStripItem" };
     public static void Write(IDesignerRegistry registry,string directory,IReadOnlySet<string>? verifiedTypes=null)
     {
         Directory.CreateDirectory(directory);

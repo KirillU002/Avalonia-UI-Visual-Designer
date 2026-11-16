@@ -101,7 +101,7 @@ public static partial class AxamlLayoutProjection
                 tabs.SelectedIndex = children.Length == 0 || index < 0 ? -1 : Math.Min(index, children.Length - 1);
                 selectedTabs[model.Id] = tabs.SelectedIndex < 0 ? "" : children[tabs.SelectedIndex].Id;
             }
-            if (view is ComboBox or ListBox && view is SelectingItemsControl combo)
+            if (view is ComboBox or ListBox or Carousel or TabStrip && view is SelectingItemsControl combo)
                 AxamlPhase4Projection.SelectStaticItem(combo, reference!, model, children, source.SourceMap);
             return view;
         }

@@ -25,7 +25,7 @@ public sealed class CollectionItemsContract
     public static bool HasExternalSource(DesignControlModel owner) => HasExternalSource(owner.CustomProperties.Select(p => (p.Key, p.ValueJson)), owner.BindingSourceId);
     public static bool HasExternalSource(DesignerControlFileModel owner) => HasExternalSource(owner.CustomProperties.Select(p => (p.Key, p.ValueJson)), owner.BindingSourceId);
     public static string ItemKind(string owner, string property) => property == "ContextMenu.Items" || property == StandardItemsProperties.MenuKey || owner == "Menu" ? "MenuItem"
-        : owner switch { "ComboBox" => "ComboBoxItem", "ListBox" => "ListBoxItem", "TabControl" => "TabItem", "TreeView" => "TreeViewItem", _ => "" };
+        : owner switch { "ItemsControl" or "Carousel" => "ContentControl", "TabStrip" => "TabStripItem", "ComboBox" => "ComboBoxItem", "ListBox" => "ListBoxItem", "TabControl" => "TabItem", "TreeView" => "TreeViewItem", _ => "" };
     public static IEnumerable<StandardMenuItem> Flatten(IEnumerable<StandardMenuItem> items)
     {
         var seen = new HashSet<StandardMenuItem>(System.Collections.Generic.ReferenceEqualityComparer.Instance);

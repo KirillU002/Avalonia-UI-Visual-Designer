@@ -150,7 +150,7 @@ public static class MetadataValueCodec
     public static MetadataEditor EditorFor(Type declared)
     {
         var type = Nullable.GetUnderlyingType(declared) ?? declared;
-        if (type == typeof(string) || type == typeof(Uri) || type == typeof(Point)) return MetadataEditor.Text;
+        if (type == typeof(string) || type == typeof(char) || type == typeof(Uri) || type == typeof(Point)) return MetadataEditor.Text;
         if (type == typeof(bool)) return Nullable.GetUnderlyingType(declared) is null ? MetadataEditor.Boolean : MetadataEditor.Enumeration;
         if (type.IsEnum) return MetadataEditor.Enumeration;
         if (type == typeof(int) || type == typeof(double) || type == typeof(float) || type == typeof(long) || type == typeof(decimal)) return MetadataEditor.Number;
@@ -165,7 +165,7 @@ public static class MetadataValueCodec
     }
     public static string Display(object? value) => value switch
     {
-        null => NullText, string text => text, Uri uri => uri.OriginalString, bool flag => flag ? "True" : "False",
+        null => NullText, string text => text, char character => character.ToString(), Uri uri => uri.OriginalString, bool flag => flag ? "True" : "False",
         Enum item => item.ToString(), double number => number.ToString("R", CultureInfo.InvariantCulture),
         float number => number.ToString("R", CultureInfo.InvariantCulture), int number => number.ToString(CultureInfo.InvariantCulture),
         long number => number.ToString(CultureInfo.InvariantCulture), decimal number => number.ToString(CultureInfo.InvariantCulture),
@@ -190,7 +190,8 @@ public static class MetadataValueCodec
                 if (text.Length > 8192 || !Uri.TryCreate(text, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https")) return false;
                 value=uri; return true;
             }
-            if (type == typeof(bool)) value = bool.Parse(text);
+            if (type == typeof(char)) { if(text.Length != 1 || char.IsSurrogate(text[0])) return false; value=text[0]; }
+            else if (type == typeof(bool)) value = bool.Parse(text);
             else if (type.IsEnum) { value = Enum.Parse(type, text, true); if (!Enum.IsDefined(type, value) && !type.IsDefined(typeof(FlagsAttribute), false)) return false; }
             else if (type == typeof(double)) { var n = double.Parse(text, NumberStyles.Float, CultureInfo.InvariantCulture); if (!double.IsFinite(n)) return false; value = n; }
             else if (type == typeof(float)) { var n = float.Parse(text, NumberStyles.Float, CultureInfo.InvariantCulture); if (!float.IsFinite(n)) return false; value = n; }

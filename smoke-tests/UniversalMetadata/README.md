@@ -164,3 +164,13 @@ Imported Preview использует прежний native builder `AxamlLayout
 * `--universal5a-profile` переиспользуется для новых типов через `UNIVERSAL5A_PROFILE_TYPES`. `--universal5c-operations-profile` + `UNIVERSAL5C_OPERATIONS_OUTPUT` добавляет 5 warm-up/30 measurements ToolboxInitialize, cached metadata enumeration, synchronous native Designer projection и actual Undo/Redo commands. Этот portable file можно скопировать без изменений в archived baseline harness; production baseline source при этом не меняется.
 
 Отчёт: [Phase 5C](../../Docs/UniversalControlsAndPropertiesPhase5C.md). Full dump capture/accessibility policy прежние; первые неуспешные прогоны сохраняются.
+
+## Phase 5D
+
+* `--universal5d-checks` проверяет ContentControl/ItemsControl/Carousel/TabStrip, реальные item types, JSON, native Designer/два Preview, routed Drop/resize, collection atomic Undo, source patches/Reset, nested layouts, Multi Form, свойства MaskedTextBox/Calendar/Path и Label metadata. `UNIVERSAL5D_FILTER` — только диагностика, filtered PASS не заменяет полный suite.
+* `--universal5d-generated`: fresh `UNIVERSAL5D_EXPORT_DIR`. Для Grid и Canvas выполнить `ProbeRuntime.ps1 -ProjectPath <export>/Grid -ProbeFile Phase5DRuntimeProbe.cs.txt -ResultName <unique>.txt -CaptureDirectory <fresh-capture-dir>`. Проверяются native controls/content/items, Carousel Next/Previous с видимым item, TabStrip selection, Mask/Prompt/selection и resize. CaptureDirectory включает прежний NativeCapture для конкретного generated process; не меняет WER/accessibility. Result должен начинаться с PASS.
+* `--universal5d-audit`: `UNIVERSAL5D_OUTPUT_DIR`; `UNIVERSAL5D_RUNTIME_VERIFIED=1` только после реальных generated/native проверок. Дополнительно пишет signature-only `PropertyCoverageInventory.json` с canonical identity/applicability; не читает instance getters.
+* `py -3 smoke-tests/UniversalMetadata/SummarizePropertyCoverage.py <before-dir> <after-audit-dir> <output-dir>` сводит существующие adapter CSV с одним native inventory. Aliases схлопываются, пары типов и глобальные identities раздельны. PropertyCoverage — conservative literal Editable ∩ Exportable, не общий процент arbitrary objects/templates. Проверяются инварианты отчёта.
+* Portable `--universal5a-profile` дополнен SelectionMs/LayoutMs для разложения Inspector. 5 warm-up/30 измерений, `UNIVERSAL5A_PROFILE_STAGES=1` для тех же стадий before/after; не запускать одновременно с build/SQL/UI suites.
+
+Подробности и первые неудачи: [Phase 5D](../../Docs/UniversalControlsAndPropertiesPhase5D.md). UIA остаётся unresolved; full dump capture включать до запуска native тестов.

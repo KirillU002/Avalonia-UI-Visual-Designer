@@ -1,4 +1,4 @@
-﻿using Avalonia;
+using Avalonia;
 using Avalonia.Collections;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
@@ -4738,6 +4738,9 @@ public partial class MainWindow : Window
                 ["Menu"] = _owner.CreateStandardItemsPreview,
                 ["ComboBox"] = _owner.CreateStandardItemsPreview,
                 ["TabControl"] = _owner.CreateStandardItemsPreview,
+                ["ItemsControl"] = _owner.CreateStandardItemsPreview,
+                ["Carousel"] = _owner.CreateStandardItemsPreview,
+                ["TabStrip"] = _owner.CreateStandardItemsPreview,
                 ["TreeView"] = _owner.CreateStandardItemsPreview,
                 [DesignerControlTypes.TextBox] = _owner.CreateTextBoxPreview,
                 [DesignerControlTypes.TextBlock] = _owner.CreateTextBlockPreview,

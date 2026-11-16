@@ -676,7 +676,7 @@ internal static class AxamlRoundTripPropertyMap
         DesignerControlTypes.CheckBox => CheckBox,
         DesignerControlTypes.Border => Common,
         DesignerControlTypes.Group or "DockPanel" or "Canvas" or "ScrollViewer" or "TabControl" or "TabItem" or "WrapPanel" or "Expander" or "ComboBox" or "ComboBoxItem"
-            or "ItemsControl" or "ListBox" or "ListBoxItem" or "TreeView" or "TreeViewItem" or "ProgressBar" or "Menu" or "MenuItem" or "ContextMenu" => Common,
+            or "ContentControl" or "Carousel" or "TabStrip" or "TabStripItem" or "ItemsControl" or "ListBox" or "ListBoxItem" or "TreeView" or "TreeViewItem" or "ProgressBar" or "Menu" or "MenuItem" or "ContextMenu" => Common,
         DesignerControlTypes.LayoutGrid => Common.Concat(new[]
         {
             Text("GridRowDefinitions", "RowDefinitions", c => c.GridRowDefinitions, (c, v) => c.GridRowDefinitions = v),

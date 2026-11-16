@@ -24,6 +24,7 @@ internal static partial class Program
                 for (var iteration = -5; iteration < 30; iteration++)
                 {
                     vm.NewProjectEditorCommand!.Execute(null); window.UpdateLayout();
+                    double selectionMs=0,layoutMs=0;
                     void Measure(string operation, Action action)
                     {
                         using var trace = Environment.GetEnvironmentVariable("UNIVERSAL5A_PROFILE_STAGES") == "1"
@@ -34,7 +35,7 @@ internal static partial class Program
                         using var process = Process.GetCurrentProcess(); var cpu = process.TotalProcessorTime;
                         var timer = Stopwatch.StartNew(); action(); timer.Stop();
                         if (iteration >= 0) samples.Add(new { Type = type, Operation = operation, Iteration = iteration,
-                            Ms = timer.Elapsed.TotalMilliseconds, Bytes = GC.GetAllocatedBytesForCurrentThread() - bytes,
+                            Ms = timer.Elapsed.TotalMilliseconds, SelectionMs=selectionMs, LayoutMs=layoutMs, Bytes = GC.GetAllocatedBytesForCurrentThread() - bytes,
                             CpuMs = (process.TotalProcessorTime - cpu).TotalMilliseconds,
                             GC = Enumerable.Range(0, 3).Select(i => GC.CollectionCount(i) - gc[i]).ToArray(),
                             Stages = trace?.Stages.ToArray(), Counters = trace?.Counters,
@@ -43,7 +44,7 @@ internal static partial class Program
                     }
                     Measure("ToolboxCreate", () => { vm.CreateControl(type, 0, 0); window.UpdateLayout(); });
                     var target = vm.Controls.Single(); vm.CreateControl("TextBox", 0, 0); window.UpdateLayout();
-                    Measure("Inspector", () => { vm.SelectSingleControl(target); window.UpdateLayout(); });
+                    Measure("Inspector", () => { var start=Stopwatch.GetTimestamp(); vm.SelectSingleControl(target); var selected=Stopwatch.GetTimestamp(); window.UpdateLayout(); var laidOut=Stopwatch.GetTimestamp(); selectionMs=Stopwatch.GetElapsedTime(start,selected).TotalMilliseconds;layoutMs=Stopwatch.GetElapsedTime(selected,laidOut).TotalMilliseconds; });
                     Measure("SaveLoad", () => { var json = vm.ExportWorkspaceJson(); var copy = GridFirstVm();
                         try { copy.LoadDocumentJson(json); RequireCapability(copy.Controls.Any(c => c.Id == target.Id && c.Type == type), "Save/load identity lost."); }
                         finally { Dispose5AProfileVm(copy); } });

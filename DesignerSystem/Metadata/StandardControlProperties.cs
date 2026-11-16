@@ -34,7 +34,7 @@ public static class StandardControlProperties
             ["Viewbox"] = typeof(Viewbox), ["UniformGrid"] = typeof(UniformGrid), ["Expander"] = typeof(Expander), ["ScrollViewer"] = typeof(ScrollViewer),
             ["Line"] = typeof(Line), ["Polygon"] = typeof(Polygon), ["Polyline"] = typeof(Polyline), ["Path"] = typeof(Path),
             ["Label"] = typeof(Label), ["AccessText"] = typeof(AccessText), ["ToggleButton"] = typeof(ToggleButton),
-            ["CalendarDatePicker"] = typeof(CalendarDatePicker), ["MaskedTextBox"] = typeof(MaskedTextBox), ["ButtonSpinner"] = typeof(ButtonSpinner)
+            ["CalendarDatePicker"] = typeof(CalendarDatePicker), ["MaskedTextBox"] = typeof(MaskedTextBox), ["ContentControl"] = typeof(ContentControl), ["ButtonSpinner"] = typeof(ButtonSpinner)
         }).ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal));
     private static readonly string[] CommonSafeKeys = { "IsEnabled", "MinWidth", "MinHeight", "MaxWidth", "MaxHeight", "Padding", "BorderBrush", "BorderThickness",
         "CornerRadius", "HorizontalContentAlignment", "VerticalContentAlignment", "FontStyle", "FontStretch", "ClipToBounds" };
@@ -45,7 +45,7 @@ public static class StandardControlProperties
         ["ToggleSwitch"] = new[] { "IsChecked", "IsThreeState", "IsEnabled", "Padding", "CornerRadius" },
         ["RadioButton"] = new[] { "IsChecked", "GroupName" },
         ["NumericUpDown"] = new[] { "Minimum", "Maximum", "Value", "Increment", "FormatString", "AllowSpin", "ShowButtonSpinner", "IsReadOnly" },
-        ["Calendar"] = new[] { "DisplayDate", "DisplayDateStart", "DisplayDateEnd", "SelectedDate", "FirstDayOfWeek", "IsTodayHighlighted", "DisplayMode" },
+        ["Calendar"] = new[] { "DisplayDate", "DisplayDateStart", "DisplayDateEnd", "SelectedDate", "FirstDayOfWeek", "IsTodayHighlighted", "DisplayMode", "SelectionMode" },
         ["DatePicker"] = new[] { "SelectedDate", "MinYear", "MaxYear", "YearVisible", "MonthVisible", "DayVisible", "YearFormat", "MonthFormat", "DayFormat" },
         ["TimePicker"] = new[] { "SelectedTime", "ClockIdentifier", "MinuteIncrement" },
         ["Separator"] = Array.Empty<string>(),
@@ -62,12 +62,13 @@ public static class StandardControlProperties
         ["Line"] = new[]{"StartPoint","EndPoint","Fill","Stroke","StrokeThickness","StrokeDashArray","StrokeDashOffset","StrokeLineCap","StrokeJoin","Stretch"},
         ["Polygon"] = new[]{"Points","Fill","Stroke","StrokeThickness","StrokeDashArray","Stretch","StrokeJoin"},
         ["Polyline"] = new[]{"Points","Fill","Stroke","StrokeThickness","StrokeDashArray","Stretch","StrokeJoin"},
-        ["Path"] = new[]{"Data","Fill","Stroke","StrokeThickness","StrokeDashArray","Stretch","StrokeJoin"},
+        ["Path"] = new[]{"Data","Fill","Stroke","StrokeThickness","StrokeDashArray","Stretch","StrokeJoin","StrokeDashOffset","StrokeLineCap"},
         ["Label"] = Array.Empty<string>(),
         ["AccessText"] = new[]{"ShowAccessKey","TextAlignment","TextWrapping","LetterSpacing","LineSpacing","MaxLines"},
         ["ToggleButton"] = new[]{"IsChecked","IsThreeState","ClickMode"},
         ["CalendarDatePicker"] = new[]{"SelectedDate","DisplayDate","DisplayDateStart","DisplayDateEnd","FirstDayOfWeek","IsTodayHighlighted","SelectedDateFormat","CustomDateFormatString"},
-        ["MaskedTextBox"] = new[]{"Mask","AsciiOnly","HidePromptOnLeave","ResetOnPrompt","ResetOnSpace","Watermark","IsReadOnly","MaxLength","HorizontalContentAlignment","VerticalContentAlignment"},
+        ["ContentControl"] = Array.Empty<string>(),
+        ["MaskedTextBox"] = new[]{"PromptChar","SelectionStart","SelectionEnd","Mask","AsciiOnly","HidePromptOnLeave","ResetOnPrompt","ResetOnSpace","Watermark","IsReadOnly","MaxLength","HorizontalContentAlignment","VerticalContentAlignment"},
         ["ButtonSpinner"] = new[]{"AllowSpin","ShowButtonSpinner","ButtonSpinnerLocation","ValidSpinDirection"}
     };
     // Cache only non-collectible, explicitly shipped types; never plugin Type/Assembly keys.
@@ -140,6 +141,8 @@ public static class StandardControlProperties
         json = "null";
         if (property.ReadOnly || !TryParseValue(property, text, out var value)
             || property.Property?.IsValidValue(value) == false) return false;
+        if (property.OwnerType == typeof(TextBox) && IsTextSelection(property.Key) && value is int index && index < 0) return false;
+        if (property.OwnerType == typeof(MaskedTextBox) && property.Key == "PromptChar" && value is char prompt && (char.IsControl(prompt)||char.IsSurrogate(prompt))) return false;
         // Avalonia accepts negative RepeatButton values at registration level,
         // but its DispatcherTimer throws when a press starts that interval.
         if (property.OwnerType == typeof(RepeatButton) && property.Key is "Delay" or "Interval" && value is int timing && timing < 0) return false;
@@ -175,7 +178,7 @@ public static class StandardControlProperties
     }
     private static bool IsViewport(AvaloniaPropertyInfo property) => property.OwnerType == typeof(ScrollBar) && property.Key == "ViewportSize";
     private static bool IsLiteralHeader(AvaloniaPropertyInfo property) => property.Key=="Header" && property.OwnerType==typeof(HeaderedContentControl);
-    public static bool IsContainer(string type) => type is "Viewbox" or "UniformGrid" or "Expander" or "ScrollViewer" or "ButtonSpinner";
+    public static bool IsContainer(string type) => type is "Viewbox" or "UniformGrid" or "Expander" or "ScrollViewer" or "ButtonSpinner" or "ContentControl";
     public static bool IsSingleChild(string type) => IsContainer(type) && type != "UniformGrid";
     public static string ContainerMode(string type) => type=="UniformGrid"?DesignerLayoutModes.Uniform:DesignerLayoutModes.Content;
     public static void AttachChildren(Control host, System.Collections.Generic.IReadOnlyList<Control> children) => AttachChildren(host,children,false);
@@ -193,11 +196,12 @@ public static class StandardControlProperties
     }
     public static bool HasLiteralContent(string type) => type is "ToggleSwitch" or "RadioButton" or "HyperlinkButton" or "RepeatButton" or "Label" or "ToggleButton";
     public static string? TextPropertyName(string type) => HasLiteralContent(type) ? "Content" : type is "AccessText" or "MaskedTextBox" ? "Text" : null;
-    public static string Attributes(string type, IReadOnlyDictionary<string, string> values, Func<string, string> escape, bool placementOwnsConstraints = false)
+    public static string Attributes(string type, IReadOnlyDictionary<string, string> values, Func<string, string> escape, bool placementOwnsConstraints = false, Func<AvaloniaPropertyInfo,bool>? filter = null)
     {
         var result = new System.Text.StringBuilder();
         foreach (var property in PropertiesFor(type))
         {
+            if (filter is not null && !filter(property)) continue;
             if (placementOwnsConstraints && LayoutPlacementProperties.SizeConstraintKeys.Contains(property.Key)) continue;
             if (!values.TryGetValue(property.Key, out var json)) continue;
             var text = Read(property, json);
@@ -226,10 +230,11 @@ public static class StandardControlProperties
             if (property is not null && MetadataValueCodec.TryParse(property.PropertyType, MetadataValueCodec.Display(value), out var parsed))
                 control.SetValue(property.Property!, parsed);
         }
-        if(type=="Expander"&&control is Expander expander&&node.CustomProperties.TryGetValue("Content",out var literalContent))
-            expander.Content=JsonSerializer.Deserialize<string>(literalContent);
+        if(type is "Expander" or "ContentControl"&&control is ContentControl contentHost&&node.CustomProperties.TryGetValue("Content",out var literalContent))
+            contentHost.Content=JsonSerializer.Deserialize<string>(literalContent);
         foreach (var property in PropertiesFor(type))
         {
+            if (type == "MaskedTextBox" && IsTextSelection(property.Key)) continue;
             if (!node.CustomProperties.TryGetValue(property.Key, out var json)) continue;
             var text = Read(property, json);
             if (!TryEncode(property, text, out _) || !TryParseValue(property, text, out var value))
@@ -242,8 +247,15 @@ public static class StandardControlProperties
             var textProperty = AvaloniaMetadataCatalog.Get(clrType).Properties.First(p => p.Key == textKey && p.Property is not null);
             control.SetValue(textProperty.Property!, node.GetString("Text", type));
         }
+        if (type == "MaskedTextBox")
+            foreach (var key in new[]{"SelectionStart","SelectionEnd"})
+                if (node.CustomProperties.TryGetValue(key,out var json) && Find(type,key) is {} p)
+                    control.SetValue(p.Property!, ParseSelection(p,json));
         return control;
     }
+    private static bool IsTextSelection(string key) => key is "SelectionStart" or "SelectionEnd";
+    private static object? ParseSelection(AvaloniaPropertyInfo p,string json)
+    { var text=Read(p,json); if(!TryEncode(p,text,out _) || !TryParseValue(p,text,out var v)) throw new FormatException("Invalid text selection: "+p.Key); return v; }
     public static bool TryWriteModel(DesignControlModel model, AvaloniaPropertyInfo property, string value)
     {
         if (!TryEncode(property, value, out var json) || !IsWithinModelRange(model, property, value)) return false;
