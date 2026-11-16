@@ -17,6 +17,6 @@ public class ToolboxItem
     {
         "ScrollBar" => "↕", "GridSplitter" => "⋮", "Rectangle" => "▭", "Ellipse" => "○",
         "Viewbox"=>"⤢", "UniformGrid"=>"▦", "Expander"=>"⌄", "ScrollViewer"=>"↕", "Line"=>"╱", "Polygon"=>"△", "Polyline"=>"⌁", "Path"=>"∿",
-        "HyperlinkButton" => "↗", "RepeatButton" => "↻", _ => ProviderBadge
+        "HyperlinkButton" => "↗", "RepeatButton" => "↻", "Label"=>"Lb", "AccessText"=>"_A", "ToggleButton"=>"☑", "CalendarDatePicker"=>"▦", "MaskedTextBox"=>"#_", "ButtonSpinner"=>"↕", _ => ProviderBadge
     };
 }

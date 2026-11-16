@@ -76,7 +76,7 @@ public static class MetadataCoverageReport
     }
     private static string NativeKey(string key, string type) => key switch
     {
-        "Text" when type is "Button" or "CheckBox" or "ToggleSwitch" or "RadioButton" or "HyperlinkButton" or "RepeatButton" => "Content",
+        "Text" when type is "Button" or "CheckBox" or "ToggleSwitch" or "RadioButton" or "HyperlinkButton" or "RepeatButton" or "Label" or "ToggleButton" => "Content",
         "X" => "Canvas.Left", "Y" => "Canvas.Top", "LayoutOrientation" => "Orientation", "LayoutSpacing" => "Spacing",
         "GridRowDefinitions" => "RowDefinitions", "GridColumnDefinitions" => "ColumnDefinitions", _ => key
     };

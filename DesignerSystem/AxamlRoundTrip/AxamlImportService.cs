@@ -669,7 +669,8 @@ internal static class AxamlRoundTripPropertyMap
 
     private static IReadOnlyList<AxamlRoundTripProperty> StandardPropertiesFor(string controlType) => controlType switch
     {
-        DesignerControlTypes.Button or DesignerControlTypes.DropDownButton or DesignerControlTypes.SplitButton or "ToggleSwitch" or "RadioButton" or "HyperlinkButton" or "RepeatButton" => Button,
+        DesignerControlTypes.Button or DesignerControlTypes.DropDownButton or DesignerControlTypes.SplitButton or "ToggleSwitch" or "RadioButton" or "HyperlinkButton" or "RepeatButton" or "Label" or "ToggleButton" => Button,
+        "MaskedTextBox" or "AccessText" => TextBlock,
         DesignerControlTypes.TextBox => TextBox,
         DesignerControlTypes.TextBlock => TextBlock,
         DesignerControlTypes.CheckBox => CheckBox,

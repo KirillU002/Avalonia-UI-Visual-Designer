@@ -92,11 +92,19 @@ internal static partial class Program
         Check("DeferredContextMenu",()=>
         {
             using var f=new PointerFixture(); var wrapper=Layout7Wrappers(f.Window)[f.First.Id];
+            var tracePath=Environment.GetEnvironmentVariable("CONTEXT5C_TRACE_OUTPUT");var trace=new List<object>();var observed=new HashSet<Border>();
+            void Observe(Border shell){if(tracePath is null||!observed.Add(shell))return;shell.DetachedFromVisualTree+=(_,_)=>trace.Add(new{Code="Detached",Wrapper=shell.GetHashCode()});shell.PropertyChanged+=(_,e)=>{
+                if(e.Property==Avalonia.Controls.Control.ContextMenuProperty&&shell.ContextMenu is {} observedMenu){trace.Add(new{Code="Assigned",Wrapper=shell.GetHashCode()});observedMenu.Opened+=(_,_)=>trace.Add(new{Code="Opened",Wrapper=shell.GetHashCode()});observedMenu.Closed+=(_,_)=>trace.Add(new{Code="Closed",Wrapper=shell.GetHashCode(),Stack=Environment.StackTrace});}};}
+            Observe(wrapper);
             RequireCapability(wrapper.ContextMenu is null,"Context menu was eagerly allocated.");
             var point=f.ControlPoint(f.First);
             f.Send(RawPointerEventType.RightButtonDown,point,RawInputModifiers.RightMouseButton);
+            Observe(Layout7Wrappers(f.Window)[f.First.Id]);
             f.Send(RawPointerEventType.RightButtonUp,point); NativeItemsUiWait(80);
             var menu=wrapper.ContextMenu ?? Layout7Wrappers(f.Window)[f.First.Id].ContextMenu ?? throw new Exception("Right click did not create a context menu.");
+            var renderedWrapper=Layout7Wrappers(f.Window)[f.First.Id];
+            Console.WriteLine($"CONTEXT_MENU_OBSERVED sameWrapper={ReferenceEquals(wrapper,renderedWrapper)}; oldAttached={wrapper.GetVisualRoot()is not null}; oldMenu={wrapper.ContextMenu is not null}; oldOpen={wrapper.ContextMenu?.IsOpen}; currentMenu={renderedWrapper.ContextMenu is not null}; currentOpen={renderedWrapper.ContextMenu?.IsOpen}");
+            if(tracePath is not null)File.WriteAllText(tracePath,JsonSerializer.Serialize(trace,new JsonSerializerOptions{WriteIndented=true}));
             RequireCapability(menu.IsOpen,"Right click created an unopened menu.");
             RequireCapability(menu.Items.OfType<MenuItem>().Any(i=>i.Header?.ToString()?.Contains("Удалить")==true),"Deferred menu lost commands.");
             var current=Layout7Wrappers(f.Window)[f.First.Id]; if(ReferenceEquals(current.ContextMenu,menu))wrapper=current;

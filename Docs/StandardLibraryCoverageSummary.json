@@ -1,0 +1,552 @@
+{
+  "Avalonia": "11.1.1.0",
+  "Families": [
+    {
+      "Assembly": "Avalonia.Controls",
+      "Discovered": 133,
+      "Applicable": 72,
+      "Standalone": 66,
+      "ChildOnly": 6,
+      "FullySupported": 0,
+      "PartiallySupported": 52,
+      "AxamlImportOnly": 1,
+      "MetadataOnly": 19,
+      "Unsupported": 0,
+      "FullPercent": 0,
+      "PartialPercent": 72.22222222222223,
+      "VerifiedScalarPipelines": 20
+    },
+    {
+      "Assembly": "Avalonia.Controls.ColorPicker",
+      "Discovered": 5,
+      "Applicable": 2,
+      "Standalone": 2,
+      "ChildOnly": 0,
+      "FullySupported": 0,
+      "PartiallySupported": 0,
+      "AxamlImportOnly": 0,
+      "MetadataOnly": 2,
+      "Unsupported": 0,
+      "FullPercent": 0,
+      "PartialPercent": 0,
+      "VerifiedScalarPipelines": 0
+    },
+    {
+      "Assembly": "Avalonia.Controls.DataGrid",
+      "Discovered": 11,
+      "Applicable": 1,
+      "Standalone": 1,
+      "ChildOnly": 0,
+      "FullySupported": 0,
+      "PartiallySupported": 1,
+      "AxamlImportOnly": 0,
+      "MetadataOnly": 0,
+      "Unsupported": 0,
+      "FullPercent": 0,
+      "PartialPercent": 100,
+      "VerifiedScalarPipelines": 0
+    },
+    {
+      "Assembly": "Avalonia.Controls.ItemsRepeater",
+      "Discovered": 1,
+      "Applicable": 1,
+      "Standalone": 1,
+      "ChildOnly": 0,
+      "FullySupported": 0,
+      "PartiallySupported": 0,
+      "AxamlImportOnly": 0,
+      "MetadataOnly": 1,
+      "Unsupported": 0,
+      "FullPercent": 0,
+      "PartialPercent": 0,
+      "VerifiedScalarPipelines": 0
+    }
+  ],
+  "RequestedTypes": [
+    {
+      "Name": "Image",
+      "Exists": true,
+      "Public": true,
+      "Abstract": false,
+      "FullName": "Avalonia.Controls.Image",
+      "Assembly": "Avalonia.Controls",
+      "IsControl": true,
+      "Role": "Standalone"
+    },
+    {
+      "Name": "ItemsControl",
+      "Exists": true,
+      "Public": true,
+      "Abstract": false,
+      "FullName": "Avalonia.Controls.ItemsControl",
+      "Assembly": "Avalonia.Controls",
+      "IsControl": true,
+      "Role": "Standalone"
+    },
+    {
+      "Name": "ContentControl",
+      "Exists": true,
+      "Public": true,
+      "Abstract": false,
+      "FullName": "Avalonia.Controls.ContentControl",
+      "Assembly": "Avalonia.Controls",
+      "IsControl": true,
+      "Role": "Standalone"
+    },
+    {
+      "Name": "HeaderedContentControl",
+      "Exists": true,
+      "Public": true,
+      "Abstract": false,
+      "FullName": "Avalonia.Controls.Primitives.HeaderedContentControl",
+      "Assembly": "Avalonia.Controls",
+      "IsControl": true,
+      "Role": "ArchitecturalBase"
+    },
+    {
+      "Name": "ContentPresenter",
+      "Exists": true,
+      "Public": true,
+      "Abstract": false,
+      "FullName": "Avalonia.Controls.Presenters.ContentPresenter",
+      "Assembly": "Avalonia.Controls",
+      "IsControl": true,
+      "Role": "TemplatePart"
+    },
+    {
+      "Name": "TextPresenter",
+      "Exists": true,
+      "Public": true,
+      "Abstract": false,
+      "FullName": "Avalonia.Controls.Presenters.TextPresenter",
+      "Assembly": "Avalonia.Controls",
+      "IsControl": true,
+      "Role": "TemplatePart"
+    },
+    {
+      "Name": "Label",
+      "Exists": true,
+      "Public": true,
+      "Abstract": false,
+      "FullName": "Avalonia.Controls.Label",
+      "Assembly": "Avalonia.Controls",
+      "IsControl": true,
+      "Role": "Standalone"
+    },
+    {
+      "Name": "AccessText",
+      "Exists": true,
+      "Public": true,
+      "Abstract": false,
+      "FullName": "Avalonia.Controls.Primitives.AccessText",
+      "Assembly": "Avalonia.Controls",
+      "IsControl": true,
+      "Role": "Standalone"
+    },
+    {
+      "Name": "ToggleButton",
+      "Exists": true,
+      "Public": true,
+      "Abstract": false,
+      "FullName": "Avalonia.Controls.Primitives.ToggleButton",
+      "Assembly": "Avalonia.Controls",
+      "IsControl": true,
+      "Role": "Standalone"
+    },
+    {
+      "Name": "CheckBox",
+      "Exists": true,
+      "Public": true,
+      "Abstract": false,
+      "FullName": "Avalonia.Controls.CheckBox",
+      "Assembly": "Avalonia.Controls",
+      "IsControl": true,
+      "Role": "Standalone"
+    },
+    {
+      "Name": "RadioButton",
+      "Exists": true,
+      "Public": true,
+      "Abstract": false,
+      "FullName": "Avalonia.Controls.RadioButton",
+      "Assembly": "Avalonia.Controls",
+      "IsControl": true,
+      "Role": "Standalone"
+    },
+    {
+      "Name": "ButtonSpinner",
+      "Exists": true,
+      "Public": true,
+      "Abstract": false,
+      "FullName": "Avalonia.Controls.ButtonSpinner",
+      "Assembly": "Avalonia.Controls",
+      "IsControl": true,
+      "Role": "Standalone"
+    },
+    {
+      "Name": "NumericUpDown",
+      "Exists": true,
+      "Public": true,
+      "Abstract": false,
+      "FullName": "Avalonia.Controls.NumericUpDown",
+      "Assembly": "Avalonia.Controls",
+      "IsControl": true,
+      "Role": "Standalone"
+    },
+    {
+      "Name": "Calendar",
+      "Exists": true,
+      "Public": true,
+      "Abstract": false,
+      "FullName": "Avalonia.Controls.Calendar",
+      "Assembly": "Avalonia.Controls",
+      "IsControl": true,
+      "Role": "Standalone"
+    },
+    {
+      "Name": "CalendarDatePicker",
+      "Exists": true,
+      "Public": true,
+      "Abstract": false,
+      "FullName": "Avalonia.Controls.CalendarDatePicker",
+      "Assembly": "Avalonia.Controls",
+      "IsControl": true,
+      "Role": "Standalone"
+    },
+    {
+      "Name": "DatePicker",
+      "Exists": true,
+      "Public": true,
+      "Abstract": false,
+      "FullName": "Avalonia.Controls.DatePicker",
+      "Assembly": "Avalonia.Controls",
+      "IsControl": true,
+      "Role": "Standalone"
+    },
+    {
+      "Name": "TimePicker",
+      "Exists": true,
+      "Public": true,
+      "Abstract": false,
+      "FullName": "Avalonia.Controls.TimePicker",
+      "Assembly": "Avalonia.Controls",
+      "IsControl": true,
+      "Role": "Standalone"
+    },
+    {
+      "Name": "AutoCompleteBox",
+      "Exists": true,
+      "Public": true,
+      "Abstract": false,
+      "FullName": "Avalonia.Controls.AutoCompleteBox",
+      "Assembly": "Avalonia.Controls",
+      "IsControl": true,
+      "Role": "Standalone"
+    },
+    {
+      "Name": "Carousel",
+      "Exists": true,
+      "Public": true,
+      "Abstract": false,
+      "FullName": "Avalonia.Controls.Carousel",
+      "Assembly": "Avalonia.Controls",
+      "IsControl": true,
+      "Role": "Standalone"
+    },
+    {
+      "Name": "TransitioningContentControl",
+      "Exists": true,
+      "Public": true,
+      "Abstract": false,
+      "FullName": "Avalonia.Controls.TransitioningContentControl",
+      "Assembly": "Avalonia.Controls",
+      "IsControl": true,
+      "Role": "Standalone"
+    },
+    {
+      "Name": "Menu",
+      "Exists": true,
+      "Public": true,
+      "Abstract": false,
+      "FullName": "Avalonia.Controls.Menu",
+      "Assembly": "Avalonia.Controls",
+      "IsControl": true,
+      "Role": "Standalone"
+    },
+    {
+      "Name": "MenuItem",
+      "Exists": true,
+      "Public": true,
+      "Abstract": false,
+      "FullName": "Avalonia.Controls.MenuItem",
+      "Assembly": "Avalonia.Controls",
+      "IsControl": true,
+      "Role": "ChildOnly"
+    },
+    {
+      "Name": "NativeMenu",
+      "Exists": true,
+      "Public": true,
+      "Abstract": false,
+      "FullName": "Avalonia.Controls.NativeMenu",
+      "Assembly": "Avalonia.Controls",
+      "IsControl": false,
+      "Role": "AssociatedNonvisual"
+    },
+    {
+      "Name": "ContextMenu",
+      "Exists": true,
+      "Public": true,
+      "Abstract": false,
+      "FullName": "Avalonia.Controls.ContextMenu",
+      "Assembly": "Avalonia.Controls",
+      "IsControl": true,
+      "Role": "AttachedObject"
+    },
+    {
+      "Name": "TreeView",
+      "Exists": true,
+      "Public": true,
+      "Abstract": false,
+      "FullName": "Avalonia.Controls.TreeView",
+      "Assembly": "Avalonia.Controls",
+      "IsControl": true,
+      "Role": "Standalone"
+    },
+    {
+      "Name": "TreeViewItem",
+      "Exists": true,
+      "Public": true,
+      "Abstract": false,
+      "FullName": "Avalonia.Controls.TreeViewItem",
+      "Assembly": "Avalonia.Controls",
+      "IsControl": true,
+      "Role": "ChildOnly"
+    },
+    {
+      "Name": "TabControl",
+      "Exists": true,
+      "Public": true,
+      "Abstract": false,
+      "FullName": "Avalonia.Controls.TabControl",
+      "Assembly": "Avalonia.Controls",
+      "IsControl": true,
+      "Role": "Standalone"
+    },
+    {
+      "Name": "TabItem",
+      "Exists": true,
+      "Public": true,
+      "Abstract": false,
+      "FullName": "Avalonia.Controls.TabItem",
+      "Assembly": "Avalonia.Controls",
+      "IsControl": true,
+      "Role": "ChildOnly"
+    },
+    {
+      "Name": "TabStrip",
+      "Exists": true,
+      "Public": true,
+      "Abstract": false,
+      "FullName": "Avalonia.Controls.Primitives.TabStrip",
+      "Assembly": "Avalonia.Controls",
+      "IsControl": true,
+      "Role": "Standalone"
+    },
+    {
+      "Name": "TabStripItem",
+      "Exists": true,
+      "Public": true,
+      "Abstract": false,
+      "FullName": "Avalonia.Controls.Primitives.TabStripItem",
+      "Assembly": "Avalonia.Controls",
+      "IsControl": true,
+      "Role": "ChildOnly"
+    },
+    {
+      "Name": "SelectingItemsControl",
+      "Exists": true,
+      "Public": true,
+      "Abstract": false,
+      "FullName": "Avalonia.Controls.Primitives.SelectingItemsControl",
+      "Assembly": "Avalonia.Controls",
+      "IsControl": true,
+      "Role": "ArchitecturalBase"
+    },
+    {
+      "Name": "Grid",
+      "Exists": true,
+      "Public": true,
+      "Abstract": false,
+      "FullName": "Avalonia.Controls.Grid",
+      "Assembly": "Avalonia.Controls",
+      "IsControl": true,
+      "Role": "Standalone"
+    },
+    {
+      "Name": "Canvas",
+      "Exists": true,
+      "Public": true,
+      "Abstract": false,
+      "FullName": "Avalonia.Controls.Canvas",
+      "Assembly": "Avalonia.Controls",
+      "IsControl": true,
+      "Role": "Standalone"
+    },
+    {
+      "Name": "StackPanel",
+      "Exists": true,
+      "Public": true,
+      "Abstract": false,
+      "FullName": "Avalonia.Controls.StackPanel",
+      "Assembly": "Avalonia.Controls",
+      "IsControl": true,
+      "Role": "Standalone"
+    },
+    {
+      "Name": "DockPanel",
+      "Exists": true,
+      "Public": true,
+      "Abstract": false,
+      "FullName": "Avalonia.Controls.DockPanel",
+      "Assembly": "Avalonia.Controls",
+      "IsControl": true,
+      "Role": "Standalone"
+    },
+    {
+      "Name": "WrapPanel",
+      "Exists": true,
+      "Public": true,
+      "Abstract": false,
+      "FullName": "Avalonia.Controls.WrapPanel",
+      "Assembly": "Avalonia.Controls",
+      "IsControl": true,
+      "Role": "Standalone"
+    },
+    {
+      "Name": "UniformGrid",
+      "Exists": true,
+      "Public": true,
+      "Abstract": false,
+      "FullName": "Avalonia.Controls.Primitives.UniformGrid",
+      "Assembly": "Avalonia.Controls",
+      "IsControl": true,
+      "Role": "Standalone"
+    },
+    {
+      "Name": "ScrollViewer",
+      "Exists": true,
+      "Public": true,
+      "Abstract": false,
+      "FullName": "Avalonia.Controls.ScrollViewer",
+      "Assembly": "Avalonia.Controls",
+      "IsControl": true,
+      "Role": "Standalone"
+    },
+    {
+      "Name": "Viewbox",
+      "Exists": true,
+      "Public": true,
+      "Abstract": false,
+      "FullName": "Avalonia.Controls.Viewbox",
+      "Assembly": "Avalonia.Controls",
+      "IsControl": true,
+      "Role": "Standalone"
+    },
+    {
+      "Name": "GridSplitter",
+      "Exists": true,
+      "Public": true,
+      "Abstract": false,
+      "FullName": "Avalonia.Controls.GridSplitter",
+      "Assembly": "Avalonia.Controls",
+      "IsControl": true,
+      "Role": "Standalone"
+    },
+    {
+      "Name": "RelativePanel",
+      "Exists": true,
+      "Public": true,
+      "Abstract": false,
+      "FullName": "Avalonia.Controls.RelativePanel",
+      "Assembly": "Avalonia.Controls",
+      "IsControl": true,
+      "Role": "Standalone"
+    },
+    {
+      "Name": "Popup",
+      "Exists": true,
+      "Public": true,
+      "Abstract": false,
+      "FullName": "Avalonia.Controls.Primitives.Popup",
+      "Assembly": "Avalonia.Controls",
+      "IsControl": true,
+      "Role": "AttachedObject"
+    },
+    {
+      "Name": "Flyout",
+      "Exists": true,
+      "Public": true,
+      "Abstract": false,
+      "FullName": "Avalonia.Controls.Flyout",
+      "Assembly": "Avalonia.Controls",
+      "IsControl": false,
+      "Role": "AssociatedNonvisual"
+    },
+    {
+      "Name": "ToolTip",
+      "Exists": true,
+      "Public": true,
+      "Abstract": false,
+      "FullName": "Avalonia.Controls.ToolTip",
+      "Assembly": "Avalonia.Controls",
+      "IsControl": true,
+      "Role": "AttachedObject"
+    },
+    {
+      "Name": "AdornerLayer",
+      "Exists": true,
+      "Public": true,
+      "Abstract": false,
+      "FullName": "Avalonia.Controls.Primitives.AdornerLayer",
+      "Assembly": "Avalonia.Controls",
+      "IsControl": true,
+      "Role": "Infrastructure"
+    },
+    {
+      "Name": "Decorator",
+      "Exists": true,
+      "Public": true,
+      "Abstract": false,
+      "FullName": "Avalonia.Controls.Decorator",
+      "Assembly": "Avalonia.Controls",
+      "IsControl": true,
+      "Role": "ArchitecturalBase"
+    },
+    {
+      "Name": "VisualLayerManager",
+      "Exists": true,
+      "Public": true,
+      "Abstract": false,
+      "FullName": "Avalonia.Controls.Primitives.VisualLayerManager",
+      "Assembly": "Avalonia.Controls",
+      "IsControl": true,
+      "Role": "Infrastructure"
+    },
+    {
+      "Name": "GroupBox",
+      "Exists": false,
+      "Public": false,
+      "Abstract": false,
+      "FullName": null,
+      "Assembly": null,
+      "IsControl": false,
+      "Role": "Unavailable or nonpublic"
+    }
+  ],
+  "Definition": "Full requires verified pipeline and no unsupported writable native properties/collections. Bounded scalar slices remain Partial. Root/attached/infrastructure are separate; assemblies are not combined.",
+  "MissingRequestedTypes": [
+    "GroupBox"
+  ],
+  "Themes": "Styles/themes are dependencies, not controls; no combined theme/third-party percentage"
+}

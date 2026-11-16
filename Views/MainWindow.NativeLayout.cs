@@ -109,7 +109,7 @@ public partial class MainWindow
         if(host is Avalonia.Controls.Primitives.TemplatedControl templated)
             templated.TemplateApplied+=(_,_)=>{
                 foreach(var control in host.GetVisualDescendants().OfType<Control>().Where(c=>c.TemplatedParent==host))
-                    if(control is Avalonia.Controls.Primitives.ToggleButton or Avalonia.Controls.Primitives.ScrollBar)control.IsHitTestVisible=false;
+                    if(control is Avalonia.Controls.Primitives.ToggleButton or Avalonia.Controls.Primitives.ScrollBar || host is ButtonSpinner && control is Button)control.IsHitTestVisible=false;
             };
     }
 

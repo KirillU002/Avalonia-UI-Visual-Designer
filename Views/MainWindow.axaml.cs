@@ -4550,10 +4550,11 @@ public partial class MainWindow : Window
         if (!isUserPreviewMode)
         {
             ToolTip.SetTip(wrapper, model.Name + " · " + model.Type);
+            var contextDocumentId = VM.ActiveDocumentId;
             wrapper.ContextRequested += (_, args) =>
             {
-                wrapper.ContextMenu ??= CreateControlContextMenu(model);
-                wrapper.ContextMenu.Open(wrapper); args.Handled = true;
+                args.Handled = true;
+                OpenCurrentControlContextMenu(model.Id, contextDocumentId);
             };
             wrapper.PointerPressed += Control_PointerPressed;
             wrapper.PointerMoved += Control_PointerMoved;
@@ -7266,6 +7267,17 @@ public partial class MainWindow : Window
         };
     }
 
+    private void OpenCurrentControlContextMenu(string controlId, string documentId)
+    {
+        // Selection/render can retire a shell while a routed context request is in
+        // flight. Resolve the active shell, never attach a popup to the old visual.
+        if (VM.ActiveDocumentId != documentId || VM.GetControl(controlId) is not { } model
+            || !_wrapperByControlId.TryGetValue(controlId, out var target)
+            || target.GetVisualRoot() is null) return;
+        var menu = target.ContextMenu ??= CreateControlContextMenu(model);
+        if (!menu.IsOpen) menu.Open(target);
+    }
+
     private ContextMenu CreateControlContextMenu(DesignControlModel model)
     {
         using var profileStage = LayoutDropProfile.Stage("CreateContextMenus");
@@ -7948,16 +7960,8 @@ public partial class MainWindow : Window
             ClearSnapCandidateSnapshot();
             VM.EndPropertyGridLiveGesture();
 
-            Dispatcher.UIThread.Post(() =>
-            {
-                var target = _wrapperByControlId.TryGetValue(releasedModel.Id, out var currentWrapper)
-                    ? currentWrapper
-                    : releasedBorder;
-
-                var contextMenu = target.ContextMenu ??= CreateControlContextMenu(releasedModel);
-                contextMenu.Close();
-                contextMenu.Open(target);
-            }, DispatcherPriority.Input);
+            var contextDocumentId = VM.ActiveDocumentId;
+            Dispatcher.UIThread.Post(() => OpenCurrentControlContextMenu(releasedModel.Id, contextDocumentId), DispatcherPriority.Input);
 
             e.Handled = true;
             return;

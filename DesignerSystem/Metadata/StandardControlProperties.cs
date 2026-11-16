@@ -20,7 +20,7 @@ namespace FormDesigner.DesignerSystem.Metadata;
 public static class StandardControlProperties
 {
     public static readonly IReadOnlySet<string> ReadOnlyInspectorKeys = new HashSet<string>(StringComparer.Ordinal)
-        { "Styles", "Resources", "Template", "DataTemplates", "DataContext", "ItemsSource", "ItemTemplate", "ContextMenu", "ContextFlyout", "Flyout", "SelectedItem", "Command", "CommandParameter", "StrokeDashArray" };
+        { "Styles", "Resources", "Template", "DataTemplates", "DataContext", "ItemsSource", "ItemTemplate", "ContextMenu", "ContextFlyout", "Flyout", "SelectedItem", "Command", "CommandParameter", "StrokeDashArray", "Target", "Culture", "MaskProvider", "MaskCompleted", "MaskFull", "Inlines", "BlackoutDates" };
     public static readonly IReadOnlyDictionary<string, Type> PilotTypes = new System.Collections.ObjectModel.ReadOnlyDictionary<string, Type>(
         new Dictionary<string, Type>(StringComparer.Ordinal)
         { ["Slider"] = typeof(Slider), ["ProgressBar"] = typeof(ProgressBar), ["ToggleSwitch"] = typeof(ToggleSwitch) });
@@ -32,7 +32,9 @@ public static class StandardControlProperties
             ["ScrollBar"] = typeof(ScrollBar), ["GridSplitter"] = typeof(GridSplitter), ["Rectangle"] = typeof(Rectangle),
             ["Ellipse"] = typeof(Ellipse), ["HyperlinkButton"] = typeof(HyperlinkButton), ["RepeatButton"] = typeof(RepeatButton),
             ["Viewbox"] = typeof(Viewbox), ["UniformGrid"] = typeof(UniformGrid), ["Expander"] = typeof(Expander), ["ScrollViewer"] = typeof(ScrollViewer),
-            ["Line"] = typeof(Line), ["Polygon"] = typeof(Polygon), ["Polyline"] = typeof(Polyline), ["Path"] = typeof(Path)
+            ["Line"] = typeof(Line), ["Polygon"] = typeof(Polygon), ["Polyline"] = typeof(Polyline), ["Path"] = typeof(Path),
+            ["Label"] = typeof(Label), ["AccessText"] = typeof(AccessText), ["ToggleButton"] = typeof(ToggleButton),
+            ["CalendarDatePicker"] = typeof(CalendarDatePicker), ["MaskedTextBox"] = typeof(MaskedTextBox), ["ButtonSpinner"] = typeof(ButtonSpinner)
         }).ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal));
     private static readonly string[] CommonSafeKeys = { "IsEnabled", "MinWidth", "MinHeight", "MaxWidth", "MaxHeight", "Padding", "BorderBrush", "BorderThickness",
         "CornerRadius", "HorizontalContentAlignment", "VerticalContentAlignment", "FontStyle", "FontStretch", "ClipToBounds" };
@@ -60,7 +62,13 @@ public static class StandardControlProperties
         ["Line"] = new[]{"StartPoint","EndPoint","Fill","Stroke","StrokeThickness","StrokeDashArray","StrokeDashOffset","StrokeLineCap","StrokeJoin","Stretch"},
         ["Polygon"] = new[]{"Points","Fill","Stroke","StrokeThickness","StrokeDashArray","Stretch","StrokeJoin"},
         ["Polyline"] = new[]{"Points","Fill","Stroke","StrokeThickness","StrokeDashArray","Stretch","StrokeJoin"},
-        ["Path"] = new[]{"Data","Fill","Stroke","StrokeThickness","StrokeDashArray","Stretch","StrokeJoin"}
+        ["Path"] = new[]{"Data","Fill","Stroke","StrokeThickness","StrokeDashArray","Stretch","StrokeJoin"},
+        ["Label"] = Array.Empty<string>(),
+        ["AccessText"] = new[]{"ShowAccessKey","TextAlignment","TextWrapping","LetterSpacing","LineSpacing","MaxLines"},
+        ["ToggleButton"] = new[]{"IsChecked","IsThreeState","ClickMode"},
+        ["CalendarDatePicker"] = new[]{"SelectedDate","DisplayDate","DisplayDateStart","DisplayDateEnd","FirstDayOfWeek","IsTodayHighlighted","SelectedDateFormat","CustomDateFormatString"},
+        ["MaskedTextBox"] = new[]{"Mask","AsciiOnly","HidePromptOnLeave","ResetOnPrompt","ResetOnSpace","Watermark","IsReadOnly","MaxLength","HorizontalContentAlignment","VerticalContentAlignment"},
+        ["ButtonSpinner"] = new[]{"AllowSpin","ShowButtonSpinner","ButtonSpinnerLocation","ValidSpinDirection"}
     };
     // Cache only non-collectible, explicitly shipped types; never plugin Type/Assembly keys.
     private sealed record SupportEntry(IReadOnlyList<AvaloniaPropertyInfo> Properties, IReadOnlySet<string> NativeKeys);
@@ -141,8 +149,14 @@ public static class StandardControlProperties
         {
             if (property.OwnerType == typeof(NumericUpDown) && property.Key == "FormatString" && value is string numberFormat) _ = 0m.ToString(numberFormat, CultureInfo.InvariantCulture);
             if (property.OwnerType == typeof(DatePicker) && property.Key is "YearFormat" or "MonthFormat" or "DayFormat" && value is string dateFormat) _ = DateTime.UnixEpoch.ToString(dateFormat, CultureInfo.InvariantCulture);
+            if (property.OwnerType == typeof(CalendarDatePicker) && property.Key == "CustomDateFormatString" && value is string calendarFormat) _ = DateTime.UnixEpoch.ToString(calendarFormat, CultureInfo.InvariantCulture);
+            if (property.OwnerType == typeof(MaskedTextBox) && property.Key == "Mask" && value is string { Length: > 0 } mask)
+            {
+                if (mask.Length > 1024) return false;
+                _ = new System.ComponentModel.MaskedTextProvider(mask, CultureInfo.InvariantCulture);
+            }
         }
-        catch (FormatException) { return false; }
+        catch (Exception error) when (error is FormatException or ArgumentException) { return false; }
         json = ShapeLiteralCodec.Supports(property) && value is not null ? JsonSerializer.Serialize(text.Trim()) : Encode(value); return true;
     }
     private static string Encode(object? value) => value switch
@@ -161,8 +175,8 @@ public static class StandardControlProperties
     }
     private static bool IsViewport(AvaloniaPropertyInfo property) => property.OwnerType == typeof(ScrollBar) && property.Key == "ViewportSize";
     private static bool IsLiteralHeader(AvaloniaPropertyInfo property) => property.Key=="Header" && property.OwnerType==typeof(HeaderedContentControl);
-    public static bool IsContainer(string type) => type is "Viewbox" or "UniformGrid" or "Expander" or "ScrollViewer";
-    public static bool IsSingleChild(string type) => type is "Viewbox" or "Expander" or "ScrollViewer";
+    public static bool IsContainer(string type) => type is "Viewbox" or "UniformGrid" or "Expander" or "ScrollViewer" or "ButtonSpinner";
+    public static bool IsSingleChild(string type) => IsContainer(type) && type != "UniformGrid";
     public static string ContainerMode(string type) => type=="UniformGrid"?DesignerLayoutModes.Uniform:DesignerLayoutModes.Content;
     public static void AttachChildren(Control host, System.Collections.Generic.IReadOnlyList<Control> children) => AttachChildren(host,children,false);
     public static void AttachChildren(Control host, System.Collections.Generic.IReadOnlyList<Control> children,bool designerEmptyTarget)
@@ -177,7 +191,8 @@ public static class StandardControlProperties
         if(host is Viewbox viewbox)viewbox.Child=content;
         else if(host is ContentControl control)control.Content=content;
     }
-    public static bool HasLiteralContent(string type) => type is "ToggleSwitch" or "RadioButton" or "HyperlinkButton" or "RepeatButton";
+    public static bool HasLiteralContent(string type) => type is "ToggleSwitch" or "RadioButton" or "HyperlinkButton" or "RepeatButton" or "Label" or "ToggleButton";
+    public static string? TextPropertyName(string type) => HasLiteralContent(type) ? "Content" : type is "AccessText" or "MaskedTextBox" ? "Text" : null;
     public static string Attributes(string type, IReadOnlyDictionary<string, string> values, Func<string, string> escape, bool placementOwnsConstraints = false)
     {
         var result = new System.Text.StringBuilder();
@@ -211,7 +226,6 @@ public static class StandardControlProperties
             if (property is not null && MetadataValueCodec.TryParse(property.PropertyType, MetadataValueCodec.Display(value), out var parsed))
                 control.SetValue(property.Property!, parsed);
         }
-        if (HasLiteralContent(type) && control is ContentControl content) content.Content = node.GetString("Text", type);
         if(type=="Expander"&&control is Expander expander&&node.CustomProperties.TryGetValue("Content",out var literalContent))
             expander.Content=JsonSerializer.Deserialize<string>(literalContent);
         foreach (var property in PropertiesFor(type))
@@ -221,6 +235,12 @@ public static class StandardControlProperties
             if (!TryEncode(property, text, out _) || !TryParseValue(property, text, out var value))
                 throw new FormatException("Invalid Avalonia property: " + property.Key);
             control.SetValue(property.Property!, value);
+        }
+        // Mask/format configuration must exist before applying the model's text.
+        if (TextPropertyName(type) is { } textKey)
+        {
+            var textProperty = AvaloniaMetadataCatalog.Get(clrType).Properties.First(p => p.Key == textKey && p.Property is not null);
+            control.SetValue(textProperty.Property!, node.GetString("Text", type));
         }
         return control;
     }

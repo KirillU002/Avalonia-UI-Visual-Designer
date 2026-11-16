@@ -3399,7 +3399,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     private ToolboxProviderInfo ResolveToolboxProvider(IControlDescriptor descriptor)
     {
-        if (descriptor.TypeKey is "ScrollBar" or "GridSplitter" or "Rectangle" or "Ellipse" or "HyperlinkButton" or "RepeatButton" or "Viewbox" or "UniformGrid" or "Expander" or "ScrollViewer" or "Line" or "Polygon" or "Polyline" or "Path")
+        if (FormDesigner.DesignerSystem.Metadata.StandardControlProperties.SupportedTypes.ContainsKey(descriptor.TypeKey))
             return new ToolboxProviderInfo("Avalonia", descriptor.Category, "AV", 10);
         if (descriptor is IDesignerControlProviderMetadata metadata
             && !string.IsNullOrWhiteSpace(metadata.ProviderId))
@@ -18191,7 +18191,8 @@ public partial class MainWindowViewModel : ObservableObject
             {
                 var model = metadataNode.Model;
                 var attributes = FormDesigner.DesignerSystem.Metadata.StandardControlProperties.Attributes(typeKey, control.CustomProperties, EscapeXml, placementOwnsConstraints: _owner.UsesNativeLayout);
-                var content = FormDesigner.DesignerSystem.Metadata.StandardControlProperties.HasLiteralContent(typeKey) ? " Content=\"" + EscapeXml(model.Text.StartsWith("{", StringComparison.Ordinal) ? "{}" + model.Text : model.Text) + "\"" : "";
+                var textProperty = FormDesigner.DesignerSystem.Metadata.StandardControlProperties.TextPropertyName(typeKey);
+                var content = textProperty is not null ? " "+textProperty+"=\"" + EscapeXml(model.Text.StartsWith("{", StringComparison.Ordinal) ? "{}" + model.Text : model.Text) + "\"" : "";
                 // Legacy absolute placement uses wrapper bounds and ignores control margins.
                 // Override theme margins (e.g. Separator) to preserve those same Canvas coordinates.
                 var absoluteMargin = !_owner.UsesNativeLayout && DesignerLayoutModes.IsAbsolute(_owner.GetExportLayoutModeForParent(model.ParentId)) ? " Margin=\"0\"" : "";

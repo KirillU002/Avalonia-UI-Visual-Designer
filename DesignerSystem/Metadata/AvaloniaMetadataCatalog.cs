@@ -106,7 +106,7 @@ public static class AvaloniaMetadataCatalog
             : typeof(ItemsControl).IsAssignableFrom(type) ? ("Items", "Items")
             : typeof(ContentControl).IsAssignableFrom(type) ? ("Content", "Content")
             : ("None", (string?)null);
-        var infrastructure = type.Namespace?.Contains(".Primitives", StringComparison.Ordinal) == true && type != typeof(ScrollBar) && type != typeof(UniformGrid)
+        var infrastructure = type.Namespace?.Contains(".Primitives", StringComparison.Ordinal) == true && type != typeof(ScrollBar) && type != typeof(UniformGrid) && type != typeof(ToggleButton) && type != typeof(AccessText)
             || type.Namespace?.Contains(".Presenters", StringComparison.Ordinal) == true
             || type.Name.EndsWith("Presenter", StringComparison.Ordinal) || type.Name.EndsWith("Panel", StringComparison.Ordinal) && type.Name.Contains("Virtualiz", StringComparison.Ordinal)
             || type.Name is "CaptionButtons" or "TitleBar" or "EmbeddableControlRoot" or "NativeControlHost" or "NativeMenuBar"
@@ -217,7 +217,7 @@ public static class MetadataValueCodec
             }
             else if (type == typeof(FontFamily)) value = new FontFamily(text);
             else if (type == typeof(Point)) { var point=Point.Parse(text);if(!double.IsFinite(point.X)||!double.IsFinite(point.Y)||Math.Abs(point.X)>1e6||Math.Abs(point.Y)>1e6)return false;value=point; }
-            else if (type == typeof(DateTime)) value = DateTime.ParseExact(text, new[] { "yyyy-MM-dd", "O" }, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);
+            else if (type == typeof(DateTime)) value = DateTime.ParseExact(text, new[] { "yyyy-MM-dd", "O", "yyyy-MM-dd'T'HH:mm:ss" }, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);
             else if (type == typeof(DateTimeOffset)) value = DateTimeOffset.ParseExact(text, new[] { "yyyy-MM-dd", "O" }, CultureInfo.InvariantCulture, DateTimeStyles.None);
             else if (type == typeof(TimeSpan)) value = TimeSpan.ParseExact(text, "c", CultureInfo.InvariantCulture);
             else return false;

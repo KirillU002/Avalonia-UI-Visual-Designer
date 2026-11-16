@@ -23,7 +23,7 @@ public static class CollectionMetadataCatalog
             var item = p.PropertyType.GetInterfaces().Prepend(p.PropertyType).FirstOrDefault(t => t.IsGenericType && t.GetGenericTypeDefinition() == typeof(IEnumerable<>))?.GetGenericArguments()[0] ?? typeof(object);
             var items = p.Name == "Items" && (type == typeof(Menu) || type == typeof(MenuItem) || type == typeof(MenuFlyout) || type == typeof(ContextMenu) || type == typeof(ComboBox) || type == typeof(ListBox) || type == typeof(TabControl) || type == typeof(TreeView) || type == typeof(TreeViewItem));
             var columns = type == typeof(DataGrid) && p.Name == "Columns";
-            var children = p.Name == "Children" && (type == typeof(Grid) || type == typeof(Canvas) || type == typeof(StackPanel) || type == typeof(WrapPanel) || type == typeof(DockPanel));
+            var children = p.Name == "Children" && (type == typeof(Grid) || type == typeof(Canvas) || type == typeof(StackPanel) || type == typeof(WrapPanel) || type == typeof(DockPanel) || type == typeof(Avalonia.Controls.Primitives.UniformGrid));
             var editable = items || columns || children;
             var controls = items || typeof(Control).IsAssignableFrom(item);
             return new CollectionPropertyMetadata(p.Name, p.DeclaringType!, item, p.PropertyType, p.SetMethod?.IsPublic != true,

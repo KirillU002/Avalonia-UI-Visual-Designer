@@ -23,7 +23,9 @@ try{
  if(-not $process.WaitForExit(45000)){$process.Kill();$process.WaitForExit();throw 'Generated native runtime timed out'}
  $process.WaitForExit()
  if($process.ExitCode -ne 0 -or -not(Test-Path -LiteralPath $env:METADATA_RUNTIME_RESULT)){throw 'Generated native runtime failed'}
- Get-Content -LiteralPath $env:METADATA_RUNTIME_RESULT
+ $resultText=Get-Content -LiteralPath $env:METADATA_RUNTIME_RESULT -Raw
+ Write-Output $resultText
+ if(-not $resultText.StartsWith('PASS',[StringComparison]::Ordinal)){throw 'Generated native runtime assertions failed'}
 }finally{
  [IO.File]::WriteAllBytes($entry,$saved)
  if(Test-Path -LiteralPath $probe){Remove-Item -LiteralPath $probe}

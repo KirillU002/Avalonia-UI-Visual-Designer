@@ -1,0 +1,57 @@
+using System;
+using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Controls.Primitives;
+using Avalonia.Input;
+using Avalonia.Interactivity;
+using Avalonia.VisualTree;
+
+internal static class MetadataRuntimeProbe
+{
+    public static void Attach(IClassicDesktopStyleApplicationLifetime desktop,Window window)
+    {
+        window.ShowInTaskbar=false;window.ShowActivated=false;window.Position=new PixelPoint(-3500,-3500);
+        window.Opened+=async(_,_)=>{
+            try{
+                await Task.Delay(180);window.UpdateLayout();
+                T Find<T>(string name) where T:Control=>window.GetVisualDescendants().OfType<T>().Single(c=>c.Name==name&&c.GetType()==typeof(T));
+                var label=Find<Label>("Phase5C_Label");var access=Find<AccessText>("Phase5C_AccessText");var toggle=Find<ToggleButton>("Phase5C_ToggleButton");
+                var date=Find<CalendarDatePicker>("Phase5C_CalendarDatePicker");var mask=Find<MaskedTextBox>("Phase5C_MaskedTextBox");var spinner=Find<ButtonSpinner>("Phase5C_ButtonSpinner");
+                var views=new Control[]{label,access,toggle,date,mask,spinner};
+                Require(views.All(c=>c.GetVisualRoot()==window&&c.Bounds.Width>0&&c.Bounds.Height>0),"Native tree/bounds incomplete");
+                Require(Equals(label.Content,"_Name & literal")&&label.Padding==new Thickness(4,6,8,10),"Label content/padding lost");
+                Require(access.Text=="_Name & literal"&&char.ToUpperInvariant(access.AccessKey)=='N'&&access.GetValue(AccessText.ShowAccessKeyProperty)&&access.MaxLines==2&&access.LetterSpacing==1.5,"AccessText properties lost");
+                Require(toggle.IsChecked==true&&toggle.IsThreeState&&Equals(toggle.Content,"_Name & literal"),"Toggle metadata lost");
+                toggle.RaiseEvent(new KeyEventArgs{RoutedEvent=InputElement.KeyDownEvent,Key=Key.Space});toggle.RaiseEvent(new KeyEventArgs{RoutedEvent=InputElement.KeyUpEvent,Key=Key.Space});Require(toggle.IsChecked is null,"Native three-state keyboard toggle failed");
+                Require(date.SelectedDate?.Date==new DateTime(2026,11,16)&&date.FirstDayOfWeek==DayOfWeek.Monday&&date.CustomDateFormatString=="yyyy-MM-dd","CalendarDatePicker state lost");
+                date.IsDropDownOpen=true;await Task.Delay(120);Require(date.IsDropDownOpen,"Calendar popup did not open");date.IsDropDownOpen=false;
+                Require(mask.Mask=="000-000"&&mask.Text=="123-456"&&mask.AsciiOnly&&mask.Watermark=="Введите код","Mask/text state lost");
+                void TypeDigits(MaskedTextBox box){foreach(var character in "654321"){
+                    var key=(Key)((int)Key.D0+character-'0');box.RaiseEvent(new KeyEventArgs{RoutedEvent=InputElement.KeyDownEvent,Key=key});
+                    box.RaiseEvent(new TextInputEventArgs{RoutedEvent=InputElement.TextInputEvent,Text=character.ToString()});
+                    box.RaiseEvent(new KeyEventArgs{RoutedEvent=InputElement.KeyUpEvent,Key=key});}}
+                var reference=new MaskedTextBox{Mask="000-000",AsciiOnly=true,Text="123456"};var referenceWindow=new Window{Content=reference,Width=330,Height=130,ShowInTaskbar=false,ShowActivated=false,Position=new PixelPoint(-3500,-3500)};
+                referenceWindow.Show();await Task.Delay(50);reference.Focus();reference.SelectAll();TypeDigits(reference);var referenceSelectedInput=reference.Text;referenceWindow.Close();
+                mask.Focus();mask.SelectAll();TypeDigits(mask);var selectedInput=mask.Text;
+                File.WriteAllText(Environment.GetEnvironmentVariable("METADATA_RUNTIME_RESULT")!+".mask-reference.txt","Selected input: generated="+selectedInput+"; native reference="+referenceSelectedInput);
+                mask.SelectAll();mask.RaiseEvent(new KeyEventArgs{RoutedEvent=InputElement.KeyDownEvent,Key=Key.Delete});mask.RaiseEvent(new KeyEventArgs{RoutedEvent=InputElement.KeyUpEvent,Key=Key.Delete});TypeDigits(mask);
+                Require(mask.Text=="654-321","Native single-character masked input failed: "+mask.Text+"; readOnly="+mask.IsReadOnly+"; focused="+mask.IsFocused+"; selection="+mask.SelectionStart+","+mask.SelectionEnd);
+                Require(spinner.Content is TextBox content&&content.Name=="SpinnerContent"&&content.Text=="Spin content"&&spinner.ValidSpinDirection==ValidSpinDirections.Increase,"Spinner content/direction lost");
+                var count=0;spinner.Spin+=(_,_)=>count++;var increase=spinner.GetVisualDescendants().OfType<Button>().First(c=>c.Name?.Contains("Increase")==true);increase.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));Require(count==1,"Spin event not delivered");
+                var positions=views.Where(v=>v.GetVisualParent()is Canvas).ToDictionary(v=>v,v=>(X:Canvas.GetLeft(v),Y:Canvas.GetTop(v)));
+                foreach(var size in new[]{new Size(800,600),new Size(1200,800),new Size(1600,900)}){
+                    window.Width=size.Width;window.Height=size.Height;await Task.Delay(50);window.UpdateLayout();
+                    Require(views.All(c=>c.Bounds.Width>0&&c.Bounds.Height>0),"Resize lost native control");
+                    Require(positions.All(p=>Canvas.GetLeft(p.Key)==p.Value.X&&Canvas.GetTop(p.Key)==p.Value.Y),"Canvas authored positions moved");
+                }
+                File.WriteAllText(Environment.GetEnvironmentVariable("METADATA_RUNTIME_RESULT")!,"PASS native=6; Content/Text/Mask/Date=true; keyboard toggle=true; masked input=true; calendar popup=true; native Spin=true; resize=3");
+            }catch(Exception error){File.WriteAllText(Environment.GetEnvironmentVariable("METADATA_RUNTIME_RESULT")!,"FAIL "+error);}
+            finally{window.Close();desktop.Shutdown();}
+        };
+    }
+    private static void Require(bool condition,string message){if(!condition)throw new InvalidOperationException(message);}
+}
