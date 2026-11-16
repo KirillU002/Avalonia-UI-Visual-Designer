@@ -22,6 +22,12 @@ public enum AxamlPropertyCapabilityMode { Editable, Preserved, Unsupported }
 
 public sealed record AxamlPropertyCapability(string Key, string SourceName, AxamlPropertyCapabilityMode Mode, string Reason = "");
 
+public sealed record AxamlStructuralCapability(bool CanAddChild, bool CanRemove, bool CanReorder,
+    bool CanReparent, bool CanEditContent, bool CanEditCollection, bool CanInsertSibling, bool CanModifyLayout, string Reason);
+
+internal sealed record AxamlArchivedSource(string Text, AxamlSourceReference Reference,
+    IReadOnlyDictionary<string, AxamlSourceReference> References);
+
 public sealed class AxamlElementCapability
 {
     public AxamlElementCapability(AxamlElementSyntax element, AxamlElementCapabilityMode mode, string reason = "")
@@ -156,6 +162,10 @@ public sealed class AxamlRoundTripDocument
     public string OriginalText { get; private set; }
     public string SourceChecksum { get; private set; }
     public Encoding TextEncoding { get; private set; } = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+    // Document-owned undo evidence. No project JSON, global Type or live control cache.
+    internal Dictionary<string, AxamlArchivedSource> RemovedSources { get; } = new(StringComparer.Ordinal);
+    internal Dictionary<string, string> PendingTypes { get; } = new(StringComparer.Ordinal);
+    internal Dictionary<string,(IReadOnlyList<double> Rows,IReadOnlyList<double> Columns)> MeasuredGridTracks { get; } = new(StringComparer.Ordinal);
 
     public void SetTextEncoding(Encoding encoding)
     {
@@ -218,6 +228,7 @@ public sealed class AxamlPatchResult
     public IReadOnlyList<AxamlTextEdit> Edits { get; }
     public IReadOnlyList<AxamlRoundTripDiagnostic> Diagnostics { get; }
     public bool HasChanges => Edits.Count > 0;
+    public IReadOnlyDictionary<string, int> ControlElementStarts { get; internal set; } = new Dictionary<string, int>();
 
     public static AxamlPatchResult Success(string patchedText, IReadOnlyList<AxamlTextEdit> edits, IReadOnlyList<AxamlRoundTripDiagnostic> diagnostics) =>
         new(true, false, patchedText, edits, diagnostics);

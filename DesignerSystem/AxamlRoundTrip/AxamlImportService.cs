@@ -652,9 +652,11 @@ internal static class AxamlRoundTripPropertyMap
     {
         var literals = AxamlControlMetadata.Find(controlType)?.LiteralProperties ?? Array.Empty<AxamlLiteralProperty>();
         var keys = literals.Select(p => p.Key).ToHashSet(StringComparer.Ordinal);
+        var nativeType=AxamlControlMetadata.Find(controlType)?.NativeType
+            ?? FormDesigner.DesignerSystem.Metadata.StandardControlProperties.PropertyTypeFor(controlType);
+        var nativeKeys=nativeType is null?null:FormDesigner.DesignerSystem.Metadata.AvaloniaMetadataCatalog.Get(nativeType).Properties.Select(p=>p.Key).ToHashSet(StringComparer.Ordinal);
         return StandardPropertiesFor(controlType).Where(p => !keys.Contains(p.Key)
-            && (!FormDesigner.DesignerSystem.Metadata.StandardControlProperties.IsShape(controlType)
-                || FormDesigner.DesignerSystem.Metadata.StandardControlProperties.HasNativeProperty(controlType,p.Key=="Name"?"Name":p.PreferredAttributeName)))
+            && (nativeKeys is null||nativeKeys.Contains(p.Key=="Name"?"Name":p.PreferredAttributeName)))
             .Concat(literals.Select(p => new AxamlRoundTripProperty(p.Key,
                 new[] { p.Key, controlType + "." + p.Key },
                 c => ReadLiteral(p, c), p.Write,

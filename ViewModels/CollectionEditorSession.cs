@@ -42,11 +42,12 @@ public sealed class CollectionEditorSession : IDisposable
     public CollectionTreeNode? SelectedNode => _nodes.GetValueOrDefault(SelectedItemId);
     public event EventHandler? Changed;
     internal CollectionEditorSession(MainWindowViewModel owner, DesignControlModel control, string property)
-    { _owner = owner; OwnerId = control.Id; DocumentId = owner.ActiveDocumentId; SessionId = owner.DocumentSessionId; PropertyName = property; ItemKind = CollectionItemsContract.ItemKind(control.Type, property); Refresh(); }
+    { _owner = owner; OwnerId = control.Id; DocumentId = owner.ActiveDocumentId; SessionId = owner.DocumentSessionId; PropertyName = property; ItemKind = owner.ImportedCollectionKind(control,property) is { Length: > 0 } imported?imported:CollectionItemsContract.ItemKind(control.Type, property); Refresh(); }
     internal bool IsCurrent => _owner is { } vm && vm.ActiveCollectionEditor == this && vm.DocumentSessionId == SessionId && vm.ActiveDocumentId == DocumentId && vm.SelectedControl?.Id == OwnerId && vm.GetControl(OwnerId) is not null;
     internal CollectionItemsContract Read()
     {
         var control = _owner?.GetControl(OwnerId) ?? throw new InvalidOperationException("Владелец коллекции закрыт.");
+        if(_owner!.ImportedCollectionKind(control,PropertyName).Length>0)return _owner.ReadImportedCollection(control,ItemKind);
         if (CollectionItemsContract.Read(control, PropertyName) is { } typed) return typed;
         var values = PropertyName == StandardItemsProperties.MenuKey ? StandardItemsProperties.Menu(control)
             : PropertyName == "Items" && control.Type == "ListBox" ? StandardItemsProperties.Read(control, "Items", Array.Empty<string>()).Select((text, index) => new StandardMenuItem { Id = LegacyId(index), Text = text, Kind = ItemKind }).ToList()

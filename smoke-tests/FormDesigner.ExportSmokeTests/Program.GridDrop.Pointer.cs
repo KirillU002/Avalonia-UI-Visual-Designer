@@ -133,12 +133,12 @@ internal static partial class Program
             RequireCapability(RouteGridToolbox(f, data, DragDrop.DragOverEvent, p).DragEffects == DragDropEffects.None, "Unavailable type was advertised as valid.");
             RouteGridToolbox(f, data, DragDrop.DropEvent, p); f.AssertIdle(); RequireCapability(f.Vm.Controls.Count == 0, "Unavailable type created a damaged node.");
         });
-        check("RoutedSourceAxamlGridReadOnly", () =>
+        check("RoutedSourceAxamlGridStructuralDrop", () =>
         {
             using var f = GridDropPointerFixture(); var path = Path.Combine(FindRepositoryRoot(), "Samples", "RoundTrip", "Layout", "GridDefinitions.axaml");
             f.Vm.LoadAxamlImportedDocument(new AxamlImportService().Import(File.ReadAllText(path), path), path); f.Refresh(); var count = f.Vm.Controls.Count; var data = GridToolboxData(f);
             var over = RouteGridToolbox(f, data, DragDrop.DragOverEvent, new Point(200, 100)); RouteGridToolbox(f, data, DragDrop.DropEvent, new Point(200, 100)); f.AssertIdle();
-            RequireCapability(over.DragEffects == DragDropEffects.None && f.Vm.Controls.Count == count && !f.Vm.CreateActiveAxamlPatch().HasChanges, "Routed source drop modified AXAML.");
+            RequireCapability(over.DragEffects == DragDropEffects.Copy && f.Vm.Controls.Count == count+1 && f.Vm.CreateActiveAxamlPatch().CanApply && f.Vm.CreateActiveAxamlPatch().HasChanges, "Reviewed structural source drop did not preserve a safe pending patch.");
         });
         check("PreviewDoesNotFloodDiagnostics", () =>
         {

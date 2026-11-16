@@ -30,13 +30,12 @@ public partial class MainWindow
     public IReadOnlyList<GridDragDiagnostic> GridDragDiagnostics => _gridDragDiagnostics;
     private bool IsGridControlInteraction => _designerInteractionMode is DesignerInteractionMode.GridControlPending or DesignerInteractionMode.MovingGridControl;
 
-    private bool IsSourceGridDropBlocked(Point point) => VM.IsAxamlRoundTripDocument && VM.Controls.Where(VM.CanHostChildren)
-        .Any(c =>
-        {
-            if (!VM.AxamlLayoutBounds.TryGetValue(c.Id, out var frame)) return false;
-            var p = VM.GetAbsolutePosition(c);
-            return point.X >= p.X && point.Y >= p.Y && point.X < p.X + frame.Width && point.Y < p.Y + frame.Height;
-        });
+    private bool IsSourceGridDropBlocked(Point point)
+    {
+        if(!VM.IsAxamlRoundTripDocument)return false;
+        var parent=VM.FindDeepestContainerAt(point.X,point.Y);
+        return !VM.GetAxamlStructuralCapability(parent?.Id).CanAddChild;
+    }
 
     private void TraceGridDrag(string code, GridDropTarget? target = null, string reason = "", string? controlId = null)
     {

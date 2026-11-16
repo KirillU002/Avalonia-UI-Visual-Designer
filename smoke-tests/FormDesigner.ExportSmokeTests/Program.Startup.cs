@@ -267,6 +267,13 @@ internal static partial class Program
 
     private static void AssertStartupHitTarget(MainWindow window, Button button)
     {
+        // The previous 180 ms dispatcher drain does not commit a native frame.
+        // Synchronize once with the compositor, rather than retrying a failed hit test.
+        window.UpdateLayout();
+        var commit=Avalonia.Rendering.Composition.ElementComposition.GetElementVisual(window)!.Compositor.RequestCommitAsync();
+        var deadline=DateTime.UtcNow.AddSeconds(3);
+        while(!commit.IsCompleted&&DateTime.UtcNow<deadline)NativeItemsUiWait(10);
+        if(!commit.IsCompletedSuccessfully)throw new InvalidOperationException("Startup compositor frame did not commit.");
         var hit = window.InputHitTest(StartupButtonPoint(window, button)) as Visual;
         if (hit != button && hit?.GetVisualAncestors().Contains(button) != true)
             throw new InvalidOperationException($"Pointer target for {button.Command} was {hit?.GetType().Name}:{(hit as Control)?.Name}.");

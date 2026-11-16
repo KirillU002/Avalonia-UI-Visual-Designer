@@ -102,7 +102,8 @@ internal static partial class Program
                 RequireCapability(native is not null && native.Bounds.Width > 0, "Native item absent from visual tree: " + item);
                 if (combo is not null) combo.IsDropDownOpen = false;
                 vm.SelectSingleControl(vm.Controls.Single(c => c.Name == "Owner")); var editor = vm.OpenCollectionEditor("Items");
-                RequireCapability(editor is null && vm.CollectionReadOnlyReason(vm.SelectedControl!, "Items").Length != 0, "Unsafe imported structural mutation enabled.");
+                RequireCapability(type=="ComboBox" ? editor is not null && vm.GetAxamlStructuralCapability(vm.SelectedControl!.Id).CanEditCollection
+                    : editor is null && vm.CollectionReadOnlyReason(vm.SelectedControl!, "Items").Length != 0, "Imported collection capability differs from reviewed structural scope.");
                 if (editor is not null) vm.CloseCollectionEditor(editor);
             });
         Check("NativeScalarValues", () =>

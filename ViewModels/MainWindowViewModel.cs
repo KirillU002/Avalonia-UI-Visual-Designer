@@ -1449,15 +1449,15 @@ public partial class MainWindowViewModel : ObservableObject
     public string ExportCacheStatusForeground => IsExportCacheStale ? "#78350F" : "#166534";
     public bool HasMultipleSelection => SelectedControlIds.Count > 1;
     public int SelectionCount => SelectedControlIds.Count;
-    public bool CanDuplicateSelected => SelectedControlIds.Count > 0;
+    public bool CanDuplicateSelected => !IsAxamlRoundTripDocument && SelectedControlIds.Count > 0;
     public bool CanLockSelected => GetSelectedControls().Any(control => !control.IsLocked);
     public bool CanUnlockSelected => GetSelectedControls().Any(control => control.IsLocked);
-    public bool CanGroupSelection => CanGroupSelectedControls();
-    public bool CanUngroupSelection => GetVisibleEditableSelectedRootControls().Any(control => control.Type == DesignerControlTypes.Group);
+    public bool CanGroupSelection => !IsAxamlRoundTripDocument && CanGroupSelectedControls();
+    public bool CanUngroupSelection => !IsAxamlRoundTripDocument && GetVisibleEditableSelectedRootControls().Any(control => control.Type == DesignerControlTypes.Group);
     public bool CanSelectedControlHostChildren => CanHostChildren(SelectedControl);
-    public bool CanCopySelection => SelectedControlIds.Count > 0;
+    public bool CanCopySelection => !IsAxamlRoundTripDocument && SelectedControlIds.Count > 0;
     public bool CanSaveSelectionAsTemplate => SelectedControlIds.Count > 0;
-    public bool CanPasteSelection => _clipboardDocument is not null;
+    public bool CanPasteSelection => !IsAxamlRoundTripDocument && _clipboardDocument is not null;
     public bool CanCopyStyle => SelectedControl is not null;
     public bool CanPasteStyle => _styleClipboard is not null && GetVisibleEditableSelectedRootControls().Count > 0;
     public bool CanChangeZOrder => GetEditableSelectedRootControls().Count > 0;
@@ -5189,6 +5189,8 @@ public partial class MainWindowViewModel : ObservableObject
         if (control is null)
             return DesignerLayoutModes.Absolute;
 
+        if(IsAxamlRoundTripDocument&&AxamlStructuralPolicy.IsPanel(AxamlSourceType(control)))return SourceLayoutMode(AxamlSourceType(control));
+
         if (FormDesigner.DesignerSystem.Metadata.StandardControlProperties.IsContainer(control.Type)) return FormDesigner.DesignerSystem.Metadata.StandardControlProperties.ContainerMode(control.Type);
         return string.IsNullOrWhiteSpace(control.ChildLayoutMode)
             ? DesignerLayoutModes.NormalizeMode(GetDescriptor(control.Type).ChildLayoutMode)
@@ -6681,8 +6683,9 @@ public partial class MainWindowViewModel : ObservableObject
 
         foreach (var control in Controls.Where(CanHostChildren).Where(control => !control.IsLocked))
         {
+            if(IsAxamlRoundTripDocument&&AxamlControlMetadata.Find(AxamlSourceType(control))?.ContainerKind==AxamlContainerKind.None)continue;
             var position = GetAbsolutePosition(control);
-            var size = UsesNativeLayout && NativeLayoutBounds.TryGetValue(control.Id, out var actual) ? actual.Size : new Avalonia.Size(control.Width, control.Height);
+            var size = (UsesNativeLayout || IsAxamlRoundTripDocument) && DesignerLayoutBounds.TryGetValue(control.Id, out var actual) ? actual.Size : new Avalonia.Size(control.Width, control.Height);
             var inside = (!UsesNativeLayout || control.IsVisible) && absoluteX >= position.X
                 && absoluteX <= position.X + size.Width
                 && absoluteY >= position.Y
@@ -6714,6 +6717,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     public void ReparentControl(DesignControlModel control, string? newParentId, double absoluteX, double absoluteY)
     {
+        if(IsAxamlRoundTripDocument){ReparentAxamlControl(control.Id,newParentId,absoluteX,absoluteY);return;}
         var normalizedParentId = NormalizeId(newParentId);
         var contentParent=GetControl(normalizedParentId);
         if(contentParent is not null && FormDesigner.DesignerSystem.Metadata.StandardControlProperties.IsSingleChild(contentParent.Type)
@@ -6910,6 +6914,11 @@ public partial class MainWindowViewModel : ObservableObject
         bool bypassGridSnap,
         string targetDocumentId)
     {
+        if(IsAxamlRoundTripDocument)
+        {
+            if(!IsActiveDocumentTarget(targetDocumentId,out _)){StatusText="Drop отменён: активная форма изменилась.";return null;}
+            return InsertAxamlControl(type,parentId,x,y);
+        }
         if (_activeAxamlRoundTripDocument is { } axaml && (!axaml.SourceMap.CanInsertControls
             || !axaml.CapabilityReport.CanSafelyPatch || !string.IsNullOrEmpty(parentId)
             || !AxamlRoundTripPropertyMap.CanInsertControl(type)))
@@ -6949,6 +6958,8 @@ public partial class MainWindowViewModel : ObservableObject
 
     public DesignControlModel CreateControl(string type, double x, double y, string? parentId = null, bool bypassGridSnap = false)
     {
+        if(IsAxamlRoundTripDocument)return InsertAxamlControl(type,parentId??(CanHostChildren(SelectedControl)?SelectedControl?.Id:SelectedControl?.ParentId),x,y)
+            ??throw new InvalidOperationException(StatusText);
         return CreateControlCore(type, x, y, parentId, bypassGridSnap, ActiveDocumentId, "CreateControl");
     }
 
@@ -9466,6 +9477,7 @@ public partial class MainWindowViewModel : ObservableObject
         if (!result.CapabilityReport.CanOpen)
             throw new InvalidOperationException(string.Join(Environment.NewLine, result.CapabilityReport.Entries.Select(entry => entry.Message)));
 
+        _axamlBufferSource=null;
         _activeAxamlRoundTripDocument = result.RoundTripDocument;
         foreach (var diagnostic in result.Diagnostics)
         {
@@ -9513,11 +9525,14 @@ public partial class MainWindowViewModel : ObservableObject
     public bool CanMoveAxamlControl(DesignControlModel control) =>
         CanEditAxamlProperty(control, nameof(control.X)) && CanEditAxamlProperty(control, nameof(control.Y));
 
+    public bool CanDragAxamlControl(DesignControlModel control) => !IsAxamlRoundTripDocument||CanMoveAxamlControl(control)||GetAxamlStructuralCapability(control.Id).CanReparent;
+
     public bool CanResizeAxamlControl(DesignControlModel control) =>
         CanEditAxamlProperty(control, nameof(control.Width)) && CanEditAxamlProperty(control, nameof(control.Height));
 
     private PropertyGridRowViewModel ApplyAxamlPropertyCapability(PropertyGridRowViewModel row)
     {
+        if(IsAxamlRoundTripDocument&&row.Key=="Items"&&SelectedControl is {} collectionOwner&&ImportedCollectionKind(collectionOwner,"Items").Length>0)return row;
         if (_activeAxamlRoundTripDocument is null)
             return row;
         var selected = GetSelectedControls();
@@ -9550,13 +9565,14 @@ public partial class MainWindowViewModel : ObservableObject
 
         PersistActiveFormDocumentState(refreshProjectViews: false);
         return _axamlPatchWriter.CreatePatch(
-            _activeAxamlRoundTripDocument,
+            _axamlBufferSource??_activeAxamlRoundTripDocument,
             CreateDocumentFileModel(),
-            currentSourceText);
+            currentSourceText, CreateAxamlDescriptorFragment);
     }
 
     public void MarkAxamlRoundTripSaved(string path, string patchedText, string? acknowledgedSnapshot = null)
     {
+        if(_axamlBufferSource is not null){AcknowledgeAxamlStructure(path,patchedText,acknowledgedSnapshot);return;}
         if (_activeAxamlRoundTripDocument is null)
             throw new InvalidOperationException("AXAML round-trip context is unavailable.");
 
@@ -9598,11 +9614,13 @@ public partial class MainWindowViewModel : ObservableObject
 
     public void SetActiveAxamlTextEncoding(System.Text.Encoding encoding)
     {
+        _axamlBufferSource?.SetTextEncoding(encoding);
         _activeAxamlRoundTripDocument?.SetTextEncoding(encoding);
     }
 
     private void ClearAxamlRoundTripContext()
     {
+        _axamlBufferSource=null;
         if (_activeAxamlRoundTripDocument is null)
             return;
 
@@ -10856,7 +10874,7 @@ public partial class MainWindowViewModel : ObservableObject
             || string.Equals(interaction.TargetControlName, control.Name, StringComparison.OrdinalIgnoreCase));
         yield return CreateReadOnlyRow(PropertyGridCategoryInteraction, "Interactions", "Interactions", interactionCount.ToString(CultureInfo.InvariantCulture), "Rules that use this control.");
 
-        var standardRows = StandardItemsRows(control).Concat(HierarchicalCollectionRows(control)).ToList();
+        var standardRows = StandardItemsRows(control).Concat(HierarchicalCollectionRows(control)).Concat(ImportedCollectionRows(control)).ToList();
         foreach (var row in standardRows) yield return row;
         var descriptorProperties = GetCustomDescriptorProperties(control).Where(property => !standardRows.Any(row => row.Key == property.Key)).ToList();
         foreach (var descriptor in descriptorProperties)
@@ -12027,6 +12045,7 @@ public partial class MainWindowViewModel : ObservableObject
     [RelayCommand]
     private void DeleteSelected()
     {
+        if(IsAxamlRoundTripDocument){RemoveAxamlControls(GetSelectedRootControls().Select(c=>c.Id));return;}
         var roots = GetSelectedRootControls().ToList();
         if (roots.Count == 0)
             return;
@@ -12080,6 +12099,7 @@ public partial class MainWindowViewModel : ObservableObject
     [RelayCommand]
     private void DuplicateSelected()
     {
+        if(IsAxamlRoundTripDocument){StatusText="Дублирование source subtree пока read-only. Используйте безопасную вставку из Toolbox.";return;}
         var selectedRoots = GetSelectedRootControls().ToList();
         if (selectedRoots.Count == 0)
             return;
@@ -12548,6 +12568,8 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void MoveSelectedStackChild(int direction)
     {
+        if(IsAxamlRoundTripDocument&&SelectedControl is {} sourceChild)
+        {var siblings=GetChildControls(sourceChild.ParentId).OrderBy(c=>c.StackOrder).ToList();ReorderAxamlControl(sourceChild.Id,siblings.FindIndex(c=>c.Id==sourceChild.Id)+direction);return;}
         if (SelectedControl is null || GetLayoutModeForParent(SelectedControl.ParentId) != DesignerLayoutModes.Stack)
             return;
 
@@ -12681,6 +12703,7 @@ public partial class MainWindowViewModel : ObservableObject
     [RelayCommand]
     private void GroupSelection()
     {
+        if(IsAxamlRoundTripDocument){StatusText="Group для импортированного AXAML пока read-only.";return;}
         var selectedRoots = GetVisibleEditableSelectedRootControls().ToList();
         if (selectedRoots.Count < 2)
             return;
@@ -12768,6 +12791,7 @@ public partial class MainWindowViewModel : ObservableObject
     [RelayCommand]
     private void UngroupSelection()
     {
+        if(IsAxamlRoundTripDocument){StatusText="Ungroup для импортированного AXAML пока read-only.";return;}
         var selectedGroups = GetVisibleEditableSelectedRootControls()
             .Where(control => control.Type == DesignerControlTypes.Group)
             .ToList();
@@ -12987,6 +13011,7 @@ public partial class MainWindowViewModel : ObservableObject
     [RelayCommand]
     private void PasteSelection()
     {
+        if(IsAxamlRoundTripDocument){StatusText="Вставка source subtree из JSON clipboard пока read-only.";return;}
         if (_clipboardDocument is null || _clipboardDocument.Controls.Count == 0)
             return;
 
@@ -18190,6 +18215,14 @@ public partial class MainWindowViewModel : ObservableObject
 
         public void AppendXaml(string typeKey, IXamlWriter writer, IDesignControlNode control, int indentLevel, IXamlExportContext context)
         {
+            if(_owner._isAxamlFragmentExport&&typeKey is "Grid" or "StackPanel" or "Canvas"&&control is DesignControlNodeAdapter sourceNode)
+            {
+                var fragment=new StringBuilder();var model=sourceNode.Model;
+                _owner.AppendLayoutHostOpening(fragment,model,indentLevel,model.Name,_owner.PlacementAttributes(model),CommonVisibilityAttributes(model),clipCanvas:false);
+                fragment.AppendLine($"{Indent(indentLevel)}</{_owner.GetLayoutHostClosingTag(model)}>");
+                foreach(var line in fragment.ToString().Replace("\r\n","\n",StringComparison.Ordinal).Split('\n'))if(line.Length>0)writer.WriteLine(0,line);
+                return;
+            }
             if (control is DesignControlNodeAdapter metadataNode
                 && FormDesigner.DesignerSystem.Metadata.StandardControlProperties.SupportedTypes.ContainsKey(typeKey))
             {
@@ -18412,7 +18445,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     private string ResolveBrushValue(DesignControlModel control, string currentValue, Func<ThemeControlDefaults, string?> selector, Func<ThemeControlDefaults, string?> keySelector)
     {
-        if (IsCompactXamlExport)
+        if (IsCompactXamlExport || _isAxamlFragmentExport)
             return EscapeXml(currentValue);
 
         var defaults = DesignerThemeCatalog.GetControlDefaults(control.Type, FormTheme);
@@ -18423,7 +18456,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     private string ResolveBrushValue(string currentValue, string? defaultValue, string? resourceKey)
     {
-        if (IsCompactXamlExport)
+        if (IsCompactXamlExport || _isAxamlFragmentExport)
             return EscapeXml(currentValue);
 
         return !string.IsNullOrWhiteSpace(defaultValue)
@@ -21926,6 +21959,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void RestoreFromSnapshot(string snapshot)
     {
+        if(_axamlBufferSource is not null)RefreshAxamlStructureAfterHistory(JsonSerializer.Deserialize<DesignerDocumentFileModel>(snapshot,JsonOptions)!);
         // Undo/redo хранит состояние целиком в JSON.
         // При восстановлении проще и надежнее пересобрать документ полностью.
         var currentPath = CurrentDocumentPath;
@@ -22651,6 +22685,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void ReorderSelection(bool toFront)
     {
+        if(IsAxamlRoundTripDocument){if(SelectedControl is {} sourceControl)ReorderAxamlControl(sourceControl.Id,toFront?int.MaxValue:0);return;}
         var selectedRoots = GetEditableSelectedRootControls().ToList();
         if (selectedRoots.Count == 0)
             return;

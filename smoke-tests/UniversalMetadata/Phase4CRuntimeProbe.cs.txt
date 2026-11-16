@@ -1,0 +1,46 @@
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.LogicalTree;
+using Avalonia.VisualTree;
+using System;
+using System.IO;
+using System.Linq;
+using System.Text.Json;
+using System.Threading.Tasks;
+using System.Collections.Generic;
+internal static class MetadataRuntimeProbe
+{
+ public static void Attach(IClassicDesktopStyleApplicationLifetime desktop,Window window){window.ShowInTaskbar=false;window.ShowActivated=false;window.Opened+=async(_,_)=>{
+  try{
+   await Task.Delay(120);window.UpdateLayout();
+   var initial=window.GetVisualDescendants().OfType<Control>().ToArray();
+   var combo=initial.OfType<ComboBox>().Single(c=>c.Name=="Combo");combo.IsDropDownOpen=true;await Task.Delay(120);window.UpdateLayout();
+   var all=window.GetVisualDescendants().OfType<Control>().Concat(initial.OfType<ItemsControl>().SelectMany(c=>c.Items.OfType<Control>())).Distinct().ToArray();
+   using var input=JsonDocument.Parse(File.ReadAllText(Environment.GetEnvironmentVariable("UNIVERSAL4C_RUNTIME_EXPECTATIONS")!));
+   var controls=new Dictionary<string,Control>();var rows=input.RootElement.EnumerateArray().ToArray();
+   foreach(var row in rows){var id=row.GetProperty("Id").GetString()!;var name=row.GetProperty("Name").GetString();var type=row.GetProperty("Type").GetString();var matches=all.Where(c=>c.Name==name&&c.GetType().Name==type).ToArray();
+    var scoped=window.FindControl<Control>(name!);
+    if(scoped is null||scoped.GetType().Name!=type||!matches.Contains(scoped))throw new Exception("Source NameScope match missing: "+name+":"+type);
+    if(matches.Length>1)Console.WriteLine("NATIVE_TEMPLATE_NAME_COLLISION "+name+":"+type+" candidates="+matches.Length+"; source resolved by Window NameScope");
+    controls[id]=scoped;}
+   foreach(var row in rows){var parent=row.GetProperty("ParentId").GetString();if(!string.IsNullOrEmpty(parent)&&!controls[row.GetProperty("Id").GetString()!].GetLogicalAncestors().Contains(controls[parent]))throw new Exception("Native parent mismatch: "+row.GetProperty("Name").GetString());}
+   foreach(var row in rows)foreach(var key in new[]{"CornerRadius","Padding","BorderThickness"})if(row.GetProperty("Expected"+key).ValueKind==JsonValueKind.Number){
+    var control=controls[row.GetProperty("Id").GetString()!];var value=row.GetProperty("Expected"+key).GetDouble();
+    object expected=key=="CornerRadius"?(object)new CornerRadius(value):new Thickness(value);
+    if(!Equals(control.GetType().GetProperty(key)!.GetValue(control),expected))throw new Exception("Pending native literal reset: "+control.Name+"."+key);
+   }
+   foreach(var group in rows.Where(r=>!string.IsNullOrEmpty(r.GetProperty("ParentId").GetString())).GroupBy(r=>r.GetProperty("ParentId").GetString()!)){
+    var expected=group.Select(r=>controls[r.GetProperty("Id").GetString()!]).ToArray();var set=expected.ToHashSet();
+    var actual=controls[group.Key].GetLogicalDescendants().OfType<Control>().Where(set.Contains).ToArray();
+    if(!actual.SequenceEqual(expected))throw new Exception("Native child order mismatch: "+controls[group.Key].Name);
+   }
+   var moved=all.OfType<Button>().Single(c=>c.Name=="Moved");if(Canvas.GetLeft(moved)!=30||Canvas.GetTop(moved)!=40||!Equals(moved.Tag,"unknown"))throw new Exception("Moved raw control lost properties");
+   if(all.Any(c=>c.Name=="Deleted"))throw new Exception("Deleted control still exists");
+   var list=all.OfType<ListBox>().Single(c=>c.Name=="List");if(combo.Items.Count!=3||list.Items.Count!=3)throw new Exception("Structural collection items lost");
+   if(combo.Items.OfType<ComboBoxItem>().Any(c=>c.GetVisualRoot()is null))throw new Exception("Combo items not realized in native popup");
+   combo.SelectedIndex=1;list.SelectedIndex=1;if(combo.SelectedIndex!=1||list.SelectedIndex!=1)throw new Exception("Native selection failed");combo.IsDropDownOpen=false;
+   File.WriteAllText(Environment.GetEnvironmentVariable("METADATA_RUNTIME_RESULT")!,"PASS structural native nodes="+controls.Count+"; eight inserted types; source parent/order/Canvas/raw Tag; Combo/List=3; native selection/popup");
+  }catch(Exception e){File.WriteAllText(Environment.GetEnvironmentVariable("METADATA_RUNTIME_RESULT")!,"FAIL "+e);}finally{window.Close();desktop.Shutdown();}
+ };}
+}

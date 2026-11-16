@@ -180,8 +180,23 @@ internal static partial class Program
 
     private static DataGridRegressionPreview ShowDataGridRegressionPreview(MainWindowViewModel vm, bool axaml, Action<PreviewWindow>? beforeShow = null)
     {
-        var window = axaml ? new PreviewWindow(vm.GenerateExportedAxamlPreviewSnapshot(), vm.Registry)
-            : new PreviewWindow(vm.CreatePreviewDocumentSnapshot(), vm.Registry, vm.CreatePreviewProjectFormsSnapshot(), vm.ActiveFormDocument!.Id);
+        PreviewWindow window;
+        if(axaml)
+        {
+            try{window=new PreviewWindow(vm.GenerateExportedAxamlPreviewSnapshot(),vm.Registry);}
+            catch(Exception error) when(vm.ActiveAxamlSourceDocument is not null)
+            {
+                // Mirror MainWindow's existing generation-failure path before it
+                // attaches the safe imported native projection. Never retry export.
+                Console.WriteLine("PREVIEW_IMPORTED_GENERATION_FALLBACK "+error.GetType().Name);
+                window=new PreviewWindow(new ExportedAxamlPreviewModel{
+                    SourceKind="ImportedAxaml",Document=vm.CreatePreviewDocumentSnapshot(),ProjectForms=vm.CreatePreviewProjectFormsSnapshot(),
+                    ActiveFormId=vm.ActiveFormDocument?.Id??"",GenerationFailure=error.Message,
+                    FallbackToLegacyPreviewOnError=vm.FallbackToLegacyPreviewOnAxamlError,ShowGeneratedAxamlOnError=vm.ShowGeneratedAxamlOnPreviewError
+                },vm.Registry);
+            }
+        }
+        else window=new PreviewWindow(vm.CreatePreviewDocumentSnapshot(),vm.Registry,vm.CreatePreviewProjectFormsSnapshot(),vm.ActiveFormDocument!.Id);
         if (vm.ActiveAxamlSourceDocument is { } source) window.SetImportedSourceContext(source);
         window.Position = new PixelPoint(-3000, -3000); window.ShowInTaskbar = false; window.ShowActivated = false;
         beforeShow?.Invoke(window); window.Show();

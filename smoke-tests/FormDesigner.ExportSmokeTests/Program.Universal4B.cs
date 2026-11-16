@@ -73,8 +73,9 @@ internal static partial class Program
         foreach(var mode in new[]{false,true})Check("PendingCanvasInsertion_"+mode,()=>
         {
             var vm=Universal4AVm("<a:Canvas><a:Button Name='Existing' Content='Existing'/></a:Canvas>");
+            var originalBuffer=vm.ActiveAxamlSourceDocument!.OriginalText;
             var added=vm.CreateControl("Button",23,37);added.Text="Pending";added.Background="#123456";added.IsVisible=false;added.Opacity=.6;
-            RequireCapability(!vm.ActiveAxamlSourceDocument!.SourceMap.TryGet(added.Id,out _),"Fixture is not a pending insertion.");
+            RequireCapability(vm.ActiveAxamlSourceDocument!.SourceMap.TryGet(added.Id,out _)&&vm.CreateActiveAxamlPatch(originalBuffer).HasChanges,"Working source map or pending insertion lost.");
             using var preview=ShowDataGridRegressionPreview(vm,mode);
             var native=preview.Window.GetVisualDescendants().OfType<Button>().Single(b=>b.Content?.ToString()=="Pending");
             RequireCapability(native.Background is Avalonia.Media.ISolidColorBrush brush&&brush.Color==Avalonia.Media.Color.Parse("#123456")

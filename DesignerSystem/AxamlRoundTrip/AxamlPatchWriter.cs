@@ -10,12 +10,13 @@ namespace FormDesigner.DesignerSystem.AxamlRoundTrip;
 /// Produces minimal source edits for the subset imported by AxamlImportService.
 /// It never serializes a complete document and treats unsupported syntax as opaque text.
 /// </summary>
-public sealed class AxamlPatchWriter
+public sealed partial class AxamlPatchWriter
 {
     public AxamlPatchResult CreatePatch(
         AxamlRoundTripDocument roundTripDocument,
         DesignerDocumentFileModel document,
-        string? currentSourceText = null)
+        string? currentSourceText = null,
+        Func<DesignerControlFileModel, string, string>? fragmentFactory = null)
     {
         ArgumentNullException.ThrowIfNull(roundTripDocument);
         ArgumentNullException.ThrowIfNull(document);
@@ -33,6 +34,9 @@ public sealed class AxamlPatchWriter
             diagnostics.Add(new AxamlRoundTripDiagnostic("AXAML_PATCH_BLOCKED", AxamlDiagnosticSeverity.Warning, $"capability={roundTripDocument.CapabilityReport.Level}"));
             return AxamlPatchResult.Unsafe(source, diagnostics);
         }
+
+        if (NeedsStructuralPatch(roundTripDocument, document))
+            return CreateStructuralPatch(roundTripDocument, document, fragmentFactory);
 
         var currentById = document.Controls
             .Where(control => !string.IsNullOrWhiteSpace(control.Id))
@@ -154,12 +158,12 @@ public sealed class AxamlPatchWriter
         return result;
     }
 
-    private static void AppendPropertyEdits(string source, AxamlSourceReference reference, DesignControlModel current, ICollection<AxamlTextEdit> edits)
+    private static void AppendPropertyEdits(string source, AxamlSourceReference reference, DesignControlModel current, ICollection<AxamlTextEdit> edits, bool skipPlacement = false)
     {
         var additions = new List<(string Name, string Value)>();
         foreach (var property in AxamlRoundTripPropertyMap.PropertiesFor(reference.Element.LocalName))
         {
-            if (!reference.Capability.CanEditProperty(property.Key))
+            if (skipPlacement && Placement(property.Key) || !reference.Capability.CanEditProperty(property.Key))
                 continue;
 
             if (IsMetadataReset(property, reference, current))

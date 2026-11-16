@@ -149,6 +149,12 @@ public static partial class AxamlLayoutProjection
                 PrepareOffscreen(items);
             measurementRoot.Measure(new Size(width, height));
             measurementRoot.Arrange(new Rect(0, 0, width, height));
+            source.MeasuredGridTracks.Clear();
+            foreach(var pair in native.Where(p=>p.Value is Grid))
+            {
+                var measured=(Grid)pair.Value;
+                source.MeasuredGridTracks[pair.Key]=(measured.RowDefinitions.Select(r=>r.ActualHeight).ToArray(),measured.ColumnDefinitions.Select(c=>c.ActualWidth).ToArray());
+            }
             return native.ToDictionary(pair => pair.Key, pair =>
             {
                 for (var child = models[pair.Key]; !string.IsNullOrEmpty(child.ParentId); child = models[child.ParentId])

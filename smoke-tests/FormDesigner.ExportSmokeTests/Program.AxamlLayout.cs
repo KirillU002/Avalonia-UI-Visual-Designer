@@ -76,7 +76,8 @@ internal static partial class Program
         stack.LayoutSpacing = 18;
         RequireCapability(vm.CreateActiveAxamlPatch().Edits.Count == 1 && vm.CreateActiveAxamlPatch().PatchedText.Contains("Spacing=\"18\""), "Stack property patch incorrect.");
         vm.Controls.Single(c => c.Name == "First").StackOrder = 100;
-        RequireCapability(!vm.CreateActiveAxamlPatch().CanApply, "Unsupported StackPanel reordering must be blocked.");
+        var reordered=vm.CreateActiveAxamlPatch();
+        RequireCapability(reordered.CanApply&&reordered.PatchedText.IndexOf("Name=\"Second\"",StringComparison.Ordinal)<reordered.PatchedText.IndexOf("Name=\"First\"",StringComparison.Ordinal), "Reviewed StackPanel source reordering failed.");
         var auto = new AxamlImportService().Import("<Window><StackPanel><Button Name=\"Auto\" Content=\"Measure me\"/><TextBox Name=\"AutoInput\" Text=\"Input\"/></StackPanel></Window>");
         vm.LoadAxamlImportedDocument(auto);
         vm.AxamlLayoutBounds = AxamlLayoutProjection.Arrange(auto.RoundTripDocument, vm.Controls, 600, 400);

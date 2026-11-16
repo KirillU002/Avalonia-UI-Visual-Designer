@@ -7841,7 +7841,7 @@ public partial class MainWindow : Window
             VM.SelectSingleControl(model);
 
         _dragSelectionRoots.Clear();
-        _dragSelectionRoots.AddRange(VM.GetEditableSelectedRootControls().Where(VM.CanMoveAxamlControl));
+        _dragSelectionRoots.AddRange(VM.GetEditableSelectedRootControls().Where(VM.CanDragAxamlControl));
         if (_dragSelectionRoots.Count == 0)
         {
             VM.TraceDocumentDebug(
@@ -7909,6 +7909,16 @@ public partial class MainWindow : Window
         var dx = position.X - _dragStartPointerPosition.X;
         var dy = position.Y - _dragStartPointerPosition.Y;
         var keyModifiers = e.KeyModifiers;
+
+        if(VM.IsAxamlRoundTripDocument)
+        {
+            // Structural drag is a visual preview. Escape/capture loss must not
+            // leave literal Canvas edits in the document before the drop commits.
+            foreach(var root in _dragSelectionRoots)
+                if(_wrapperByControlId.TryGetValue(root.Id,out var shell)&&VM.AxamlLayoutBounds.TryGetValue(root.Id,out var frame))
+                {Canvas.SetLeft(shell,frame.X+dx);Canvas.SetTop(shell,frame.Y+dy);}
+            ClearGuideOverlay();RenderLayoutDropHint(VM.FindDeepestContainerAt(position.X,position.Y),position);e.Handled=true;return;
+        }
 
         foreach (var root in _dragSelectionRoots)
         {
@@ -8014,6 +8024,12 @@ public partial class MainWindow : Window
             var absolutePosition = VM.IsAbsoluteLayoutParent(draggedRoot.ParentId)
                 ? VM.GetAbsolutePosition(draggedRoot)
                 : (X: releasePosition.X - draggedRoot.Width / 2, Y: releasePosition.Y - draggedRoot.Height / 2);
+            if(VM.IsAxamlRoundTripDocument)
+            {
+                var origin=VM.GetAbsolutePosition(draggedRoot);
+                absolutePosition=(origin.X+releasePosition.X-_dragStartPointerPosition.X,origin.Y+releasePosition.Y-_dragStartPointerPosition.Y);
+                if(_dragRootStartPositions.TryGetValue(draggedRoot.Id,out var saved)){draggedRoot.X=saved.X;draggedRoot.Y=saved.Y;}
+            }
             var probeX = releasePosition.X;
             var probeY = releasePosition.Y;
             var targetContainer = VM.FindDeepestContainerAt(probeX, probeY);

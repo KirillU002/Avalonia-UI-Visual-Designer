@@ -48,7 +48,8 @@ public partial class MainWindowViewModel
     }
     public string CollectionReadOnlyReason(DesignControlModel control, string property)
     {
-        if (IsAxamlRoundTripDocument) return "Структура импортированного AXAML сохраняется без регенерации; Add/Remove/Reorder пока read-only.";
+        if (IsAxamlRoundTripDocument) return ImportedCollectionKind(control,property).Length>0&&GetAxamlStructuralCapability(control.Id).CanEditCollection
+            ?"":"Структурное редактирование этого source Items/Binding/Template не поддерживается; XML сохраняется.";
         if (!CollectionControlFactory.Supports(control.Type) || string.IsNullOrEmpty(CollectionItemsContract.ItemKind(control.Type, property))) return "Нет проверенного адаптера коллекции.";
         if (property == "Items" && CollectionItemsContract.HasExternalSource(control)) return "ItemsSource управляется Binding/BindingSource либо содержит неизвестное значение. Локальные Items не заменяют источник.";
         try
@@ -80,6 +81,7 @@ public partial class MainWindowViewModel
     { if (ActiveCollectionEditor == session) { RefreshStructureSelection(); RebuildPropertyGrid("CollectionItemSelection"); } }
     internal bool WriteCollection(CollectionEditorSession session, CollectionItemsContract data, bool propertyEdit)
     {
+        if(IsAxamlRoundTripDocument)return WriteImportedCollection(session,data);
         if (!session.IsCurrent || GetControl(session.OwnerId) is not { } owner || CollectionReadOnlyReason(owner, session.PropertyName).Length != 0) return false;
         CollectionItemsContract.Validate(data, session.ItemKind);
         ValidateCollectionItemNames(session, data);
@@ -170,6 +172,10 @@ public partial class MainWindowViewModel
                     try { if (ActiveCollectionEditor?.EditorId == editorId) ActiveCollectionEditor.SetValue(id, key, reset); RebuildPropertyGrid("CollectionItemReset"); } finally { CommitUndoBatch(); }
                 }, false);
             row.ResetDescription = "Восстановить значение текстового/булевого поля контракта элемента; не Avalonia.ClearValue.";
+            if(IsAxamlRoundTripDocument)
+            {
+                row.ProtectValue("В imported Items свойства редактируются выбором самого элемента в Explorer; структурные кнопки редактора доступны отдельно.");
+            }
             yield return row;
         }
     }
