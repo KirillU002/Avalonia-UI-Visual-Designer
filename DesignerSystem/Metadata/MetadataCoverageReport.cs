@@ -45,7 +45,7 @@ public static class MetadataCoverageReport
                 descriptor is not null ? "Descriptor adapter" : "Not enabled", descriptor is not null ? "Export adapter" : "Not enabled",
                 descriptor is not null ? "Descriptor adapter" : "Not enabled",type.Assembly.GetName().Name,category,
                 root?"Form root contract":descriptor is not null?"Existing project contract":"No enabled JSON descriptor",
-                runtimeVerifiedTypes?.Contains(type.Name)==true?"PASS native tree and behavior; Phase5A":descriptor is not null?"Adapter; see regression evidence":"Not verified"));
+                runtimeVerifiedTypes?.Contains(type.Name)==true?"PASS native tree and behavior; acceptance evidence provided":descriptor is not null?"Adapter; see regression evidence":"Not verified"));
             // Detailed property audit is limited to types with an actual editing/root workflow.
             if (descriptor is null && imported is null && !root) continue;
             var sourceProperties = AxamlRoundTripPropertyMap.PropertiesFor(type.Name);

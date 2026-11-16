@@ -46,7 +46,7 @@ public partial class MainWindowViewModel
                     else StatusText = "Введите неотрицательный размер; Infinity допустим только для MaxWidth/MaxHeight.";
                 });
         }
-        if (!CanHostChildren(control)) yield break;
+        if (!CanHostChildren(control) || FormDesigner.DesignerSystem.Metadata.StandardControlProperties.IsContainer(control.Type)) yield break;
         if (!layoutOnly)
         {
             yield return CreateEnumRow(PropertyGridCategoryLayout, nameof(control.ChildLayoutMode), "Children Layout", GetLayoutModeForControl(control), NativeContainerModes,
@@ -164,6 +164,14 @@ public partial class MainWindowViewModel
                 DockSide: dock, CanvasPosition: canvas, InsertionIndicator: indicator, GrabOffset: grabOffset,
                 BypassSnap: bypassSnap, UsesContainerHitTest: true);
 
+        if(host.Mode==DesignerLayoutModes.Content){
+            if(host.Children.Any(c=>c.Id!=moving?.Id))return Invalid("Content занят. Используйте вложенный Layout или переместите существующий дочерний компонент.",hostId,host.Mode,host.Bounds);
+            return Target(0,"Left",host.Bounds);
+        }
+        if(host.Mode==DesignerLayoutModes.Uniform){
+            var next=host.Children.FirstOrDefault(c=>c.Id!=moving?.Id&&(point.Y<c.Bounds.Center.Y-1||Math.Abs(point.Y-c.Bounds.Center.Y)<=c.Bounds.Height/2&&point.X<c.Bounds.Center.X));
+            return Target(next is null?host.Children.Count:host.Children.ToList().IndexOf(next),"Left",next?.Bounds??host.Bounds);
+        }
         if (host.Mode == DesignerLayoutModes.Grid)
             return ResolveGridCellDropTarget(point, moving, hostId) with { UsesContainerHitTest = true, GrabOffset = grabOffset, BypassSnap = bypassSnap };
         if (host.Mode == DesignerLayoutModes.Absolute)

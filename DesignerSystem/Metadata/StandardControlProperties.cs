@@ -30,7 +30,9 @@ public static class StandardControlProperties
             ["RadioButton"] = typeof(RadioButton), ["NumericUpDown"] = typeof(NumericUpDown), ["Calendar"] = typeof(Avalonia.Controls.Calendar),
             ["DatePicker"] = typeof(DatePicker), ["TimePicker"] = typeof(TimePicker), ["Separator"] = typeof(Separator),
             ["ScrollBar"] = typeof(ScrollBar), ["GridSplitter"] = typeof(GridSplitter), ["Rectangle"] = typeof(Rectangle),
-            ["Ellipse"] = typeof(Ellipse), ["HyperlinkButton"] = typeof(HyperlinkButton), ["RepeatButton"] = typeof(RepeatButton)
+            ["Ellipse"] = typeof(Ellipse), ["HyperlinkButton"] = typeof(HyperlinkButton), ["RepeatButton"] = typeof(RepeatButton),
+            ["Viewbox"] = typeof(Viewbox), ["UniformGrid"] = typeof(UniformGrid), ["Expander"] = typeof(Expander), ["ScrollViewer"] = typeof(ScrollViewer),
+            ["Line"] = typeof(Line), ["Polygon"] = typeof(Polygon), ["Polyline"] = typeof(Polyline), ["Path"] = typeof(Path)
         }).ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal));
     private static readonly string[] CommonSafeKeys = { "IsEnabled", "MinWidth", "MinHeight", "MaxWidth", "MaxHeight", "Padding", "BorderBrush", "BorderThickness",
         "CornerRadius", "HorizontalContentAlignment", "VerticalContentAlignment", "FontStyle", "FontStretch", "ClipToBounds" };
@@ -50,12 +52,20 @@ public static class StandardControlProperties
         ["Rectangle"] = new[]{"Fill","Stroke","StrokeThickness","Stretch","RadiusX","RadiusY","StrokeDashOffset","StrokeLineCap","StrokeJoin"},
         ["Ellipse"] = new[]{"Fill","Stroke","StrokeThickness","Stretch","StrokeDashOffset","StrokeLineCap","StrokeJoin"},
         ["HyperlinkButton"] = new[]{"NavigateUri","IsVisited","ClickMode"},
-        ["RepeatButton"] = new[]{"Delay","Interval","ClickMode"}
+        ["RepeatButton"] = new[]{"Delay","Interval","ClickMode"},
+        ["Viewbox"] = new[]{"Stretch","StretchDirection"},
+        ["UniformGrid"] = new[]{"Rows","Columns","FirstColumn"},
+        ["Expander"] = new[]{"Header","IsExpanded","ExpandDirection"},
+        ["ScrollViewer"] = new[]{"HorizontalScrollBarVisibility","VerticalScrollBarVisibility","AllowAutoHide"},
+        ["Line"] = new[]{"StartPoint","EndPoint","Fill","Stroke","StrokeThickness","StrokeDashArray","StrokeDashOffset","StrokeLineCap","StrokeJoin","Stretch"},
+        ["Polygon"] = new[]{"Points","Fill","Stroke","StrokeThickness","StrokeDashArray","Stretch","StrokeJoin"},
+        ["Polyline"] = new[]{"Points","Fill","Stroke","StrokeThickness","StrokeDashArray","Stretch","StrokeJoin"},
+        ["Path"] = new[]{"Data","Fill","Stroke","StrokeThickness","StrokeDashArray","Stretch","StrokeJoin"}
     };
     // Cache only non-collectible, explicitly shipped types; never plugin Type/Assembly keys.
     private sealed record SupportEntry(IReadOnlyList<AvaloniaPropertyInfo> Properties, IReadOnlySet<string> NativeKeys);
     private static readonly Lazy<IReadOnlyDictionary<string, SupportEntry>> Supported = new(() =>
-        SupportedTypes.ToDictionary(pair => pair.Key, pair => new SupportEntry(Keys[pair.Key].Concat(PilotTypes.ContainsKey(pair.Key) ? Array.Empty<string>() : CommonSafeKeys).Distinct(StringComparer.Ordinal)
+        SupportedTypes.ToDictionary(pair => pair.Key, pair => new SupportEntry(Keys[pair.Key].Concat(PilotTypes.ContainsKey(pair.Key) ? Array.Empty<string>() : CommonSafeKeys).Concat(typeof(Shape).IsAssignableFrom(pair.Value)?new[]{"StrokeDashArray"}:Array.Empty<string>()).Distinct(StringComparer.Ordinal)
             .Select(key => AvaloniaMetadataCatalog.Get(pair.Value).Properties.FirstOrDefault(p => p.Key == key))
             .Where(p => p is { ReadOnly: false, Property: not null }).Cast<AvaloniaPropertyInfo>().ToArray(),
             AvaloniaMetadataCatalog.Get(pair.Value).Properties.Where(p=>p.Property is not null).Select(p=>p.Key).ToHashSet(StringComparer.Ordinal)), StringComparer.Ordinal));
@@ -64,7 +74,7 @@ public static class StandardControlProperties
     public static bool HasNativeProperty(string type, string key) => Supported.Value.TryGetValue(type,out var entry) && entry.NativeKeys.Contains(key);
     public static bool IsShape(string type) => SupportedTypes.TryGetValue(type,out var native) && typeof(Shape).IsAssignableFrom(native);
     public static AvaloniaPropertyInfo? Find(string? type, string key) => PropertiesFor(type).FirstOrDefault(p => p.Key == key);
-    public static MetadataEditor EditorFor(AvaloniaPropertyInfo property) => property.OwnerType == typeof(TimePicker) && property.Key == "ClockIdentifier"
+    public static MetadataEditor EditorFor(AvaloniaPropertyInfo property) => ShapeLiteralCodec.Supports(property) || IsLiteralHeader(property) ? MetadataEditor.Text : property.OwnerType == typeof(TimePicker) && property.Key == "ClockIdentifier"
         ? MetadataEditor.Enumeration : property.Editor;
     public static string CategoryFor(AvaloniaPropertyInfo property) => property.Key is "MinWidth" or "MinHeight" or "MaxWidth" or "MaxHeight"
         || property.Editor is MetadataEditor.Thickness or MetadataEditor.CornerRadius ? "Layout"
@@ -83,6 +93,8 @@ public static class StandardControlProperties
     };
     public static string Hint(AvaloniaPropertyInfo property) => IsViewport(property) ? "Размер видимой области. NaN — нативный автоматический режим ScrollBar; конечное число должно быть неотрицательным." : property.Editor switch
     {
+        _ when ShapeLiteralCodec.Supports(property) => property.Key=="Data"?"Проверяемая path mini-language Avalonia (M/L/C/Q/A/Z); до 16384 символов. Объекты Geometry, Bindings и Resources не преобразуются в строку.":property.Key=="Points"?"Координаты x,y через пробел: 0,0 100,0 50,80. До 1024 точек; конечные значения.":"Неотрицательные длины штрихов через пробел или запятую; пустое значение очищает список.",
+        _ when IsLiteralHeader(property) => "Текстовый Header. Объектные значения, Bindings и Resources сохраняются отдельно и не заменяются текстом.",
         _ when property.OwnerType == typeof(RepeatButton) && property.Key is "Delay" or "Interval" => "Интервал в миллисекундах, не меньше нуля. Отрицательные значения недопустимы для нативного таймера.",
         MetadataEditor.Thickness => "Отступы в DIP: одно, два или четыре числа (left,top,right,bottom).",
         MetadataEditor.CornerRadius => "Радиусы углов в DIP; значение проверяется Avalonia.",
@@ -123,6 +135,7 @@ public static class StandardControlProperties
         // Avalonia accepts negative RepeatButton values at registration level,
         // but its DispatcherTimer throws when a press starts that interval.
         if (property.OwnerType == typeof(RepeatButton) && property.Key is "Delay" or "Interval" && value is int timing && timing < 0) return false;
+        if (property.OwnerType == typeof(UniformGrid) && property.Key is "Rows" or "Columns" or "FirstColumn" && value is int count && count < 0) return false;
         if (property.OwnerType == typeof(TimePicker) && property.Key == "ClockIdentifier" && !Options(property).Contains(text, StringComparer.Ordinal)) return false;
         try
         {
@@ -130,7 +143,7 @@ public static class StandardControlProperties
             if (property.OwnerType == typeof(DatePicker) && property.Key is "YearFormat" or "MonthFormat" or "DayFormat" && value is string dateFormat) _ = DateTime.UnixEpoch.ToString(dateFormat, CultureInfo.InvariantCulture);
         }
         catch (FormatException) { return false; }
-        json = Encode(value); return true;
+        json = ShapeLiteralCodec.Supports(property) && value is not null ? JsonSerializer.Serialize(text.Trim()) : Encode(value); return true;
     }
     private static string Encode(object? value) => value switch
     {
@@ -140,11 +153,30 @@ public static class StandardControlProperties
     };
     public static bool TryParseValue(AvaloniaPropertyInfo property, string text, out object? value)
     {
+        if (ShapeLiteralCodec.Supports(property)) return ShapeLiteralCodec.TryParse(property,text,out value);
+        if (IsLiteralHeader(property)) { value=text is MetadataValueCodec.NullText or "{x:Null}"?null:text;return !text.TrimStart().StartsWith('{')||text=="{x:Null}"; }
         if (IsViewport(property) && text == "NaN") { value=double.NaN; return true; }
         if (property.Key is "MaxWidth" or "MaxHeight" && text == "Infinity") { value = double.PositiveInfinity; return true; }
         return MetadataValueCodec.TryParse(property.PropertyType, text, out value);
     }
     private static bool IsViewport(AvaloniaPropertyInfo property) => property.OwnerType == typeof(ScrollBar) && property.Key == "ViewportSize";
+    private static bool IsLiteralHeader(AvaloniaPropertyInfo property) => property.Key=="Header" && property.OwnerType==typeof(HeaderedContentControl);
+    public static bool IsContainer(string type) => type is "Viewbox" or "UniformGrid" or "Expander" or "ScrollViewer";
+    public static bool IsSingleChild(string type) => type is "Viewbox" or "Expander" or "ScrollViewer";
+    public static string ContainerMode(string type) => type=="UniformGrid"?DesignerLayoutModes.Uniform:DesignerLayoutModes.Content;
+    public static void AttachChildren(Control host, System.Collections.Generic.IReadOnlyList<Control> children) => AttachChildren(host,children,false);
+    public static void AttachChildren(Control host, System.Collections.Generic.IReadOnlyList<Control> children,bool designerEmptyTarget)
+    {
+        if (host is UniformGrid panel) { foreach(var child in children)panel.Children.Add(child);return; }
+        if (children.Count>1)throw new InvalidOperationException("Контейнер "+host.Name+" принимает один Content/Child. Поместите несколько controls во вложенный Layout.");
+        var content=children.SingleOrDefault();
+        // An empty Viewbox legitimately arranges to zero in Avalonia. This is
+        // editor interaction chrome only; no model child or runtime/export node.
+        if(content is null && designerEmptyTarget && host is Viewbox)
+            content=new Border{MinWidth=48,MinHeight=32,Background=Avalonia.Media.Brushes.Transparent,IsHitTestVisible=false};
+        if(host is Viewbox viewbox)viewbox.Child=content;
+        else if(host is ContentControl control)control.Content=content;
+    }
     public static bool HasLiteralContent(string type) => type is "ToggleSwitch" or "RadioButton" or "HyperlinkButton" or "RepeatButton";
     public static string Attributes(string type, IReadOnlyDictionary<string, string> values, Func<string, string> escape, bool placementOwnsConstraints = false)
     {
@@ -180,6 +212,8 @@ public static class StandardControlProperties
                 control.SetValue(property.Property!, parsed);
         }
         if (HasLiteralContent(type) && control is ContentControl content) content.Content = node.GetString("Text", type);
+        if(type=="Expander"&&control is Expander expander&&node.CustomProperties.TryGetValue("Content",out var literalContent))
+            expander.Content=JsonSerializer.Deserialize<string>(literalContent);
         foreach (var property in PropertiesFor(type))
         {
             if (!node.CustomProperties.TryGetValue(property.Key, out var json)) continue;

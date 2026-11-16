@@ -82,6 +82,7 @@ public static partial class AxamlLayoutProjection
                     && childReference.Capability.CanEditProperty("DockPanel.Dock")) DockPanel.SetDock(childView, LayoutPlacementProperties.GetDock(child));
                 if (view is ItemsControl items) items.Items.Add(childView);
                 else if (view is Panel panel) panel.Children.Add(childView);
+                else if (view is Viewbox viewbox) viewbox.Child = childView;
                 else if (view is Border host) host.Child = childView;
                 else if (view is ContentControl content) content.Content = childView;
             }

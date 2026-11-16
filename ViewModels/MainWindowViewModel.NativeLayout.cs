@@ -147,6 +147,8 @@ public partial class MainWindowViewModel
     {
         if (document.LayoutSemanticsVersion is < 1 or > 2)
             throw new InvalidOperationException("Версия layout документа не поддерживается. Файл не изменён.");
+        var singleHosts=document.Controls.Where(c=>FormDesigner.DesignerSystem.Metadata.StandardControlProperties.IsSingleChild(c.Type)).Select(c=>c.Id).ToHashSet();
+        if(document.Controls.GroupBy(c=>c.ParentId).Any(g=>singleHosts.Contains(g.Key)&&g.Count()>1))throw new InvalidOperationException("Контейнер допускает один Child/Content. Проект не изменён.");
         if (document.LayoutSemanticsVersion != 2) return;
         if (document.SurfaceLayoutMode != DesignerLayoutModes.Grid)
             throw new InvalidOperationException("Phase 2 поддерживает native layout с корневым Grid.");

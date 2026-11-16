@@ -42,6 +42,7 @@ public static class LegacyCanvasLayoutProjection
             var parent = byId[model.ParentId];
             var mode = string.IsNullOrEmpty(parent.ChildLayoutMode) ? DesignerLayoutModes.GetModeForControlType(parent.Type) : DesignerLayoutModes.NormalizeMode(parent.ChildLayoutMode);
             if (DesignerLayoutModes.IsAbsolute(mode)) { view.Margin = default; return; }
+            if (FormDesigner.DesignerSystem.Metadata.StandardControlProperties.IsContainer(parent.Type)) return;
             if (!string.IsNullOrWhiteSpace(model.Margin) && model.Margin.Trim() != "0") return;
             var spacing = Math.Max(0, parent.LayoutSpacing);
             view.Margin = mode is DesignerLayoutModes.Grid or DesignerLayoutModes.Flex ? new Thickness(0,0,spacing,spacing)

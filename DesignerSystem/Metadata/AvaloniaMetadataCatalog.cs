@@ -106,7 +106,7 @@ public static class AvaloniaMetadataCatalog
             : typeof(ItemsControl).IsAssignableFrom(type) ? ("Items", "Items")
             : typeof(ContentControl).IsAssignableFrom(type) ? ("Content", "Content")
             : ("None", (string?)null);
-        var infrastructure = type.Namespace?.Contains(".Primitives", StringComparison.Ordinal) == true && type != typeof(ScrollBar)
+        var infrastructure = type.Namespace?.Contains(".Primitives", StringComparison.Ordinal) == true && type != typeof(ScrollBar) && type != typeof(UniformGrid)
             || type.Namespace?.Contains(".Presenters", StringComparison.Ordinal) == true
             || type.Name.EndsWith("Presenter", StringComparison.Ordinal) || type.Name.EndsWith("Panel", StringComparison.Ordinal) && type.Name.Contains("Virtualiz", StringComparison.Ordinal)
             || type.Name is "CaptionButtons" or "TitleBar" or "EmbeddableControlRoot" or "NativeControlHost" or "NativeMenuBar"
@@ -150,7 +150,7 @@ public static class MetadataValueCodec
     public static MetadataEditor EditorFor(Type declared)
     {
         var type = Nullable.GetUnderlyingType(declared) ?? declared;
-        if (type == typeof(string) || type == typeof(Uri)) return MetadataEditor.Text;
+        if (type == typeof(string) || type == typeof(Uri) || type == typeof(Point)) return MetadataEditor.Text;
         if (type == typeof(bool)) return Nullable.GetUnderlyingType(declared) is null ? MetadataEditor.Boolean : MetadataEditor.Enumeration;
         if (type.IsEnum) return MetadataEditor.Enumeration;
         if (type == typeof(int) || type == typeof(double) || type == typeof(float) || type == typeof(long) || type == typeof(decimal)) return MetadataEditor.Number;
@@ -216,6 +216,7 @@ public static class MetadataValueCodec
                 var length = GridLength.Parse(text); if (!double.IsFinite(length.Value)) return false; value = length;
             }
             else if (type == typeof(FontFamily)) value = new FontFamily(text);
+            else if (type == typeof(Point)) { var point=Point.Parse(text);if(!double.IsFinite(point.X)||!double.IsFinite(point.Y)||Math.Abs(point.X)>1e6||Math.Abs(point.Y)>1e6)return false;value=point; }
             else if (type == typeof(DateTime)) value = DateTime.ParseExact(text, new[] { "yyyy-MM-dd", "O" }, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);
             else if (type == typeof(DateTimeOffset)) value = DateTimeOffset.ParseExact(text, new[] { "yyyy-MM-dd", "O" }, CultureInfo.InvariantCulture, DateTimeStyles.None);
             else if (type == typeof(TimeSpan)) value = TimeSpan.ParseExact(text, "c", CultureInfo.InvariantCulture);

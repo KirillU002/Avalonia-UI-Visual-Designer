@@ -31,6 +31,8 @@ public sealed record AxamlControlMetadata(string SourceType, string ProjectionTy
         ["DockPanel"] = new("DockPanel", "Group", AxamlContainerKind.PanelChildren, "Children"),
         ["Canvas"] = new("Canvas", "Group", AxamlContainerKind.PanelChildren, "Children"),
         ["WrapPanel"] = new("WrapPanel", "WrapPanel", AxamlContainerKind.PanelChildren, "Children"),
+        ["Viewbox"] = new("Viewbox", "Group", AxamlContainerKind.Decorator, "Child"),
+        ["UniformGrid"] = new("UniformGrid", "Group", AxamlContainerKind.PanelChildren, "Children"),
         ["ScrollViewer"] = new("ScrollViewer", "Group", AxamlContainerKind.SingleContent, "Content"),
         ["TabControl"] = new("TabControl", "Group", AxamlContainerKind.Items, "Items", "TabItem"),
         ["TabItem"] = new("TabItem", "Group", AxamlContainerKind.HeaderedContent, "Content"),
@@ -57,7 +59,15 @@ public sealed record AxamlControlMetadata(string SourceType, string ProjectionTy
         if (element.LocalName == "String")
             return parentType is "ComboBox" or "ItemsControl" or "ListBox" && element.NamespaceUri is "http://schemas.microsoft.com/winfx/2006/xaml" or "clr-namespace:System;assembly=mscorlib"
                 ? Find("String") : null;
-        return element.NamespaceUri is "" or "https://github.com/avaloniaui" ? Find(element.LocalName) : null;
+        return IsFrameworkNamespace(element) ? Find(element.LocalName) : null;
+    }
+
+    private static bool IsFrameworkNamespace(AxamlElementSyntax element)
+    {
+        if(element.NamespaceUri is "" or "https://github.com/avaloniaui")return true;
+        var owner=element.LocalName.Split('.')[0];var type=Find(owner)?.NativeType;
+        return type is not null && (element.NamespaceUri=="using:"+type.Namespace
+            || element.NamespaceUri=="clr-namespace:"+type.Namespace+";assembly="+type.Assembly.GetName().Name);
     }
 
     public bool AcceptsItem(AxamlElementSyntax element) => ItemType is null
@@ -77,7 +87,7 @@ public sealed record AxamlControlMetadata(string SourceType, string ProjectionTy
     }
 
     public bool IsChildProperty(AxamlElementSyntax element) => ChildProperty is not null
-        && element.NamespaceUri is "" or "https://github.com/avaloniaui"
+        && IsFrameworkNamespace(element)
         && (element.LocalName == SourceType + "." + ChildProperty
             || ContainerKind == AxamlContainerKind.Items && element.LocalName == "ItemsControl.Items");
 
@@ -158,7 +168,8 @@ public sealed record AxamlControlMetadata(string SourceType, string ProjectionTy
     private IReadOnlyList<AxamlLiteralProperty> LegacyLiteralProperties => StandardControlProperties.SupportedTypes.ContainsKey(SourceType)
         ? StandardControlProperties.PropertiesFor(SourceType).Select(p => new AxamlLiteralProperty(p.Key, p.DefaultText,
             Options: StandardControlProperties.EditorFor(p) == MetadataEditor.Enumeration ? StandardControlProperties.Options(p).ToArray() : null,
-            IsBoolean: p.Editor == MetadataEditor.Boolean, IsNumber: p.Editor == MetadataEditor.Number, Metadata: p)).ToArray()
+            IsBoolean: p.Editor == MetadataEditor.Boolean, IsNumber: p.Editor == MetadataEditor.Number, Metadata: p))
+            .Concat(SourceType=="Expander"?new[]{new AxamlLiteralProperty("Content","")}:Array.Empty<AxamlLiteralProperty>()).ToArray()
         : SourceType switch
     {
         "TabControl" => new[] { new AxamlLiteralProperty(nameof(TabControl.SelectedIndex), "0", IsInteger: true) },

@@ -159,7 +159,8 @@ internal static partial class Program
         Check("SourceBindingResourcesAndReadonlyCollections",()=>{
             foreach(var type in Phase5ATypes){var key=Phase5AValues(type)[0].Key;var vm=Universal4AVm($"<a:{type} Name='Target' {key}='{{Binding Dangerous}}' Opacity='{{DynamicResource Alpha}}' u:Unknown='keep'/>");
                 var source=vm.ActiveAxamlSourceDocument!.OriginalText;vm.SelectSingleControl(vm.Controls.Single());RequireCapability(GetPropertyGridRow(vm,key).IsReadOnly,"Bound property editable.");RequireCapability(vm.CreateActiveAxamlPatch().PatchedText==source,"Expression/source changed.");}
-            var shapes=Phase5AScene();shapes.SelectSingleControl(shapes.Controls.Single(c=>c.Type=="Rectangle"));RequireCapability(GetPropertyGridRow(shapes,"StrokeDashArray").IsReadOnly,"Collection exposed as scalar.");
+            var shapes=Phase5AScene();shapes.SelectSingleControl(shapes.Controls.Single(c=>c.Type=="Rectangle"));
+            RequireCapability(!GetPropertyGridRow(shapes,"StrokeDashArray").IsReadOnly && !StandardControlProperties.TryEncode(StandardControlProperties.Find("Rectangle","StrokeDashArray")!,"{Binding Dashes}",out _),"Reviewed dash codec lost expression protection.");
         });
         Check("MultiFormAndPropertyUndo",()=>{
             var vm=Phase5AScene();var first=vm.ActiveFormDocument!.Id;var model=vm.Controls.Single(c=>c.Type=="Rectangle");vm.SelectSingleControl(model);

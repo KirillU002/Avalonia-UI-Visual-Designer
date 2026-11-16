@@ -3699,12 +3699,12 @@ public partial class MainWindow : Window
     {
         if (_wrapperByControlId.TryGetValue(control.Id, out var wrapper))
         {
-            var translated = wrapper.TranslatePoint(default, DesignerCanvas);
-            if (translated.HasValue)
+            var transform = wrapper.TransformToVisual(DesignerCanvas);
+            if (transform.HasValue)
             {
                 var width = wrapper.Bounds.Width > 0 ? wrapper.Bounds.Width : control.Width;
                 var height = wrapper.Bounds.Height > 0 ? wrapper.Bounds.Height : control.Height;
-                return new Rect(translated.Value.X, translated.Value.Y, Math.Max(0, width), Math.Max(0, height));
+                return new Rect(new Size(Math.Max(0,width),Math.Max(0,height))).TransformToAABB(transform.Value);
             }
         }
 
@@ -4294,9 +4294,10 @@ public partial class MainWindow : Window
         var isPrimary = VM.SelectedControl?.Id == model.Id;
         var isUserPreviewMode = VM.IsUserPreviewMode;
         var renderModel = CreateRenderModel(model, renderedWidth, renderedHeight);
-        var preview = VM.UsesNativeLayout && VM.CanHostChildren(model) ? CreateNativeContainerBackdrop(renderModel)
+        var preview = FormDesigner.DesignerSystem.Metadata.StandardControlProperties.IsContainer(model.Type) ? CreatePreviewControl(renderModel)
+            : VM.UsesNativeLayout && VM.CanHostChildren(model) ? CreateNativeContainerBackdrop(renderModel)
             : VM.IsAxamlRoundTripDocument && VM.CanHostChildren(model) ? CreateGroupPreview(renderModel) : CreatePreviewControl(renderModel);
-        if (VM.UsesNativeLayout)
+        if (VM.UsesNativeLayout || _buildingLegacyCanvasProjection)
         {
             // The projection already applied margin/alignment. The shell only paints that frame.
             preview.Margin = new Thickness(0);
@@ -4312,7 +4313,7 @@ public partial class MainWindow : Window
             preview.Tag = model;
             if (preview is TemplatedControl templatedPreview) templatedPreview.FontSize = model.FontSize;
             preview.IsHitTestVisible = false;
-            if (preview is Expander expander)
+            if (preview is Expander expander && !FormDesigner.DesignerSystem.Metadata.StandardControlProperties.IsContainer(phase4Reference.Element.LocalName))
             {
                 expander.IsHitTestVisible = true;
                 expander.TemplateApplied += (_, _) =>
@@ -4399,11 +4400,13 @@ public partial class MainWindow : Window
                     ? 1 : Math.Clamp(model.Opacity, 0, 1)
         };
 
+        var advancedType=VM.ActiveAxamlSourceDocument?.SourceMap.TryGet(model.Id,out var advancedReference)==true?advancedReference.Element.LocalName:model.Type;
+        if(FormDesigner.DesignerSystem.Metadata.StandardControlProperties.IsContainer(advancedType))PopulateAdvancedDesignerContainer(model,preview);
         visualLayer.Children.Add(preview);
         Canvas.SetLeft(preview, 0);
         Canvas.SetTop(preview, 0);
 
-        if (VM.CanHostChildren(model)
+        if (VM.CanHostChildren(model) && !FormDesigner.DesignerSystem.Metadata.StandardControlProperties.IsContainer(advancedType)
             && (preview is TabControl || preview is not (Expander or ItemsControl or ComboBoxItem or ListBoxItem)))
         {
             var childHost = new Canvas

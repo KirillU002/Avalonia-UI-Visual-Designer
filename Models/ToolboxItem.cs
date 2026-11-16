@@ -16,6 +16,7 @@ public class ToolboxItem
     public string Icon => Type switch
     {
         "ScrollBar" => "↕", "GridSplitter" => "⋮", "Rectangle" => "▭", "Ellipse" => "○",
+        "Viewbox"=>"⤢", "UniformGrid"=>"▦", "Expander"=>"⌄", "ScrollViewer"=>"↕", "Line"=>"╱", "Polygon"=>"△", "Polyline"=>"⌁", "Path"=>"∿",
         "HyperlinkButton" => "↗", "RepeatButton" => "↻", _ => ProviderBadge
     };
 }

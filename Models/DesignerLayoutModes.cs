@@ -11,6 +11,8 @@ public static class DesignerLayoutModes
     public const string Grid = "Grid";
     public const string Flex = "Flex";
     public const string Dock = "Dock";
+    public const string Content = "Content";
+    public const string Uniform = "Uniform";
 
     public const string Vertical = "Vertical";
     public const string Horizontal = "Horizontal";
@@ -30,6 +32,8 @@ public static class DesignerLayoutModes
             Flex => Flex,
             Stack => Stack,
             Dock => Dock,
+            Content => Content,
+            Uniform => Uniform,
             _ => Absolute
         };
     }
@@ -75,7 +79,7 @@ public static class DesignerLayoutModes
         return NormalizeMode(value) is Stack or Flex;
     }
 
-    public static bool IsOrdered(string? value) => NormalizeMode(value) is Stack or Flex or Dock;
+    public static bool IsOrdered(string? value) => NormalizeMode(value) is Stack or Flex or Dock or Uniform;
 
     public static string GetModeForControlType(string? controlType)
     {
@@ -84,6 +88,8 @@ public static class DesignerLayoutModes
             DesignerControlTypes.StackLayout => Stack,
             DesignerControlTypes.LayoutGrid => Grid,
             DesignerControlTypes.FlexLayout => Flex,
+            "UniformGrid" => Uniform,
+            "Viewbox" or "Expander" or "ScrollViewer" => Content,
             _ => Absolute
         };
     }

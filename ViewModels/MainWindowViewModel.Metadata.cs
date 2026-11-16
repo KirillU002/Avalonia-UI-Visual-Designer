@@ -12,7 +12,7 @@ public partial class MainWindowViewModel
         if (SelectedControl is null || row.Category != PropertyGridCategoryAppearance) return true;
         var type=SelectedControl.Type;
         if(_activeAxamlRoundTripDocument?.SourceMap.TryGet(SelectedControl.Id,out var reference)==true)type=reference.Element.LocalName;
-        return !StandardControlProperties.IsShape(type) || StandardControlProperties.HasNativeProperty(type,row.Key);
+        return !StandardControlProperties.SupportedTypes.ContainsKey(type) || StandardControlProperties.HasNativeProperty(type,row.Key);
     }
     private PropertyGridRowViewModel ApplyMetadataPropertyRow(PropertyGridRowViewModel row)
     {
@@ -68,7 +68,7 @@ public partial class MainWindowViewModel
                 apply(text);
             }, (_, flag) => apply(flag ? "True" : "False"), boolValue: value == "True", isAdvanced: true);
         row.UsesMetadata = true;
-        row.LiteralEquals = (left, right) => StandardControlProperties.TryParseValue(property, left, out var a)
+        row.LiteralEquals = (left, right) => left==right || StandardControlProperties.TryParseValue(property, left, out var a)
             && StandardControlProperties.TryParseValue(property, right, out var b)
             && (a is Avalonia.Media.ISolidColorBrush ba && b is Avalonia.Media.ISolidColorBrush bb ? ba.Color == bb.Color : Equals(a, b));
         if (kind == PropertyGridEditorKind.Enum)

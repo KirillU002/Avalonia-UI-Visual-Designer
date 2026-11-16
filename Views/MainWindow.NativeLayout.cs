@@ -9,6 +9,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Avalonia.Styling;
+using Avalonia.VisualTree;
 using FormDesigner.Services;
 
 namespace FormDesigner.Views;
@@ -16,6 +17,7 @@ namespace FormDesigner.Views;
 public partial class MainWindow
 {
     private bool _buildingLegacyCanvasProjection;
+    private readonly Dictionary<string,(Avalonia.Layout.HorizontalAlignment Horizontal,Avalonia.Layout.VerticalAlignment Vertical)> _legacyNativeAlignments=new();
     private readonly List<IStyle> _nativeCanvasThemeStyles = new();
     private string _nativeCanvasThemeContext = "";
     private void RefreshNativeCanvasThemeScope()
@@ -49,6 +51,7 @@ public partial class MainWindow
     private void MeasureLegacyManagedCanvasLayouts()
     {
         if (VM.UsesNativeLayout || VM.IsAxamlRoundTripDocument) return;
+        _legacyNativeAlignments.Clear();
         var measured = new Dictionary<string, Rect>();
         foreach (var root in VM.Controls.Where(c => VM.CanHostChildren(c) && !DesignerLayoutModes.IsAbsolute(VM.GetLayoutModeForControl(c))))
         {
@@ -67,6 +70,7 @@ public partial class MainWindow
                     CreatePreviewControl, includeHidden: !VM.IsUserPreviewMode);
                 foreach (var frame in tree.Measure(root.Width, root.Height))
                     if (frame.Key != root.Id) measured[frame.Key] = frame.Value;
+                foreach(var item in tree.Controls)_legacyNativeAlignments[item.Key]=(item.Value.HorizontalAlignment,item.Value.VerticalAlignment);
             }
             catch (Exception ex) when (ex is FormatException or ArgumentException or InvalidOperationException)
             {
@@ -75,6 +79,38 @@ public partial class MainWindow
             finally { _buildingLegacyCanvasProjection = false; }
         }
         VM.AxamlLayoutBounds = measured;
+    }
+
+    // Native containers own their child shell layout too. Reuse the existing
+    // selection/resize wrappers inside real Child/Content/Children; no Canvas root
+    // is inserted into the authored container or its exported hierarchy.
+    private void PopulateAdvancedDesignerContainer(DesignControlModel model, Control host)
+    {
+        var children=new List<Control>();
+        var previousNativeFactory=_buildingLegacyCanvasProjection;
+        _buildingLegacyCanvasProjection=true;
+        try {
+        foreach(var child in VM.GetChildControls(model.Id).OrderBy(c=>c.StackOrder))
+        {
+            var frames=VM.UsesNativeLayout?VM.NativeLayoutBounds:VM.AxamlLayoutBounds;
+            var size=frames.TryGetValue(child.Id,out var frame)&&frame.Width>0&&frame.Height>0?frame.Size:new Size(child.Width,child.Height);
+            var wrapper=CreateDesignerWrapper(child,size.Width,size.Height);_wrapperByControlId[child.Id]=wrapper;
+            FormDesigner.DesignerSystem.AxamlRoundTrip.AxamlLayoutProjection.ApplyJsonLayout(child,wrapper,includeHidden:!VM.IsUserPreviewMode);
+            if(!VM.UsesNativeLayout&&!VM.IsAxamlRoundTripDocument&&_legacyNativeAlignments.TryGetValue(child.Id,out var alignment))
+            {wrapper.HorizontalAlignment=alignment.Horizontal;wrapper.VerticalAlignment=alignment.Vertical;}
+            wrapper.Opacity=1; // The native view already owns authored opacity.
+            children.Add(wrapper);
+        }
+        } finally { _buildingLegacyCanvasProjection=previousNativeFactory; }
+        FormDesigner.DesignerSystem.Metadata.StandardControlProperties.AttachChildren(host,children,designerEmptyTarget:true);
+        // The shell remains selectable, while native header/scroll gestures do not
+        // mutate the model behind PropertyGrid/Undo in the editing surface.
+        host.IsHitTestVisible=true;
+        if(host is Avalonia.Controls.Primitives.TemplatedControl templated)
+            templated.TemplateApplied+=(_,_)=>{
+                foreach(var control in host.GetVisualDescendants().OfType<Control>().Where(c=>c.TemplatedParent==host))
+                    if(control is Avalonia.Controls.Primitives.ToggleButton or Avalonia.Controls.Primitives.ScrollBar)control.IsHitTestVisible=false;
+            };
     }
 
     private Control CreateNativeContainerBackdrop(DesignControlModel model) => new Border

@@ -1,4 +1,4 @@
-using CommunityToolkit.Mvvm.ComponentModel;
+﻿using CommunityToolkit.Mvvm.ComponentModel;
 using System;
 using System.Collections.ObjectModel;
 
@@ -13,9 +13,9 @@ public partial class DesignControlModel : ObservableObject
     [System.Text.Json.Serialization.JsonIgnore]
     public bool UsesSourceLayout { get; set; }
     [System.Text.Json.Serialization.JsonIgnore]
-    public double MinimumDesignerWidth => Type is "GridSplitter" or "ScrollBar" or "Rectangle" or "Ellipse" ? 1 : 40;
+    public double MinimumDesignerWidth => Type is "GridSplitter" or "ScrollBar" or "Rectangle" or "Ellipse" or "Line" or "Polygon" or "Polyline" or "Path" ? 1 : 40;
     [System.Text.Json.Serialization.JsonIgnore]
-    public double MinimumDesignerHeight => Type is "GridSplitter" or "ScrollBar" or "Rectangle" or "Ellipse" ? 1 : 24;
+    public double MinimumDesignerHeight => Type is "GridSplitter" or "ScrollBar" or "Rectangle" or "Ellipse" or "Line" or "Polygon" or "Polyline" or "Path" ? 1 : 24;
     public const string DataGridTextAlignmentLeft = "Left";
     public const string DataGridTextAlignmentCenter = "Center";
     public const string DataGridTextAlignmentRight = "Right";

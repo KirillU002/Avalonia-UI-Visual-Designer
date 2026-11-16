@@ -3399,7 +3399,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     private ToolboxProviderInfo ResolveToolboxProvider(IControlDescriptor descriptor)
     {
-        if (descriptor.TypeKey is "ScrollBar" or "GridSplitter" or "Rectangle" or "Ellipse" or "HyperlinkButton" or "RepeatButton")
+        if (descriptor.TypeKey is "ScrollBar" or "GridSplitter" or "Rectangle" or "Ellipse" or "HyperlinkButton" or "RepeatButton" or "Viewbox" or "UniformGrid" or "Expander" or "ScrollViewer" or "Line" or "Polygon" or "Polyline" or "Path")
             return new ToolboxProviderInfo("Avalonia", descriptor.Category, "AV", 10);
         if (descriptor is IDesignerControlProviderMetadata metadata
             && !string.IsNullOrWhiteSpace(metadata.ProviderId))
@@ -5189,6 +5189,7 @@ public partial class MainWindowViewModel : ObservableObject
         if (control is null)
             return DesignerLayoutModes.Absolute;
 
+        if (FormDesigner.DesignerSystem.Metadata.StandardControlProperties.IsContainer(control.Type)) return FormDesigner.DesignerSystem.Metadata.StandardControlProperties.ContainerMode(control.Type);
         return string.IsNullOrWhiteSpace(control.ChildLayoutMode)
             ? DesignerLayoutModes.NormalizeMode(GetDescriptor(control.Type).ChildLayoutMode)
             : DesignerLayoutModes.NormalizeMode(control.ChildLayoutMode);
@@ -6714,6 +6715,10 @@ public partial class MainWindowViewModel : ObservableObject
     public void ReparentControl(DesignControlModel control, string? newParentId, double absoluteX, double absoluteY)
     {
         var normalizedParentId = NormalizeId(newParentId);
+        var contentParent=GetControl(normalizedParentId);
+        if(contentParent is not null && FormDesigner.DesignerSystem.Metadata.StandardControlProperties.IsSingleChild(contentParent.Type)
+            && Controls.Any(c=>c.ParentId==normalizedParentId&&c.Id!=control.Id))
+        {StatusText="Content занят. Используйте вложенный Layout для нескольких компонентов.";return;}
         if (UsesNativeLayout)
         {
             var point = new Avalonia.Point(absoluteX, absoluteY);
@@ -6923,6 +6928,15 @@ public partial class MainWindowViewModel : ObservableObject
             return null;
         }
 
+        var dropParent = GetControl(parentId);
+        if (dropParent is not null
+            && FormDesigner.DesignerSystem.Metadata.StandardControlProperties.IsSingleChild(dropParent.Type)
+            && Controls.Any(c => c.ParentId == dropParent.Id))
+        {
+            StatusText = "Контейнер принимает один Child/Content. Добавьте вложенный Layout для нескольких компонентов.";
+            return null;
+        }
+
         if (UsesNativeLayout)
         {
             var point = new Avalonia.Point(x, y);
@@ -6943,6 +6957,9 @@ public partial class MainWindowViewModel : ObservableObject
         using var profileStage = LayoutDropProfile.Stage("CreateControlCore");
         // Контрол всегда создается из стартового шаблона,
         // а координаты сразу привязываются к сетке и границам контейнера.
+        var parentModel=GetControl(parentId);
+        if(parentModel is not null && FormDesigner.DesignerSystem.Metadata.StandardControlProperties.IsSingleChild(parentModel.Type) && Controls.Any(c=>c.ParentId==parentModel.Id))
+            throw new InvalidOperationException("Контейнер принимает один Child/Content. Добавьте вложенный Layout для нескольких компонентов.");
         var model = CreateDefaultControl(type);
         LayoutDropProfile.Affect(model.Id);
         model.Name = GetUniqueControlName(type);
@@ -10773,7 +10790,7 @@ public partial class MainWindowViewModel : ObservableObject
         if (DesignerLayoutModes.NormalizeMode(parentLayoutMode) == DesignerLayoutModes.Stack || (UsesNativeLayout && DesignerLayoutModes.IsOrdered(parentLayoutMode)))
             yield return CreateNumberRow(PropertyGridCategoryLayout, nameof(DesignControlModel.StackOrder), UsesNativeLayout ? "Children order" : "StackPanel.Order", control.StackOrder, "Порядок среди дочерних элементов текущего контейнера.", value => control.StackOrder = Math.Max(0, (int)Math.Round(value)));
 
-        if (CanHostChildren(control))
+        if (CanHostChildren(control) && !FormDesigner.DesignerSystem.Metadata.StandardControlProperties.IsContainer(control.Type))
         {
             yield return CreateEnumRow(PropertyGridCategoryLayout, nameof(DesignControlModel.ChildLayoutMode), "Children Layout", GetLayoutModeForControl(control), UsesNativeLayout ? NativeContainerModes : AvailableLayoutModes, "Layout mode used by children of this container.", value => { if (UsesNativeLayout) SetNativeContainerMode(control, value); else control.ChildLayoutMode = value; });
             yield return CreateEnumRow(PropertyGridCategoryLayout, nameof(DesignControlModel.LayoutOrientation), "Orientation", control.LayoutOrientation, AvailableLayoutOrientations, "Child layout orientation.", value => control.LayoutOrientation = value);
@@ -18178,8 +18195,15 @@ public partial class MainWindowViewModel : ObservableObject
                 // Legacy absolute placement uses wrapper bounds and ignores control margins.
                 // Override theme margins (e.g. Separator) to preserve those same Canvas coordinates.
                 var absoluteMargin = !_owner.UsesNativeLayout && DesignerLayoutModes.IsAbsolute(_owner.GetExportLayoutModeForParent(model.ParentId)) ? " Margin=\"0\"" : "";
-                var appearance=FormDesigner.DesignerSystem.Metadata.StandardControlProperties.IsShape(typeKey)?"":_owner.BackgroundAttribute(model)+_owner.ForegroundAttribute(model)+TextStyleAttributes(model);
-                writer.WriteLine(indentLevel, $"<{typeKey} x:Name=\"{EscapeXml(_owner.GetExportControlName(model))}\" {_owner.PlacementAttributes(model)}{absoluteMargin}{appearance}{CommonVisibilityAttributes(model)}{attributes}{content} />");
+                var appearance=(FormDesigner.DesignerSystem.Metadata.StandardControlProperties.HasNativeProperty(typeKey,"Background")?_owner.BackgroundAttribute(model):"")
+                    +(FormDesigner.DesignerSystem.Metadata.StandardControlProperties.HasNativeProperty(typeKey,"Foreground")?_owner.ForegroundAttribute(model):"")
+                    +(FormDesigner.DesignerSystem.Metadata.StandardControlProperties.HasNativeProperty(typeKey,"FontFamily")?TextStyleAttributes(model):"");
+                var opening=$"<{typeKey} x:Name=\"{EscapeXml(_owner.GetExportControlName(model))}\" {_owner.PlacementAttributes(model)}{absoluteMargin}{appearance}{CommonVisibilityAttributes(model)}{attributes}{content}";
+                if(FormDesigner.DesignerSystem.Metadata.StandardControlProperties.IsContainer(typeKey)){
+                    var children=context.GetChildren(control.Id);
+                    if(FormDesigner.DesignerSystem.Metadata.StandardControlProperties.IsSingleChild(typeKey)&&children.Count>1)throw new InvalidOperationException("Экспорт: неоднозначный Child/Content в "+control.Name);
+                    writer.WriteLine(indentLevel,opening+">");context.AppendChildren(writer,control.Id,indentLevel+1);writer.WriteLine(indentLevel,$"</{typeKey}>");
+                }else writer.WriteLine(indentLevel,opening+" />");
                 return;
             }
             if (control is not DesignControlNodeAdapter adapter || !_appenders.TryGetValue(typeKey, out var appender))
@@ -20040,6 +20064,10 @@ public partial class MainWindowViewModel : ObservableObject
             builder.Append(explicitMargin);
             return builder.ToString();
         }
+
+        // Native single-content/UniformGrid hosts have no implicit legacy spacing.
+        if (parentLayoutMode is DesignerLayoutModes.Content or DesignerLayoutModes.Uniform)
+            return builder.Append(" Margin=\"0\"").ToString();
 
         if (string.IsNullOrWhiteSpace(NormalizeId(control.ParentId)) && _activeLayoutExportPlan?.UsesResponsiveStack == true)
             return builder.ToString();

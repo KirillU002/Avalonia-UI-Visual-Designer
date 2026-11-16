@@ -1,0 +1,55 @@
+using System;
+using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
+using Avalonia.Controls.Shapes;
+using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Input;
+using Avalonia.Media;
+using Avalonia.VisualTree;
+
+internal static class MetadataRuntimeProbe
+{
+    public static void Attach(IClassicDesktopStyleApplicationLifetime desktop,Window window)
+    {
+        window.ShowInTaskbar=false;window.ShowActivated=false;window.Position=new PixelPoint(-3500,-3500);
+        window.Opened+=async(_,_)=>{
+            try{
+                await Task.Delay(180);window.UpdateLayout();
+                var types=new[]{"Viewbox","UniformGrid","Expander","ScrollViewer","Line","Polygon","Polyline","Path"};
+                var views=types.Select(t=>window.GetVisualDescendants().OfType<Control>().Single(c=>c.Name=="Phase5B_"+t&&c.GetType().Name==t)).ToArray();
+                foreach(var view in views)Require(view.GetVisualRoot()==window&&view.Bounds.Width>0&&view.Bounds.Height>0,"Missing native "+view.Name);
+                var viewbox=(Viewbox)views[0];Require(viewbox.Stretch==Stretch.Uniform&&viewbox.Child is Control,"Viewbox child/stretch lost");
+                var uniform=(UniformGrid)views[1];Require(uniform.Rows==2&&uniform.Columns==2&&uniform.FirstColumn==1&&uniform.Children.Count==3,"UniformGrid settings/hierarchy lost");
+                Require(uniform.Children[0].Bounds.X>uniform.Children[1].Bounds.X&&uniform.Children[1].Bounds.Y>uniform.Children[0].Bounds.Y,"UniformGrid did not auto-place FirstColumn/order");
+                var expander=(Expander)views[2];Require(expander.IsExpanded&&Equals(expander.Header,"Раздел & текст")&&expander.Content is Control,"Expander content/header lost");
+                var toggle=expander.GetVisualDescendants().OfType<ToggleButton>().First(c=>c.TemplatedParent==expander);
+                toggle.RaiseEvent(new KeyEventArgs{RoutedEvent=InputElement.KeyDownEvent,Key=Key.Space});toggle.RaiseEvent(new KeyEventArgs{RoutedEvent=InputElement.KeyUpEvent,Key=Key.Space});
+                await Task.Delay(220);Require(!expander.IsExpanded,"Native header interaction did not collapse Expander");
+                toggle.RaiseEvent(new KeyEventArgs{RoutedEvent=InputElement.KeyDownEvent,Key=Key.Space});toggle.RaiseEvent(new KeyEventArgs{RoutedEvent=InputElement.KeyUpEvent,Key=Key.Space});
+                await Task.Delay(220);window.UpdateLayout();Require(expander.IsExpanded&&expander.Content is Control,"Native expansion lost content");
+                var scroll=(ScrollViewer)views[3];Require(scroll.Content is Control&&scroll.Extent.Height>scroll.Viewport.Height,"ScrollViewer has no scrollable content");scroll.Offset=new Vector(20,50);window.UpdateLayout();Require(scroll.Offset.Y>0,"Native scrolling did not change Offset");
+                var line=(Line)views[4];Require(line.StartPoint==new Point(10,20)&&line.EndPoint==new Point(120,70)&&line.StrokeThickness==3&&line.StrokeDashArray!.SequenceEqual(new[]{3d,2d}),"Line/dash values lost");
+                Require(((Polygon)views[5]).Points!.SequenceEqual(new[]{new Point(0,0),new Point(140,0),new Point(70,80)}),"Polygon points lost");
+                Require(((Polyline)views[6]).Points!.Count==3&&((Polyline)views[6]).StrokeDashArray!.Count==2,"Polyline data lost");
+                var path=(Avalonia.Controls.Shapes.Path)views[7];Require(path.Data is Geometry&&path.Data.Bounds.Width>0&&path.Fill?.ToString()=="#ff123456","Path geometry/fill lost");
+                Require(line.Fill is ISolidColorBrush lineFill&&lineFill.Color==Color.Parse("#123456")&&((Polyline)views[6]).Fill is ISolidColorBrush polyFill&&polyFill.Color==lineFill.Color,"Line/Polyline editable Fill lost");
+                // Viewbox may return fitted Bounds inside its authored Canvas slot.
+                // Compare native positions across resize rather than adding offsets.
+                var canvasFrames=views.Where(v=>v.GetVisualParent()is Canvas).ToDictionary(v=>v,v=>(Position:v.TranslatePoint(default,(Canvas)v.GetVisualParent()!)!.Value,Left:Canvas.GetLeft(v),Top:Canvas.GetTop(v)));
+                foreach(var size in new[]{new Size(800,600),new Size(1200,800),new Size(1600,900)}){
+                    window.Width=size.Width;window.Height=size.Height;await Task.Delay(40);window.UpdateLayout();
+                    foreach(var view in views){Require(view.GetVisualRoot()==window&&view.Bounds.Width>0,"Resize lost "+view.Name);if(view.GetVisualParent()is Canvas parent){var p=view.TranslatePoint(default,parent)!.Value;var expected=canvasFrames[view];Require(Math.Abs(p.X-expected.Position.X)<1&&Math.Abs(p.Y-expected.Position.Y)<1&&Canvas.GetLeft(view)==expected.Left&&Canvas.GetTop(view)==expected.Top,"Canvas native position changed on resize: "+view.Name);}}
+                }
+                Rect Frame(Control c)=>new Rect(c.Bounds.Size).TransformToAABB(c.TransformToVisual(viewbox)!.Value);
+                var original=Frame(viewbox.Child!);viewbox.Width*=1.5;viewbox.Height*=1.5;window.UpdateLayout();var resized=Frame(viewbox.Child!);
+                Require(resized.Width>original.Width*1.4&&resized.Height>original.Height*1.4,"Native Viewbox did not scale content");
+                File.WriteAllText(Environment.GetEnvironmentVariable("METADATA_RUNTIME_RESULT")!,"PASS native=8; Child/Content/Children=true; Points/Data/dashes=true; UniformGrid auto placement=true; Expander keyboard toggle=true; scrolling=true; Viewbox scaling=true; resize=3");desktop.Shutdown(0);
+            }catch(Exception e){File.WriteAllText(Environment.GetEnvironmentVariable("METADATA_RUNTIME_RESULT")!,"FAIL "+e);desktop.Shutdown(1);}
+        };
+    }
+    private static void Require(bool condition,string message){if(!condition)throw new InvalidOperationException(message);}
+}

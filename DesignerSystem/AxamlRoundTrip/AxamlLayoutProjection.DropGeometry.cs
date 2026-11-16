@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.VisualTree;
 using FormDesigner.Models;
 using System.Collections.Generic;
@@ -17,6 +18,7 @@ public static partial class AxamlLayoutProjection
     public sealed partial record JsonLayoutTree
     {
         public IReadOnlyDictionary<string, Panel> ContainerPanels { get; init; } = new Dictionary<string, Panel>();
+        public IReadOnlyDictionary<string, Control> ContentHosts { get; init; } = new Dictionary<string, Control>();
         internal IReadOnlyDictionary<string, bool> ModelVisibility { get; init; } = new Dictionary<string, bool>();
         public IReadOnlyDictionary<string, ContainerMeasurement> MeasuredContainers { get; private set; } = new Dictionary<string, ContainerMeasurement>();
         public IReadOnlyList<LayoutVisualHit> VisualHits { get; private set; } = new List<LayoutVisualHit>();
@@ -25,7 +27,8 @@ public static partial class AxamlLayoutProjection
         {
             var ids = Controls.ToDictionary(p => p.Value, p => p.Key);
             var clips = new Dictionary<Visual, Rect>(); var hits = new List<LayoutVisualHit>();
-            Rect Bounds(Visual visual) => new(visual.TranslatePoint(default, Root) ?? default, visual.Bounds.Size);
+            Rect Bounds(Visual visual) => visual.TransformToVisual(Root) is { } transform
+                ? new Rect(visual.Bounds.Size).TransformToAABB(transform) : default;
             void Visit(Visual visual, Rect clip, bool visible)
             {
                 var bounds = Bounds(visual);
@@ -34,7 +37,7 @@ public static partial class AxamlLayoutProjection
                 {
                     visible &= ModelVisibility[id];
                     // The editor's existing child-host Canvas clips to its model wrapper.
-                    if (ContainerPanels.ContainsKey(id)) clip = clip.Intersect(bounds);
+                    if (ContainerPanels.ContainsKey(id) || ContentHosts.ContainsKey(id)) clip = clip.Intersect(bounds);
                     if (visible) hits.Add(new(id, bounds, clip));
                 }
                 if (visual.ClipToBounds) clip = clip.Intersect(bounds);
@@ -47,16 +50,23 @@ public static partial class AxamlLayoutProjection
             }
             Visit(Root, new Rect(Root.Bounds.Size), true);
             VisualHits = hits;
-            MeasuredContainers = ContainerPanels.ToDictionary(pair => pair.Key, pair =>
+            var containers = ContainerPanels.ToDictionary(pair => pair.Key, pair =>
             {
                 var panel = pair.Value;
-                var mode = panel switch { Grid => DesignerLayoutModes.Grid, StackPanel => DesignerLayoutModes.Stack,
+                var mode = panel switch { UniformGrid => DesignerLayoutModes.Uniform, Grid => DesignerLayoutModes.Grid, StackPanel => DesignerLayoutModes.Stack,
                     WrapPanel => DesignerLayoutModes.Flex, DockPanel => DesignerLayoutModes.Dock, _ => DesignerLayoutModes.Absolute };
                 var children = panel.Children.Where(ids.ContainsKey).Select(c => new LayoutChildMeasurement(ids[c], Bounds(c), c.Margin, ModelVisibility[ids[c]])).ToArray();
                 var horizontal = panel is StackPanel stack ? stack.Orientation == Avalonia.Layout.Orientation.Horizontal
                     : panel is WrapPanel wrap && wrap.Orientation == Avalonia.Layout.Orientation.Horizontal;
                 return new ContainerMeasurement(mode, Bounds(panel), clips[panel], horizontal, panel is DockPanel { LastChildFill: true }, children);
             });
+            foreach(var entry in ContentHosts){
+                var host=entry.Value;
+                var child=host is Viewbox vb?vb.Child:(host as ContentControl)?.Content as Control;
+                var children=child is not null&&ids.TryGetValue(child,out var childId)?new[]{new LayoutChildMeasurement(childId,Bounds(child),child.Margin,ModelVisibility[childId])}:System.Array.Empty<LayoutChildMeasurement>();
+                containers[entry.Key]=new ContainerMeasurement(DesignerLayoutModes.Content,Bounds(host),clips.GetValueOrDefault(host),false,false,children);
+            }
+            MeasuredContainers=containers;
         }
     }
 }

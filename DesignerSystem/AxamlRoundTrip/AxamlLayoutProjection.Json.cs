@@ -55,6 +55,8 @@ public static partial class AxamlLayoutProjection
                 {
                     var parent = Parents[pair.Key];
                     var relativeTo = !string.IsNullOrEmpty(parent) ? Controls[parent] : Root;
+                    var ancestor = pair.Value.Parent;
+                    while(ancestor is not null){if(ancestor is Expander {IsExpanded:false})return default(Rect);ancestor=ancestor.Parent;}
                     var point = pair.Value.TranslatePoint(default, relativeTo) ?? default;
                     return new Rect(point, pair.Value.Bounds.Size);
                 });
@@ -76,6 +78,7 @@ public static partial class AxamlLayoutProjection
         var views = new Dictionary<string, Control>(StringComparer.Ordinal);
         var grids = new Dictionary<string, Grid>(StringComparer.Ordinal);
         var panels = new Dictionary<string, Panel>(StringComparer.Ordinal);
+        var contentHosts = new Dictionary<string, Control>(StringComparer.Ordinal);
         var visiting = new HashSet<string>(StringComparer.Ordinal);
         foreach (var model in models)
             if (!string.IsNullOrEmpty(model.ParentId) && !byId.ContainsKey(model.ParentId))
@@ -111,7 +114,14 @@ public static partial class AxamlLayoutProjection
             var isContainer = model.Type is DesignerControlTypes.Group or DesignerControlTypes.Border
                 or DesignerControlTypes.LayoutGrid or DesignerControlTypes.StackLayout or DesignerControlTypes.FlexLayout;
             Control view;
-            if (isContainer)
+            if (FormDesigner.DesignerSystem.Metadata.StandardControlProperties.IsContainer(model.Type))
+            {
+                view=leafFactory(model);
+                var ordered=children.OrderBy(c=>c.StackOrder).ToArray();
+                FormDesigner.DesignerSystem.Metadata.StandardControlProperties.AttachChildren(view,ordered.Select(Build).ToArray(),designerEmptyTarget:includeHidden);
+                if(view is Panel nativePanel)panels[model.Id]=nativePanel;else contentHosts[model.Id]=view;
+            }
+            else if (isContainer)
             {
                 var mode = string.IsNullOrEmpty(model.ChildLayoutMode) ? DesignerLayoutModes.GetModeForControlType(model.Type) : model.ChildLayoutMode;
                 var panel = PanelFor(mode, model.GridRowDefinitions, model.GridColumnDefinitions, model.Rows, model.Columns, model.LayoutOrientation, model.LayoutSpacing);
@@ -140,12 +150,14 @@ public static partial class AxamlLayoutProjection
 
         void AddChildren(Panel panel, IEnumerable<DesignControlModel> children)
         {
-            if (panel is StackPanel or WrapPanel or DockPanel) children = children.OrderBy(c => c.StackOrder);
+            if (panel is StackPanel or WrapPanel or DockPanel or UniformGrid) children = children.OrderBy(c => c.StackOrder);
             foreach (var child in children)
             {
                 var view = Build(child);
-                Grid.SetRow(view, Math.Max(0, child.GridRow)); Grid.SetColumn(view, Math.Max(0, child.GridColumn));
-                Grid.SetRowSpan(view, Math.Max(1, child.GridRowSpan)); Grid.SetColumnSpan(view, Math.Max(1, child.GridColumnSpan));
+                if(panel is not UniformGrid){
+                    Grid.SetRow(view, Math.Max(0, child.GridRow)); Grid.SetColumn(view, Math.Max(0, child.GridColumn));
+                    Grid.SetRowSpan(view, Math.Max(1, child.GridRowSpan)); Grid.SetColumnSpan(view, Math.Max(1, child.GridColumnSpan));
+                }
                 if (panel is Canvas) { Canvas.SetLeft(view, child.X); Canvas.SetTop(view, child.Y); }
                 if (panel is DockPanel) DockPanel.SetDock(view, LayoutPlacementProperties.GetDock(child));
                 panel.Children.Add(view);
@@ -161,7 +173,7 @@ public static partial class AxamlLayoutProjection
         if (views.Count != models.Count) throw new InvalidOperationException("Layout: дерево содержит недоступные или циклические элементы.");
         return new JsonLayoutTree(root, views, models.ToDictionary(c => c.Id, c => c.ParentId))
         {
-            GridPanels = grids, ContainerPanels = panels,
+            GridPanels = grids, ContainerPanels = panels, ContentHosts = contentHosts,
             ModelVisibility = models.ToDictionary(c => c.Id, c => c.IsVisible && c.Opacity > 0.001)
         };
     }
