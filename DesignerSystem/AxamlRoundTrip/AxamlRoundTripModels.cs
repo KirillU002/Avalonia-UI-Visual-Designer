@@ -229,6 +229,7 @@ public sealed class AxamlPatchResult
     public IReadOnlyList<AxamlRoundTripDiagnostic> Diagnostics { get; }
     public bool HasChanges => Edits.Count > 0;
     public IReadOnlyDictionary<string, int> ControlElementStarts { get; internal set; } = new Dictionary<string, int>();
+    internal AxamlSyntaxDocument? ParsedSyntax { get; set; }
 
     public static AxamlPatchResult Success(string patchedText, IReadOnlyList<AxamlTextEdit> edits, IReadOnlyList<AxamlRoundTripDiagnostic> diagnostics) =>
         new(true, false, patchedText, edits, diagnostics);

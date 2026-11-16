@@ -18,6 +18,9 @@ public partial class MainWindowViewModel
 {
     private AxamlRoundTripDocument? _axamlBufferSource;
     private bool _isAxamlFragmentExport;
+    private bool _axamlSnapshotIsCurrent;
+    private string? _axamlProjectionSnapshot;
+    public bool IsAxamlStructureBusy { get; private set; }
     public AxamlStructuralCapability GetAxamlStructuralCapability(string? id)=>_activeAxamlRoundTripDocument is {} source
         ?AxamlStructuralPolicy.Inspect(source,id):new(false,false,false,false,false,false,false,false,"Не AXAML document.");
     private string AxamlSourceType(DesignControlModel control)=>_activeAxamlRoundTripDocument?.SourceMap.TryGet(control.Id,out var r)==true?r.Element.LocalName
@@ -42,7 +45,7 @@ public partial class MainWindowViewModel
     private AxamlRoundTripDocument ImportAxamlProjection(AxamlRoundTripDocument baseline,DesignerDocumentFileModel model,AxamlPatchResult patch)
     {
         using var stage=FormDesigner.Services.LayoutDropProfile.Stage("AXAML.StructuralSourceMapUpdate");
-        var syntax=AxamlSyntaxDocument.Parse(patch.PatchedText);
+        var syntax=patch.ParsedSyntax??AxamlSyntaxDocument.Parse(patch.PatchedText);
         var elements=AxamlImportStructureReport.Descendants(syntax.Root).ToDictionary(e=>e.OpeningTagSpan.Start);
         var identities=new Dictionary<string,string>(StringComparer.Ordinal);
         foreach(var c in model.Controls.Where(c=>!string.IsNullOrWhiteSpace(c.Name)))identities[c.Name]=c.Id;
@@ -57,7 +60,7 @@ public partial class MainWindowViewModel
             var moved=start+patch.Edits.Where(e=>e.Start<start&&e.End<=start).Sum(e=>e.NewText.Length-e.Length);
             if(elements.TryGetValue(moved,out var element))identities["@path:"+AxamlImportStructureReport.PathOf(element)]=r.ControlId;
         }
-        var imported=_axamlImportService.Import(patch.PatchedText,baseline.SourcePath,identities);
+        var imported=_axamlImportService.ImportParsed(syntax,baseline.SourcePath,identities);
         if(!imported.CapabilityReport.CanOpen||imported.Document.Controls.Count!=model.Controls.Count
             ||!imported.Document.Controls.Select(c=>c.Id).ToHashSet().SetEquals(model.Controls.Select(c=>c.Id)))
             throw new InvalidOperationException("Структурная операция не сохранила однозначные source identities.");
@@ -67,6 +70,15 @@ public partial class MainWindowViewModel
         return imported.RoundTripDocument;
     }
     private bool CommitAxamlStructure(DesignerDocumentFileModel candidate,string? selectedId)
+    {
+        if(IsAxamlStructureBusy){StatusText="Предыдущее изменение структуры ещё выполняется.";return false;}
+        IsAxamlStructureBusy=true;
+        var ownsBusy=!IsBusy;
+        if(ownsBusy)BeginBusy("Изменение AXAML","Проверяем структуру и обновляем source map.");
+        try{return CommitAxamlStructureCore(candidate,selectedId);}
+        finally{IsAxamlStructureBusy=false;if(ownsBusy)EndBusy();}
+    }
+    private bool CommitAxamlStructureCore(DesignerDocumentFileModel candidate,string? selectedId)
     {
         if(_activeAxamlRoundTripDocument is null)return false;
         var baseline=_axamlBufferSource??_activeAxamlRoundTripDocument;
@@ -114,9 +126,10 @@ public partial class MainWindowViewModel
         }
         finally{_isHistorySuspended=suspended;_isStructureTreeRefreshSuspended=false;}
         RebuildStructureTree();NotifyDesignerStateChanged();CommitGridEditorUndoBatch();
+        _axamlProjectionSnapshot=_currentSnapshot;
         OnPropertyChanged(nameof(ActiveAxamlCapabilityReport));return true;
     }
-    private DesignerDocumentFileModel AxamlCandidate()=>JsonSerializer.Deserialize<DesignerDocumentFileModel>(JsonSerializer.Serialize(CreateDocumentFileModel(),JsonOptions),JsonOptions)!;
+    private DesignerDocumentFileModel AxamlCandidate()=>CreateDocumentFileModel();
     private string GetUniqueAxamlControlName(string type)
     {
         var name=GetUniqueControlName(type);
@@ -218,17 +231,44 @@ public partial class MainWindowViewModel
     }
     private void AcknowledgeAxamlStructure(string path,string text,string? snapshot)
     {
+        using var stage=FormDesigner.Services.LayoutDropProfile.Stage("AXAML.AcknowledgeSynchronization");
         var baseline=_axamlBufferSource!;
-        var model=snapshot is null?CreateDocumentFileModel():JsonSerializer.Deserialize<DesignerDocumentFileModel>(snapshot,JsonOptions)!;
-        var patch=_axamlPatchWriter.CreatePatch(baseline,model,fragmentFactory:CreateAxamlDescriptorFragment);
-        if(!patch.CanApply||patch.PatchedText!=text)throw new InvalidOperationException("ACK не соответствует структурному patch.");
-        var updated=ImportAxamlProjection(baseline,model,patch);
-        updated.ReplaceSource(path,updated.Syntax,updated.SourceMap,updated.CapabilityReport);
-        foreach(var r in baseline.SourceMap.Controls.Where(r=>!model.Controls.Any(c=>c.Id==r.ControlId)))
-            baseline.RemovedSources[r.ControlId]=new(baseline.OriginalText,r,baseline.SourceMap.ByControlId);
-        foreach(var pair in baseline.RemovedSources)updated.RemovedSources[pair.Key]=pair.Value;
-        foreach(var pair in baseline.PendingTypes)updated.PendingTypes[pair.Key]=pair.Value;
-        _axamlBufferSource=updated;RefreshAxamlStructureAfterHistory(CreateDocumentFileModel());
-        RebuildPropertyGrid("AxamlStructureAcknowledged");MarkDocumentSaved(path,snapshot);OnPropertyChanged(nameof(ActiveAxamlCapabilityReport));
+        var current=_activeAxamlRoundTripDocument!;
+        AxamlRoundTripDocument updated;
+        var exactCurrent=_axamlProjectionSnapshot==_currentSnapshot
+            &&(snapshot is null||snapshot==_currentSnapshot)&&text==current.OriginalText;
+        if(exactCurrent)
+        {
+            using var reused=FormDesigner.Services.LayoutDropProfile.Stage("AXAML.AcknowledgeReuse");
+            updated=current;
+        }
+        else
+        {
+            var model=snapshot is null?CreateDocumentFileModel():JsonSerializer.Deserialize<DesignerDocumentFileModel>(snapshot,JsonOptions)!;
+            var patch=_axamlPatchWriter.CreatePatch(baseline,model,fragmentFactory:CreateAxamlDescriptorFragment);
+            if(!patch.CanApply||patch.PatchedText!=text)throw new InvalidOperationException("ACK не соответствует структурному patch.");
+            updated=ImportAxamlProjection(baseline,model,patch);
+        }
+        // Keep only evidence absent from the acknowledged map. Present entries are
+        // always rendered from that map, so retaining older whole maps is redundant.
+        foreach(var r in baseline.SourceMap.Controls.Where(r=>!updated.SourceMap.ByControlId.ContainsKey(r.ControlId)))
+            updated.RemovedSources[r.ControlId]=new(baseline.OriginalText,r,baseline.SourceMap.ByControlId);
+        foreach(var pair in baseline.RemovedSources)
+            if(!updated.SourceMap.ByControlId.ContainsKey(pair.Key))updated.RemovedSources[pair.Key]=pair.Value;
+        foreach(var pair in baseline.PendingTypes)
+            if(!updated.SourceMap.ByControlId.ContainsKey(pair.Key))updated.PendingTypes[pair.Key]=pair.Value;
+        AxamlRoundTripDocument working=updated;
+        if(!exactCurrent)
+        {
+            var live=CreateDocumentFileModel();var pending=_axamlPatchWriter.CreatePatch(updated,live,fragmentFactory:CreateAxamlDescriptorFragment);
+            if(!pending.CanApply)throw new InvalidOperationException("Изменения после ACK требуют перезагрузки документа.");
+            working=ImportAxamlProjection(updated,live,pending);
+        }
+        if(updated.SourcePath!=path)updated.ReplaceSource(path,updated.Syntax,updated.SourceMap,updated.CapabilityReport);
+        if(working.SourcePath!=path)working.ReplaceSource(path,working.Syntax,working.SourceMap,working.CapabilityReport);
+        _axamlBufferSource=updated;_activeAxamlRoundTripDocument=working;
+        _axamlProjectionSnapshot=_currentSnapshot;
+        if(!exactCurrent)RebuildPropertyGrid("AxamlStructureAcknowledged");
+        MarkDocumentSaved(path,snapshot);OnPropertyChanged(nameof(ActiveAxamlCapabilityReport));
     }
 }

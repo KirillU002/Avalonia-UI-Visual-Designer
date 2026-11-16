@@ -22,6 +22,14 @@ public sealed class AxamlImportService
         string? sourcePath = null,
         IReadOnlyDictionary<string, string>? knownControlIdsByName = null,
         bool detailedDiagnostics = false)
+        => ImportCore(sourceText,sourcePath,knownControlIdsByName,detailedDiagnostics,null);
+
+    internal AxamlImportResult ImportParsed(AxamlSyntaxDocument syntax,string? sourcePath,
+        IReadOnlyDictionary<string,string>? knownControlIdsByName)
+        => ImportCore(syntax.Text,sourcePath,knownControlIdsByName,false,syntax);
+
+    private AxamlImportResult ImportCore(string sourceText,string? sourcePath,
+        IReadOnlyDictionary<string,string>? knownControlIdsByName,bool detailedDiagnostics,AxamlSyntaxDocument? preparedSyntax)
     {
         detailedDiagnostics |= string.Equals(Environment.GetEnvironmentVariable("FORMDESIGNER_AXAML_IMPORT_DIAGNOSTICS"), "verbose", StringComparison.OrdinalIgnoreCase);
         var diagnostics = new List<AxamlRoundTripDiagnostic>
@@ -34,7 +42,8 @@ public sealed class AxamlImportService
         try
         {
             DesignerDocumentFormat.Validate(sourceText ?? string.Empty, DesignerDocumentKind.AxamlRoundTrip, nameof(AxamlImportService));
-            using (FormDesigner.Services.LayoutDropProfile.Stage("AXAML.SyntaxParse"))
+            if(preparedSyntax is not null) syntax=preparedSyntax;
+            else using (FormDesigner.Services.LayoutDropProfile.Stage("AXAML.SyntaxParse"))
                 syntax = AxamlSyntaxDocument.Parse(sourceText ?? string.Empty);
         }
         catch (Exception ex) when (ex is AxamlSyntaxException or ArgumentException)

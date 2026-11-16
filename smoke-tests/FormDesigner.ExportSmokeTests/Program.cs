@@ -46,6 +46,9 @@ internal static partial class Program
         // Initialize the real UI dispatcher before any view model can create the
         // fallback dispatcher; IPC continuations must run on the actual UI thread.
         EnsureAvaloniaRuntimeInitialized();
+        if (args.Contains("--universal4d-checks")) return RunUniversal4DChecks();
+        if (args.Contains("--universal4d-ack-profile")) return RunUniversal4DAckProfile();
+        if (args.Contains("--universal4d-memory")) return RunUniversal4DMemory();
         if (args.Contains("--universal4c-checks")) return RunUniversal4CChecks();
         if (args.Contains("--universal4c-profile")) return RunUniversal4CProfile();
         if (args.Contains("--universal4c-generated")) return GenerateUniversal4CRuntime();
@@ -463,6 +466,7 @@ internal static partial class Program
             new("AxamlLayoutRebaseUnnamedSiblings", ConfigureSimpleFormExport, AssertLayoutRebaseUnnamedSiblings),
             new("AxamlLayoutSimpleGreenBaseline", ConfigureSimpleFormExport, AssertLayoutSimpleGreenBaseline),
             new("AxamlCoverageTabs", ConfigureSimpleFormExport, AssertCoverageTabs),
+            new("Universal4DTransactions", ConfigureSimpleFormExport, AssertUniversal4DTransactions),
             new("Universal4CStructuralIpc", ConfigureSimpleFormExport, AssertUniversal4CStructuralIpc),
             new("Universal4APropertyElementIpc", ConfigureSimpleFormExport, context => AssertAxamlIpcEdits(context,
                 "<Window xmlns='https://github.com/avaloniaui' xmlns:custom=\"using:X\"><Grid><!-- KEEP --><Button Name='Target' FontFamily='Arial' custom:Unknown=\"KEEP\"><Button.Padding>1,2,3,4</Button.Padding></Button><TreeView><TreeViewItem Name='Node' Header='Old'/></TreeView></Grid></Window>",
@@ -9650,4 +9654,3 @@ Diagnostics:
         }
     }
 }
-

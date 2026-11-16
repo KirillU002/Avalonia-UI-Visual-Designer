@@ -175,9 +175,9 @@ public sealed partial class AxamlPatchWriter
             if(ApplyEdits(source.OriginalText,edits.Select(e=>new AxamlTextEdit(e.Start,e.Length,e.Value.Text)))!=result.Text)
                 throw new InvalidOperationException("Text edit application differs from source projection.");
             DesignerDocumentFormat.Validate(result.Text,DesignerDocumentKind.AxamlRoundTrip,nameof(CreateStructuralPatch));
-            _=AxamlSyntaxDocument.Parse(result.Text);
+            var parsed=AxamlSyntaxDocument.Parse(result.Text);
             var applied=AxamlPatchResult.Success(result.Text,edits.OrderByDescending(e=>e.Start).Select(e=>new AxamlTextEdit(e.Start,e.Length,e.Value.Text)).ToArray(),Array.Empty<AxamlRoundTripDiagnostic>());
-            applied.ControlElementStarts=result.Starts;return applied;
+            applied.ControlElementStarts=result.Starts;applied.ParsedSyntax=parsed;return applied;
         }
         catch(Exception error)when(error is InvalidOperationException or ArgumentException or FormatException or XmlException or AxamlSyntaxException)
         {return AxamlPatchResult.Unsafe(source.OriginalText,new[]{new AxamlRoundTripDiagnostic("AXAML_STRUCTURE_BLOCKED",AxamlDiagnosticSeverity.Warning,error.Message)});}

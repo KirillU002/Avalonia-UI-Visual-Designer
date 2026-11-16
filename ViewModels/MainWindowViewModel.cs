@@ -9477,6 +9477,7 @@ public partial class MainWindowViewModel : ObservableObject
         if (!result.CapabilityReport.CanOpen)
             throw new InvalidOperationException(string.Join(Environment.NewLine, result.CapabilityReport.Entries.Select(entry => entry.Message)));
 
+        _axamlSnapshotIsCurrent=false;
         _axamlBufferSource=null;
         _activeAxamlRoundTripDocument = result.RoundTripDocument;
         foreach (var diagnostic in result.Diagnostics)
@@ -9498,6 +9499,7 @@ public partial class MainWindowViewModel : ObservableObject
         OnPropertyChanged(nameof(DocumentKind));
         OnPropertyChanged(nameof(ActiveAxamlCapabilityReport));
         StatusText = result.CapabilityReport.StatusMessage;
+        _axamlProjectionSnapshot=_currentSnapshot;
     }
 
     public FormDesigner.DesignerSystem.DesignerDocumentKind DocumentKind => IsAxamlRoundTripDocument
@@ -9620,6 +9622,8 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void ClearAxamlRoundTripContext()
     {
+        _axamlProjectionSnapshot=null;
+        _axamlSnapshotIsCurrent=false;
         _axamlBufferSource=null;
         if (_activeAxamlRoundTripDocument is null)
             return;
@@ -14372,6 +14376,18 @@ public partial class MainWindowViewModel : ObservableObject
 
     public ExportedAxamlPreviewModel GenerateExportedAxamlPreviewSnapshot()
     {
+        if(IsAxamlRoundTripDocument)
+        {
+            using var stage=LayoutDropProfile.Stage("AXAML.ImportedPreviewSnapshot");
+            // Imported Preview already uses the trusted native projection. Do not
+            // generate/reload model AXAML or execute the user's original markup.
+            return new ExportedAxamlPreviewModel {
+                SourceKind="ImportedAxaml",Document=CreateDocumentFileModel(),
+                ActiveFormId=ActiveFormDocument?.Id??"",ProjectId=CurrentProject.Id,
+                FallbackToLegacyPreviewOnError=FallbackToLegacyPreviewOnAxamlError,
+                ShowGeneratedAxamlOnError=ShowGeneratedAxamlOnPreviewError
+            };
+        }
         PersistActiveFormDocumentState(refreshProjectViews: false);
 
         var form = ActiveFormDocument
@@ -21976,6 +21992,7 @@ public partial class MainWindowViewModel : ObservableObject
             resetHistory: false);
         _currentSnapshot = snapshot;
         _lastHistoryMutationUtc = DateTime.UtcNow;
+        if(IsAxamlRoundTripDocument)_axamlProjectionSnapshot=snapshot;
         PersistActiveFormDocumentState(refreshProjectViews: false);
 
         RestoreSelectionContextAfterSnapshot(
@@ -22025,6 +22042,7 @@ public partial class MainWindowViewModel : ObservableObject
     {
         var snapshot = JsonSerializer.Serialize(CreateDocumentFileModel(), JsonOptions);
         ActiveSession.ResetHistory(snapshot, markAsSaved);
+        _axamlSnapshotIsCurrent=IsAxamlRoundTripDocument;
         if (!markAsSaved && string.IsNullOrWhiteSpace(_savedSnapshot))
             _savedSnapshot = "";
         RaiseDocumentStateProperties();
@@ -22391,13 +22409,15 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void RegisterHistorySnapshot()
     {
-        using var profileStage = LayoutDropProfile.Stage("CreateUndoSnapshot");
         if (_isHistorySuspended)
             return;
+        if(IsAxamlRoundTripDocument&&_axamlSnapshotIsCurrent)return;
+        using var profileStage = LayoutDropProfile.Stage("CreateUndoSnapshot");
 
         // Группируем частые мелкие изменения в один шаг истории,
         // чтобы перетаскивание мышью не засоряло undo сотнями записей.
         var snapshot = JsonSerializer.Serialize(CreateDocumentFileModel(), JsonOptions);
+        _axamlSnapshotIsCurrent=IsAxamlRoundTripDocument;
         if (snapshot == _currentSnapshot)
             return;
 
@@ -24895,6 +24915,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void NotifyDesignerStateChanged(bool trackHistory = true)
     {
+        _axamlSnapshotIsCurrent=false;
         _gridDropLayoutFingerprint = null;
         TrackRefreshOperation(nameof(NotifyDesignerStateChanged), trackHistory ? "Tracked" : "Untracked");
         // Общая точка синхронизации всего конструктора:

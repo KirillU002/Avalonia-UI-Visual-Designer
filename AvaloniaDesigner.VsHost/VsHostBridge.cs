@@ -27,6 +27,7 @@ public sealed partial class VsHostBridge : IDisposable
     private sealed record PendingPatch(string RequestId, string DocumentId, long BaseVersion, string Text, string DesignerSnapshot);
     private bool _started;
     private bool _disposed;
+    private bool _requiresReload;
 
     public VsHostBridge(MainWindowViewModel viewModel, VsHostWindow window, string pipeName)
     {
@@ -49,6 +50,7 @@ public sealed partial class VsHostBridge : IDisposable
 
     public async Task ApplyAsync()
     {
+        if(_requiresReload){SetStatus("Состояние буфера не подтверждено. Перезагрузите AXAML из Visual Studio перед Apply.");return;}
         if (_pendingPatch is not null)
         {
             SetStatus("Ожидается подтверждение предыдущего patch от Visual Studio.");
@@ -110,6 +112,7 @@ public sealed partial class VsHostBridge : IDisposable
         catch (Exception ex)
         {
             _pendingPatch = null;
+            _requiresReload=true;
             SetStatus($"Не удалось подготовить изменения: {ex.Message}");
             Log("VSHOST_PATCH_CREATE_FAILED", ex.ToString());
         }
@@ -123,6 +126,8 @@ public sealed partial class VsHostBridge : IDisposable
             return;
         }
 
+        // Explicit reload is recovery, never automatic replay of an uncertain patch.
+        _pendingPatch=null;_requiresReload=true;
         await _connection.SendAsync(DesignerHostMessageTypes.ReloadRequested, Guid.NewGuid().ToString("N"), _documentId, new EmptyPayload(), _cancellation.Token);
         SetStatus("Запрошен актуальный AXAML из Visual Studio...");
     }
@@ -131,11 +136,19 @@ public sealed partial class VsHostBridge : IDisposable
 
     private async Task AcceptAndRunAsync()
     {
+        while(!_disposed&&!_cancellation.IsCancellationRequested)
+            if(!await RunConnectionAsync())break;
+    }
+
+    private async Task<bool> RunConnectionAsync()
+    {
+        var connected=false;
         try
         {
             using var server = NamedPipeProtocolConnection.CreateServer(_pipeName);
             await server.WaitForConnectionAsync(_cancellation.Token);
             _connection = new NamedPipeProtocolConnection(server);
+            connected=true;
             SetStatus("Visual Studio подключена.");
             Log("VSHOST_PROTOCOL_HANDSHAKE", "pipe connected");
 
@@ -159,10 +172,12 @@ public sealed partial class VsHostBridge : IDisposable
         {
             _connection?.Dispose();
             _connection = null;
+            if(connected){_pendingPatch=null;_requiresReload=_document is not null;}
             if (!_disposed)
                 SetStatus("Avalonia Designer отключён от Visual Studio.");
             Log("VSHOST_DISCONNECTED", "pipe closed");
         }
+        return connected;
     }
 
     private async Task HandleMessageAsync(DesignerHostEnvelope message)
@@ -191,6 +206,11 @@ public sealed partial class VsHostBridge : IDisposable
                     await SendErrorAsync(message, "DOCUMENT_PAYLOAD_MISSING", "OpenDocument payload is missing.");
                     return;
                 }
+                if(_requiresReload&&_viewModel.HasUnsavedChanges&&message.MessageType==DesignerHostMessageTypes.OpenDocument)
+                {
+                    await SendErrorAsync(message,"RECOVERY_RELOAD_REQUIRED","Unacknowledged Designer changes remain. Request an explicit reload of the actual VS buffer.");
+                    return;
+                }
                 if (message.MessageType == DesignerHostMessageTypes.ReloadDocument)
                     Log("VSHOST_DOCUMENT_RELOAD", $"document={message.DocumentId}");
                 await OpenDocumentAsync(message.DocumentId, document, message);
@@ -212,6 +232,7 @@ public sealed partial class VsHostBridge : IDisposable
                     && (_pendingPatch is null || message.RequestId == _pendingPatch.RequestId))
                 {
                     _pendingPatch = null;
+                    _requiresReload=true;
                     HandleBridgeError(error);
                 }
                 break;
@@ -222,6 +243,7 @@ public sealed partial class VsHostBridge : IDisposable
                 _document = null;
                 _documentId = string.Empty;
                 _pendingPatch = null;
+                _requiresReload=true;
                 SetStatus("Документ закрыт в Visual Studio.");
                 break;
 
@@ -279,6 +301,7 @@ public sealed partial class VsHostBridge : IDisposable
 
             Log("AXAML_SESSION_REOPEN", $"oldVersion={_document?.Version}; newVersion={document.Version}; oldChecksum={_document?.Checksum}; receivedChecksum={document.Checksum}; calculatedChecksum={calculatedChecksum}");
             _document = document;
+            _requiresReload=false;
             _documentId = documentId;
             _sessionId = _viewModel.DocumentSessionId;
             Log("AXAML_SESSION_CREATED", $"documentId={documentId}; session={_sessionId}; kind={_viewModel.DocumentKind}; version={document.Version}; checksum={document.Checksum}");
@@ -313,13 +336,23 @@ public sealed partial class VsHostBridge : IDisposable
             SetStatus("Visual Studio вернула некорректное подтверждение patch.");
             Log("VSHOST_PATCH_APPLY_FAILED", "reason=checksum-mismatch");
             _pendingPatch = null;
+            _requiresReload=true;
             return;
         }
 
+        try
+        {
+            await Dispatcher.UIThread.InvokeAsync(() => _viewModel.MarkAxamlRoundTripSaved(_document.FilePath, applied.Text, pending.DesignerSnapshot));
+        }
+        catch(Exception error)
+        {
+            _pendingPatch=null;_requiresReload=true;
+            SetStatus("ACK не удалось синхронизировать. Перезагрузите фактический буфер Visual Studio.");
+            Log("VSHOST_PATCH_APPLY_FAILED",error.ToString());return;
+        }
         _document.Text = applied.Text;
         _document.Version = applied.Version;
         _document.Checksum = applied.Checksum;
-        await Dispatcher.UIThread.InvokeAsync(() => _viewModel.MarkAxamlRoundTripSaved(_document.FilePath, applied.Text, pending.DesignerSnapshot));
         _pendingPatch = null;
         SetStatus("Изменения применены к буферу Visual Studio. Нажмите Ctrl+S для сохранения.");
         Log("VSHOST_PATCH_APPLIED", $"acknowledgedVersion={applied.Version}");
