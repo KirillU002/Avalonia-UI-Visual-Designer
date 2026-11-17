@@ -89,7 +89,8 @@ public static class DesignerLayoutModes
             DesignerControlTypes.LayoutGrid => Grid,
             DesignerControlTypes.FlexLayout => Flex,
             "UniformGrid" => Uniform,
-            "Viewbox" or "Expander" or "ScrollViewer" or "ButtonSpinner" or "ContentControl" => Content,
+            "ReversibleStackPanel" => Stack,
+            "Viewbox" or "Expander" or "ScrollViewer" or "ButtonSpinner" or "ContentControl" or "LayoutTransformControl" or "TransitioningContentControl" => Content,
             _ => Absolute
         };
     }

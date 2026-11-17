@@ -20,7 +20,7 @@ namespace FormDesigner.DesignerSystem.Metadata;
 public static partial class StandardControlProperties
 {
     public static readonly IReadOnlySet<string> ReadOnlyInspectorKeys = new HashSet<string>(StringComparer.Ordinal)
-        { "Styles", "Resources", "Template", "DataTemplates", "DataContext", "ItemsSource", "ItemTemplate", "ContextMenu", "ContextFlyout", "Flyout", "SelectedItem", "Command", "CommandParameter", "StrokeDashArray", "Target", "Culture", "MaskProvider", "MaskCompleted", "MaskFull", "Inlines", "BlackoutDates", "Transitions", "RenderTransform", "RenderTransformOrigin", "Clip", "OpacityMask", "Cursor" };
+        { "Styles", "Resources", "Template", "DataTemplates", "DataContext", "ItemsSource", "ItemTemplate", "ContextMenu", "ContextFlyout", "Flyout", "SelectedItem", "Command", "CommandParameter", "StrokeDashArray", "Target", "Culture", "MaskProvider", "MaskCompleted", "MaskFull", "Inlines", "BlackoutDates", "Transitions", "RenderTransform", "RenderTransformOrigin", "Clip", "OpacityMask", "Cursor", "PageTransition", "CaretIndex" };
     public static readonly IReadOnlyDictionary<string, Type> PilotTypes = new System.Collections.ObjectModel.ReadOnlyDictionary<string, Type>(
         new Dictionary<string, Type>(StringComparer.Ordinal)
         { ["Slider"] = typeof(Slider), ["ProgressBar"] = typeof(ProgressBar), ["ToggleSwitch"] = typeof(ToggleSwitch) });
@@ -35,7 +35,7 @@ public static partial class StandardControlProperties
             ["Line"] = typeof(Line), ["Polygon"] = typeof(Polygon), ["Polyline"] = typeof(Polyline), ["Path"] = typeof(Path),
             ["Label"] = typeof(Label), ["AccessText"] = typeof(AccessText), ["ToggleButton"] = typeof(ToggleButton),
             ["CalendarDatePicker"] = typeof(CalendarDatePicker), ["MaskedTextBox"] = typeof(MaskedTextBox), ["ContentControl"] = typeof(ContentControl), ["ButtonSpinner"] = typeof(ButtonSpinner),
-            ["SelectableTextBlock"] = typeof(SelectableTextBlock), ["PathIcon"] = typeof(PathIcon), ["Arc"] = typeof(Arc), ["Sector"] = typeof(Sector)
+            ["SelectableTextBlock"] = typeof(SelectableTextBlock), ["PathIcon"] = typeof(PathIcon), ["Arc"] = typeof(Arc), ["Sector"] = typeof(Sector), ["ReversibleStackPanel"] = typeof(ReversibleStackPanel), ["LayoutTransformControl"] = typeof(LayoutTransformControl), ["TransitioningContentControl"] = typeof(TransitioningContentControl)
         }).ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal));
     private static readonly string[] CommonSafeKeys = { "IsEnabled", "MinWidth", "MinHeight", "MaxWidth", "MaxHeight", "Padding", "BorderBrush", "BorderThickness",
         "CornerRadius", "HorizontalContentAlignment", "VerticalContentAlignment", "FontStyle", "FontStretch", "ClipToBounds" };
@@ -66,6 +66,9 @@ public static partial class StandardControlProperties
         ["Path"] = new[]{"Data","Fill","Stroke","StrokeThickness","StrokeDashArray","Stretch","StrokeJoin","StrokeDashOffset","StrokeLineCap"},
         ["SelectableTextBlock"] = new[]{"TextAlignment","TextWrapping","TextTrimming","LineHeight","LetterSpacing","MaxLines","SelectionBrush","SelectionForegroundBrush"},
         ["PathIcon"] = new[]{"Data"},
+        ["ReversibleStackPanel"] = new[]{"ReverseOrder","Orientation","Spacing"},
+        ["LayoutTransformControl"] = new[]{"LayoutTransform","UseRenderTransform"},
+        ["TransitioningContentControl"] = new[]{"IsTransitionReversed"},
         ["Arc"] = new[]{"StartAngle","SweepAngle","Fill","Stroke","StrokeThickness","Stretch","StrokeDashArray","StrokeJoin"},
         ["Sector"] = new[]{"StartAngle","SweepAngle","Fill","Stroke","StrokeThickness","Stretch","StrokeDashArray","StrokeJoin"},
         ["Label"] = Array.Empty<string>(),
@@ -95,11 +98,11 @@ public static partial class StandardControlProperties
             ? string.Join(",", numbers.Select(n=>n.ToString("R",CultureInfo.InvariantCulture))) : text;
     public static bool IsShape(string type) => SupportedTypes.TryGetValue(type,out var native) && typeof(Shape).IsAssignableFrom(native);
     public static AvaloniaPropertyInfo? Find(string? type, string key) => PropertiesFor(type).FirstOrDefault(p => p.Key == key);
-    public static MetadataEditor EditorFor(AvaloniaPropertyInfo property) => ShapeLiteralCodec.Supports(property) || TransformLiteralCodec.Supports(property) || IsLiteralObject(property) ? MetadataEditor.Text : property.OwnerType == typeof(TimePicker) && property.Key == "ClockIdentifier"
+    public static MetadataEditor EditorFor(AvaloniaPropertyInfo property) => ShapeLiteralCodec.Supports(property) || TransformLiteralCodec.Supports(property) || TextDecorationsLiteralCodec.Supports(property) || IsLiteralObject(property) ? MetadataEditor.Text : property.OwnerType == typeof(TimePicker) && property.Key == "ClockIdentifier"
         ? MetadataEditor.Enumeration : property.Editor;
     // Preserve the pre-adapter disclosure category. Moving these formerly opaque
     // rows into expanded Behavior eagerly realizes editors on every selection.
-    public static string CategoryFor(AvaloniaPropertyInfo property) => property.Key is "Clip" or "RenderTransform" or "RenderTransformOrigin" ? "Advanced" : property.Key is "BoxShadow" or "TextAlignment" or "TextWrapping" or "TextTrimming" or "LineHeight" or "LetterSpacing" or "MaxLines" ? "Appearance" : property.Key is "MinWidth" or "MinHeight" or "MaxWidth" or "MaxHeight"
+    public static string CategoryFor(AvaloniaPropertyInfo property) => property.Key is "Clip" or "RenderTransform" or "RenderTransformOrigin" or "LayoutTransform" or "OpacityMask" or "TextDecorations" or "SelectionBrush" or "SelectionForegroundBrush" ? "Advanced" : property.Key is "BoxShadow" or "TextAlignment" or "TextWrapping" or "TextTrimming" or "LineHeight" or "LetterSpacing" or "MaxLines" ? "Appearance" : property.Key is "FlowDirection" or "MinWidth" or "MinHeight" or "MaxWidth" or "MaxHeight"
         || property.Editor is MetadataEditor.Thickness or MetadataEditor.CornerRadius ? "Layout"
         : property.Editor is MetadataEditor.Color or MetadataEditor.Font || property.Key.StartsWith("Font", StringComparison.Ordinal) ? "Appearance" : "Behavior";
     public static DesignPropertyDescriptor Descriptor(AvaloniaPropertyInfo property) => new()
@@ -116,7 +119,9 @@ public static partial class StandardControlProperties
     };
     public static string Hint(AvaloniaPropertyInfo property) => IsViewport(property) ? "Размер видимой области. NaN — нативный автоматический режим ScrollBar; конечное число должно быть неотрицательным." : property.Editor switch
     {
-        _ when TransformLiteralCodec.Supports(property) => property.Key=="RenderTransform"?"Матрица Avalonia: matrix(m11,m12,m21,m22,offsetX,offsetY), шесть конечных чисел. Сложные Transform-объекты сохраняются opaque.":"Начало преобразования: две координаты DIP либо два процента, например 50%,50%.",
+        _ when TextDecorationsLiteralCodec.Supports(property) => "Стандартные имена Underline, Strikethrough, Overline, Baseline через запятую. (null) очищает; custom pen/offset collections сохраняются opaque.",
+        _ when property.Key=="OpacityMask" => "Только SolidColorBrush с alpha или (null). Gradient/Binding/Resource не заменяются строкой.",
+        _ when TransformLiteralCodec.Supports(property) => property.Key!="RenderTransformOrigin"?"Avalonia transform operations: translate(4px,6px) rotate(30deg) scale(2,0.5) skew(5deg,0deg) matrix(...). До 16 операций; порядок сохраняется. Объектные TransformGroup остаются opaque.":"Начало преобразования: две координаты DIP либо два процента, например 50%,50%.",
         _ when ShapeLiteralCodec.Supports(property) => property.Key is "Data" or "Clip"?"Проверяемая path mini-language Avalonia (M/L/C/Q/A/Z); до 16384 символов. Объекты Geometry, Bindings и Resources не преобразуются в строку.":property.Key=="Points"?"Координаты x,y через пробел: 0,0 100,0 50,80. До 1024 точек; конечные значения.":"Неотрицательные длины штрихов через пробел или запятую; пустое значение очищает список.",
         _ when IsLiteralObject(property) => "Текстовый Header/ToolTip. Объектные значения, Bindings и Resources сохраняются отдельно и не заменяются текстом.",
         _ when property.OwnerType == typeof(RepeatButton) && property.Key is "Delay" or "Interval" => "Интервал в миллисекундах, не меньше нуля. Отрицательные значения недопустимы для нативного таймера.",
@@ -177,7 +182,7 @@ public static partial class StandardControlProperties
             }
         }
         catch (Exception error) when (error is FormatException or ArgumentException) { return false; }
-        json = (ShapeLiteralCodec.Supports(property) || TransformLiteralCodec.Supports(property)) && value is not null ? JsonSerializer.Serialize(text.Trim()) : Encode(value); return true;
+        json = (ShapeLiteralCodec.Supports(property) || TransformLiteralCodec.Supports(property) || TextDecorationsLiteralCodec.Supports(property)) && value is not null ? JsonSerializer.Serialize(text.Trim()) : Encode(value); return true;
     }
     private static string Encode(object? value) => value switch
     {
@@ -187,6 +192,7 @@ public static partial class StandardControlProperties
     };
     public static bool TryParseValue(AvaloniaPropertyInfo property, string text, out object? value)
     {
+        if (TextDecorationsLiteralCodec.Supports(property)) return TextDecorationsLiteralCodec.TryParse(text,out value);
         if (TransformLiteralCodec.Supports(property)) return TransformLiteralCodec.TryParse(property,text,out value);
         if (ShapeLiteralCodec.Supports(property)) return ShapeLiteralCodec.TryParse(property,text,out value);
         if (IsLiteralObject(property)) { value=text is MetadataValueCodec.NullText or "{x:Null}"?null:text;return !text.TrimStart().StartsWith('{')||text=="{x:Null}"; }
@@ -197,13 +203,13 @@ public static partial class StandardControlProperties
     }
     private static bool IsViewport(AvaloniaPropertyInfo property) => property.OwnerType == typeof(ScrollBar) && property.Key == "ViewportSize";
     private static bool IsLiteralObject(AvaloniaPropertyInfo property) => property.Key=="Header" && property.OwnerType==typeof(HeaderedContentControl) || property.Key=="ToolTip.Tip";
-    public static bool IsContainer(string type) => type is "Viewbox" or "UniformGrid" or "Expander" or "ScrollViewer" or "ButtonSpinner" or "ContentControl";
-    public static bool IsSingleChild(string type) => IsContainer(type) && type != "UniformGrid";
-    public static string ContainerMode(string type) => type=="UniformGrid"?DesignerLayoutModes.Uniform:DesignerLayoutModes.Content;
+    public static bool IsContainer(string type) => type is "Viewbox" or "UniformGrid" or "Expander" or "ScrollViewer" or "ButtonSpinner" or "ContentControl" or "ReversibleStackPanel" or "LayoutTransformControl" or "TransitioningContentControl";
+    public static bool IsSingleChild(string type) => IsContainer(type) && type is not ("UniformGrid" or "ReversibleStackPanel");
+    public static string ContainerMode(string type) => type=="UniformGrid"?DesignerLayoutModes.Uniform:type=="ReversibleStackPanel"?DesignerLayoutModes.Stack:DesignerLayoutModes.Content;
     public static void AttachChildren(Control host, System.Collections.Generic.IReadOnlyList<Control> children) => AttachChildren(host,children,false);
     public static void AttachChildren(Control host, System.Collections.Generic.IReadOnlyList<Control> children,bool designerEmptyTarget)
     {
-        if (host is UniformGrid panel) { foreach(var child in children)panel.Children.Add(child);return; }
+        if (host is Panel panel) { foreach(var child in children)panel.Children.Add(child);return; }
         if (children.Count>1)throw new InvalidOperationException("Контейнер "+host.Name+" принимает один Content/Child. Поместите несколько controls во вложенный Layout.");
         var content=children.SingleOrDefault();
         // An empty Viewbox legitimately arranges to zero in Avalonia. This is
@@ -211,6 +217,7 @@ public static partial class StandardControlProperties
         if(content is null && designerEmptyTarget && host is Viewbox)
             content=new Border{MinWidth=48,MinHeight=32,Background=Avalonia.Media.Brushes.Transparent,IsHitTestVisible=false};
         if(host is Viewbox viewbox)viewbox.Child=content;
+        else if(host is Decorator decorator)decorator.Child=content;
         else if(host is ContentControl control)control.Content=content;
     }
     public static bool HasLiteralContent(string type) => type is "ToggleSwitch" or "RadioButton" or "HyperlinkButton" or "RepeatButton" or "Label" or "ToggleButton";
@@ -249,7 +256,7 @@ public static partial class StandardControlProperties
             if (property is not null && MetadataValueCodec.TryParse(property.PropertyType, MetadataValueCodec.Display(value), out var parsed))
                 control.SetValue(property.Property!, parsed);
         }
-        if(type is "Expander" or "ContentControl"&&control is ContentControl contentHost&&node.CustomProperties.TryGetValue("Content",out var literalContent))
+        if(type is "Expander" or "ContentControl" or "TransitioningContentControl"&&control is ContentControl contentHost&&node.CustomProperties.TryGetValue("Content",out var literalContent))
             contentHost.Content=JsonSerializer.Deserialize<string>(literalContent);
         foreach (var property in PropertiesFor(type))
         {

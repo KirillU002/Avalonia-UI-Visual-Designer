@@ -58,6 +58,10 @@ internal static partial class Program
         if (args.Contains("--universal4c-generated")) return GenerateUniversal4CRuntime();
         if (args.Contains("--universal5a-audit")) return RunUniversal5AAudit();
         if (args.Contains("--universal5f-checks")) return RunUniversal5FChecks();
+        if (args.Contains("--universal5g-api")) return Inspect5GApi();
+        if (args.Contains("--universal5g-checks")) return Run5GChecks();
+        if (args.Contains("--universal5g-generated")) return Generate5GProjects();
+        if (args.Contains("--universal5g-audit")) return Audit5G();
         if (args.Contains("--universal5f-inspector-diagnostics")) return Diagnose5FInspector();
         if (args.Contains("--universal5f-generated")) return GenerateUniversal5FProjects();
         if (args.Contains("--universal5e-audit")) return RunUniversal5EAudit();

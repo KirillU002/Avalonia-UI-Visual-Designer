@@ -15,6 +15,7 @@ public class ToolboxItem
     public string ProviderBadge { get; set; } = "";
     public string Icon => Type switch
     {
+        "ReversibleStackPanel"=>"⇅", "LayoutTransformControl"=>"⤢", "TransitioningContentControl"=>"↝",
         "SelectableTextBlock"=>"I↔", "PathIcon"=>"◇", "Arc"=>"◜", "Sector"=>"◔",
         "ContentControl"=>"Cc", "ItemsControl"=>"Ic", "Carousel"=>"↔", "TabStrip"=>"▤",
         "ScrollBar" => "↕", "GridSplitter" => "⋮", "Rectangle" => "▭", "Ellipse" => "○",

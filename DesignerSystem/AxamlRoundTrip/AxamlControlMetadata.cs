@@ -35,6 +35,9 @@ public sealed record AxamlControlMetadata(string SourceType, string ProjectionTy
         ["Canvas"] = new("Canvas", "Group", AxamlContainerKind.PanelChildren, "Children"),
         ["WrapPanel"] = new("WrapPanel", "WrapPanel", AxamlContainerKind.PanelChildren, "Children"),
         ["Viewbox"] = new("Viewbox", "Group", AxamlContainerKind.Decorator, "Child"),
+        ["ReversibleStackPanel"] = new("ReversibleStackPanel", "Group", AxamlContainerKind.PanelChildren, "Children"),
+        ["LayoutTransformControl"] = new("LayoutTransformControl", "Group", AxamlContainerKind.Decorator, "Child"),
+        ["TransitioningContentControl"] = new("TransitioningContentControl", "Group", AxamlContainerKind.SingleContent, "Content", TextContentProperty: "Content"),
         ["UniformGrid"] = new("UniformGrid", "Group", AxamlContainerKind.PanelChildren, "Children"),
         ["ScrollViewer"] = new("ScrollViewer", "Group", AxamlContainerKind.SingleContent, "Content"),
         ["TabControl"] = new("TabControl", "Group", AxamlContainerKind.Items, "Items", "TabItem"),
@@ -176,7 +179,7 @@ public sealed record AxamlControlMetadata(string SourceType, string ProjectionTy
         ? StandardControlProperties.PropertiesFor(SourceType).Select(p => new AxamlLiteralProperty(p.Key, p.DefaultText,
             Options: StandardControlProperties.EditorFor(p) == MetadataEditor.Enumeration ? StandardControlProperties.Options(p).ToArray() : null,
             IsBoolean: p.Editor == MetadataEditor.Boolean, IsNumber: p.Editor == MetadataEditor.Number, Metadata: p))
-            .Concat(SourceType is "Expander" or "ContentControl"?new[]{new AxamlLiteralProperty("Content","")}:Array.Empty<AxamlLiteralProperty>()).ToArray()
+            .Concat(SourceType is "Expander" or "ContentControl" or "TransitioningContentControl"?new[]{new AxamlLiteralProperty("Content","")}:Array.Empty<AxamlLiteralProperty>()).ToArray()
         : SourceType switch
     {
         "Carousel" or "TabStrip" => new[] { new AxamlLiteralProperty("SelectedIndex", "-1", IsInteger: true) },

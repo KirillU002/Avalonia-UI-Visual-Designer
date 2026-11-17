@@ -1,0 +1,47 @@
+{
+  "Definition": "Historical 72/4935 retained separately. Corrected control scope excludes architectural HeaderedItemsControl only; associated/infrastructure/root/presenter types remain excluded as before. Corrected properties also exclude explicitly listed runtime diagnostic/caret state. Writable complex properties and authorable getter collections remain in denominator, including Templates/Styles/Resources/Transitions. Initial SelectionStart/SelectionEnd remain authorable where explicitly supported. Not a claim of arbitrary expression support.",
+  "RuntimeStateExcluded": [
+    "ActualThemeVariant",
+    "Bounds",
+    "CaretIndex",
+    "DesiredSize",
+    "IsArrangeValid",
+    "IsEffectivelyEnabled",
+    "IsEffectivelyVisible",
+    "IsFocused",
+    "IsKeyboardFocusWithin",
+    "IsMeasureValid",
+    "IsPointerOver",
+    "SelectedText"
+  ],
+  "PropertyCoverage": [
+    {
+      "Phase": "Before",
+      "HistoricalPairs": 4935,
+      "ApplicableControls": 71,
+      "CorrectedAuthorablePairs": 4788,
+      "ExcludedArchitecturalBase": 71,
+      "ExcludedRuntimeState": 76,
+      "Editable": 2343,
+      "Serializable": 2582,
+      "SourcePatchable": 2527,
+      "Exportable": 2343,
+      "EditableAndExportable": 2343,
+      "Percent": 48.93483709273183
+    },
+    {
+      "Phase": "After",
+      "HistoricalPairs": 4935,
+      "ApplicableControls": 71,
+      "CorrectedAuthorablePairs": 4788,
+      "ExcludedArchitecturalBase": 71,
+      "ExcludedRuntimeState": 76,
+      "Editable": 2579,
+      "Serializable": 2818,
+      "SourcePatchable": 2760,
+      "Exportable": 2579,
+      "EditableAndExportable": 2579,
+      "Percent": 53.863826232247284
+    }
+  ]
+}

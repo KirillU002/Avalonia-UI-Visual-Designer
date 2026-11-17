@@ -21,7 +21,7 @@ public static partial class StandardControlProperties
         ["ListBox"]=typeof(ListBox),["Menu"]=typeof(Menu),["ComboBox"]=typeof(ComboBox),["TabControl"]=typeof(TabControl),["TreeView"]=typeof(TreeView),
         ["ItemsControl"]=typeof(ItemsControl),["Carousel"]=typeof(Carousel),["TabStrip"]=typeof(Avalonia.Controls.Primitives.TabStrip)
     };
-    private static readonly string[] AdditionalKeys={"IsEnabled","IsHitTestVisible","Focusable","IsTabStop","TabIndex","UseLayoutRounding","ClipToBounds","FontStyle","FontStretch","ToolTip.Tip","RenderTransform","RenderTransformOrigin","Clip"};
+    private static readonly string[] AdditionalKeys={"IsEnabled","IsHitTestVisible","Focusable","IsTabStop","TabIndex","UseLayoutRounding","ClipToBounds","FontStyle","FontStretch","ToolTip.Tip","RenderTransform","RenderTransformOrigin","Clip","FlowDirection","OpacityMask","TextDecorations","SelectionBrush","SelectionForegroundBrush"};
     private static IEnumerable<string> AdditionalKeysFor(string type) => AdditionalKeys.Concat(type switch
     {
         "TextBox" => new[]{"IsReadOnly","MaxLength","AcceptsReturn","AcceptsTab","TextWrapping","TextAlignment"},

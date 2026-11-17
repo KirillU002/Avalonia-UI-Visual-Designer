@@ -8,13 +8,13 @@
       "Standalone": 66,
       "ChildOnly": 6,
       "FullySupported": 0,
-      "PartiallySupported": 61,
+      "PartiallySupported": 64,
       "AxamlImportOnly": 0,
-      "MetadataOnly": 11,
+      "MetadataOnly": 8,
       "Unsupported": 0,
       "FullPercent": 0,
-      "PartialPercent": 84.72222222222223,
-      "VerifiedScalarPipelines": 12
+      "PartialPercent": 88.88888888888889,
+      "VerifiedScalarPipelines": 16
     },
     {
       "Assembly": "Avalonia.Controls.ColorPicker",
@@ -549,5 +549,5 @@
     "GroupBox"
   ],
   "Themes": "Styles/themes are dependencies, not controls; no combined theme/third-party percentage",
-  "RuntimeEvidence": "Phase5F Inspector/native Preview proof intersected with two running generated apps; evidence-only overlay, support status and scope unchanged."
+  "VerificationNote": "Phase 5G: Inspector edit, JSON file reopen, native Designer/Legacy/AXAML/imported Preview and two built/running generated applications; 195 explicit unique canonical pairs on 16 types. All controls remain Partial; not all-value or full-library certification."
 }

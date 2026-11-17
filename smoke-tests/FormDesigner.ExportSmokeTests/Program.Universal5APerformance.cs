@@ -43,7 +43,7 @@ internal static partial class Program
                             PeakWorkingSet = process.PeakWorkingSet64 });
                     }
                     Measure("ToolboxCreate", () => { vm.CreateControl(type, 0, 0); window.UpdateLayout(); });
-                    var target = vm.Controls.Single(); vm.CreateControl("TextBox", 0, 0); window.UpdateLayout();
+                    var target = vm.Controls.Single(); vm.CreateControl(Environment.GetEnvironmentVariable("UNIVERSAL5A_SELECTION_SOURCE") ?? "TextBox", 0, 0); window.UpdateLayout();
                     Measure("Inspector", () => { var start=Stopwatch.GetTimestamp(); vm.SelectSingleControl(target); var selected=Stopwatch.GetTimestamp(); window.UpdateLayout(); var laidOut=Stopwatch.GetTimestamp(); selectionMs=Stopwatch.GetElapsedTime(start,selected).TotalMilliseconds;layoutMs=Stopwatch.GetElapsedTime(selected,laidOut).TotalMilliseconds; });
                     Measure("SaveLoad", () => { var json = vm.ExportWorkspaceJson(); var copy = GridFirstVm();
                         try { copy.LoadDocumentJson(json); RequireCapability(copy.Controls.Any(c => c.Id == target.Id && c.Type == type), "Save/load identity lost."); }

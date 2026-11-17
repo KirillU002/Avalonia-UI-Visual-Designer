@@ -1,0 +1,17 @@
+Type,VerifiedLiteralPairs,Inspector,Json,Designer,AxamlPreview,LegacyPreview,ImportedPreview,GridRuntime,CanvasRuntime,Scope
+Avalonia.Controls.Button,15,True,True,True,True,True,True,True,True,Explicit literal matrix only; not Fully Supported
+Avalonia.Controls.TextBox,23,True,True,True,True,True,True,True,True,Explicit literal matrix only; not Fully Supported
+Avalonia.Controls.TextBlock,22,True,True,True,True,True,True,True,True,Explicit literal matrix only; not Fully Supported
+Avalonia.Controls.Border,14,True,True,True,True,True,True,True,True,Explicit literal matrix only; not Fully Supported
+Avalonia.Controls.Slider,15,True,True,True,True,True,True,True,True,Explicit literal matrix only; not Fully Supported
+Avalonia.Controls.NumericUpDown,15,True,True,True,True,True,True,True,True,Explicit literal matrix only; not Fully Supported
+Avalonia.Controls.ListBox,15,True,True,True,True,True,True,True,True,Explicit literal matrix only; not Fully Supported
+Avalonia.Controls.Calendar,15,True,True,True,True,True,True,True,True,Explicit literal matrix only; not Fully Supported
+Avalonia.Controls.SelectableTextBlock,11,True,True,True,True,True,True,True,True,Explicit literal matrix only; not Fully Supported
+Avalonia.Controls.PathIcon,6,True,True,True,True,True,True,True,True,Explicit literal matrix only; not Fully Supported
+Avalonia.Controls.Shapes.Arc,12,True,True,True,True,True,True,True,True,Explicit literal matrix only; not Fully Supported
+Avalonia.Controls.Shapes.Sector,12,True,True,True,True,True,True,True,True,Explicit literal matrix only; not Fully Supported
+Avalonia.Controls.ReversibleStackPanel,6,True,True,True,True,True,True,True,True,Explicit literal matrix only; not Fully Supported
+Avalonia.Controls.LayoutTransformControl,5,True,True,True,True,True,True,True,True,Explicit literal matrix only; not Fully Supported
+Avalonia.Controls.TransitioningContentControl,4,True,True,True,True,True,True,True,True,Explicit literal matrix only; not Fully Supported
+Avalonia.Controls.MaskedTextBox,5,True,True,True,True,True,True,True,True,Explicit literal matrix only; not Fully Supported
