@@ -4925,6 +4925,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void RebuildDescriptorCustomPropertyEditors()
     {
+        using var profile = LayoutDropProfile.Stage("Selection.LegacyDescriptorEditors");
         DescriptorCustomPropertyEditors.Clear();
 
         foreach (var descriptor in GetCustomDescriptorProperties(SelectedControl))
@@ -23370,6 +23371,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void HandleSelectedControlChanged(DesignControlModel? value)
     {
+        using var profile = LayoutDropProfile.Stage("Selection.Changed");
         if (_suppressNextSelectedControlChangedForSameSelection)
         {
             TraceDocumentDebug(
@@ -24915,6 +24917,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void NotifyDesignerStateChanged(bool trackHistory = true)
     {
+        using var profile = LayoutDropProfile.Stage("DesignerStateChanged");
         _axamlSnapshotIsCurrent=false;
         _gridDropLayoutFingerprint = null;
         TrackRefreshOperation(nameof(NotifyDesignerStateChanged), trackHistory ? "Tracked" : "Untracked");

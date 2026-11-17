@@ -14,7 +14,9 @@ namespace FormDesigner.DesignerSystem.Metadata;
 internal static class ShapeLiteralCodec
 {
     public static bool Supports(AvaloniaPropertyInfo property) => typeof(Shape).IsAssignableFrom(property.OwnerType)
-        && property.Key is "Points" or "Data" or "StrokeDashArray";
+        && property.Key is "Points" or "Data" or "StrokeDashArray"
+        || property.OwnerType == typeof(Avalonia.Controls.PathIcon) && property.Key == "Data"
+        || property.Key == "Clip" && property.PropertyType == typeof(Geometry);
 
     public static bool TryParse(AvaloniaPropertyInfo property, string text, out object? value)
     {
@@ -23,7 +25,7 @@ internal static class ShapeLiteralCodec
         if (text.Length > 16384 || text.TrimStart().StartsWith('{')) return false;
         try
         {
-            if (property.Key == "Data")
+            if (property.Key is "Data" or "Clip")
             {
                 // Only the standard path mini-language, with bounded finite coordinates.
                 if (string.IsNullOrWhiteSpace(text) || text.Any(c => !(char.IsAsciiDigit(c) || char.IsWhiteSpace(c) || ",.+-eEMmLlHhVvCcSsQqTtAaZzFf".Contains(c)))) return false;

@@ -34,7 +34,8 @@ public static partial class StandardControlProperties
             ["Viewbox"] = typeof(Viewbox), ["UniformGrid"] = typeof(UniformGrid), ["Expander"] = typeof(Expander), ["ScrollViewer"] = typeof(ScrollViewer),
             ["Line"] = typeof(Line), ["Polygon"] = typeof(Polygon), ["Polyline"] = typeof(Polyline), ["Path"] = typeof(Path),
             ["Label"] = typeof(Label), ["AccessText"] = typeof(AccessText), ["ToggleButton"] = typeof(ToggleButton),
-            ["CalendarDatePicker"] = typeof(CalendarDatePicker), ["MaskedTextBox"] = typeof(MaskedTextBox), ["ContentControl"] = typeof(ContentControl), ["ButtonSpinner"] = typeof(ButtonSpinner)
+            ["CalendarDatePicker"] = typeof(CalendarDatePicker), ["MaskedTextBox"] = typeof(MaskedTextBox), ["ContentControl"] = typeof(ContentControl), ["ButtonSpinner"] = typeof(ButtonSpinner),
+            ["SelectableTextBlock"] = typeof(SelectableTextBlock), ["PathIcon"] = typeof(PathIcon), ["Arc"] = typeof(Arc), ["Sector"] = typeof(Sector)
         }).ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal));
     private static readonly string[] CommonSafeKeys = { "IsEnabled", "MinWidth", "MinHeight", "MaxWidth", "MaxHeight", "Padding", "BorderBrush", "BorderThickness",
         "CornerRadius", "HorizontalContentAlignment", "VerticalContentAlignment", "FontStyle", "FontStretch", "ClipToBounds" };
@@ -63,6 +64,10 @@ public static partial class StandardControlProperties
         ["Polygon"] = new[]{"Points","Fill","Stroke","StrokeThickness","StrokeDashArray","Stretch","StrokeJoin"},
         ["Polyline"] = new[]{"Points","Fill","Stroke","StrokeThickness","StrokeDashArray","Stretch","StrokeJoin"},
         ["Path"] = new[]{"Data","Fill","Stroke","StrokeThickness","StrokeDashArray","Stretch","StrokeJoin","StrokeDashOffset","StrokeLineCap"},
+        ["SelectableTextBlock"] = new[]{"TextAlignment","TextWrapping","TextTrimming","LineHeight","LetterSpacing","MaxLines","SelectionBrush","SelectionForegroundBrush"},
+        ["PathIcon"] = new[]{"Data"},
+        ["Arc"] = new[]{"StartAngle","SweepAngle","Fill","Stroke","StrokeThickness","Stretch","StrokeDashArray","StrokeJoin"},
+        ["Sector"] = new[]{"StartAngle","SweepAngle","Fill","Stroke","StrokeThickness","Stretch","StrokeDashArray","StrokeJoin"},
         ["Label"] = Array.Empty<string>(),
         ["AccessText"] = new[]{"ShowAccessKey","TextAlignment","TextWrapping","LetterSpacing","LineSpacing","MaxLines"},
         ["ToggleButton"] = new[]{"IsChecked","IsThreeState","ClickMode"},
@@ -81,11 +86,20 @@ public static partial class StandardControlProperties
     public static IReadOnlyList<AvaloniaPropertyInfo> PropertiesFor(string? type) =>
         type is not null && Supported.Value.TryGetValue(type, out var entry) ? entry.Properties : Array.Empty<AvaloniaPropertyInfo>();
     public static bool HasNativeProperty(string type, string key) => Supported.Value.TryGetValue(type,out var entry) && entry.NativeKeys.Contains(key);
+    // AvaloniaList<double>'s AXAML converter requires commas, while the typed
+    // editor deliberately accepts spaces too. Keep authored JSON; emit a known,
+    // reversible numeric list at the export boundary, never object.ToString().
+    public static string AttributeText(AvaloniaPropertyInfo property, string text) =>
+        property.Key == "StrokeDashArray" && ShapeLiteralCodec.Supports(property)
+        && TryParseValue(property,text,out var value) && value is System.Collections.Generic.IEnumerable<double> numbers
+            ? string.Join(",", numbers.Select(n=>n.ToString("R",CultureInfo.InvariantCulture))) : text;
     public static bool IsShape(string type) => SupportedTypes.TryGetValue(type,out var native) && typeof(Shape).IsAssignableFrom(native);
     public static AvaloniaPropertyInfo? Find(string? type, string key) => PropertiesFor(type).FirstOrDefault(p => p.Key == key);
-    public static MetadataEditor EditorFor(AvaloniaPropertyInfo property) => ShapeLiteralCodec.Supports(property) || IsLiteralObject(property) ? MetadataEditor.Text : property.OwnerType == typeof(TimePicker) && property.Key == "ClockIdentifier"
+    public static MetadataEditor EditorFor(AvaloniaPropertyInfo property) => ShapeLiteralCodec.Supports(property) || TransformLiteralCodec.Supports(property) || IsLiteralObject(property) ? MetadataEditor.Text : property.OwnerType == typeof(TimePicker) && property.Key == "ClockIdentifier"
         ? MetadataEditor.Enumeration : property.Editor;
-    public static string CategoryFor(AvaloniaPropertyInfo property) => property.Key is "BoxShadow" or "TextAlignment" or "TextWrapping" or "TextTrimming" or "LineHeight" or "LetterSpacing" or "MaxLines" ? "Appearance" : property.Key is "MinWidth" or "MinHeight" or "MaxWidth" or "MaxHeight"
+    // Preserve the pre-adapter disclosure category. Moving these formerly opaque
+    // rows into expanded Behavior eagerly realizes editors on every selection.
+    public static string CategoryFor(AvaloniaPropertyInfo property) => property.Key is "Clip" or "RenderTransform" or "RenderTransformOrigin" ? "Advanced" : property.Key is "BoxShadow" or "TextAlignment" or "TextWrapping" or "TextTrimming" or "LineHeight" or "LetterSpacing" or "MaxLines" ? "Appearance" : property.Key is "MinWidth" or "MinHeight" or "MaxWidth" or "MaxHeight"
         || property.Editor is MetadataEditor.Thickness or MetadataEditor.CornerRadius ? "Layout"
         : property.Editor is MetadataEditor.Color or MetadataEditor.Font || property.Key.StartsWith("Font", StringComparison.Ordinal) ? "Appearance" : "Behavior";
     public static DesignPropertyDescriptor Descriptor(AvaloniaPropertyInfo property) => new()
@@ -102,7 +116,8 @@ public static partial class StandardControlProperties
     };
     public static string Hint(AvaloniaPropertyInfo property) => IsViewport(property) ? "Размер видимой области. NaN — нативный автоматический режим ScrollBar; конечное число должно быть неотрицательным." : property.Editor switch
     {
-        _ when ShapeLiteralCodec.Supports(property) => property.Key=="Data"?"Проверяемая path mini-language Avalonia (M/L/C/Q/A/Z); до 16384 символов. Объекты Geometry, Bindings и Resources не преобразуются в строку.":property.Key=="Points"?"Координаты x,y через пробел: 0,0 100,0 50,80. До 1024 точек; конечные значения.":"Неотрицательные длины штрихов через пробел или запятую; пустое значение очищает список.",
+        _ when TransformLiteralCodec.Supports(property) => property.Key=="RenderTransform"?"Матрица Avalonia: matrix(m11,m12,m21,m22,offsetX,offsetY), шесть конечных чисел. Сложные Transform-объекты сохраняются opaque.":"Начало преобразования: две координаты DIP либо два процента, например 50%,50%.",
+        _ when ShapeLiteralCodec.Supports(property) => property.Key is "Data" or "Clip"?"Проверяемая path mini-language Avalonia (M/L/C/Q/A/Z); до 16384 символов. Объекты Geometry, Bindings и Resources не преобразуются в строку.":property.Key=="Points"?"Координаты x,y через пробел: 0,0 100,0 50,80. До 1024 точек; конечные значения.":"Неотрицательные длины штрихов через пробел или запятую; пустое значение очищает список.",
         _ when IsLiteralObject(property) => "Текстовый Header/ToolTip. Объектные значения, Bindings и Resources сохраняются отдельно и не заменяются текстом.",
         _ when property.OwnerType == typeof(RepeatButton) && property.Key is "Delay" or "Interval" => "Интервал в миллисекундах, не меньше нуля. Отрицательные значения недопустимы для нативного таймера.",
         MetadataEditor.Thickness => "Отступы в DIP: одно, два или четыре числа (left,top,right,bottom).",
@@ -162,7 +177,7 @@ public static partial class StandardControlProperties
             }
         }
         catch (Exception error) when (error is FormatException or ArgumentException) { return false; }
-        json = ShapeLiteralCodec.Supports(property) && value is not null ? JsonSerializer.Serialize(text.Trim()) : Encode(value); return true;
+        json = (ShapeLiteralCodec.Supports(property) || TransformLiteralCodec.Supports(property)) && value is not null ? JsonSerializer.Serialize(text.Trim()) : Encode(value); return true;
     }
     private static string Encode(object? value) => value switch
     {
@@ -172,6 +187,7 @@ public static partial class StandardControlProperties
     };
     public static bool TryParseValue(AvaloniaPropertyInfo property, string text, out object? value)
     {
+        if (TransformLiteralCodec.Supports(property)) return TransformLiteralCodec.TryParse(property,text,out value);
         if (ShapeLiteralCodec.Supports(property)) return ShapeLiteralCodec.TryParse(property,text,out value);
         if (IsLiteralObject(property)) { value=text is MetadataValueCodec.NullText or "{x:Null}"?null:text;return !text.TrimStart().StartsWith('{')||text=="{x:Null}"; }
         if (property.Key=="LineHeight" && text=="NaN") { value=double.NaN; return true; }
@@ -198,7 +214,7 @@ public static partial class StandardControlProperties
         else if(host is ContentControl control)control.Content=content;
     }
     public static bool HasLiteralContent(string type) => type is "ToggleSwitch" or "RadioButton" or "HyperlinkButton" or "RepeatButton" or "Label" or "ToggleButton";
-    public static string? TextPropertyName(string type) => HasLiteralContent(type) ? "Content" : type is "AccessText" or "MaskedTextBox" ? "Text" : null;
+    public static string? TextPropertyName(string type) => HasLiteralContent(type) ? "Content" : type is "AccessText" or "MaskedTextBox" or "SelectableTextBlock" ? "Text" : null;
     public static string Attributes(string type, IReadOnlyDictionary<string, string> values, Func<string, string> escape, bool placementOwnsConstraints = false, Func<AvaloniaPropertyInfo,bool>? filter = null)
     {
         var result = new System.Text.StringBuilder();
@@ -209,7 +225,7 @@ public static partial class StandardControlProperties
             if (!values.TryGetValue(property.Key, out var json)) continue;
             var text = Read(property, json);
             if (!TryEncode(property, text, out _)) throw new FormatException("Invalid Avalonia property: " + property.Key);
-            result.Append(' ').Append(property.Key).Append("=\"").Append(text == MetadataValueCodec.NullText ? "{x:Null}" : escape(text)).Append('"');
+            result.Append(' ').Append(property.Key).Append("=\"").Append(text == MetadataValueCodec.NullText ? "{x:Null}" : escape(AttributeText(property,text))).Append('"');
         }
         return result.ToString();
     }

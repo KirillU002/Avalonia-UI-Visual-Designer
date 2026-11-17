@@ -178,6 +178,7 @@ public static class MetadataValueCodec
         long number => number.ToString(CultureInfo.InvariantCulture), decimal number => number.ToString(CultureInfo.InvariantCulture),
         Color color => color.ToString(), ISolidColorBrush brush => brush.Color.ToString(), Thickness thickness => thickness.ToString(),
         CornerRadius radius => radius.ToString(), GridLength length => length.ToString(), FontFamily font => font.Name,
+        RelativePoint origin => origin.ToString(),
         Rect rect => rect.ToString(), Size size => size.ToString(), Point point => point.ToString(), Vector vector => vector.ToString(),
         TimeSpan time => time.ToString("c", CultureInfo.InvariantCulture),
         DateTime date => date.ToString("O", CultureInfo.InvariantCulture), DateTimeOffset date => date.ToString("O", CultureInfo.InvariantCulture),

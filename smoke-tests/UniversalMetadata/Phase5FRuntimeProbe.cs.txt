@@ -1,0 +1,35 @@
+using Avalonia.Controls;
+using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Media;
+using Avalonia.VisualTree;
+using System;
+using System.IO;
+using System.Linq;
+using System.Globalization;
+using System.Text.Json;
+using System.Collections.Generic;
+using System.Threading.Tasks;
+internal static class MetadataRuntimeProbe
+{
+ public static void Attach(IClassicDesktopStyleApplicationLifetime desktop,Window window){window.ShowInTaskbar=false;window.ShowActivated=false;window.Opened+=async(_,_)=>{
+  try{await Task.Delay(120);window.UpdateLayout();var rows=new List<object>();using var input=JsonDocument.Parse(File.ReadAllText(Environment.GetEnvironmentVariable("UNIVERSAL5F_RUNTIME_EXPECTATIONS")!));
+   foreach(var model in input.RootElement.EnumerateArray()){
+    var name=model.GetProperty("Name").GetString();var type=model.GetProperty("Type").GetString();var control=window.GetVisualDescendants().OfType<Control>().Single(c=>c.Name==name&&c.GetType().FullName==type);
+    foreach(var p in model.GetProperty("Properties").EnumerateObject()){
+     var expected=p.Value.GetString()!;object? value=p.Name=="ToolTip.Tip"?ToolTip.GetTip(control):control.GetType().GetProperty(p.Name)!.GetValue(control);
+     if(value is ITransform transform){if(transform.Value!=((ITransform)Avalonia.Media.Transformation.TransformOperations.Parse(expected)).Value)throw new Exception("Wrong runtime matrix");rows.Add(new{Type=type,Key=p.Name,Runtime=true,Value=expected});continue;}
+     if(value is Geometry geometry){var want=StreamGeometry.Parse(expected);if(geometry.Bounds!=want.Bounds||new[]{new Avalonia.Point(20,20),new Avalonia.Point(350,110),new Avalonia.Point(450,150)}.Any(point=>geometry.FillContains(point)!=want.FillContains(point)))throw new Exception("Wrong runtime geometry");rows.Add(new{Type=type,Key=p.Name,Runtime=true,Value=expected});continue;}
+     if(value is System.Collections.Generic.IEnumerable<double> numbers){if(!numbers.SequenceEqual(expected.Split(' ').Select(n=>double.Parse(n,CultureInfo.InvariantCulture))))throw new Exception("Wrong runtime dashes");rows.Add(new{Type=type,Key=p.Name,Runtime=true,Value=expected});continue;}
+     if(value is Avalonia.RelativePoint origin)expected=Avalonia.RelativePoint.Parse(expected).ToString();
+     if(value is ISolidColorBrush)expected=((ISolidColorBrush)Brush.Parse(expected)).Color.ToString();
+     var text=value switch{null=>"(null)",bool b=>b?"True":"False",TextTrimming t when ReferenceEquals(t,TextTrimming.None)=>"None",TextTrimming t when ReferenceEquals(t,TextTrimming.CharacterEllipsis)=>"CharacterEllipsis",TextTrimming t when ReferenceEquals(t,TextTrimming.WordEllipsis)=>"WordEllipsis",BoxShadows b=>b.ToString(),Avalonia.RelativePoint point=>point.ToString(),ISolidColorBrush brush=>brush.Color.ToString(),double d=>d.ToString("R",CultureInfo.InvariantCulture),Enum e=>e.ToString(),string s=>s,int n=>n.ToString(CultureInfo.InvariantCulture),_=>throw new Exception("Unreviewed runtime value "+p.Name)};
+     if(value is BoxShadows)expected=BoxShadows.Parse(expected).ToString();
+     if(text!=expected)throw new Exception(type+"."+p.Name+": "+text+" != "+expected);
+     rows.Add(new{Type=type,Key=p.Name,Runtime=true,Value=text});
+    }
+   }
+   var selectable=window.GetVisualDescendants().OfType<SelectableTextBlock>().Single();selectable.SelectAll();if(selectable.SelectedText!="Phase 5F текст")throw new Exception("Runtime text/selection failed");selectable.ClearSelection();
+   var result=Environment.GetEnvironmentVariable("METADATA_RUNTIME_RESULT")!;File.WriteAllText(Path.ChangeExtension(result,"properties.json"),JsonSerializer.Serialize(rows));File.WriteAllText(result,"PASS native property pairs="+rows.Count+"; native types=12; trusted native getters only");
+  }catch(Exception e){File.WriteAllText(Environment.GetEnvironmentVariable("METADATA_RUNTIME_RESULT")!,"FAIL "+e);}finally{window.Close();desktop.Shutdown();}
+ };}
+}

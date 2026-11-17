@@ -21,7 +21,7 @@ public static partial class StandardControlProperties
         ["ListBox"]=typeof(ListBox),["Menu"]=typeof(Menu),["ComboBox"]=typeof(ComboBox),["TabControl"]=typeof(TabControl),["TreeView"]=typeof(TreeView),
         ["ItemsControl"]=typeof(ItemsControl),["Carousel"]=typeof(Carousel),["TabStrip"]=typeof(Avalonia.Controls.Primitives.TabStrip)
     };
-    private static readonly string[] AdditionalKeys={"IsEnabled","IsHitTestVisible","Focusable","IsTabStop","TabIndex","UseLayoutRounding","ClipToBounds","FontStyle","FontStretch","ToolTip.Tip"};
+    private static readonly string[] AdditionalKeys={"IsEnabled","IsHitTestVisible","Focusable","IsTabStop","TabIndex","UseLayoutRounding","ClipToBounds","FontStyle","FontStretch","ToolTip.Tip","RenderTransform","RenderTransformOrigin","Clip"};
     private static IEnumerable<string> AdditionalKeysFor(string type) => AdditionalKeys.Concat(type switch
     {
         "TextBox" => new[]{"IsReadOnly","MaxLength","AcceptsReturn","AcceptsTab","TextWrapping","TextAlignment"},
@@ -53,7 +53,7 @@ public static partial class StandardControlProperties
         {
             if(!node.CustomProperties.TryGetValue(p.Key,out var json))continue;
             var text=Read(p,json);if(!TryEncode(p,text,out _))throw new FormatException("Invalid Avalonia property: "+p.Key);
-            var attribute=p.Key+"=\""+(text==MetadataValueCodec.NullText?"{x:Null}":escape(text))+"\"";
+            var attribute=p.Key+"=\""+(text==MetadataValueCodec.NullText?"{x:Null}":escape(AttributeText(p,text)))+"\"";
             var pattern="(?<![\\w.])"+Regex.Escape(p.Key)+"\\s*=\\s*(['\"])(.*?)\\1";
             if(Regex.IsMatch(line,pattern))line=Regex.Replace(line,pattern,_=>attribute);
             else {var end=line.LastIndexOf("/>",StringComparison.Ordinal);if(end<0)end=line.LastIndexOf('>');if(end<0)throw new FormatException("Generated opening tag missing");line=line.Insert(end," "+attribute);}

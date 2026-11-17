@@ -120,7 +120,9 @@ public partial class MainWindowViewModel
         if (ActiveCollectionEditor is not null) yield break;
         if (SelectedControl is null || !InspectorStandardTypes.Value.TryGetValue(InspectorSourceType, out var type)) yield break;
         var names = StandardControlProperties.ReadOnlyInspectorKeys;
-        foreach (var p in AvaloniaMetadataCatalog.Get(type).Properties.Where(p => names.Contains(p.Key)))
+        // Keep opaque fallback rows for controls without a reviewed adapter.
+        // A supported literal already has its typed row; do not create a duplicate.
+        foreach (var p in AvaloniaMetadataCatalog.Get(type).Properties.Where(p => names.Contains(p.Key) && SelectedMetadataProperty(p.Key) is null))
             yield return CreateReadOnlyRow(PropertyGridCategoryAdvanced, p.Key, p.Name, "<" + p.PropertyType.Name + ">",
                 "Безопасное представление типа; instance getter не вызывается. Специализированный редактор / source-preserving workflow.");
     }

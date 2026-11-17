@@ -1,0 +1,951 @@
+{
+  "BaselineCommit": "9fb14e4084a447746ad4c0123e5c7a345bfcbcc9",
+  "Avalonia": "11.1.1",
+  "Runtime": "8.0.32",
+  "SDK": "10.0.402",
+  "Windows": "19045.6456",
+  "NewTypes": [
+    "SelectableTextBlock",
+    "PathIcon",
+    "Arc",
+    "Sector"
+  ],
+  "NewCommonProperties": [
+    "RenderTransform",
+    "RenderTransformOrigin",
+    "Clip"
+  ],
+  "CurrentInspectorPairCount": 147,
+  "CurrentNativeTypeCount": 12,
+  "NativeUIACrash": "UNRESOLVED",
+  "InstalledVSIX": "NOT VERIFIED for Phase5F",
+  "PhysicalDPI_DnD": "NOT VERIFIED",
+  "RejectedExperiment": "Unbinding hidden legacy descriptor ItemsControl: no proven latency/allocation benefit; original binding restored",
+  "FirstRedRuns": [
+    {
+      "Run": "first-checks",
+      "Passed": 36,
+      "Failed": 26,
+      "Cause": "Transform.Parse legacy six-number string not accepted by AXAML ITransform converter"
+    },
+    {
+      "Run": "second-checks",
+      "Passed": 57,
+      "Failed": 5,
+      "Cause": "Space-delimited StrokeDashArray not accepted by AXAML numeric list converter"
+    }
+  ],
+  "BaselineEvidenceHashes": {
+    "inspector-proof.json": "de1642b31cda3e4fc2949fb59c178d1c70cbdc25e8cc36e707b9eff67ad23681",
+    "Grid.properties.json": "cbf9c90087f0fb3e68bd05d77bb861b95542d1713e281d7b1f0f492ec4bf5f1c",
+    "Canvas.properties.json": "cbf9c90087f0fb3e68bd05d77bb861b95542d1713e281d7b1f0f492ec4bf5f1c",
+    "UniversalPropertyCoverage.csv": "986f658cbc05e906790fe24e7bce51e10c5243b04926dfb91d8b69d8f68903b6",
+    "PropertyCoverageInventory.json": "33709cfa71e9b1e30dc688fdba180aac2a056b45b384cb8130e32b101e1153d8"
+  },
+  "ProductionFiles": {
+    "DesignerSystem/Metadata/TransformLiteralCodec.cs": "56a6c1ad88d6e54d4a3f338ad7588f28404972be392a776a997066af092632d8",
+    "DesignerSystem/Metadata/ShapeLiteralCodec.cs": "1a06d15c314011c67ac2e8ce1b3c29090758f0f4cb35eb4dd316553e44d5e962",
+    "DesignerSystem/Metadata/StandardControlProperties.cs": "77ad69d19412b63f915fbddfbb985db7bd66a99cf9dfa15ce595de5e023d4560",
+    "DesignerSystem/Metadata/StandardControlProperties.Extensions.cs": "82e3d5083b97816684b77bc0134333d53864b9a69c35698f62f168afceecb977",
+    "DesignerSystem/Metadata/AvaloniaMetadataCatalog.cs": "5e69886e1b9ca26c430042af272be24bfbcb2d9b97d6d9e325910339e143d7a2",
+    "DesignerSystem/BuiltIn/BuiltInControlRegistrar.Metadata.cs": "4427c545c6ae84a30aa97b444682f51de964fef04e297fe21e5831ec3bc5a1b5",
+    "DesignerSystem/AxamlRoundTrip/AxamlImportService.cs": "50fb208063bfd2c19c9cdfcaf522579fb978dc3a75c8451e426406ab2c9b5a8e",
+    "Models/ToolboxItem.cs": "0e2714183ee0634b1ee2a278fbc05349c688fedcaae2ad0b6788e03289b5febb",
+    "ViewModels/MainWindowViewModel.cs": "afa45caf661520dd155aea5425071195e3d2435b27d6cfb695f74168b23a67e6",
+    "ViewModels/MainWindowViewModel.PropertyMetadata.cs": "5f629d3ca40344c50827941efb7308ccb21abb3979f2081fb6003d276dc71d32"
+  },
+  "FinalPhase5FTests": "73/73",
+  "ControlPartialBefore": 57,
+  "ControlPartialAfter": 61,
+  "ControlDenominator": 72,
+  "EditableExportableBefore": 2025,
+  "EditableExportableAfter": 2343,
+  "PropertyDenominator": 4935,
+  "VerifiedPairsBefore": 91,
+  "VerifiedPairsAfter": 147,
+  "Package": {
+    "Entries": 639,
+    "Bytes": 219358020,
+    "SHA256": "becac468f05f0c01cf1aa5d692c0173ef25231d633af963c93e54e15c07404b9",
+    "Version": "0.1.18",
+    "Identity": "AvaloniaDesigner.VSIX",
+    "RuntimeDependencyClosure": "PASS",
+    "Forbidden": [],
+    "Symbols": [
+      "AvaloniaDesigner.Host.Protocol.pdb"
+    ],
+    "RequiredSHA256": {
+      "AvaloniaDesigner.VSIX.dll": "443f29ffc02ef3895cb22fafa3a9895651296f9c22e105a6811650ed75cd58f9",
+      "AvaloniaDesigner.Host.Protocol.dll": "32a3dcd2810e30c44cd2f296275b91de1e582be56bfa21fd5435a171feef3893",
+      "VsHost/AvaloniaDesigner.VsHost.exe": "018d45e4d3d1be004da7b929680bb1e80f397afc0c1345b367c874f6fca35ecb",
+      "VsHost/AvaloniaDesigner.VsHost.runtimeconfig.json": "28329cf08f6505e73806b17558b187c02f0c1c516fe47ebfb7a013d082aaa306",
+      "VsHost/AvaloniaDesigner.VsHost.deps.json": "6a81c54d0a7a2a8afa3d1b0fe30f766d05f8261818edd9e05968d46ae008319d",
+      "VsHost/FormDesigner.dll": "7a76426c06ed7e39e9c688636ab463a1a771e29b923e8914a708ab53b86595f7",
+      "VsHost/AvaloniaDesigner.VsHost.dll": "5b6b387a6f0807a400a38d61be47c617990cbd621615881f93d567bf483af431"
+    }
+  },
+  "Captures": [
+    {
+      "Path": "artifacts\\universal-phase5f\\accepted-profile-capture\\result.json",
+      "RunId": "b8dd9264e6154aae9283ae8daf8ba7de",
+      "Pid": 71736,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 152010
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\after-audit-capture\\result.json",
+      "RunId": "760122e53b7543c8b37670fc9298a0e7",
+      "Pid": 65448,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 2317
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\after-profile-capture\\result.json",
+      "RunId": "47d731b1911b4f129dbd2b9472240bdf",
+      "Pid": 56592,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 140589
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\baseline-audit-capture\\result.json",
+      "RunId": "c841b2eefaa14a82998c29a62942f25a",
+      "Pid": 15920,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 2303
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\baseline-profile-capture\\result.json",
+      "RunId": "1d8ca46addda4cfb90c161e8a2640adb",
+      "Pid": 63052,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 130291
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\category-final-collections3b-checks-capture\\result.json",
+      "RunId": "559d44f075eb4eecba236f6a75b5bfcd",
+      "Pid": 70688,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 28286
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\category-final-layout7a-checks-capture\\result.json",
+      "RunId": "5c8988b4dedf41f3b829e8970ee501c3",
+      "Pid": 48224,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 32247
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\category-final-propertygrid3a-checks-capture\\result.json",
+      "RunId": "1391570700884f94b7e7cd8b5f77efa7",
+      "Pid": 31336,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 47924
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\category-final-universal4f-checks-capture\\result.json",
+      "RunId": "87b8301bf89d497e98da4a7875c255ac",
+      "Pid": 25192,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 8697
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\category-final-universal5f-checks-capture\\result.json",
+      "RunId": "d5dd3a5d00054f8f86ea82f6df1e2770",
+      "Pid": 46736,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 71883
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\category-profile-capture\\result.json",
+      "RunId": "3738492336934444af26b9d78990fc07",
+      "Pid": 59784,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 142218
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\final-inspector-diagnostic-capture\\result.json",
+      "RunId": "6360febfea484185b44b1f2aa356ec69",
+      "Pid": 67872,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 5359
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\final-new-controls-profile-capture\\result.json",
+      "RunId": "a50f84aaa9a3459a99504dd9c10bc0e7",
+      "Pid": 64532,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 170742
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\first-checks-capture\\result.json",
+      "RunId": "f0be89bd0541453db62b12f17a58ba59",
+      "Pid": 45932,
+      "ExitCode": 1,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 50508
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\focused-1-capture\\result.json",
+      "RunId": "6ac71341ebf6489daa57a1d11f6a6c1f",
+      "Pid": 51928,
+      "ExitCode": 1,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 4115
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\import-final-after-capture\\result.json",
+      "RunId": "9ba1fede6658422b84e2441b97e58816",
+      "Pid": 29848,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 9669
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\inspector-diagnostic-capture\\result.json",
+      "RunId": "2c8d066722b64016bc834073578f68c6",
+      "Pid": 64356,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 5106
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\late-before-profile-capture\\result.json",
+      "RunId": "b4f70d65a19c43c896c94b8c0e70efb2",
+      "Pid": 69948,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 139366
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\new-controls-profile-capture\\result.json",
+      "RunId": "ef8594f483e74f06a9cd8fed2f466068",
+      "Pid": 47568,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 197236
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\second-checks-capture\\result.json",
+      "RunId": "757bd39caa2b456aa0a347a90aae19d9",
+      "Pid": 31888,
+      "ExitCode": 1,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 49761
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\shapes-regression-capture\\result.json",
+      "RunId": "eaf024eb321e4440950de7ad33c13209",
+      "Pid": 53316,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 110682
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\structural\\generated\\export-capture\\result.json",
+      "RunId": "e83d683762e448a9a9ad22cc3408ec2a",
+      "Pid": 66916,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 2827
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\structural\\generated\\runtime-capture\\result.json",
+      "RunId": "560d4520243d4d59954c72e82dbd9caa",
+      "Pid": 10828,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 3708
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\normal-accepted\\broad-normal-capture\\result.json",
+      "RunId": "82c4524f215647ad88d33b0c72a52179",
+      "Pid": 31888,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 262552
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\normal-accepted\\ipc-capture\\result.json",
+      "RunId": "3f4ffeb8ac1c473da7ac1028e0e5528a",
+      "Pid": 73496,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 18716
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\live\\sql\\UniversalMetadata_fbccef3ef4b9460f8784710e6be5def4\\datagrid-preview-checks-capture\\result.json",
+      "RunId": "fd68e068224b406cafe986ea74b2ece0",
+      "Pid": 76756,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 58813
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\live\\sql\\UniversalMetadata_fbccef3ef4b9460f8784710e6be5def4\\datagrid-preview-export-check-capture\\result.json",
+      "RunId": "716c0f84ea9042d0b9957c895924d874",
+      "Pid": 63872,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 8165
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\live\\sql\\UniversalMetadata_fbccef3ef4b9460f8784710e6be5def4\\datagrid-preview-source-check-capture\\result.json",
+      "RunId": "d4f3dc8d1f1d450d836f5fcb95ee5080",
+      "Pid": 71648,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 4664
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\live\\sql\\UniversalMetadata_fbccef3ef4b9460f8784710e6be5def4\\memory-1-capture\\result.json",
+      "RunId": "7499bb17acdb4cb5bfa9e99ed8ec9946",
+      "Pid": 51776,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 92814
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\live\\sql\\UniversalMetadata_fbccef3ef4b9460f8784710e6be5def4\\memory-2-capture\\result.json",
+      "RunId": "1ff512a030a64f77b1b751cc1e72c4ef",
+      "Pid": 11836,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 92471
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\live\\sql\\UniversalMetadata_fbccef3ef4b9460f8784710e6be5def4\\memory-3-capture\\result.json",
+      "RunId": "10b893dd32814711937498b22afbcd3b",
+      "Pid": 13388,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 92539
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\import-comparison\\After-capture\\result.json",
+      "RunId": "2c4408f0a59041758cdc191c7146a3df",
+      "Pid": 53016,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 10520
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\import-comparison\\Before-capture\\result.json",
+      "RunId": "c43eb5d4311649f58fe7a1ff32ddda59",
+      "Pid": 48592,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 11498
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\generated\\Canvas-runtime-capture\\result.json",
+      "RunId": "00fc3558588b493685b01a2817e58e2b",
+      "Pid": 34536,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 3779
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\generated\\export-capture\\result.json",
+      "RunId": "67c80c949e1c495683b05c677e53ca1d",
+      "Pid": 61036,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 3275
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\generated\\Grid-runtime-capture\\result.json",
+      "RunId": "df263857d520416b8ef8c4576eae5fe5",
+      "Pid": 24072,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 3875
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\acceptance-verified\\collections3b-checks-capture\\result.json",
+      "RunId": "df8fe6b00a2645b09c8aa0087fdc943b",
+      "Pid": 71756,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 28756
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\acceptance-verified\\designer-pointer-checks-capture\\result.json",
+      "RunId": "3ad1df5d772143f4b30eefb5f83c3405",
+      "Pid": 45312,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 32840
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\acceptance-verified\\grid-drop-checks-capture\\result.json",
+      "RunId": "9e7fb2c8263c4a398608d12b710e4e91",
+      "Pid": 55568,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 50094
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\acceptance-verified\\layout7a-checks-capture\\result.json",
+      "RunId": "05e9fb54c67a4f06a425671af407b43e",
+      "Pid": 4672,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 32808
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\acceptance-verified\\propertygrid3a-checks-capture\\result.json",
+      "RunId": "ec52bed1d9cc46e38a1b93eb839a64bb",
+      "Pid": 37708,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 49125
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\acceptance-verified\\universal-metadata-checks-capture\\result.json",
+      "RunId": "cc8b0e96da3440cabfb54742fec299aa",
+      "Pid": 56388,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 31683
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\acceptance-verified\\universal4a-checks-capture\\result.json",
+      "RunId": "0ca77fe3404b4630b826adab98946159",
+      "Pid": 44664,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 12090
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\acceptance-verified\\universal4b-checks-capture\\result.json",
+      "RunId": "c197b69d56e14f8f8018060e022f7116",
+      "Pid": 73376,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 24546
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\acceptance-verified\\universal4c-checks-capture\\result.json",
+      "RunId": "d9ce9d27d5114de1a760ca170ce2b6af",
+      "Pid": 20016,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 69569
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\acceptance-verified\\universal4d-checks-capture\\result.json",
+      "RunId": "c034d3383ef44ebfa7a1e9c5647e6518",
+      "Pid": 38156,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 16290
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\acceptance-verified\\universal4f-checks-capture\\result.json",
+      "RunId": "40ee9e85ba864de3a87f8ed3687b357f",
+      "Pid": 54956,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 8767
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\acceptance-verified\\universal5e-checks-capture\\result.json",
+      "RunId": "fbcffbeef6cb4f718d019ff5c8aafba2",
+      "Pid": 1900,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 51342
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\acceptance-verified\\universal5f-checks-capture\\result.json",
+      "RunId": "f59c69d0200d492e83cfe9375b7f9286",
+      "Pid": 35352,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 70591
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\acceptance-final\\collections3b-checks-capture\\result.json",
+      "RunId": "00e8c460bc7747f09192f5c07d12243d",
+      "Pid": 13184,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 30078
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\acceptance-final\\designer-pointer-checks-capture\\result.json",
+      "RunId": "76ab11c46377496c8f1e23c89378975c",
+      "Pid": 75388,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 32496
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\acceptance-final\\grid-drop-checks-capture\\result.json",
+      "RunId": "14a4684476fc4c68896885a601c82b8f",
+      "Pid": 60772,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 50280
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\acceptance-final\\layout7a-checks-capture\\result.json",
+      "RunId": "99f1c09b177047318ae672bd24b3ad0c",
+      "Pid": 24872,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 33699
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\acceptance-final\\propertygrid3a-checks-capture\\result.json",
+      "RunId": "3010c01d829244c8af0750e84eb03574",
+      "Pid": 14208,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 48681
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\acceptance-final\\universal-metadata-checks-capture\\result.json",
+      "RunId": "c5ca22dfd8394c6c84ef600c0b110a8d",
+      "Pid": 46544,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 31941
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\acceptance-final\\universal4a-checks-capture\\result.json",
+      "RunId": "ffe7aa64f11d43979fc447463bb450ac",
+      "Pid": 43268,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 12438
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\acceptance-final\\universal4b-checks-capture\\result.json",
+      "RunId": "57148f1c428941d0b13fb2d06a3d676c",
+      "Pid": 41764,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 24760
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\acceptance-final\\universal4c-checks-capture\\result.json",
+      "RunId": "53bf7774130d430b91883e5b70f79b5f",
+      "Pid": 37708,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 69420
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\acceptance-final\\universal4d-checks-capture\\result.json",
+      "RunId": "f3f29b72b64247a698fe97767f3d4b73",
+      "Pid": 21456,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 15912
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\acceptance-final\\universal4f-checks-capture\\result.json",
+      "RunId": "e4f75a300c1f4d3da51483d703efd50b",
+      "Pid": 62016,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 9847
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\acceptance-final\\universal5e-checks-capture\\result.json",
+      "RunId": "41ae6835cb634468bf64980727307e4f",
+      "Pid": 22920,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 51731
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\acceptance-final\\universal5f-checks-capture\\result.json",
+      "RunId": "7164cb47236c4068a3969f1beb42893c",
+      "Pid": 40588,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 70571
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\acceptance\\collections3b-checks-capture\\result.json",
+      "RunId": "dfb37d08afb84e7684050d37def76d49",
+      "Pid": 22384,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 28518
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\acceptance\\designer-pointer-checks-capture\\result.json",
+      "RunId": "f247240cf3364d678bb32bdef38a4d59",
+      "Pid": 53652,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 32965
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\acceptance\\grid-drop-checks-capture\\result.json",
+      "RunId": "4d3dcfb89a114172b859f3fb7ecd5cae",
+      "Pid": 64504,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 50543
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\acceptance\\layout7a-checks-capture\\result.json",
+      "RunId": "36d11a992e4c48708cdd32f20742b40a",
+      "Pid": 53360,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 33428
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\acceptance\\propertygrid3a-checks-capture\\result.json",
+      "RunId": "75f3e137c7b448b2b20e381419662607",
+      "Pid": 41972,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 48140
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\acceptance\\universal-metadata-checks-capture\\result.json",
+      "RunId": "595b62116813410b879129032ac13153",
+      "Pid": 73380,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 32314
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\acceptance\\universal4a-checks-capture\\result.json",
+      "RunId": "254ce800b6074003b0cd27f60b9fff59",
+      "Pid": 55592,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 13121
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\acceptance\\universal4b-checks-capture\\result.json",
+      "RunId": "423793535421492b844bb0de1f2ca370",
+      "Pid": 60772,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 24700
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\acceptance\\universal4c-checks-capture\\result.json",
+      "RunId": "2474e15cdfae40019dac6ef4e0d593f7",
+      "Pid": 70436,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 69510
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\acceptance\\universal4d-checks-capture\\result.json",
+      "RunId": "b6c4bc337b154a4e9cf07785b94c8550",
+      "Pid": 70012,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 16477
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\acceptance\\universal4f-checks-capture\\result.json",
+      "RunId": "2e363e71975c4df2a9ff3227f56b9a02",
+      "Pid": 24760,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 8486
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\acceptance\\universal5e-checks-capture\\result.json",
+      "RunId": "cf7f463afdf243beaa9bafa7cd15dcb1",
+      "Pid": 56676,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 51611
+    },
+    {
+      "Path": "artifacts\\universal-phase5f\\acceptance\\universal5f-checks-capture\\result.json",
+      "RunId": "e0c429f81daf4e229c14b50e3609efb2",
+      "Pid": 11940,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 66868
+    }
+  ],
+  "Regression": [
+    [
+      "Solution / runner build",
+      "PASS; 0 errors"
+    ],
+    [
+      "Phase 5F, final category/disclosure",
+      "73/73"
+    ],
+    [
+      "Phase 5E",
+      "58/58"
+    ],
+    [
+      "Phase 5B shared shapes/containers",
+      "73/73"
+    ],
+    [
+      "PropertyGrid Phase 3A",
+      "30/30"
+    ],
+    [
+      "Collections Phase 3B",
+      "30/30"
+    ],
+    [
+      "Layout7",
+      "15/15"
+    ],
+    [
+      "Phase 4A / 4B",
+      "38/38; 52/52"
+    ],
+    [
+      "Phase 4C / 4D",
+      "85/85; 14/14"
+    ],
+    [
+      "Phase 4F automated integration",
+      "15/15"
+    ],
+    [
+      "Metadata / pointer / Grid Drop",
+      "45/45; 26/26; 40/40"
+    ],
+    [
+      "Broad normal environment / IPC",
+      "72/72; 3/3"
+    ],
+    [
+      "SQL LocalDB / live source",
+      "47/47; PASS"
+    ],
+    [
+      "Preview Memory, clean processes",
+      "36/36 × 3"
+    ],
+    [
+      "New generated Grid / Canvas",
+      "2/2 apps; 147 native property pairs each"
+    ],
+    [
+      "Patched AXAML generated runtime",
+      "20 native nodes; 8 inserted types; parent/order/property checks"
+    ],
+    [
+      "SQL generated runtime",
+      "PASS; Customers=3 / Orders=2 / resize"
+    ],
+    [
+      "Installed VSIX / physical DPI",
+      "NOT VERIFIED"
+    ],
+    [
+      "UIA historical crash",
+      "UNRESOLVED"
+    ]
+  ],
+  "ProductionChangesAfterFullMatrix": "Only CategoryFor Clip/RenderTransform/Origin restored their prior Advanced disclosure category; targeted Phase5F/PropertyGrid/Collections/Layout7/4F repeated. Serialization, projection, patch and IPC algorithms unchanged.",
+  "ChangedFiles": [
+    "DesignerSystem/AxamlRoundTrip/AxamlImportService.cs",
+    "DesignerSystem/BuiltIn/BuiltInControlRegistrar.Metadata.cs",
+    "DesignerSystem/Metadata/AvaloniaMetadataCatalog.cs",
+    "DesignerSystem/Metadata/ShapeLiteralCodec.cs",
+    "DesignerSystem/Metadata/StandardControlProperties.Extensions.cs",
+    "DesignerSystem/Metadata/StandardControlProperties.cs",
+    "DesignerSystem/Metadata/TransformLiteralCodec.cs",
+    "Docs/Phase5FControlAcceptance.csv",
+    "Docs/Phase5FEvidenceSummary.json",
+    "Docs/Phase5FImportPerformance.csv",
+    "Docs/Phase5FInspectorStages.csv",
+    "Docs/Phase5FNewControlsPerformance.csv",
+    "Docs/Phase5FPerformance.csv",
+    "Docs/Phase5FPropertyCoverage.csv",
+    "Docs/Phase5FPropertyCoverageDetails.csv",
+    "Docs/Phase5FPropertyCoverageSummary.json",
+    "Docs/Phase5FPropertyPriority.csv",
+    "Docs/Phase5FRemainingControls.csv",
+    "Docs/StandardLibraryCoverage.csv",
+    "Docs/StandardLibraryCoverageSummary.json",
+    "Docs/UniversalControlCoverage.csv",
+    "Docs/UniversalControlsAndPropertiesPhase5F.md",
+    "Docs/UniversalCoverageSummary.json",
+    "Docs/UniversalPropertyCoverage.csv",
+    "Models/ToolboxItem.cs",
+    "ViewModels/MainWindowViewModel.PropertyMetadata.cs",
+    "ViewModels/MainWindowViewModel.cs",
+    "smoke-tests/FormDesigner.ExportSmokeTests/Program.Universal5F.cs",
+    "smoke-tests/FormDesigner.ExportSmokeTests/Program.cs",
+    "smoke-tests/UniversalMetadata/Phase5FRuntimeProbe.cs.txt",
+    "smoke-tests/UniversalMetadata/Summarize5FPropertyCoverage.py"
+  ]
+}
