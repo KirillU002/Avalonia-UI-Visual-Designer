@@ -46,6 +46,17 @@ public sealed class AvaloniaDesignerVsixPackage : AsyncPackage
         }
     }
 
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            if (_bridge is { } bridge)
+                JoinableTaskFactory.Run(bridge.ShutdownAsync);
+            _bridge = null;
+        }
+        base.Dispose(disposing);
+    }
+
     private static void WriteDiagnostic(string message, Exception? exception = null)
     {
         VsixPackageLoadProbe.Write(message, exception);

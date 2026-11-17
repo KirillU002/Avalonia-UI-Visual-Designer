@@ -34,6 +34,8 @@ internal static partial class Program
     private const string AvaloniaVersion = "11.1.1";
     private const string AvaloniaDesktopVersion = "11.1.1";
     private const int FailedSmokeRunsToKeep = 2;
+    private static string HostSmokeConfiguration => typeof(Program).Assembly
+        .GetCustomAttribute<AssemblyConfigurationAttribute>()?.Configuration ?? "Release";
     private static readonly Dictionary<string, string> LinqToSqlSmokeDllCache = new(StringComparer.OrdinalIgnoreCase);
     private static bool _avaloniaRuntimeInitialized;
     private static string? _activeScenarioWorkspace;
@@ -46,6 +48,8 @@ internal static partial class Program
         // Initialize the real UI dispatcher before any view model can create the
         // fallback dispatcher; IPC continuations must run on the actual UI thread.
         EnsureAvaloniaRuntimeInitialized();
+        if (args.Contains("--universal4f-checks")) return RunUniversal4FChecks();
+        if (args.Contains("--universal4f-host-cycles")) return RunUniversal4FHostCycles();
         if (args.Contains("--universal4d-checks")) return RunUniversal4DChecks();
         if (args.Contains("--universal4d-ack-profile")) return RunUniversal4DAckProfile();
         if (args.Contains("--universal4d-memory")) return RunUniversal4DMemory();
@@ -5326,6 +5330,8 @@ internal static partial class Program
             connection.SendAsync(DesignerHostMessageTypes.HostShutdown, "shutdown", "smoke-document", new EmptyPayload(), cancellation.Token).GetAwaiter().GetResult();
             if (!process.WaitForExit(10_000))
                 throw new InvalidOperationException("VsHost did not stop after HostShutdown.");
+            if (process.ExitCode != 0)
+                throw new InvalidOperationException($"VsHost shutdown exit code: {process.ExitCode}.");
         }
         finally
         {
@@ -5363,7 +5369,7 @@ internal static partial class Program
         RequireNotContains(source, "using Eremex", "VSIX bridge source must not load Eremex APIs.");
         RequireNotContains(source, "using FormDesigner", "VSIX bridge source must not load FormDesigner APIs.");
 
-        var archivePath = Path.Combine(root, "AvaloniaDesigner.VSIX", "bin", "Debug", "net472", "AvaloniaDesigner.VSIX.vsix");
+        var archivePath = Path.Combine(root, "AvaloniaDesigner.VSIX", "bin", HostSmokeConfiguration, "net472", "AvaloniaDesigner.VSIX.vsix");
         RequireFileExists(archivePath, "VSIX package must be built before its dependency boundary is verified.");
         using var archive = ZipFile.OpenRead(archivePath);
         var forbiddenRootPayload = archive.Entries.Any(entry =>
@@ -5398,7 +5404,7 @@ internal static partial class Program
         RequireContains(commandSource, "ACTIVE_DOCUMENT_RESOLVED", "VSIX Open Designer command must capture the active AXAML buffer.");
         RequireNotContains(commandSource, "BeforeQueryStatus", "The Open Designer command must remain visible without document-specific visibility logic.");
 
-        var archivePath = Path.Combine(root, "AvaloniaDesigner.VSIX", "bin", "Debug", "net472", "AvaloniaDesigner.VSIX.vsix");
+        var archivePath = Path.Combine(root, "AvaloniaDesigner.VSIX", "bin", HostSmokeConfiguration, "net472", "AvaloniaDesigner.VSIX.vsix");
         RequireFileExists(archivePath, "VSIX package must be built before its command registration is verified.");
         using var archive = ZipFile.OpenRead(archivePath);
         var pkgdef = archive.GetEntry("AvaloniaDesigner.VSIX.pkgdef")
@@ -5424,7 +5430,7 @@ internal static partial class Program
         RequireContains(packageSource, "WriteDiagnostic", "VSIX package must write each registration stage to both diagnostics channels.");
         RequireContains(packageSource, "VsixPackageLoadProbe.Write", "VSIX package must write a service-independent load probe for PoC diagnostics.");
 
-        var archivePath = Path.Combine(root, "AvaloniaDesigner.VSIX", "bin", "Debug", "net472", "AvaloniaDesigner.VSIX.vsix");
+        var archivePath = Path.Combine(root, "AvaloniaDesigner.VSIX", "bin", HostSmokeConfiguration, "net472", "AvaloniaDesigner.VSIX.vsix");
         RequireFileExists(archivePath, "VSIX package must be built before validating its runtime dependency closure.");
         using var archive = ZipFile.OpenRead(archivePath);
         var rootEntries = archive.Entries
@@ -5472,7 +5478,7 @@ internal static partial class Program
     private static void AssertVsixContainsCompleteVsHostRuntime(SmokeContext context)
     {
         var root = FindRepositoryRoot();
-        var archivePath = Path.Combine(root, "AvaloniaDesigner.VSIX", "bin", "Debug", "net472", "AvaloniaDesigner.VSIX.vsix");
+        var archivePath = Path.Combine(root, "AvaloniaDesigner.VSIX", "bin", HostSmokeConfiguration, "net472", "AvaloniaDesigner.VSIX.vsix");
         RequireFileExists(archivePath, "VSIX package must be built before validating the bundled VsHost runtime.");
 
         var requiredEntries = new[]
@@ -5529,7 +5535,7 @@ internal static partial class Program
     {
         var deploymentPath = Environment.GetEnvironmentVariable("FORMDESIGNER_SMOKE_VSHOST_EXECUTABLE");
         var executable = string.IsNullOrWhiteSpace(deploymentPath)
-            ? Path.Combine(FindRepositoryRoot(), "AvaloniaDesigner.VsHost", "bin", "Debug", "net8.0", "AvaloniaDesigner.VsHost.exe")
+            ? Path.Combine(FindRepositoryRoot(), "AvaloniaDesigner.VsHost", "bin", HostSmokeConfiguration, "net8.0", "AvaloniaDesigner.VsHost.exe")
             : Path.GetFullPath(deploymentPath);
         RequireFileExists(executable, "VsHost build/publish/package executable is missing.");
         Console.WriteLine($"VSHOST_SMOKE_EXECUTABLE path={executable}");

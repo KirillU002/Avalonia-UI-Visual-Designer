@@ -191,9 +191,9 @@ internal static partial class Program
             using var connection = new NamedPipeProtocolConnection(client);
             const string id = "unsaved-buffer.axaml";
             var source = ComplexSource().Replace("Text=\"Hello\"", "Text=\"Unsaved VS text\"");
-            async Task Open(string text, long version)
+            async Task Open(string text, long version, string messageType = DesignerHostMessageTypes.OpenDocument)
             {
-                await connection.SendAsync(DesignerHostMessageTypes.OpenDocument, "open" + version, id, CreateVsHostOpenDocumentPayload(text, version), cancellation.Token);
+                await connection.SendAsync(messageType, "open" + version, id, CreateVsHostOpenDocumentPayload(text, version), cancellation.Token);
                 var response = await connection.ReceiveAsync(cancellation.Token);
                 if (response?.MessageType != DesignerHostMessageTypes.DocumentOpened)
                     throw new InvalidOperationException($"IPC open failed: {response?.Payload}");
@@ -233,7 +233,21 @@ internal static partial class Program
                 if (!vm.ActiveSession.IsDirty || !next.CanApply || next.Edits.Count != 1)
                     throw new InvalidOperationException("Acknowledgement lost newer edits or failed to rebase the source map.");
             });
-            await Open(updated, 3);
+            // A normal open must not discard the newer, unacknowledged edit.
+            // Replacing it is an explicit Reload, not an implicit file switch.
+            await connection.SendAsync(DesignerHostMessageTypes.OpenDocument, "dirty-open", id,
+                CreateVsHostOpenDocumentPayload(updated, 3), cancellation.Token);
+            var dirtyRejected = (await connection.ReceiveAsync(cancellation.Token))!;
+            if (dirtyRejected.MessageType != DesignerHostMessageTypes.Error
+                || connection.GetPayload<ErrorPayload>(dirtyRejected)!.Code != "UNSAVED_DESIGNER_CHANGES")
+                throw new InvalidOperationException("Dirty Designer was silently replaced by OpenDocument.");
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (!vm.HasUnsavedChanges || vm.Controls.Single(c => c.Name == "Button1").Text != "Next edit"
+                    || vm.CreateActiveAxamlPatch(updated).Edits.Count != 1)
+                    throw new InvalidOperationException("Rejected OpenDocument lost the newer Designer edit.");
+            });
+            await Open(updated, 3, DesignerHostMessageTypes.ReloadDocument);
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
                 if (vm.DocumentKind != DesignerDocumentKind.AxamlRoundTrip || vm.CreateActiveAxamlPatch(updated).HasChanges)
@@ -251,7 +265,11 @@ internal static partial class Program
             rejected = (await connection.ReceiveAsync(cancellation.Token))!;
             if (rejected.MessageType != DesignerHostMessageTypes.Error
                 || connection.GetPayload<ErrorPayload>(rejected)!.Code != "DOCUMENT_CHECKSUM_MISMATCH")
+            {
+                await Dispatcher.UIThread.InvokeAsync(() => Console.WriteLine("PHASE4F_INVALID_DIAGNOSTIC " +
+                    $"dirty={vm.HasUnsavedChanges}; sourceChanges={vm.CreateActiveAxamlPatch(updated).HasChanges}; response={rejected.Payload}"));
                 throw new InvalidOperationException("Real checksum corruption was not rejected.");
+            }
             var realSource = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "Views", "MainWindow.axaml"));
             await Open(realSource, 4);
             await Dispatcher.UIThread.InvokeAsync(() =>
@@ -298,6 +316,8 @@ internal static partial class Program
             }
             connection.SendAsync(DesignerHostMessageTypes.HostShutdown, "shutdown", "", new EmptyPayload(), cancellation.Token).GetAwaiter().GetResult();
             if (!process.WaitForExit(10_000)) throw new TimeoutException("VsHost shutdown failed.");
+            if (process.ExitCode != 0)
+                throw new InvalidOperationException($"VsHost terminated with exit code {process.ExitCode}; shutdown is not a successful assertion.");
         }
         finally
         {

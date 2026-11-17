@@ -1,0 +1,42 @@
+{
+  "Boundary": "NativeCapture launch + real VsHost pipe handshake; not devenv command/DTE latency",
+  "Samples": 50,
+  "Warmups": 5,
+  "Operations": {
+    "LaunchHandshake": {
+      "MedianMs": 4229.8774,
+      "P95Ms": 4517.6062,
+      "StdDevMs": 171.52441464160466
+    },
+    "OpenSmall": {
+      "MedianMs": 1606.8726000000001,
+      "P95Ms": 2178.7991,
+      "StdDevMs": 304.14659847285105
+    },
+    "ReopenOtherDocument": {
+      "MedianMs": 636.0941,
+      "P95Ms": 719.9672,
+      "StdDevMs": 100.02820159832704
+    }
+  },
+  "PrivateBytes": {
+    "Min": 200609792,
+    "Max": 204500992,
+    "Median": 202520576.0
+  },
+  "WorkingSet": {
+    "Min": 213512192,
+    "Max": 217153536,
+    "Median": 214706176.0
+  },
+  "Handles": {
+    "Min": 864,
+    "Max": 878,
+    "Median": 870.0
+  },
+  "Threads": {
+    "Min": 91,
+    "Max": 93,
+    "Median": 92.0
+  }
+}

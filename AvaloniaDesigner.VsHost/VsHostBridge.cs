@@ -174,7 +174,9 @@ public sealed partial class VsHostBridge : IDisposable
             _connection = null;
             if(connected){_pendingPatch=null;_requiresReload=_document is not null;}
             if (!_disposed)
-                SetStatus("Avalonia Designer отключён от Visual Studio.");
+                SetStatus(_viewModel.HasUnsavedChanges
+                    ? "Visual Studio отключена. Неприменённые изменения сохранены в открытом Designer. Не закрывайте окно до восстановления соединения."
+                    : "Avalonia Designer отключён от Visual Studio.");
             Log("VSHOST_DISCONNECTED", "pipe closed");
         }
         return connected;
@@ -248,6 +250,11 @@ public sealed partial class VsHostBridge : IDisposable
                 break;
 
             case DesignerHostMessageTypes.HostShutdown:
+                if (HasUnappliedSourceChanges() || _pendingPatch is not null)
+                {
+                    SetStatus("Visual Studio завершает соединение. Неприменённые изменения остаются в Designer; автоматическое закрытие отменено.");
+                    return;
+                }
                 Dispose();
                 Dispatcher.UIThread.Post(_window.CloseForBridgeShutdown);
                 break;
@@ -282,6 +289,16 @@ public sealed partial class VsHostBridge : IDisposable
 
         try
         {
+            // Workspace snapshots also contain projection state. Check actual
+            // source edits, including scalar edits ahead of snapshot notification.
+            if (request.MessageType != DesignerHostMessageTypes.ReloadDocument
+                && _viewModel.IsAxamlRoundTripDocument && HasUnappliedSourceChanges())
+            {
+                const string message = "В Designer есть неприменённые изменения. Сначала выполните Apply к исходному документу либо явный Reload из Visual Studio.";
+                SetStatus(message);
+                await SendErrorAsync(request, "UNSAVED_DESIGNER_CHANGES", message);
+                return;
+            }
             Log("VSHOST_DOCUMENT_RECEIVED", $"path={document.FilePath}; version={document.Version}; targetFramework={document.TargetFramework}");
             Log("VSHOST_AXAML_IMPORT_START", $"path={document.FilePath}; length={document.Text.Length}");
             var result = _importService.Import(document.Text, document.FilePath);
@@ -316,6 +333,22 @@ public sealed partial class VsHostBridge : IDisposable
             SetStatus($"AXAML Preview не удалось открыть: {ex.Message}");
             Log("VSHOST_AXAML_IMPORT_FAILED", ex.ToString());
             await SendErrorAsync(request, "AXAML_IMPORT_FAILED", ex.Message, ex.ToString());
+        }
+    }
+
+    private bool HasUnappliedSourceChanges()
+    {
+        if (!_viewModel.IsAxamlRoundTripDocument)
+            return _viewModel.HasUnsavedChanges;
+        try
+        {
+            var patch = _viewModel.CreateActiveAxamlPatch(_document?.Text);
+            return patch.HasChanges || (!patch.CanApply && _viewModel.HasUnsavedChanges);
+        }
+        catch (Exception error)
+        {
+            Log("VSHOST_SOURCE_CHANGE_CHECK_FAILED", error.ToString());
+            return true; // Never discard state when it cannot be validated.
         }
     }
 

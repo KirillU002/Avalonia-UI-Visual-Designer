@@ -1,0 +1,250 @@
+{
+  "Memory": [
+    {
+      "Run": 1,
+      "ChecksPassed": 36,
+      "ChecksTotal": 36,
+      "PostGcCheckpoints": 44,
+      "ObservedWindowRefsWithRepeatedBatches": 216,
+      "AliveWindows": 0,
+      "AliveContexts": 0,
+      "AliveItems": 0,
+      "AliveGrids": 0,
+      "OwnedClientStoppedBeforeGate": true
+    },
+    {
+      "Run": 2,
+      "ChecksPassed": 36,
+      "ChecksTotal": 36,
+      "PostGcCheckpoints": 44,
+      "ObservedWindowRefsWithRepeatedBatches": 216,
+      "AliveWindows": 0,
+      "AliveContexts": 0,
+      "AliveItems": 0,
+      "AliveGrids": 0,
+      "OwnedClientStoppedBeforeGate": true
+    },
+    {
+      "Run": 3,
+      "ChecksPassed": 36,
+      "ChecksTotal": 36,
+      "PostGcCheckpoints": 44,
+      "ObservedWindowRefsWithRepeatedBatches": 216,
+      "AliveWindows": 0,
+      "AliveContexts": 0,
+      "AliveItems": 0,
+      "AliveGrids": 0,
+      "OwnedClientStoppedBeforeGate": true
+    }
+  ],
+  "HostProcessCycles": {
+    "Boundary": "NativeCapture launch + real VsHost pipe handshake; not devenv command/DTE latency",
+    "Samples": 50,
+    "Warmups": 5,
+    "Operations": {
+      "LaunchHandshake": {
+        "MedianMs": 4229.8774,
+        "P95Ms": 4517.6062,
+        "StdDevMs": 171.52441464160466
+      },
+      "OpenSmall": {
+        "MedianMs": 1606.8726000000001,
+        "P95Ms": 2178.7991,
+        "StdDevMs": 304.14659847285105
+      },
+      "ReopenOtherDocument": {
+        "MedianMs": 636.0941,
+        "P95Ms": 719.9672,
+        "StdDevMs": 100.02820159832704
+      }
+    },
+    "PrivateBytes": {
+      "Min": 200609792,
+      "Max": 204500992,
+      "Median": 202520576.0
+    },
+    "WorkingSet": {
+      "Min": 213512192,
+      "Max": 217153536,
+      "Median": 214706176.0
+    },
+    "Handles": {
+      "Min": 864,
+      "Max": 878,
+      "Median": 870.0
+    },
+    "Threads": {
+      "Min": 91,
+      "Max": 93,
+      "Median": 92.0
+    }
+  },
+  "Inspector": {
+    "Samples": 30,
+    "TotalSelectionAndLayoutMs": {
+      "Median": 89.22515,
+      "P95": 187.1887,
+      "StdDev": 88.48227545421042
+    },
+    "SelectionMs": {
+      "Median": 55.637750000000004,
+      "P95": 118.7949,
+      "StdDev": 33.105633358261784
+    },
+    "AllocatedBytes": {
+      "Median": 6904252.0,
+      "P95": 10830192,
+      "StdDev": 2910764.85795446
+    },
+    "GC": [
+      14,
+      8,
+      0
+    ],
+    "MetadataRebuilds": 0,
+    "RenderScaling": 1
+  },
+  "Package": {
+    "Entries": 639,
+    "Bytes": 219356683,
+    "SHA256": "4f35dd41ecb90ef27d95b5b93f81de364bcfb13235a07bde9686567ab2524c88",
+    "Version": "0.1.18",
+    "Identity": "AvaloniaDesigner.VSIX",
+    "RuntimeDependencyClosure": "PASS",
+    "Forbidden": [],
+    "Symbols": [
+      "AvaloniaDesigner.Host.Protocol.pdb"
+    ],
+    "RequiredSHA256": {
+      "AvaloniaDesigner.VSIX.dll": "da349ce9e547995f3f18cc2fec11a0bcd2ea9f284f8b06046da477eb8bd3ccc1",
+      "AvaloniaDesigner.Host.Protocol.dll": "ed6cd66795263466fe722be4a37cce1dc8ff5cbb1ad5f09c47ed2e2c5fbbd4d7",
+      "VsHost/AvaloniaDesigner.VsHost.exe": "7c17b8851fa4395ddebe1a9184b2ad729024e8b3de6549e49958ee1ed550e2f1",
+      "VsHost/AvaloniaDesigner.VsHost.runtimeconfig.json": "28329cf08f6505e73806b17558b187c02f0c1c516fe47ebfb7a013d082aaa306",
+      "VsHost/AvaloniaDesigner.VsHost.deps.json": "6a81c54d0a7a2a8afa3d1b0fe30f766d05f8261818edd9e05968d46ae008319d",
+      "VsHost/FormDesigner.dll": "5a7e0f6e219a3ab994a2ab39ec393614caac0a97569dd9f733655e347fc70ffb",
+      "VsHost/AvaloniaDesigner.VsHost.dll": "181baf924fb6f29467a1fcfff8ff4e2563a1c153024e89fa0ba9997f599f7cb3"
+    }
+  },
+  "CaptureSummary": {
+    "ProcessRuns": 158,
+    "NativeAV": 0,
+    "ManagedFatalCaptures": 0,
+    "CaptureFailures": 0,
+    "Timeouts": 0,
+    "NonZero": [
+      {
+        "Path": "first-red-capture\\result.json",
+        "ExitCode": 1,
+        "Captured": false,
+        "Code": null,
+        "CaptureFailed": false,
+        "TimedOut": false
+      },
+      {
+        "Path": "focused-diagnostic-capture\\result.json",
+        "ExitCode": 1,
+        "Captured": false,
+        "Code": null,
+        "CaptureFailed": false,
+        "TimedOut": false
+      },
+      {
+        "Path": "focused-source-guard-capture\\result.json",
+        "ExitCode": 1,
+        "Captured": false,
+        "Code": null,
+        "CaptureFailed": false,
+        "TimedOut": false
+      },
+      {
+        "Path": "host-cycles-parent-capture\\result.json",
+        "ExitCode": -532462766,
+        "Captured": false,
+        "Code": null,
+        "CaptureFailed": false,
+        "TimedOut": false
+      },
+      {
+        "Path": "shutdown-red-capture\\result.json",
+        "ExitCode": 1,
+        "Captured": false,
+        "Code": null,
+        "CaptureFailed": false,
+        "TimedOut": false
+      },
+      {
+        "Path": "source-dirty-red-capture\\result.json",
+        "ExitCode": 1,
+        "Captured": false,
+        "Code": null,
+        "CaptureFailed": false,
+        "TimedOut": false
+      },
+      {
+        "Path": "transport-red-capture\\result.json",
+        "ExitCode": 1,
+        "Captured": false,
+        "Code": null,
+        "CaptureFailed": false,
+        "TimedOut": false
+      },
+      {
+        "Path": "normal-final\\broad-normal-capture\\result.json",
+        "ExitCode": 1,
+        "Captured": false,
+        "Code": null,
+        "CaptureFailed": false,
+        "TimedOut": false
+      },
+      {
+        "Path": "normal-after-contract\\broad-normal-capture\\result.json",
+        "ExitCode": 1,
+        "Captured": false,
+        "Code": null,
+        "CaptureFailed": false,
+        "TimedOut": false
+      }
+    ]
+  },
+  "FinalGates": {
+    "AutomatedTests": "PASS",
+    "InstalledVsixInteractive": "NOT VERIFIED",
+    "PhysicalDpiDnD": "NOT VERIFIED",
+    "UiaCrash": "UNRESOLVED",
+    "Phase4F": "15/15",
+    "Broad": "72/72",
+    "IPC": "3/3",
+    "Memory": [
+      "36/36",
+      "36/36",
+      "36/36"
+    ],
+    "FinalHostCycles": "55/55"
+  },
+  "InstalledHostProbe": {
+    "Executable": "C:\\Users\\Kirill\\AppData\\Local\\Microsoft\\VisualStudio\\17.0_3b0ec686Codex4F20261117\\Extensions\\o33ky5fj.zmx\\VsHost\\AvaloniaDesigner.VsHost.exe",
+    "HostPid": 2552,
+    "ExitCode": 0,
+    "Documents": [
+      {
+        "File": "Samples/VisualStudioPoC/SimpleAvaloniaApp/MainWindow.axaml",
+        "Version": 1,
+        "Checksum": "BF27D36825C19B4E3C013857BB974D5BCE90B932886F66740C65F47EEFE5E030",
+        "Capability": "PartiallyEditable"
+      },
+      {
+        "File": "Samples/VisualStudioPoC/ComplexAxamlVisualStudioRoundTrip/MainWindow.axaml",
+        "Version": 2,
+        "Checksum": "AB6BA51AA74357E2B5A9BCDE6AD0901D4C6DA9CAF2BBA2D1E1BF37B37FD9DE0E",
+        "Capability": "PartiallyEditable"
+      },
+      {
+        "File": "Views/MainWindow.axaml",
+        "Version": 3,
+        "Checksum": "6F87A711498673E73674737487F0A8C6C36E9CA1A4729687BFFFBECBECE4CCBA",
+        "Capability": "PartiallyEditable"
+      }
+    ],
+    "InteractiveVsix": "NOT VERIFIED"
+  }
+}

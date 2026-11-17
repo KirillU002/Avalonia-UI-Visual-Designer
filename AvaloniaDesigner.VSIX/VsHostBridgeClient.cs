@@ -33,6 +33,8 @@ internal sealed class VsHostBridgeClient : IDisposable
 
     public async Task EnsureConnectedAsync()
     {
+        if (_disposed)
+            throw new ObjectDisposedException(nameof(VsHostBridgeClient));
         if (_connection is not null)
         {
             Log?.Invoke("VSIX_VSHOST_REUSE");
@@ -53,16 +55,22 @@ internal sealed class VsHostBridgeClient : IDisposable
                 UseShellExecute = false,
                 CreateNoWindow = false
         }) ?? throw new InvalidOperationException("Не удалось запустить AvaloniaDesigner.VsHost.exe.");
-        _process.EnableRaisingEvents = true;
-        _process.Exited += (_, _) => OnDisconnected("VSIX_HOST_DISCONNECTED process exited");
+        var process = _process;
+        process.EnableRaisingEvents = true;
+        process.Exited += (_, _) =>
+        {
+            if (ReferenceEquals(_process, process) && _connection is { } active)
+                OnDisconnected(active, "VSIX_HOST_DISCONNECTED process exited");
+        };
 
         var client = NamedPipeProtocolConnection.CreateClient(_pipeName);
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(_cancellation.Token);
         timeout.CancelAfter(TimeSpan.FromSeconds(12));
         Log?.Invoke("VSIX_IPC_CONNECT_START");
         await client.ConnectAsync(timeout.Token).ConfigureAwait(false);
-        _connection = new NamedPipeProtocolConnection(client);
-        _ = ReceiveLoopAsync();
+        var connection = new NamedPipeProtocolConnection(client);
+        _connection = connection;
+        _ = ReceiveLoopAsync(connection);
         Log?.Invoke("VSIX_IPC_CONNECTED");
 
         var ack = await SendRequestAsync(DesignerHostMessageTypes.Hello, string.Empty, new HelloPayload
@@ -130,13 +138,13 @@ internal sealed class VsHostBridgeClient : IDisposable
         }
     }
 
-    private async Task ReceiveLoopAsync()
+    private async Task ReceiveLoopAsync(NamedPipeProtocolConnection connection)
     {
         try
         {
-            while (!_cancellation.IsCancellationRequested && _connection is not null)
+            while (!_cancellation.IsCancellationRequested && ReferenceEquals(_connection, connection))
             {
-                var envelope = await _connection.ReceiveAsync(_cancellation.Token).ConfigureAwait(false);
+                var envelope = await connection.ReceiveAsync(_cancellation.Token).ConfigureAwait(false);
                 if (envelope is null)
                     break;
 
@@ -148,7 +156,7 @@ internal sealed class VsHostBridgeClient : IDisposable
 
                 if (string.Equals(envelope.MessageType, DesignerHostMessageTypes.ApplyDesignerPatch, StringComparison.Ordinal))
                 {
-                    var patch = _connection.GetPayload<ApplyDesignerPatchPayload>(envelope);
+                    var patch = connection.GetPayload<ApplyDesignerPatchPayload>(envelope);
                     if (patch is not null)
                         await HandlePatchAsync(envelope, patch).ConfigureAwait(false);
                     continue;
@@ -172,7 +180,7 @@ internal sealed class VsHostBridgeClient : IDisposable
         }
         finally
         {
-            OnDisconnected("VSIX_HOST_DISCONNECTED pipe closed");
+            OnDisconnected(connection, "VSIX_HOST_DISCONNECTED pipe closed");
         }
     }
 
@@ -203,13 +211,14 @@ internal sealed class VsHostBridgeClient : IDisposable
 
     public Task SendPatchAppliedAsync(string requestId, string documentId, VsDocumentSnapshot snapshot)
     {
+        var connection = _connection ?? throw new InvalidOperationException("VsHost disconnected before the patch acknowledgement was sent. Reload the actual Visual Studio buffer.");
         Log?.Invoke($"VSIX_PATCH_APPLIED document={snapshot.FilePath}; version={snapshot.Version}");
-        return _connection?.SendAsync(DesignerHostMessageTypes.PatchApplied, requestId, documentId, new PatchAppliedPayload
+        return connection.SendAsync(DesignerHostMessageTypes.PatchApplied, requestId, documentId, new PatchAppliedPayload
         {
             Version = snapshot.Version,
             Checksum = snapshot.Checksum,
             Text = snapshot.Text
-        }, _cancellation.Token) ?? Task.CompletedTask;
+        }, _cancellation.Token);
     }
 
     private Task SendErrorAsync(DesignerHostEnvelope request, string code, string message, string details = "") =>
@@ -277,16 +286,38 @@ internal sealed class VsHostBridgeClient : IDisposable
         }
     }
 
-    private void OnDisconnected(string details)
+    private void OnDisconnected(NamedPipeProtocolConnection connection, string details)
     {
-        if (_connection is null)
+        // A prior receive loop/process may finish after a replacement connected.
+        if (!ReferenceEquals(Interlocked.CompareExchange(ref _connection, null, connection), connection))
             return;
-        _connection.Dispose();
-        _connection = null;
+        connection.Dispose();
         foreach (var item in _pending.Values)
             item.TrySetException(new InvalidOperationException("Avalonia Designer disconnected."));
         Disconnected?.Invoke();
         Log?.Invoke(details);
+    }
+
+    public async Task ShutdownAsync()
+    {
+        if (_disposed)
+            return;
+        if (_connection is { } active)
+        {
+            try
+            {
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+                await active.SendAsync(DesignerHostMessageTypes.HostShutdown, Guid.NewGuid().ToString("N"),
+                    string.Empty, new EmptyPayload(), timeout.Token).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is IOException || ex is ObjectDisposedException || ex is OperationCanceledException)
+            {
+                // The outcome is uncertain. Never retry or kill a host that may
+                // still own unsent Designer edits.
+                Log?.Invoke($"VSIX_HOST_SHUTDOWN_UNCONFIRMED {ex.Message}");
+            }
+        }
+        Dispose();
     }
 
     public void Dispose()
@@ -295,7 +326,10 @@ internal sealed class VsHostBridgeClient : IDisposable
             return;
         _disposed = true;
         _cancellation.Cancel();
-        _connection?.Dispose();
+        var connection = Interlocked.Exchange(ref _connection, null);
+        connection?.Dispose();
+        foreach (var item in _pending.Values)
+            item.TrySetException(new ObjectDisposedException(nameof(VsHostBridgeClient)));
         _process?.Dispose();
         _cancellation.Dispose();
     }

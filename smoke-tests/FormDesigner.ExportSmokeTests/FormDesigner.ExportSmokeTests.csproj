@@ -10,6 +10,7 @@
     <Compile Include="..\UiaStability\Common\PlainWindowProbe.cs" Link="PlainWindowProbe.cs" />
     <None Include="..\PostgreSql\fixture.sql" Link="PostgreSql\fixture.sql" CopyToOutputDirectory="PreserveNewest" />
     <Compile Include="..\..\AvaloniaDesigner.VSIX\VsTextPatch.cs" Link="VsTextPatch.cs" />
+    <Compile Include="..\..\AvaloniaDesigner.VSIX\VsHostBridgeClient.cs" Link="VsHostBridgeClient.cs" />
     <ProjectReference Include="..\..\FormDesigner.csproj" />
     <ProjectReference Include="..\..\AvaloniaDesigner.Host.Protocol\AvaloniaDesigner.Host.Protocol.csproj" />
     <ProjectReference Include="..\..\AvaloniaDesigner.VsHost\AvaloniaDesigner.VsHost.csproj" />
