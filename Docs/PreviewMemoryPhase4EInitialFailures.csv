@@ -1,0 +1,8 @@
+Test,WindowType,ScenarioWindows,OriginalRetained,Closed,Disposed,AutomationReleased,OriginalHeap,FocusedEvidence
+Legacy_TwentyCycles,FormDesigner.Views.PreviewWindow,20,>=1; exact count not recorded,True,True,True,Not captured for this run,Legacy: two focused heaps; Window allocated but no strong roots at capture
+Legacy_Eremex,FormDesigner.Views.PreviewWindow,3,>=1; exact count not recorded,True,True,True,Not captured for this run,No per-case heap; individual root unproven
+Legacy_CancelledOwnerClose,FormDesigner.Views.PreviewWindow,2,>=1; exact count not recorded,True,True,True,Not captured for this run,No per-case heap; individual root unproven
+Legacy_CloseDuringAsyncContractLoad,FormDesigner.Views.PreviewWindow,1,>=1; exact count not recorded,True,True,True,Not captured for this run,No per-case heap; individual root unproven
+AXAML_NoDataGrid,FormDesigner.Views.PreviewWindow,3,>=1; exact count not recorded,True,True,True,Not captured for this run,No per-case heap; individual root unproven
+AXAML_StaticRows,FormDesigner.Views.PreviewWindow,3,>=1; exact count not recorded,True,True,True,Not captured for this run,No per-case heap; individual root unproven
+AXAML_TwentyCycles,FormDesigner.Views.PreviewWindow,20,>=1; exact count not recorded,True,True,True,Not captured for this run,AXAML baseline focused heap: CCW RefCount 1 -> RootAutomationNode -> WindowAutomationPeer -> PreviewWindow

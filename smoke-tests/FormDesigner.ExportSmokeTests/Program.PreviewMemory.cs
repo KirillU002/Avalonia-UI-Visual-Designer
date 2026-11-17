@@ -238,8 +238,20 @@ internal static partial class Program
 
     private static void VerifyMemoryReleased(IEnumerable<PreviewMemoryReferences> references)
     {
+        var samples = references.ToArray();
+        var collections = Enumerable.Range(0, 3).Select(GC.CollectionCount).ToArray();
         NativeItemsUiWait(1000); ForceFullGc();
-        foreach (var refs in references)
+        Console.WriteLine("MEMORY_GATE_INVENTORY " + JsonSerializer.Serialize(new
+        {
+            Windows = samples.Length, AliveWindows = samples.Count(r => r.Window.IsAlive),
+            AliveContexts = samples.Sum(r => r.Contexts.Count(w => w.IsAlive)),
+            AliveItems = samples.Sum(r => r.Items.Count(w => w.IsAlive)),
+            AliveGrids = samples.Sum(r => r.Grids.Count(w => w.IsAlive)),
+            GC = Enumerable.Range(0, 3).Select(i => GC.CollectionCount(i) - collections[i]).ToArray(),
+            ActiveWindows = PreviewWindow.ActivePreviewWindows,
+            RetainedIds = samples.Where(r => r.Window.IsAlive).Select(r => r.Id).ToArray()
+        }));
+        foreach (var refs in samples)
         {
             if (refs.Window.IsAlive)
             {

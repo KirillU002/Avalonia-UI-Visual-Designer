@@ -3,7 +3,7 @@ param(
     [Parameter(Mandatory)][string]$Output,
     [ValidateSet('minimal','editor','differential')][string]$Scenario='minimal',
     [string[]]$Controls=@('TextBox'),
-    [ValidateSet('plain','editor','mutations','undo','forms','project','preview-legacy','preview-axaml','menu','popup')][string]$StressScenario='mutations',
+    [ValidateSet('plain','editor','mutations','undo','forms','project','preview-legacy','preview-axaml','preview-imported','menu','popup')][string]$StressScenario='mutations',
     [ValidateSet('normal','root-disconnect')][string]$Close='normal',
     [ValidateSet('owner','popup')][string]$Scope='owner',
     [int]$Cycles=200,

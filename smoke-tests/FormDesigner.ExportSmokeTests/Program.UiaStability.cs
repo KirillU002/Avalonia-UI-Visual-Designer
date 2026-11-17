@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Threading;
+using Avalonia.LogicalTree;
 using FormDesigner.Models;
 using FormDesigner.Services;
 using FormDesigner.ViewModels;
@@ -24,7 +25,8 @@ internal static partial class Program
         using var client = string.IsNullOrEmpty(external) ? null : StartUiaStressClient(external);
         var observations = new List<object>(); var weak = new List<WeakReference>();
         var watch = Stopwatch.StartNew();
-        var vm = scenario.StartsWith("preview") ? MemoryPreviewModel("NoDataGrid") : GridFirstVm();
+        var vm = scenario == "preview-imported" ? Scene4C()
+            : scenario.StartsWith("preview") ? MemoryPreviewModel("NoDataGrid") : GridFirstVm();
         var collectionType = Environment.GetEnvironmentVariable("UIA_STRESS_CONTROL") ?? "TreeView";
         if (collectionType is not ("Menu" or "ContextMenu" or "Flyout" or "TreeView" or "TabControl" or "ComboBox" or "ListBox")) throw new ArgumentException("Unsupported diagnostic collection type.");
         if (scenario is "editor" or "mutations" or "undo" or "forms" or "project") vm.CreateControl(UiaCollectionOwner(), 0, 0);
@@ -55,6 +57,8 @@ internal static partial class Program
             NativeItemsUiWait(1000); ForceFullGc();
             if (scenario.StartsWith("preview") && weak.Any(r => r.IsAlive)) DumpRetainedPreviewIfRequested();
             if (scenario.StartsWith("preview")) RequireCapability(weak.All(r => !r.IsAlive), "Closed Preview retained after stress.");
+            if (Environment.GetEnvironmentVariable("UIA_STRESS_RELEASE_CLIENT_FIRST") == "1")
+                RequireCapability(weak.All(r => !r.IsAlive), "Closed window/popup/editor retained after owned client shutdown.");
             var hasEditor = scenario is "editor" or "mutations" or "undo" or "forms" or "project";
             var aliveSessions = hasEditor ? weak.Where((r, index) => index % 2 == 1).Count(r => r.IsAlive) : 0;
             RequireCapability(aliveSessions == 0, "Closed editor sessions retained after stress.");
@@ -76,6 +80,7 @@ internal static partial class Program
             foreach (var window in SmokeWindows) window.CloseForExternalHost(); SmokeWindows.Clear();
             if (client is not null && !client.HasExited) { client.Kill(); client.WaitForExit(); }
             NativeItemsUiWait(100);
+            Dispose5AProfileVm(vm);
         }
         void Write(string code, object value)
         {
@@ -106,7 +111,7 @@ internal static partial class Program
         Window window; CollectionEditorSession? session = null; IDisposable? preview = null;
         if (scenario.StartsWith("preview"))
         {
-            var shown = ShowDataGridRegressionPreview(vm, scenario == "preview-axaml"); preview = shown; window = shown.Window;
+            var shown = ShowDataGridRegressionPreview(vm, scenario is "preview-axaml" or "preview-imported"); preview = shown; window = shown.Window;
         }
         else if (scenario is "editor" or "mutations" or "undo" or "forms" or "project")
         {
@@ -183,6 +188,15 @@ internal static partial class Program
         }
         var references = new List<WeakReference> { new(window) };
         if (session is not null) references.Add(new(session));
+        if (scenario is "popup" or "menu" && window.Content is Control popupOwner)
+        {
+            // Only known native popup content, not arbitrary reflected object graphs.
+            var roots = new HashSet<TopLevel>();
+            if (popupOwner.ContextMenu is { } menu && TopLevel.GetTopLevel(menu) is { } menuRoot) roots.Add(menuRoot);
+            foreach (var button in popupOwner.GetLogicalDescendants().OfType<Button>())
+                if (button.Flyout is Flyout { Content: Control content } && TopLevel.GetTopLevel(content) is { } root) roots.Add(root);
+            foreach (var root in roots.Where(root => !ReferenceEquals(root, window))) references.Add(new(root));
+        }
         if (scenario == "forms") { var form = vm.ActiveDocumentId; vm.SetActiveForm(alternateForm!, "uia-stress"); vm.SetActiveForm(form, "uia-stress"); }
         if (scenario == "project") { vm.NewProjectEditorCommand!.Execute(null); vm.CreateControl(UiaCollectionOwner(), 0, 0); }
         // Intentionally close with popup/menu open; do not hide lifecycle defects.

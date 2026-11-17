@@ -220,3 +220,44 @@ default order: `COLLECTION3B_PROFILE_COUNTS=10,50,100`,
 then run the smoke runner with `--collections3b-profile`. Three warm-ups and 30
 measured observations per operation; no CI timing thresholds. Do not run during
 restore/build/stress jobs. Compositor callback is not physical first-pixel time.
+
+## Phase 4E: external client lifetime and forensic checkpoints
+
+Before a post-close GC gate, finish only the UIA sessions owned by the test or
+diagnostic task. A read-only UIA inspector can retain provider/peer/Window objects
+after HWND destruction. Do not terminate arbitrary screen readers, disable UIA,
+or change the gate's wait/GC/assertions. Record ambient clients as uncontrolled;
+loading UIAutomationCore alone does not establish ownership.
+
+`Common/PlainWindowProbe.cs` is shared by the standalone Avalonia probe and the
+Designer smoke binary. `UIA_PROBE_FORENSIC_HOLD=1` pauses after the original GC
+checkpoint and writes `hold-ready.json`. `UIA_PROBE_WAIT_CLOSE=1` exposes one
+selectable test Window and waits for `close.request` before closing; this styling
+is opt-in and for diagnostic snapshots only. Publish complete requests atomically:
+
+```powershell
+pwsh -File smoke-tests/UiaStability/WriteProbeSignal.ps1 `
+  -Output artifacts/<fresh-case>/TextBox -Name sample.request -Label client-alive
+```
+
+Allowed names are `sample.request`, `close.request`, and `release.txt`. The
+publisher refuses to overwrite a pending signal. Never write these files in
+place: a reader can encounter a sharing violation or incomplete content. When
+reading the append-only response log concurrently, use FileShare.ReadWrite.
+`ConnectedAlive`/`ReleasedAlive` are observations; process Success is not proof
+that every observed count is zero.
+
+`UIA_CAPTURE_MANAGED_FATAL=1` opts NativeCapture into a full dump of a second-chance
+CLR exception (E0434352), with a `managed-` filename. Default AV capture and exception
+disposition are unchanged. Classify by manifest ExceptionCode plus SOS/native
+stack; a captured CLR exception is not automatically a native UIA AV.
+
+The editor stress scenario `preview-imported` uses the existing native source
+projection. Stress captures known native popup roots and disposes its owned VM.
+With `UIA_STRESS_RELEASE_CLIENT_FIRST=1`, Window/popup/editor weak references must
+all be dead after the existing checkpoint. Connected-client checkpoints remain
+recorded separately; client references are released through STOP/process exit.
+
+See [Phase 4E report](../../Docs/UniversalControlsAndPropertiesPhase4E.md) and
+[minimal reproducer](../../Docs/Phase4EUiAutomationRetentionReproducer.md).
+The historical GetPatternProvider native crash remains UNRESOLVED.

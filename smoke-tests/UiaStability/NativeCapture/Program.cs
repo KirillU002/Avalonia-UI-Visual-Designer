@@ -111,10 +111,12 @@ internal static class Program
                     var code=(uint)Marshal.ReadInt32(data,16); var address=(ulong)Marshal.ReadInt64(data,32); var first=Marshal.ReadInt32(data,168)!=0;
                     disposition=0x80010001;
                     if(code==0x80000003&&!initialBreakpoint){initialBreakpoint=true;disposition=0x00010002;}
-                    if(code==0xC0000005 && !captureAttempted && (selfTest || address>=uiaStart && address<uiaEnd || !first))
+                    var managedFatal=code==0xE0434352 && !first
+                        && Environment.GetEnvironmentVariable("UIA_CAPTURE_MANAGED_FATAL")=="1";
+                    if(!captureAttempted && (managedFatal || code==0xC0000005 && (selfTest || address>=uiaStart && address<uiaEnd || !first)))
                     {
                         captureAttempted=true;
-                        var dump=Path.Combine(folder,$"av-{DateTime.UtcNow:yyyyMMddTHHmmssfffZ}-{pid}-{tid}-{runId}.dmp");
+                        var dump=Path.Combine(folder,$"{(managedFatal?"managed":"av")}-{DateTime.UtcNow:yyyyMMddTHHmmssfffZ}-{pid}-{tid}-{runId}.dmp");
                         try
                         {
                             using var own=Process.GetProcessById((int)pid);

@@ -20,6 +20,11 @@ internal static class Program
     {
         Folder=Path.GetFullPath(Environment.GetEnvironmentVariable("UIA_PROBE_OUTPUT")??"artifacts/universal-phase3b2/minimal");
         Directory.CreateDirectory(Folder);
+        AppDomain.CurrentDomain.UnhandledException += (_, error) =>
+        {
+            try { Log("MANAGED_UNHANDLED", new { Exception = error.ExceptionObject.ToString(), error.IsTerminating }); }
+            catch (IOException) { }
+        };
         if(args.Contains("--uia-differential"))
         {
             AppBuilder.Configure<ProbeApp>().UsePlatformDetect().SetupWithoutStarting();
