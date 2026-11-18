@@ -53,11 +53,21 @@ public sealed class AxamlStyleValues
             {
                 if (Is(node,"ResourceDictionary.ThemeDictionaries"))
                 {
+                    var uniqueVariants = result.UniqueKeys(node);
                     foreach (var variant in node.Children)
                     {
                         var name = PropertyExpressionProjection.XamlAttribute(variant,"Key");
-                        if (Is(variant,"ResourceDictionary") && name is ("Default" or "Light" or "Dark") && result.UniqueKeys(node).Contains(name))
-                            foreach (var item in variant.Children) result.ReadResource(syntax,item,name);
+                        if (!Is(variant,"ResourceDictionary") || name is not ("Default" or "Light" or "Dark"))
+                        {
+                            result.Notices.Add("Window.Resources · " + (name ?? variant.Name) + " — неподдерживаемый тематический словарь, только чтение.");
+                            continue;
+                        }
+                        if (!uniqueVariants.Contains(name))
+                        {
+                            result.Notices.Add("Window.Resources · " + name + " — повторяющийся ключ варианта темы, только чтение.");
+                            continue;
+                        }
+                        foreach (var item in variant.Children) result.ReadResource(syntax,item,name);
                     }
                 }
                 else result.ReadResource(syntax,node,"");
@@ -110,10 +120,18 @@ public sealed class AxamlStyleValues
             return;
         }
         var attr = type == "SolidColorBrush" ? node.FindAttribute("Color") : null;
+        if (attr is null && node.IsSelfClosing)
+        {
+            Notices.Add(scope + " · " + key + " — у самозакрывающегося элемента нет исходного диапазона значения, только чтение.");
+            return;
+        }
         var span = attr?.ValueSpan ?? new AxamlTextSpan(node.ContentStart,node.EndTagSpan.Start-node.ContentStart);
-        if (attr is null && node.IsSelfClosing) return;
         var raw = syntax.Text.Substring(span.Start,span.Length);
-        if (raw.Contains('<')) return;
+        if (raw.Contains('<'))
+        {
+            Notices.Add(scope + " · " + key + " — значение содержит XML-разметку, только чтение.");
+            return;
+        }
         if (!TryReadReversibleScalar(raw,attr?.Quote ?? '\0',out var value))
         {
             Notices.Add(scope+" · "+key+" — исходная запись XML требует точного сохранения, только чтение.");

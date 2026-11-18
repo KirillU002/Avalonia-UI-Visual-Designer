@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using FormDesigner.Models;
 using System;
 using System.Collections.Generic;
@@ -7,7 +8,6 @@ using System.Text.Json;
 using System.Threading;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
-using System.Linq;
 using FormDesigner.Services;
 
 namespace FormDesigner.Views;
@@ -66,9 +66,15 @@ public partial class PreviewWindow
         _databasePreviewClosed = true;
         // Closed is committed, including when an owner closes its children. Closing can
         // still be cancelled by the owner after the child's Closing event has returned.
-        // End only this preview's template animations; never mutate document controls.
-        foreach (var progress in this.GetVisualDescendants().OfType<ProgressBar>())
-            if (progress.IsIndeterminate) progress.IsIndeterminate = false;
+        foreach (var visual in this.GetVisualDescendants())
+        {
+            if (visual is ProgressBar { IsIndeterminate: true } progress)
+                progress.IsIndeterminate = false;
+            // Avalonia cancels the pending collapse timer when auto-hide is disabled.
+            // Otherwise the timer can retain this closed window through the composition target.
+            else if (visual is ScrollBar { TemplatedParent: DataGrid, AllowAutoHide: true } bar)
+                bar.SetCurrentValue(ScrollBar.AllowAutoHideProperty, false);
+        }
         // Hiding an ancestor doesn't end the indeterminate template's infinite clock subscription.
         LoadingProgress.IsIndeterminate = false;
         _databasePreviewCancellation?.Cancel();

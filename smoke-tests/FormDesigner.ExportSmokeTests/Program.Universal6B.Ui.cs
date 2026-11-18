@@ -13,8 +13,37 @@ namespace FormDesigner.ExportSmokeTests;
 
 internal static partial class Program
 {
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    private static PreviewMemoryReferences Close6BPreviewWithPendingGridScroll()
+    {
+        using var scope = ShowDataGridRegressionPreview(MemoryPreviewModel("TwentyCycles"), false);
+        var window = scope.Window;
+        var grid = window.GetVisualDescendants().OfType<DataGrid>().Single();
+        var bar = grid.GetVisualDescendants().OfType<Avalonia.Controls.Primitives.ScrollBar>()
+            .Single(s => ReferenceEquals(s.TemplatedParent, grid) && s.Name == "PART_VerticalScrollbar");
+        RequireCapability(bar.AllowAutoHide && bar.HideDelay > TimeSpan.FromSeconds(1),
+            "Native DataGrid lost its auto-hide configuration before close.");
+        EventHandler<WindowClosingEventArgs> cancel = (_, e) => e.Cancel = true;
+        window.Closing += cancel;
+        try
+        {
+            window.Close();
+            RequireCapability(window.IsVisible && bar.AllowAutoHide, "Cancelled Close changed the live DataGrid scrollbar.");
+        }
+        finally { window.Closing -= cancel; }
+        var references = CaptureMemoryReferences(window);
+        using var pointer = new Avalonia.Input.Pointer(Avalonia.Input.Pointer.GetNextFreeId(), Avalonia.Input.PointerType.Mouse, true);
+        var exit = new Avalonia.Input.PointerEventArgs(Avalonia.Input.InputElement.PointerExitedEvent, bar,
+            pointer, window, default, 0, new Avalonia.Input.PointerPointProperties(), Avalonia.Input.KeyModifiers.None);
+        bar.RaiseEvent(exit);
+        window.Close();
+        return references;
+    }
+
     private static void Run6BUiChecks(Action<string, Action> check)
     {
+        check("Committed close releases the DataGrid scrollbar delay after cancelled close", () =>
+            VerifyMemoryReleased(new[] { Close6BPreviewWithPendingGridScroll() }));
         check("compound Setter exported and restored as native CornerRadius", () =>
         {
             var vm = StyleScene("Grid");
@@ -155,6 +184,55 @@ internal static partial class Program
                 }
             }
             finally { Dispose5AProfileVm(vm); Dispose5AProfileVm(reopened); }
+        });
+
+        check("resource type filter combines with scope search and preserves the selected entry", () =>
+        {
+            var vm = GridFirstVm();
+            var sheet = vm.AppearanceDraft();
+            var declarations = new FormResource[]
+            {
+                new("Swatch", "Color", "Red"),
+                new("Swatch", "Color", "Blue", "Dark"),
+                new("Caption", "String", "Title")
+            };
+            sheet.Resources.AddRange(declarations);
+            vm.SaveAppearance(vm.ActiveDocumentId, sheet);
+            var editor = new FormStyleEditorWindow(vm);
+            try
+            {
+                editor.Show();
+                editor.UpdateLayout();
+                editor.GetVisualDescendants().OfType<TabControl>().Single().SelectedIndex = 1;
+                editor.UpdateLayout();
+                var resources = editor.GetVisualDescendants().OfType<ListBox>().Single();
+                var filter = editor.GetVisualDescendants().OfType<ComboBox>().Single(c => Equals(c.SelectedItem, "Все типы"));
+                var fields = editor.GetVisualDescendants().OfType<TextBox>().ToArray();
+                var search = fields.Single(b => b.Watermark == "Поиск по ключу, типу или теме");
+                var value = fields.Single(b => b.Watermark == "Значение ресурса");
+                RequireCapability(filter.Items.Cast<string>().Skip(1).SequenceEqual(FormStyleAuthoring.ResourceTypes),
+                    "Category choices differ from supported resource types");
+                resources.SelectedIndex = 0;
+                value.Text = "Green";
+                search.Text = "оБщИй";
+                DropPumpUntil(() => resources.ItemCount == 2, "search by the visible common scope");
+                filter.SelectedItem = "Color";
+                DropPumpUntil(() => resources.ItemCount == 1, "combine resource category and scope");
+                RequireCapability(Equals(resources.SelectedItem, "Общий · Color · Swatch") && value.Text == "Green",
+                    "Refiltering lost selection or overwrote draft");
+                search.Text = "dark";
+                DropPumpUntil(() => Equals(resources.Items.Cast<string>().SingleOrDefault(), "Dark · Color · Swatch"),
+                    "resolve a key in the selected theme");
+                RequireCapability(resources.SelectedIndex == -1, "Selection crossed theme boundaries");
+                filter.SelectedItem = "String";
+                DropPumpUntil(() => resources.ItemCount == 0, "resource filters with empty intersection");
+                search.Text = "";
+                DropPumpUntil(() => resources.ItemCount == 1, "clearing text retains the resource category");
+                filter.SelectedIndex = 0;
+                DropPumpUntil(() => resources.ItemCount == declarations.Length, "restore unfiltered declarations");
+                RequireCapability(vm.AppearanceDraft().Resources.SequenceEqual(declarations), "Filtering mutated the dictionary");
+            }
+            finally { editor.Close(); Dispose5AProfileVm(vm); }
         });
 
         check("visual resource CRUD, search and duplicate validation", () =>

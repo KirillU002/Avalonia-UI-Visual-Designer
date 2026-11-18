@@ -8,6 +8,38 @@ internal static partial class Program
 {
     private static void CheckStyleSourceSafety(Action<string,Action> check)
     {
+        check("opaque resource entries and theme scopes have read-only notices", () =>
+        {
+            const string body = """
+                <Window.Resources><ResourceDictionary>
+                  <x:String x:Key="Editable">EDIT-ME</x:String>
+                  <x:String x:Key="Commented">a<!-- keep -->b</x:String>
+                  <x:String x:Key="SelfClosing"/>
+                  <ResourceDictionary.ThemeDictionaries>
+                    <ResourceDictionary x:Key="FutureTheme"><x:String x:Key="Accent">opaque</x:String></ResourceDictionary>
+                    <ResourceDictionary x:Key="Dark"><x:String x:Key="Accent">first</x:String></ResourceDictionary>
+                    <ResourceDictionary x:Key="Dark"><x:String x:Key="Accent">second</x:String></ResourceDictionary>
+                  </ResourceDictionary.ThemeDictionaries>
+                </ResourceDictionary></Window.Resources>
+                <Grid/>
+                """;
+            var vm = Universal4AVm(body);
+            try
+            {
+                var field = vm.StyleFields.Single();
+                RequireCapability(field.Resource?.Key == "Editable", "Opaque entries must not be editable");
+                var notices = vm.StyleNotices().ToArray();
+                foreach (var key in new[] { "Commented", "SelfClosing", "FutureTheme", "Dark" })
+                    RequireCapability(notices.Count(n => n.Contains(key) && n.Contains("только чтение")) == 1, "Missing or duplicate notice for " + key);
+                var original = vm.CreateActiveAxamlPatch().PatchedText;
+                vm.SaveSourceStyleValue(vm.ActiveDocumentId, field, "changed");
+                var patch = vm.CreateActiveAxamlPatch();
+                RequireCapability(patch.CanApply && patch.Edits.Count == 1 && patch.PatchedText == original.Replace("EDIT-ME", "changed"),
+                    "A scalar edit changed read-only markup or neighbouring theme dictionaries");
+            }
+            finally { Dispose5AProfileVm(vm); }
+        });
+
         check("XML lexemes survive scalar edit, ACK, Undo and Redo", () =>
         {
             const string body = """

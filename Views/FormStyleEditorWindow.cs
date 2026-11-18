@@ -25,10 +25,12 @@ public sealed class FormStyleEditorWindow : Window
     private readonly ContentControl _valueHost = new();
     private PropertyGridRowViewModel? _row;
     private Func<string> _readValue = () => "";
+    private const string CommonResourceScope = "Общий";
     private readonly TextBox _search = new() { Watermark = "Поиск по ключу, типу или теме" };
+    private readonly ComboBox _resourceTypeFilter = Choices(FormStyleAuthoring.ResourceTypes.Prepend("Все типы").ToArray());
     private readonly ListBox _resources = new() { Height = 155 };
     private readonly ComboBox _type = Choices(FormStyleAuthoring.ResourceTypes.ToArray());
-    private readonly ComboBox _variant = Choices("Общий","Default","Light","Dark");
+    private readonly ComboBox _variant = Choices(CommonResourceScope,"Default","Light","Dark");
     private readonly TextBox _key = new() { Watermark = "Ключ" };
     private readonly TextBox _resourceValue = new() { Watermark = "Значение ресурса" };
     private FormResource[] _visible = Array.Empty<FormResource>();
@@ -204,23 +206,47 @@ public sealed class FormStyleEditorWindow : Window
                 _message.Text = "Локальное значение снято.";
             })));
     }
+    private static string ResourceScope(FormResource resource) =>
+        resource.Variant.Length == 0 ? CommonResourceScope : resource.Variant;
+
     private void FilterResources()
     {
-        var q = _search.Text ?? "";
-        _visible = _sheet.Resources.Where(r => (r.Key+" "+r.Type+" "+r.Variant).Contains(q,StringComparison.OrdinalIgnoreCase)).ToArray();
-        _resources.ItemsSource = _visible.Select(r => (r.Variant == "" ? "Общий" : r.Variant)+" · "+r.Type+" · "+r.Key).ToArray();
+        var query = _search.Text?.Trim() ?? "";
+        var type = _resourceTypeFilter.SelectedIndex > 0 ? _resourceTypeFilter.SelectedItem as string : null;
+        var visible = _sheet.Resources.Where(r => (type == null || r.Type == type)
+            && $"{r.Key} {r.Type} {ResourceScope(r)}".Contains(query, StringComparison.OrdinalIgnoreCase)).ToArray();
+        if (_visible.SequenceEqual(visible)) return;
+
+        var index = _resources.SelectedIndex;
+        var selected = index >= 0 && index < _visible.Length ? _visible[index] : null;
+        _visible = visible;
+        _refreshing = true;
+        try
+        {
+            _resources.ItemsSource = visible.Select(r => $"{ResourceScope(r)} · {r.Type} · {r.Key}").ToArray();
+            _resources.SelectedIndex = selected == null ? -1 :
+                Array.FindIndex(visible, r => r.Key == selected.Key && r.Variant == selected.Variant);
+        }
+        finally { _refreshing = false; }
     }
     private Control BuildResources()
     {
         _search.TextChanged += (_,_) => FilterResources();
+        _resourceTypeFilter.SelectionChanged += (_,_) => FilterResources();
+        ToolTip.SetTip(_resourceTypeFilter, "Фильтр по типу ресурса");
+        var filters = new DockPanel { LastChildFill = true };
+        _resourceTypeFilter.Margin = new Thickness(6,0,0,0);
+        DockPanel.SetDock(_resourceTypeFilter, Dock.Right);
+        filters.Children.Add(_resourceTypeFilter);
+        filters.Children.Add(_search);
         _resources.SelectionChanged += (_,_) =>
         {
-            if (_resources.SelectedIndex is var i && i >= 0 && i < _visible.Length)
-            { var r = _visible[i]; _key.Text=r.Key; _resourceValue.Text=r.Value; _type.SelectedItem=r.Type; _variant.SelectedItem=r.Variant == "" ? "Общий" : r.Variant; }
+            if (!_refreshing && _resources.SelectedIndex is var i && i >= 0 && i < _visible.Length)
+            { var r = _visible[i]; _key.Text=r.Key; _resourceValue.Text=r.Value; _type.SelectedItem=r.Type; _variant.SelectedItem=ResourceScope(r); }
         };
         FormResource Input() => new(_key.Text ?? "",(string)_type.SelectedItem!,_resourceValue.Text ?? "",_variant.SelectedIndex == 0 ? "" : (string)_variant.SelectedItem!);
         FormResource Selected() => _resources.SelectedIndex >= 0 ? _visible[_resources.SelectedIndex] : throw new InvalidOperationException("Выберите ресурс.");
-        return Panel(_search,_resources,Actions(_variant,_type),_key,_resourceValue,
+        return Panel(filters,_resources,Actions(_variant,_type),_key,_resourceValue,
             new TextBlock { Text="Переименование и удаление ключа требуют проверки ссылок в других документах.", TextWrapping=Avalonia.Media.TextWrapping.Wrap },
             Actions(Action("Добавить ресурс",() => Change(s => s.Resources.Add(Input()))),
             Action("Сохранить ключ и значение",() => Change(s => s.Resources[s.Resources.IndexOf(Selected())] = Input())),
