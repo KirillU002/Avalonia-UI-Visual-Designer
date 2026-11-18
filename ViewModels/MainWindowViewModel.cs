@@ -13421,7 +13421,7 @@ public partial class MainWindowViewModel : ObservableObject
         sb.AppendLine($"        ShowInTaskbar=\"{BoolToXaml(FormShowInTaskbar)}\"");
         sb.AppendLine($"        Topmost=\"{BoolToXaml(FormTopmost)}\"");
         sb.AppendLine($"        SystemDecorations=\"{EscapeXml(FormHasSystemDecorations ? "Full" : "None")}\">");
-        if (IsFullStyledXamlExport)
+        if (IsFullStyledXamlExport || _formAppearance is not null)
         {
             AppendThemeResources(sb, themePalette);
             AppendThemeStyles(sb);
@@ -13468,7 +13468,7 @@ public partial class MainWindowViewModel : ObservableObject
 
         sb.AppendLine(GetRootContainerClosingTag());
         sb.AppendLine("</Window>");
-        GeneratedXaml = FormDesigner.DesignerSystem.Metadata.PropertyExpressionProjection.ApplyGenerated(sb.ToString(),Controls,GetExportControlName);
+        GeneratedXaml = FormDesigner.DesignerSystem.Metadata.PropertyExpressionProjection.ApplyGenerated(ApplyAuthoredClasses(sb.ToString()),Controls,GetExportControlName);
         GeneratedCSharp = BuildGeneratedCSharp();
         GeneratedBindingGuide = BuildGeneratedBindingGuide();
         if (_isGeneratingSecondaryFormExport)
@@ -14618,6 +14618,8 @@ public partial class MainWindowViewModel : ObservableObject
                     : document.FormTheme);
             var palette = DesignerThemeCatalog.Get(normalizedTheme);
 
+            _formAppearance = document.Appearance;
+            _styleSourceValues = document.StyleSourceValues;
             FormTheme = normalizedTheme;
             _activeFormTheme = normalizedTheme;
             DesignWidth = Math.Max(300, document.DesignWidth);
@@ -18523,20 +18525,27 @@ public partial class MainWindowViewModel : ObservableObject
             $"form={FormTitle}; theme={palette.Name}; accent={tokens[ThemeResourceKeys.AccentBrush]}; tokens={tokens.Values.Count}; fullStyled={IsFullStyledXamlExport}",
             toOutput: false);
         sb.AppendLine("  <Window.Resources>");
-        GeneratedFormDesignSystem.AppendWindowResources(
+        if (_formAppearance is not null) ValidateAppearanceForExport(_formAppearance);
+        var variants = _formAppearance?.Resources.Any(r => r.Variant.Length > 0) == true;
+        if (variants) sb.AppendLine("    <ResourceDictionary>");
+        if (IsFullStyledXamlExport) GeneratedFormDesignSystem.AppendWindowResources(
             sb,
             indentLevel: 2,
             tokens);
+        if (_formAppearance is not null) AppendAuthoredResources(sb,_formAppearance);
+        if (variants) sb.AppendLine("    </ResourceDictionary>");
         sb.AppendLine("  </Window.Resources>");
     }
 
     private void AppendThemeStyles(StringBuilder sb)
     {
         sb.AppendLine("  <Window.Styles>");
-        GeneratedFormDesignSystem.AppendWindowStyles(
+        if (IsFullStyledXamlExport) GeneratedFormDesignSystem.AppendWindowStyles(
             sb,
             indentLevel: 2,
             includeDataGridStyles: ShouldExportRealDataGrid && Controls.Any(control => control.Type == DesignerControlTypes.DataGrid));
+        if (_formAppearance is not null)
+            foreach (var style in _formAppearance.Styles) sb.Append("    ").AppendLine(FormDesigner.DesignerSystem.Metadata.FormStyleAuthoring.StyleXml(style));
         sb.AppendLine("  </Window.Styles>");
     }
     private static string NormalizeId(string? value) => string.IsNullOrWhiteSpace(value) ? "" : value;
@@ -21183,6 +21192,8 @@ public partial class MainWindowViewModel : ObservableObject
             SurfaceGridColumnDefinitions = SurfaceGridColumnDefinitions,
             SurfaceGridRowDefinitions = SurfaceGridRowDefinitions,
             FormTitle = FormTitle,
+            Appearance = _formAppearance,
+            StyleSourceValues = _styleSourceValues,
             FormTheme = FormTheme,
             FormWindowState = FormWindowState,
             FormStartupLocation = FormStartupLocation,
@@ -21729,6 +21740,8 @@ public partial class MainWindowViewModel : ObservableObject
                     : document.FormTheme);
             var palette = DesignerThemeCatalog.Get(normalizedTheme);
 
+            _formAppearance = document.Appearance;
+            _styleSourceValues = document.StyleSourceValues;
             FormTheme = normalizedTheme;
             _activeFormTheme = normalizedTheme;
             DesignWidth = Math.Max(300, document.DesignWidth);

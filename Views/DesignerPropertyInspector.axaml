@@ -53,6 +53,7 @@
   </UserControl.Resources>
   <DockPanel>
   <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="6" Margin="0,0,0,4">
+    <Button Content="Стили и ресурсы" Click="StyleEditor_Click" ToolTip.Tip="Оформление активной формы"/>
     <Button x:Name="ExpressionEditorButton" Content="fx" IsEnabled="False" Click="ExpressionEditor_Click" ToolTip.Tip="Binding / StaticResource / DynamicResource / Literal. Сначала выберите строку свойства."/>
     <TextBlock x:Name="ExpressionTargetText" Text="Выберите строку свойства" FontSize="11" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
   </StackPanel>

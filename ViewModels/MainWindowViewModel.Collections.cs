@@ -204,6 +204,9 @@ public partial class MainWindowViewModel
                     .Select(c => f.Name + "/" + c.Name))).ToArray();
         if (failures.Length != 0)
             throw new NotSupportedException("Экспорт остановлен: внешний ItemsSource не поддерживается локальным collection adapter: " + string.Join(", ", failures) + ". Исходные данные сохранены.");
+        if (_formAppearance is {} appearance) ValidateAppearanceForExport(appearance);
+        foreach (var other in CurrentProject.Forms.Where(f => f.Id != ActiveDocumentId && f.Document.Appearance is not null))
+            ValidateAppearanceForExport(other.Document.Appearance!);
         foreach(var control in Controls) ValidateReviewedExportContract(StandardItemsControlFactory.Snapshot(control));
         foreach(var form in CurrentProject.Forms.Where(f=>f.Id!=ActiveDocumentId))
             foreach(var control in form.Document.Controls) ValidateReviewedExportContract(control);

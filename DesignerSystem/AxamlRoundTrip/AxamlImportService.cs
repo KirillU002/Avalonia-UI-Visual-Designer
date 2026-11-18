@@ -284,7 +284,11 @@ public sealed class AxamlImportService
             "AXAML_CAPABILITY_REPORT",
             report.DocumentReadOnly ? AxamlDiagnosticSeverity.Warning : AxamlDiagnosticSeverity.Information,
             $"level={report.Level}; controls={document.Controls.Count}; entries={report.Entries.Count}"));
-        return new AxamlImportResult(document, new AxamlRoundTripDocument(sourcePath ?? string.Empty, syntax, sourceMap, report), diagnostics);
+        var mapped = new AxamlRoundTripDocument(sourcePath ?? string.Empty, syntax, sourceMap, report);
+        var fields = mapped.StyleCatalog.Fields;
+        if (fields.Count != 0)
+            document.StyleSourceValues = fields.ToDictionary(f => f.Id, f => f.Value, StringComparer.Ordinal);
+        return new AxamlImportResult(document, mapped, diagnostics);
     }
 
     private static void ImportDefinitions(AxamlElementSyntax element, DesignControlModel control, AxamlElementCapability capability)

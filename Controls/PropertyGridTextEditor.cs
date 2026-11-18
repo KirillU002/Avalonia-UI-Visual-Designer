@@ -185,7 +185,8 @@ public sealed class PropertyGridTextEditor : TextBox
 
         var text = Text ?? "";
         var viewModel = GetViewModel();
-        viewModel?.CommitPropertyGridEdit(row, text);
+        if (row.IsStyleDraft) row.Value = text;
+        else viewModel?.CommitPropertyGridEdit(row, text);
         _isEditing = false;
         _initialText = row.Value;
         viewModel?.EndPropertyGridTextEdit(row);

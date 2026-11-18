@@ -40,7 +40,20 @@ public static class PropertyExpressionProjection
                     if(resourceKey is not null||converterKey.Length>0)
                     {
                         var referencedKey=resourceKey??converterKey;
-                        var resource=nodes.FirstOrDefault(e=>e.GetAttributeValue("x:Key")==referencedKey);
+                        var formResources = syntax.Root.Children.FirstOrDefault(e => e.LocalName.EndsWith(".Resources",StringComparison.Ordinal));
+                        var dictionary = formResources?.Children.FirstOrDefault(e => e.LocalName == "ResourceDictionary") ?? formResources;
+                        var direct = dictionary?.Children.Where(e => XamlAttribute(e,"Key") == referencedKey).ToArray() ?? Array.Empty<AxamlElementSyntax>();
+                        var themed = dictionary?.Children.Where(e => e.LocalName == "ResourceDictionary.ThemeDictionaries")
+                            .SelectMany(e => e.Children).SelectMany(e => e.Children).Where(e => XamlAttribute(e,"Key") == referencedKey).ToArray()
+                            ?? Array.Empty<AxamlElementSyntax>();
+                        var resource = direct.FirstOrDefault();
+                        var candidates = value.Kind == PropertyValueKind.DynamicResource ? direct.Concat(themed) : direct;
+                        foreach (var candidate in candidates)
+                        {
+                            var resourceType = FormStyleAuthoring.RuntimeResourceType(candidate.LocalName);
+                            if (resourceType != null && !p.PropertyType.IsAssignableFrom(resourceType))
+                                throw new InvalidOperationException("Несовместимый тип ресурса " + referencedKey + " для " + model.Name + "." + p.Key);
+                        }
                         if(resource is null&&(value.Kind==PropertyValueKind.StaticResource||converterKey.Length>0))
                             throw new InvalidOperationException("StaticResource/Converter key не объявлен в generated scope: "+referencedKey);
                         if(resource is not null&&converterKey.Length>0)

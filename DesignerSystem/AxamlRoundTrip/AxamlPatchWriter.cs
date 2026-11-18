@@ -139,6 +139,12 @@ public sealed partial class AxamlPatchWriter
             AppendNewControlInsert(source, roundTripDocument, addedControls, edits);
         }
 
+        try { edits.AddRange(AxamlStyleValues.Edits(roundTripDocument,document)); }
+        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or FormatException or System.Xml.XmlException or OverflowException)
+        {
+            diagnostics.Add(new("AXAML_STYLE_PATCH_BLOCKED",AxamlDiagnosticSeverity.Warning,ex.Message));
+            return AxamlPatchResult.Unsafe(source,diagnostics);
+        }
         if (HasOverlaps(edits))
         {
             diagnostics.Add(new AxamlRoundTripDiagnostic("AXAML_PATCH_BLOCKED", AxamlDiagnosticSeverity.Error, "generated edits overlap"));

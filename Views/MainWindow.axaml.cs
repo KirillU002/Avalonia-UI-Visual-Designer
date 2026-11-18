@@ -4381,6 +4381,7 @@ public partial class MainWindow : Window
             AxamlControlMetadata.ApplySourceScalars(scalarReference, model, preview, isDesignMode: !VM.IsUserPreviewMode);
             preview.Margin = default; // The wrapper already owns the measured source frame.
         }
+        VM.ApplyFormStyle(preview, model);
 
         var root = new Canvas
         {

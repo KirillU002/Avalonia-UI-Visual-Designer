@@ -20,19 +20,27 @@ public partial class MainWindowViewModel
         if(SelectedControl is {} selected&&_activeAxamlRoundTripDocument?.SourceMap.TryGet(selected.Id,out var selectedSource)==true
             &&selectedSource.Element.FindAttribute(property.Key)is {} sourceAttribute)
             initialKind=PropertyExpressions.Classify(WebUtility.HtmlDecode(sourceAttribute.Value));
-        row.SetExpressionCapability(false,initialKind,"Для этого значения нет безопасного expression adapter.",null);
-        if(SelectedControl is not { } target||ActiveCollectionEditor is not null||!PropertyExpressions.CanTarget(property))return;
-        var nativeKey=property.Key;
-        if(nativeKey=="Content"&&Controls.Any(c=>c.ParentId==target.Id))return;
+        if (SelectedControl is not { } target || ActiveCollectionEditor is not null || !PropertyExpressions.CanTarget(property)
+            || property.Key == "Content" && Controls.Any(c => c.ParentId == target.Id))
+        {
+            row.SetExpressionCapability(false, initialKind, "Для этого значения нет безопасного expression adapter.", null);
+            return;
+        }
+        var nativeKey = property.Key;
         var allowed=true;var reason="";
         AxamlSourceReference? source=null;
         if(_activeAxamlRoundTripDocument is {} doc)
             allowed=doc.CapabilityReport.CanSafelyPatch&&doc.SourceMap.TryGet(target.Id,out source)
                 &&AxamlPatchWriter.CanEditExpression(source,nativeKey,out reason);
-        var hasPayload=target.CustomProperties.Any(p=>p.Key==PropertyExpressions.Prefix+nativeKey);
-        var stored=PropertyExpressions.TryRead(target.CustomProperties,nativeKey,out var value);
-        if(hasPayload&&(!stored||!PropertyExpressions.Validate(property,value)))
-        { row.ProtectValue("Неизвестная версия/повреждённый expression payload сохранён без изменений.");return; }
+        var entry = target.CustomProperties.Count == 0 ? null :
+            target.CustomProperties.FirstOrDefault(p => p.Key == PropertyExpressions.Prefix + nativeKey);
+        var stored = PropertyExpressions.TryReadJson(entry?.ValueJson, out var value);
+        if (entry is not null && (!stored || !PropertyExpressions.Validate(property, value)))
+        {
+            row.SetExpressionCapability(false, PropertyValueKind.Opaque, "Некорректное выражение доступно только для чтения.", null);
+            row.ProtectValue("Неизвестная версия/повреждённый expression payload сохранён без изменений.");
+            return;
+        }
         var attribute=source?.Element.Attributes.FirstOrDefault(a=>a.Name==nativeKey);
         var sourceText=attribute is null?null:WebUtility.HtmlDecode(attribute.Value);
         if(stored)
@@ -67,6 +75,8 @@ public partial class MainWindowViewModel
         }
         else foreach(var f in typeof(ThemeResourceKeys).GetFields(BindingFlags.Public|BindingFlags.Static).Where(f=>f.IsLiteral&&f.FieldType==typeof(string)))
                 keys.Add((string)f.GetRawConstantValue()!);
+        if (!HasImportedStyleScope && _formAppearance is {} appearance)
+            foreach (var entry in appearance.Resources) keys.Add(entry.Key);
         // Existing schema only. No SQL, assembly loading, connection strings or credentials.
         var paths=BindingSources.SelectMany(s=>new[]{s.Path}.Concat(s.Fields.Select(f=>s.Path+"[0]."+f.Path)))
             .Where(p=>PropertyExpressions.TryBinding(new(p),out _,out _)).Distinct().OrderBy(p=>p,StringComparer.Ordinal).ToArray();

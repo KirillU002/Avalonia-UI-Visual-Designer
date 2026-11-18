@@ -116,7 +116,8 @@ public sealed class PropertyGridCompoundEditor : StackPanel
         var texts = _components.Select(c => c.Text ?? "").ToArray();
         if (texts.Any(t => !double.TryParse(t, NumberStyles.Float, CultureInfo.InvariantCulture, out var n) || !double.IsFinite(n)))
         { token.ValidationMessage = "Компоненты должны быть конечными числами DIP."; Owner()?.EndPropertyGridTextEdit(token); return; }
-        Owner()?.CommitPropertyGridTextEdit(token, string.Join(",", texts));
+        if (token.IsStyleDraft) token.Value = string.Join(",", texts);
+        else Owner()?.CommitPropertyGridTextEdit(token, string.Join(",", texts));
     }
     private MainWindowViewModel? Owner() => (this.GetVisualRoot() as Window)?.DataContext as MainWindowViewModel;
 }

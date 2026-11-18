@@ -76,7 +76,7 @@ public partial class PreviewWindow
 
         }
         if (_importedSourceHasResources)
-            ReportPreviewFailure(null, "ResourceResolutionFailed", "Styles/Resources/Templates импортированного AXAML сохраняются, но безопасная native projection не вычисляет их. Исходный AXAML не изменяется.", code: "PREVIEW_RESOURCE_FAILED");
+            ReportPreviewFailure(null, "ResourceResolutionFailed", "Импортированные шаблоны, сложные стили и внешние ресурсы доступны лишь частично. Поддерживаются простые стили окна. Исходный AXAML не изменяется.", code: "PREVIEW_RESOURCE_FAILED");
         if (_importedRootGaps.Length > 0)
             ReportPreviewFailure(null, "PartialSourceValue", "Корневые свойства импортированного окна не проецируются: " + string.Join(", ", _importedRootGaps) + ". Исходный AXAML сохранён.", code: "PREVIEW_SOURCE_PROPERTY_PARTIAL");
     }

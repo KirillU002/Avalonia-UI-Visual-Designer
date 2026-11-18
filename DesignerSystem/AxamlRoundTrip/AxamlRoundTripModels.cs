@@ -149,6 +149,7 @@ public sealed class AxamlRoundTripDocument
     public AxamlRoundTripDocument(string sourcePath, AxamlSyntaxDocument syntax, AxamlSourceMap sourceMap, AxamlCapabilityReport capabilityReport)
     {
         SourcePath = sourcePath ?? string.Empty;
+        _styleCatalog = null;
         Syntax = syntax;
         SourceMap = sourceMap;
         CapabilityReport = capabilityReport;
@@ -157,6 +158,8 @@ public sealed class AxamlRoundTripDocument
     }
 
     public string SourcePath { get; private set; }
+    private AxamlStyleValues? _styleCatalog;
+    public AxamlStyleValues StyleCatalog => _styleCatalog ??= AxamlStyleValues.Read(Syntax);
     public AxamlSyntaxDocument Syntax { get; private set; }
     public AxamlSourceMap SourceMap { get; private set; }
     public AxamlCapabilityReport CapabilityReport { get; private set; }
@@ -176,6 +179,7 @@ public sealed class AxamlRoundTripDocument
     internal void ReplaceSource(string sourcePath, AxamlSyntaxDocument syntax, AxamlSourceMap sourceMap, AxamlCapabilityReport capabilityReport)
     {
         SourcePath = sourcePath ?? string.Empty;
+        _styleCatalog = null;
         Syntax = syntax;
         SourceMap = sourceMap;
         CapabilityReport = capabilityReport;

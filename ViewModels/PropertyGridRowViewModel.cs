@@ -99,15 +99,19 @@ public sealed class PropertyGridRowViewModel : ObservableObject
 
     public PropertyGridEditorKind Editor { get; private set; }
     public bool UsesMetadata { get; internal set; }
+    internal bool IsStyleDraft { get; init; }
     public bool CanEditExpression { get; private set; }
     public FormDesigner.DesignerSystem.Metadata.PropertyValueKind ValueKind { get; private set; }
     public string ExpressionHint { get; private set; } = "";
     internal Action? ResetExpression { get; private set; }
     internal void SetExpressionCapability(bool allowed,FormDesigner.DesignerSystem.Metadata.PropertyValueKind kind,string hint,Action? reset)
     {
-        CanEditExpression=allowed;ValueKind=kind;ExpressionHint=hint;ResetExpression=allowed?reset:null;
-        OnPropertyChanged(nameof(CanEditExpression));OnPropertyChanged(nameof(ValueKind));OnPropertyChanged(nameof(ExpressionHint));
-        OnPropertyChanged(nameof(CanResetToDefault));
+        var resetBefore = CanResetToDefault;
+        ResetExpression = allowed ? reset : null;
+        if (CanEditExpression != allowed) { CanEditExpression = allowed; OnPropertyChanged(nameof(CanEditExpression)); }
+        if (ValueKind != kind) { ValueKind = kind; OnPropertyChanged(nameof(ValueKind)); }
+        if (ExpressionHint != hint) { ExpressionHint = hint; OnPropertyChanged(nameof(ExpressionHint)); }
+        if (CanResetToDefault != resetBefore) OnPropertyChanged(nameof(CanResetToDefault));
     }
     internal Func<string, string, bool>? LiteralEquals { get; set; }
     public PropertyGridPropertyMetadata? PropertyMetadata { get; private set; }

@@ -327,9 +327,11 @@ internal static partial class Program
     private static void AssertPhase4Ipc(SmokeContext context)
         => AssertAxamlIpcEdits(context, Phase4Source("Combined"), new[] { ("Expand", "Header", "IPC header"), ("Choose", "SelectedIndex", "1"), ("Expand", "IsExpanded", "False") });
 
-    private static void AssertAxamlIpcEdits(SmokeContext context, string sourceText, (string Name, string Key, string Value)[] edits)
+    private static void AssertAxamlIpcEdits(SmokeContext context, string sourceText, (string Name, string Key, string Value)[] edits,
+        Action<string, string, string>? editValue = null, string? expectedSource = null)
     {
         var vm = context.ViewModel;
+        editValue ??= (name, key, value) => Phase4Edit(vm, name, key, value);
         var window = new VsHostWindow(new TestDesignerHostServices()) { DataContext = vm }; window.Show();
         var pipe = $"{DesignerHostProtocol.PipePrefix}.phase4.{Guid.NewGuid():N}";
         using var bridge = new VsHostBridge(vm, window, pipe); bridge.Start();
@@ -345,7 +347,7 @@ internal static partial class Program
             RequireCapability((await connection.ReceiveAsync(cancel.Token))!.MessageType == DesignerHostMessageTypes.DocumentOpened, "Phase 4 IPC open failed.");
             foreach (var edit in edits)
             {
-                await Dispatcher.UIThread.InvokeAsync(() => Phase4Edit(vm, edit.Item1, edit.Item2, edit.Item3));
+                await Dispatcher.UIThread.InvokeAsync(() => editValue(edit.Name, edit.Key, edit.Value));
                 var apply = Dispatcher.UIThread.InvokeAsync(bridge.ApplyAsync);
                 var envelope = (await connection.ReceiveAsync(cancel.Token))!; await apply;
                 RequireCapability(envelope.MessageType == DesignerHostMessageTypes.ApplyDesignerPatch, "Phase 4 Apply did not send a patch.");
@@ -358,6 +360,7 @@ internal static partial class Program
                 await Dispatcher.UIThread.InvokeAsync(() => RequireCapability(!vm.CreateActiveAxamlPatch().HasChanges, "ACK created phantom Phase 4 edits."));
             }
             RequireCapability(source.Contains("<!-- KEEP -->") && source.Contains("custom:Unknown=\"KEEP\""), "IPC Apply lost opaque source.");
+            if (expectedSource != null) RequireCapability(source == expectedSource, "IPC patch changed neighbouring AXAML.");
         });
         try { Pump(task); } finally { window.CloseForBridgeShutdown(); }
     }

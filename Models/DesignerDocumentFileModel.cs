@@ -4,6 +4,11 @@ namespace FormDesigner.Models;
 
 public class DesignerDocumentFileModel
 {
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public FormAppearance? Appearance { get; set; }
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public Dictionary<string,string>? StyleSourceValues { get; set; }
+
     public string Version { get; set; } = "2.3";
 
     // Missing in legacy files: retain the original Canvas/experimental layout behaviour.

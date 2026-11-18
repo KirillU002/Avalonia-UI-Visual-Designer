@@ -38,6 +38,7 @@ public partial class MainWindowViewModel
         if (document.Controls.Where(c => !string.IsNullOrWhiteSpace(c.Id))
             .GroupBy(c => c.Id, StringComparer.OrdinalIgnoreCase).Any(g => g.Count() > 1))
             throw new InvalidOperationException("Повторяющиеся идентификаторы компонентов. Текущий проект не изменён.");
+        if (document.Appearance is {} appearance) ValidateAppearanceForExport(appearance);
         ValidateNativeDocument(document);
     }
 

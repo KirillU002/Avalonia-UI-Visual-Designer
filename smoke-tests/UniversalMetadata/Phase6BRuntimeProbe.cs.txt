@@ -1,0 +1,63 @@
+using Avalonia.Controls;
+using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Media;
+using Avalonia.Styling;
+using Avalonia.Threading;
+using Avalonia.VisualTree;
+using System;
+using System.IO;
+using System.Linq;
+
+internal static class MetadataRuntimeProbe
+{
+    public static void Attach(IClassicDesktopStyleApplicationLifetime desktop, Window window)
+    {
+        window.ShowInTaskbar = false;
+        window.ShowActivated = false;
+        window.Opened += (_,_) => Dispatcher.UIThread.Post(() =>
+        {
+            try
+            {
+                var button = window.GetVisualDescendants().OfType<Button>().Single(c => c.Name == "SaveButton");
+                var input = window.GetVisualDescendants().OfType<TextBox>().Single(c => c.Name == "NameInput");
+                if (!button.Classes.Contains("primary") || button.CornerRadius.TopLeft != 9 || input.FontSize != 23)
+                    throw new Exception("Selector/Setter did not reach native control");
+                var stackHost = window.GetVisualDescendants().OfType<Control>().Single(c => c.Name == "StyleStack");
+                var stack = stackHost as StackPanel ?? (stackHost as Border)?.Child as StackPanel
+                    ?? throw new Exception("The authored container did not render a native StackPanel");
+                foreach (var type in new[] { typeof(TextBlock), typeof(CheckBox), typeof(Border) })
+                {
+                    var child = stack.GetVisualDescendants().OfType<Control>().Single(c => c.Name == type.Name + "InStack");
+                    if (child.GetType() != type || Math.Abs(child.Opacity - 0.64) > 0.000001)
+                        throw new Exception("Nested name selector failed for " + type.Name);
+                }
+                T Resource<T>(string key)
+                {
+                    if (window.Resources.TryGetResource(key, window.ActualThemeVariant, out var value) && value is T result)
+                        return result;
+                    throw new Exception("Missing or incorrectly typed resource: " + key);
+                }
+                if (Resource<string>("Greeting6B") != "A & B" || Resource<double>("TextSize6B") != 23
+                    || Resource<Avalonia.Thickness>("Spacing6B") != new Avalonia.Thickness(1,2,3,4)
+                    || Resource<Avalonia.CornerRadius>("Corner6B") != new Avalonia.CornerRadius(9)
+                    || Resource<FontWeight>("Weight6B") != FontWeight.Bold || Resource<FontFamily>("Family6B").Name != "Arial"
+                    || Resource<Color>("Color6B") != Colors.Red)
+                    throw new Exception("Window resource lost its typed value");
+                foreach (var pair in new[]{(ThemeVariant.Light,"#123456"),(ThemeVariant.Dark,"#ABCDEF")})
+                {
+                    window.RequestedThemeVariant = pair.Item1;
+                    window.UpdateLayout();
+                    if (button.Background is not ISolidColorBrush brush || brush.Color != Color.Parse(pair.Item2))
+                        throw new Exception("Theme resource mismatch: "+pair.Item1+" "+button.Background);
+                }
+                File.WriteAllText(Environment.GetEnvironmentVariable("METADATA_RUNTIME_RESULT")!, "PASS native Button.primary Background Light/Dark, #SaveButton CornerRadius, TextBox FontSize StaticResource and all eight native resource types; nested TextBlock/CheckBox/Border Opacity");
+                window.Close(); desktop.Shutdown(0);
+            }
+            catch(Exception ex)
+            {
+                File.WriteAllText(Environment.GetEnvironmentVariable("METADATA_RUNTIME_RESULT")!, "FAIL "+ex);
+                window.Close(); desktop.Shutdown(1);
+            }
+        }, DispatcherPriority.Loaded);
+    }
+}

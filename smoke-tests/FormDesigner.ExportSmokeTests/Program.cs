@@ -60,6 +60,10 @@ internal static partial class Program
         if (args.Contains("--universal5f-checks")) return RunUniversal5FChecks();
         if (args.Contains("--universal5g-api")) return Inspect5GApi();
         if (args.Contains("--universal5g-checks")) return Run5GChecks();
+        if (args.Contains("--universal6b-export-profile")) return ProfileStyleExport(args[^1]);
+        if (args.Contains("--universal6b-profile")) return ProfileStyleEditor(args[^1]);
+        if (args.Contains("--universal6b-checks")) return Run6BChecks();
+        if (args.Contains("--universal6b-generated")) return StyleProjects(args[^1]);
         if (args.Contains("--universal6a-checks")) return RunUniversal6AChecks();
         if (args.Contains("--universal6a-generated")) return Generate6AProjects();
         if (args.Contains("--universal6a-profile")) return Profile6AEditor();
@@ -481,6 +485,7 @@ internal static partial class Program
             new("AxamlLayoutRebaseUnnamedSiblings", ConfigureSimpleFormExport, AssertLayoutRebaseUnnamedSiblings),
             new("AxamlLayoutSimpleGreenBaseline", ConfigureSimpleFormExport, AssertLayoutSimpleGreenBaseline),
             new("AxamlCoverageTabs", ConfigureSimpleFormExport, AssertCoverageTabs),
+            new("Universal6BStyleResourceIpc", ConfigureSimpleFormExport, AssertStyleResourceIpc),
             new("Universal4DTransactions", ConfigureSimpleFormExport, AssertUniversal4DTransactions),
             new("Universal4CStructuralIpc", ConfigureSimpleFormExport, AssertUniversal4CStructuralIpc),
             new("Universal4APropertyElementIpc", ConfigureSimpleFormExport, context => AssertAxamlIpcEdits(context,

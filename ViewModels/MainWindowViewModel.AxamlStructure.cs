@@ -108,6 +108,7 @@ public partial class MainWindowViewModel
         var suspended=_isHistorySuspended;_isHistorySuspended=true;_isStructureTreeRefreshSuspended=true;
         try
         {
+            _styleSourceValues = candidate.StyleSourceValues;
             _activeAxamlRoundTripDocument=projection;
             var ids=candidate.Controls.Select(c=>c.Id).ToHashSet();
             foreach(var old in Controls.Where(c=>!ids.Contains(c.Id)).ToArray())Controls.Remove(old);

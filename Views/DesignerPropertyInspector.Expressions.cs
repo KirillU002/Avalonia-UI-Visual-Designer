@@ -21,9 +21,15 @@ public partial class DesignerPropertyInspector
     }
     private void ClearExpressionTarget()
     {
+        if (_expressionRow is null) return;
         _expressionRow=null;
         if(this.FindControl<Button>("ExpressionEditorButton")is {} button)button.IsEnabled=false;
         if(this.FindControl<TextBlock>("ExpressionTargetText")is {} label)label.Text="Выберите строку свойства";
+    }
+    private async void StyleEditor_Click(object? sender,RoutedEventArgs e)
+    {
+        if (Context is MainWindowViewModel vm && TopLevel.GetTopLevel(this) is Window owner)
+            await new FormStyleEditorWindow(vm).ShowDialog(owner);
     }
     private async void ExpressionEditor_Click(object? sender,RoutedEventArgs e)
     {

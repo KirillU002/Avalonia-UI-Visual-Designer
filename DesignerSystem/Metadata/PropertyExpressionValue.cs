@@ -156,7 +156,7 @@ public static class PropertyExpressions
     }
     public static bool TryRead(IEnumerable<DesignPropertyValueFileModel> values,string key,out PropertyExpressionValue value) =>
         TryReadJson(values.FirstOrDefault(p=>p.Key==Prefix+key)?.ValueJson,out value);
-    private static bool TryReadJson(string? json,out PropertyExpressionValue value)
+    internal static bool TryReadJson(string? json,out PropertyExpressionValue value)
     {
         value=null!;if(json is null)return false;
         try

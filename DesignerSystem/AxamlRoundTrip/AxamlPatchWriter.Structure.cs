@@ -161,7 +161,8 @@ public sealed partial class AxamlPatchWriter
             }
             var root=source.SourceMap.CanvasElement??source.Syntax.Root;
             // The Window content root cannot be duplicated/reparented. Descend through its original slots.
-            var edits=Plan("",null,root).GroupBy(e=>e.Start).Select(group=>
+            var styleEdits = AxamlStyleValues.Edits(source,document).Select(e => new StructuralEdit(e.Start,e.Length,new(e.NewText,new())));
+            var edits=Plan("",null,root).Concat(styleEdits).GroupBy(e=>e.Start).Select(group=>
             {
                 var same=group.OrderBy(e=>e.Length).ToArray();
                 if(same.Length==1)return same[0];

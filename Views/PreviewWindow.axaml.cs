@@ -1670,6 +1670,7 @@ public partial class PreviewWindow : Window
             : CreateMissingPreview(control, failure);
         created.IsEnabled = IsRuntimeControlEnabled(control);
         FormDesigner.DesignerSystem.Metadata.StandardControlProperties.NativePropertyTarget(created,control.Type).IsEnabled=IsRuntimeControlEnabled(control);
+        FormDesigner.DesignerSystem.Metadata.FormStyleProjection.Apply(created,_document.Appearance,control.Id,control.Name,control.Type);
         TrackPreviewControl(control, created);
         return created;
     }
