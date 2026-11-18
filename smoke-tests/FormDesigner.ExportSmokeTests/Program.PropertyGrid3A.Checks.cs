@@ -140,7 +140,9 @@ internal static partial class Program
         {
             var vm=Phase3Source("Value='{Binding Keep}' BorderBrush='{DynamicResource Accent}' Tag='{StaticResource Keep}'");Phase3Show(vm);
             var before=vm.CreateActiveAxamlPatch().PatchedText;
-            foreach(var key in new[]{"Value","BorderBrush"}){var row=GetPropertyGridRow(vm,key);RequireCapability(row.IsReadOnly&&!row.CanResetToDefault,"Protected source became editable.");vm.CommitPropertyGridEdit(row,"0");row.ResetToDefault();}
+            // Phase 6A keeps scalar writes blocked, while explicit fx authoring/reset is a separate capability.
+            foreach(var key in new[]{"Value","BorderBrush"}){var row=GetPropertyGridRow(vm,key);RequireCapability(row.IsReadOnly&&row.CanEditExpression,"Scalar protection / explicit expression capability wrong.");vm.CommitPropertyGridEdit(row,"0");}
+            RequireCapability(vm.CreateActiveAxamlPatch().PatchedText==before,"Scalar editor replaced an expression.");
             RequireCapability(GetPropertyGridRow(vm,"Value").ValueSource==PropertyGridValueSource.Binding&&GetPropertyGridRow(vm,"BorderBrush").ValueSource==PropertyGridValueSource.Resource,"Value Source classification wrong.");
             vm.CommitPropertyGridTextEdit(GetPropertyGridRow(vm,"Increment"),"0.5");var patch=vm.CreateActiveAxamlPatch();RequireCapability(patch.CanApply&&patch.PatchedText.Contains("Value='{Binding Keep}'")&&patch.PatchedText.Contains("BorderBrush='{DynamicResource Accent}'"),"Protected expression was rewritten.");
         });

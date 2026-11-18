@@ -58,7 +58,7 @@ public sealed partial class AxamlPatchWriter
                     if(reference.SnapshotValues.TryGetValue("@ChildLayoutMode",out var mode)&&mode!=file.ChildLayoutMode)throw new InvalidOperationException("Изменение layout semantics существующего узла запрещено.");
                     foreach(var p in AxamlRoundTripPropertyMap.PropertiesFor(element.LocalName))
                     {
-                        if(moved&&Placement(p.Key))continue;
+                        if(moved&&Placement(p.Key)||ExpressionManaged(reference,runtime,p))continue;
                         if(reference.SnapshotValues.TryGetValue(p.Key,out var before)&&p.Read(runtime)!=before
                             &&(!reference.Capability.CanEditProperty(p.Key)||!p.TryWrite(new DesignControlModel{UsesSourceLayout=true},p.Read(runtime))))
                             throw new InvalidOperationException("Небезопасное значение свойства: "+p.Key);

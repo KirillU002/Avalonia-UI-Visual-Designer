@@ -1,0 +1,627 @@
+{
+  "Baseline": "a290aff077817e1840c69bf023207c808a1efa10",
+  "Avalonia": "11.1.1",
+  "Status": "READY WITH CONDITIONS",
+  "Gates": [
+    {
+      "Name": "Phase 6A",
+      "Result": "63/63",
+      "Path": "scalar-guard-universal6a-checks.log",
+      "SHA256": "e46ddc211d83d4e773206ea1a1fc86c1408c86ed2f1bb74e5b4836d4973619df"
+    },
+    {
+      "Name": "Phase 5G",
+      "Result": "85/85",
+      "Path": "final-regression/universal5g-checks.log",
+      "SHA256": "6f64872318c14f42d87f9b1131c5c56623bb67c62604047429617e96777236bc"
+    },
+    {
+      "Name": "Metadata",
+      "Result": "45/45",
+      "Path": "scalar-guard-universal-metadata-checks.log",
+      "SHA256": "0ca0c42def16531cb3e23279b782e4dab4252a37a96518049cb137689cb3d607"
+    },
+    {
+      "Name": "PropertyGrid",
+      "Result": "30/30",
+      "Path": "scalar-guard-propertygrid3a-checks.log",
+      "SHA256": "644630c97db7c5c62b41fcef8695cc5ee122f03a829d1b58902a94086420cc2f"
+    },
+    {
+      "Name": "Collections",
+      "Result": "30/30",
+      "Path": "final-regression/collections3b-checks.log",
+      "SHA256": "1bca58471ffb22c38487e7bc4424df34eb79984d004a3ba2085ab0305568d93a"
+    },
+    {
+      "Name": "Layout7",
+      "Result": "15/15",
+      "Path": "final-regression/layout7a-checks.log",
+      "SHA256": "b2ca471626382b6684f5760e2b6292f3f1530b3f2cc775cedd069fc5d623cf2e"
+    },
+    {
+      "Name": "Phase 4A",
+      "Result": "38/38",
+      "Path": "final-regression/universal4a-checks.log",
+      "SHA256": "fd3e294cec8f5c2e39cfd0d08e88301a6bbc9e7fba5709e017b25d8d5c6dd494"
+    },
+    {
+      "Name": "Phase 4B",
+      "Result": "52/52",
+      "Path": "final-regression/universal4b-checks.log",
+      "SHA256": "6e81c1c44e2724a5629f48e13a738321e4a2f28d916acd8a11c836f55c87269f"
+    },
+    {
+      "Name": "Phase 4C / Structural",
+      "Result": "85/85",
+      "Path": "scalar-guard-universal4c-checks.log",
+      "SHA256": "59bd0c6a2cb947c2d3b17fbcfb5120bd0a40fdbb91b2f1b1aeb847ab6a975a46"
+    },
+    {
+      "Name": "Phase 4D",
+      "Result": "14/14",
+      "Path": "scalar-guard-universal4d-checks.log",
+      "SHA256": "6043474542b947331aa3f0b30b66d574c3a4481567ff329c926a44c600bb14b5"
+    },
+    {
+      "Name": "Phase 4F",
+      "Result": "15/15",
+      "Path": "final-regression/universal4f-checks.log",
+      "SHA256": "03dc05dcfb04e6bc0c01ba5b6444871d487a189cc61a594ff0dc198feca0cb5d"
+    },
+    {
+      "Name": "Phase 5F",
+      "Result": "73/73",
+      "Path": "final-regression/universal5f-checks.log",
+      "SHA256": "914d54848f442b0a4ea1c458806fef49888e65d727f4bdc376e253f0058d4789"
+    },
+    {
+      "Name": "Phase 5E",
+      "Result": "58/58",
+      "Path": "final-regression/universal5e-checks.log",
+      "SHA256": "35d395f4706fe59c6e99620dd13a0ff0348ef6359caf794298dd1aa1dcd91c02"
+    },
+    {
+      "Name": "Pointer",
+      "Result": "26/26",
+      "Path": "final-regression/designer-pointer-checks.log",
+      "SHA256": "625dbabea2250d5cf8e422aa7a98c25f3897d1b0a8525c6377eb8ea020556cd5"
+    },
+    {
+      "Name": "Grid Drop",
+      "Result": "40/40",
+      "Path": "final-regression/grid-drop-checks.log",
+      "SHA256": "ee6ab14de4d83cb889911e7065aa27a7165aa7befe05717ce2367a1643fdbff5"
+    },
+    {
+      "Name": "Broad normal environment",
+      "Result": "72/72",
+      "Path": "normal-accepted/broad-normal.log",
+      "SHA256": "547819f3f264d551c2ec87afb9f80f3dafb753f3c22866e57499091f355f9313"
+    },
+    {
+      "Name": "IPC normal environment",
+      "Result": "3/3",
+      "Path": "normal-accepted/ipc.log",
+      "SHA256": "06c58797a0752afd133d36ffff335805c04e4877365616454cafc8c5f4b238ae"
+    }
+  ],
+  "Memory": [
+    {
+      "Process": 1,
+      "Checkpoints": 44,
+      "Survivors": 0,
+      "Log": "live/live-memory-1.log",
+      "SHA256": "8fb7851b4029d670d53c0f1ef9780fb682c4c7ea971e53a87cf2848784a60896"
+    },
+    {
+      "Process": 2,
+      "Checkpoints": 44,
+      "Survivors": 0,
+      "Log": "live/live-memory-2.log",
+      "SHA256": "8fb7851b4029d670d53c0f1ef9780fb682c4c7ea971e53a87cf2848784a60896"
+    },
+    {
+      "Process": 3,
+      "Checkpoints": 44,
+      "Survivors": 0,
+      "Log": "live/live-memory-3.log",
+      "SHA256": "8fb7851b4029d670d53c0f1ef9780fb682c4c7ea971e53a87cf2848784a60896"
+    }
+  ],
+  "NativeCaptures": [
+    {
+      "Path": "after-profile-capture/result.json",
+      "RunId": "6065fb9d4e6f4476bb5eabb95f6781b3",
+      "Pid": 75872,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 236501
+    },
+    {
+      "Path": "audit-capture/result.json",
+      "RunId": "f89928d809994fd79f8aee10132445b6",
+      "Pid": 61084,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 2514
+    },
+    {
+      "Path": "before-profile-capture/result.json",
+      "RunId": "28f132222996426fba75755eb7395b66",
+      "Pid": 60332,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 229457
+    },
+    {
+      "Path": "editor-profile-capture/result.json",
+      "RunId": "b471c122cfc3459b83903c63391f2ffb",
+      "Pid": 58620,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 11072
+    },
+    {
+      "Path": "first-checks-capture/result.json",
+      "RunId": "7b998f0146cf41659a7892924a998217",
+      "Pid": 17204,
+      "ExitCode": 1,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 15343
+    },
+    {
+      "Path": "markup-api-propertygrid3a-checks-capture/result.json",
+      "RunId": "94d7af8bf3cf49d79d8b58084c81264f",
+      "Pid": 38864,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 48740
+    },
+    {
+      "Path": "markup-api-universal5g-checks-capture/result.json",
+      "RunId": "d20cb6f9e6ed43a8adb128d587f93364",
+      "Pid": 61840,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 78250
+    },
+    {
+      "Path": "markup-api-universal6a-checks-capture/result.json",
+      "RunId": "4fe718bc93f04ebc88062bf8b83aabe0",
+      "Pid": 21968,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 13622
+    },
+    {
+      "Path": "scalar-guard-propertygrid3a-checks-capture/result.json",
+      "RunId": "c7e2c0ad796c4cfa91cbe7b6b0b05d17",
+      "Pid": 55088,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 52986
+    },
+    {
+      "Path": "scalar-guard-universal-metadata-checks-capture/result.json",
+      "RunId": "1ae8160fbb7748c6bba522cb84d34c7b",
+      "Pid": 22592,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 33741
+    },
+    {
+      "Path": "scalar-guard-universal4c-checks-capture/result.json",
+      "RunId": "7a9e5f41f77e42a2b51324bc9bf9143f",
+      "Pid": 42752,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 70784
+    },
+    {
+      "Path": "scalar-guard-universal4d-checks-capture/result.json",
+      "RunId": "b1cca370c77649818b7ef9615282208f",
+      "Pid": 73040,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 19902
+    },
+    {
+      "Path": "scalar-guard-universal6a-checks-capture/result.json",
+      "RunId": "d2a0d1e1f51f489e8ff75f41b6934902",
+      "Pid": 68480,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 14275
+    },
+    {
+      "Path": "verified-universal6a-checks-capture/result.json",
+      "RunId": "7b4e86d574474402aca70547778fa2f9",
+      "Pid": 16000,
+      "ExitCode": 1,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 13773
+    },
+    {
+      "Path": "normal-accepted/broad-normal-capture/result.json",
+      "RunId": "eb42046ea9ca47f5901f61bb29c9a8bd",
+      "Pid": 62564,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 301690
+    },
+    {
+      "Path": "normal-accepted/ipc-capture/result.json",
+      "RunId": "168e2f5fbf1a4a50a50a20159904eb85",
+      "Pid": 61808,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 19186
+    },
+    {
+      "Path": "live/sql/UniversalMetadata_625ecc54b0a5400d83664c2f6240e291/datagrid-preview-checks-capture/result.json",
+      "RunId": "90d0e595ecf44195a9df575be7a779d2",
+      "Pid": 64980,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 59545
+    },
+    {
+      "Path": "live/sql/UniversalMetadata_625ecc54b0a5400d83664c2f6240e291/datagrid-preview-export-check-capture/result.json",
+      "RunId": "da6545ca1d2249edb6042afac8ecccd0",
+      "Pid": 71348,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 9652
+    },
+    {
+      "Path": "live/sql/UniversalMetadata_625ecc54b0a5400d83664c2f6240e291/datagrid-preview-source-check-capture/result.json",
+      "RunId": "010e98b67dbe4bc2837fdf90caa199d8",
+      "Pid": 51848,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 4901
+    },
+    {
+      "Path": "live/sql/UniversalMetadata_625ecc54b0a5400d83664c2f6240e291/memory-1-capture/result.json",
+      "RunId": "c9d9dbaddd124c66aa1703031b67105b",
+      "Pid": 48880,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 94804
+    },
+    {
+      "Path": "live/sql/UniversalMetadata_625ecc54b0a5400d83664c2f6240e291/memory-2-capture/result.json",
+      "RunId": "4cc2a771c3004381b72ecbda548c7ab9",
+      "Pid": 56224,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 94773
+    },
+    {
+      "Path": "live/sql/UniversalMetadata_625ecc54b0a5400d83664c2f6240e291/memory-3-capture/result.json",
+      "RunId": "92dec31104be406e8979efefeb1d025f",
+      "Pid": 6000,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 94735
+    },
+    {
+      "Path": "generated/Canvas-runtime-capture/result.json",
+      "RunId": "c03bc5cc1ca942d6bca9993c3a0aed43",
+      "Pid": 60760,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 3880
+    },
+    {
+      "Path": "generated/export-capture/result.json",
+      "RunId": "d4e0116da3e24281adbca5f7bddf2989",
+      "Pid": 72024,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 2669
+    },
+    {
+      "Path": "generated/Grid-runtime-capture/result.json",
+      "RunId": "ceac0f43552a4f018f757a2cf713b076",
+      "Pid": 48800,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 3781
+    },
+    {
+      "Path": "final-regression/collections3b-checks-capture/result.json",
+      "RunId": "fc104c8215c5431ea3401a8fbda440a8",
+      "Pid": 69680,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 30395
+    },
+    {
+      "Path": "final-regression/designer-pointer-checks-capture/result.json",
+      "RunId": "de2aed658ce3450c83eec832ad5f533c",
+      "Pid": 54524,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 35804
+    },
+    {
+      "Path": "final-regression/grid-drop-checks-capture/result.json",
+      "RunId": "2e9761ebb91742448c276b180ec67bfc",
+      "Pid": 48224,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 59188
+    },
+    {
+      "Path": "final-regression/layout7a-checks-capture/result.json",
+      "RunId": "8f8c84e77cf844e4a9aac652ec4cb7a0",
+      "Pid": 54332,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 36915
+    },
+    {
+      "Path": "final-regression/universal4a-checks-capture/result.json",
+      "RunId": "bd0b4bd158b74977ada6da082d790d79",
+      "Pid": 5104,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 13756
+    },
+    {
+      "Path": "final-regression/universal4b-checks-capture/result.json",
+      "RunId": "e58a253e271644aa961c029b3efab3cf",
+      "Pid": 67084,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 26511
+    },
+    {
+      "Path": "final-regression/universal4f-checks-capture/result.json",
+      "RunId": "3c8f4231651948298de2d0a72a7110c0",
+      "Pid": 75332,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 9437
+    },
+    {
+      "Path": "final-regression/universal5e-checks-capture/result.json",
+      "RunId": "d4a9d07db8fa47b1ba87af0adb0b8362",
+      "Pid": 69124,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 54271
+    },
+    {
+      "Path": "final-regression/universal5f-checks-capture/result.json",
+      "RunId": "29cf5a08a25d49bc98eb52a836f49ca7",
+      "Pid": 59252,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 75862
+    },
+    {
+      "Path": "final-regression/universal5g-checks-capture/result.json",
+      "RunId": "fcb398b221eb4e14bafded9b14e5abe3",
+      "Pid": 54900,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 83990
+    },
+    {
+      "Path": "acceptance/collections3b-checks-capture/result.json",
+      "RunId": "687ad47e248e42c5809298dcad85903c",
+      "Pid": 60700,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 28655
+    },
+    {
+      "Path": "acceptance/layout7a-checks-capture/result.json",
+      "RunId": "81aaac5032214af88094369a1167235b",
+      "Pid": 6464,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 34800
+    },
+    {
+      "Path": "acceptance/universal-metadata-checks-capture/result.json",
+      "RunId": "6a02bb072811487cbad972a09f06cdb5",
+      "Pid": 49348,
+      "ExitCode": 1,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 35136
+    },
+    {
+      "Path": "acceptance/universal4a-checks-capture/result.json",
+      "RunId": "8ef50d549f654d1c845a9fe93efcfca7",
+      "Pid": 52760,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 13828
+    },
+    {
+      "Path": "acceptance/universal4b-checks-capture/result.json",
+      "RunId": "23b2dda533a149d395485499b6f58bd8",
+      "Pid": 56388,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 25336
+    },
+    {
+      "Path": "acceptance/universal4c-checks-capture/result.json",
+      "RunId": "9fcf6287b1f04c9691594671eba4c275",
+      "Pid": 74624,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 70362
+    },
+    {
+      "Path": "acceptance/universal4d-checks-capture/result.json",
+      "RunId": "95c0a4135df046e59881390162f393a4",
+      "Pid": 43592,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 20289
+    },
+    {
+      "Path": "acceptance/universal4f-checks-capture/result.json",
+      "RunId": "5e313834568e408487cd5f472c71d269",
+      "Pid": 23292,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 12836
+    },
+    {
+      "Path": "acceptance/universal5e-checks-capture/result.json",
+      "RunId": "667342346e09420f8658c48e5741a000",
+      "Pid": 54064,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 53976
+    },
+    {
+      "Path": "acceptance/universal5f-checks-capture/result.json",
+      "RunId": "a98e09fe7d744772a5dd3fd4f0617cf3",
+      "Pid": 63452,
+      "ExitCode": 0,
+      "TimedOut": false,
+      "Captured": false,
+      "CaptureFailed": false,
+      "ElapsedMs": 78747
+    }
+  ],
+  "Generated": [
+    {
+      "File": "generated/projects/Grid-runtime.txt",
+      "Result": "PASS 10 authored expression assignments; 5 unique native type-property pairs; OneWay/TwoWay/default source trigger/ElementName/RelativeSelf/Fallback/TargetNull/StringFormat/Static+Dynamic/Command+Parameter; caller-owned DataContext; no generated fake VM",
+      "SHA256": "140ec9fa2944c2f3d1e000a90b913fedd1e51927831a859a31a16cde2ee3d4e4"
+    },
+    {
+      "File": "generated/projects/Canvas-runtime.txt",
+      "Result": "PASS 10 authored expression assignments; 5 unique native type-property pairs; OneWay/TwoWay/default source trigger/ElementName/RelativeSelf/Fallback/TargetNull/StringFormat/Static+Dynamic/Command+Parameter; caller-owned DataContext; no generated fake VM",
+      "SHA256": "140ec9fa2944c2f3d1e000a90b913fedd1e51927831a859a31a16cde2ee3d4e4"
+    }
+  ],
+  "Package": {
+    "Entries": 639,
+    "Bytes": 219380326,
+    "SHA256": "5a90e070926f13d6740534b6bedc4531ee9d1797c1eeff70fde03eab9d71c347",
+    "Version": "0.1.18",
+    "Identity": "AvaloniaDesigner.VSIX",
+    "RuntimeDependencyClosure": "PASS",
+    "Forbidden": [],
+    "Symbols": [
+      "AvaloniaDesigner.Host.Protocol.pdb"
+    ],
+    "RequiredSHA256": {
+      "AvaloniaDesigner.VSIX.dll": "315f7523c865c667dc9d22cfd74272651139aa97fd610dc5e0d4d87c2125b13f",
+      "AvaloniaDesigner.Host.Protocol.dll": "b501902f8f20bb1a3336dd6a1d0b602e9ad9b9bd65c79bb54d61f8282476d4ec",
+      "VsHost/AvaloniaDesigner.VsHost.exe": "d83b2af50da49b72a8b9ead10de1b44a5b0bd177b9ec457abe258bec286295ac",
+      "VsHost/AvaloniaDesigner.VsHost.runtimeconfig.json": "28329cf08f6505e73806b17558b187c02f0c1c516fe47ebfb7a013d082aaa306",
+      "VsHost/AvaloniaDesigner.VsHost.deps.json": "6a81c54d0a7a2a8afa3d1b0fe30f766d05f8261818edd9e05968d46ae008319d",
+      "VsHost/FormDesigner.dll": "ab07131a7cd76d032006d87353e538ae58380ef23a71c2cbd45b11e2ad0c96ba",
+      "VsHost/AvaloniaDesigner.VsHost.dll": "3a9437e4d4b78f8e880c03eed700a0490d501d99d80aee960dec4dd3e409cc89"
+    }
+  },
+  "ProductionDLLSHA256": "ab07131a7cd76d032006d87353e538ae58380ef23a71c2cbd45b11e2ad0c96ba",
+  "UIACrash": "UNRESOLVED",
+  "InstalledVSIX": "NOT VERIFIED",
+  "PhysicalDpiDnd": "NOT VERIFIED",
+  "FirstFailures": [
+    "Prototype/harness compiler errors retained",
+    "First checks 56/57: nested namespace in trusted runtime fixture",
+    "Next checks 62/63: BindingBase API differs from ReflectionBindingExtension UpdateSourceTrigger API",
+    "Metadata 44/45: scalar mutation under active expression must reject; backing snapshot rebased after ACK"
+  ]
+}

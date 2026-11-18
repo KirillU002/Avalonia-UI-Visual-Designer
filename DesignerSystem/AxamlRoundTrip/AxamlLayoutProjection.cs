@@ -103,6 +103,7 @@ public static partial class AxamlLayoutProjection
             }
             if (view is ComboBox or ListBox or Carousel or TabStrip && view is SelectingItemsControl combo)
                 AxamlPhase4Projection.SelectStaticItem(combo, reference!, model, children, source.SourceMap);
+            FormDesigner.DesignerSystem.Metadata.PropertyExpressions.ApplyPreview(view,model,type);
             return view;
         }
 

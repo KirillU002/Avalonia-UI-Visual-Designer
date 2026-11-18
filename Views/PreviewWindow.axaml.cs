@@ -194,6 +194,7 @@ public partial class PreviewWindow : Window
             context.Diagnostics.Count == 0
                 ? "Preview runtime is isolated from the document model."
                 : string.Join(Environment.NewLine, context.Diagnostics.Take(6).Select(item => $"{item.Category}: {item.Message}")));
+        ShowPropertyExpressionWarnings();
     }
 
     private IEnumerable<InteractionModel> ToRuntimeInteractions()
@@ -304,6 +305,7 @@ public partial class PreviewWindow : Window
             PreviewRuntimeStatusText.Text = "AXAML Preview ready";
             TracePreviewMode("AXAML_PREVIEW_SUCCESS", "NativeVisualTreeAttached");
             ToolTip.SetTip(PreviewRuntimeStatusText, "Preview загружен из AXAML, который используется Export Pipeline.");
+            ShowPropertyExpressionWarnings();
             CompletePreviewBuild();
         }
         catch (Exception ex)

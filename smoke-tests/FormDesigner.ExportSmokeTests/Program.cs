@@ -60,6 +60,10 @@ internal static partial class Program
         if (args.Contains("--universal5f-checks")) return RunUniversal5FChecks();
         if (args.Contains("--universal5g-api")) return Inspect5GApi();
         if (args.Contains("--universal5g-checks")) return Run5GChecks();
+        if (args.Contains("--universal6a-checks")) return RunUniversal6AChecks();
+        if (args.Contains("--universal6a-generated")) return Generate6AProjects();
+        if (args.Contains("--universal6a-profile")) return Profile6AEditor();
+        if (args.Contains("--universal6a-audit")) return Audit6AExpressions();
         if (args.Contains("--universal5g-generated")) return Generate5GProjects();
         if (args.Contains("--universal5g-audit")) return Audit5G();
         if (args.Contains("--universal5f-inspector-diagnostics")) return Diagnose5FInspector();

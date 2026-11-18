@@ -1,0 +1,46 @@
+{
+  "Method": "Frozen 72 core types / 4935 canonical type-property pairs. Aliases collapsed. Actual production CanTarget intersected with previous Displayable. Conditional expression eligibility is separate from literal eligibility and native runtime proof. No claim of arbitrary Binding/Resource resolution.",
+  "LiteralBefore": {
+    "Count": 2579,
+    "Denominator": 4935,
+    "Percent": 52.25937183383992
+  },
+  "LiteralAfter": {
+    "Count": 2579,
+    "Denominator": 4935,
+    "Percent": 52.25937183383992
+  },
+  "GenericFxBefore": {
+    "Count": 0,
+    "Denominator": 4935,
+    "Percent": 0,
+    "Scope": "New generic fx editor only; existing TextBindingPath/BindingSource/DataGrid workflows were already supported"
+  },
+  "GenericFxAfter": {
+    "Count": 2241,
+    "Denominator": 4935,
+    "Percent": 45.41033434650456,
+    "UniqueNativeIdentities": 152
+  },
+  "ConditionalAdditionalPairs": 239,
+  "LiteralOrConditionalFx": {
+    "Count": 2818,
+    "Denominator": 4935,
+    "Percent": 57.102330293819655,
+    "Scope": "Potential explicit authoring modes, not unconditional end-to-end coverage"
+  },
+  "ExistingLiteralProof": {
+    "UniquePairs": 195,
+    "NativeTypes": 16,
+    "Scope": "Phase 5G literal matrix retained; separate from expression modes"
+  },
+  "ExpressionNativeProof": {
+    "AssignmentsPerApplication": 10,
+    "UniqueTypePropertyPairs": 5,
+    "Applications": [
+      "Grid",
+      "Canvas"
+    ],
+    "Scope": "Read generated runtime PASS files; caller-owned DataContext. No inferred all-value coverage"
+  }
+}

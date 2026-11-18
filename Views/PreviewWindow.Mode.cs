@@ -11,6 +11,13 @@ public partial class PreviewWindow
     private readonly List<PreviewModeDiagnostic> _modeDiagnostics = new();
     public IReadOnlyList<PreviewModeDiagnostic> ModeDiagnostics => _modeDiagnostics;
     public event EventHandler<PreviewModeDiagnostic>? ModeDiagnosticEmitted;
+    private void ShowPropertyExpressionWarnings()
+    {
+        var warnings=FormDesigner.DesignerSystem.Metadata.PropertyExpressionProjection.Warnings(_document.Controls);
+        if(warnings.Count==0)return;
+        PreviewRuntimeStatusText.Text="Expressions сохранены; preview resolution ограничен";
+        Avalonia.Controls.ToolTip.SetTip(PreviewRuntimeStatusText,string.Join(Environment.NewLine,warnings));
+    }
     private void TracePreviewMode(string code, string reason, string mode = "AXAML")
     {
         var record = new PreviewModeDiagnostic(code, _exportedAxamlPreview?.ProjectId ?? "", _currentFormId, mode,

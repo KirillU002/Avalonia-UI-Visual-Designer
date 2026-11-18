@@ -85,6 +85,7 @@ public partial class DesignerPropertyInspector
     }
     private void ClearPresentation()
     {
+        ClearExpressionTarget();
         // UIA/compositor can retain detached native visuals. Release this cache's
         // explicit Row/Category contexts before discarding its template instances.
         foreach (var view in _categoryByKey.Values)
@@ -110,6 +111,7 @@ public partial class DesignerPropertyInspector
     }
     private void SynchronizePresentation()
     {
+        ClearExpressionTarget();
         if (_synchronizing) { _synchronizePending = true; return; }
         _synchronizing = true;
         try { do { _synchronizePending = false; SynchronizePresentationCore(); } while (_synchronizePending); }

@@ -67,6 +67,7 @@ public partial class MainWindowViewModel
         var expected=model.Controls.ToDictionary(c=>c.Id);
         if(imported.Document.Controls.Any(c=>(c.ParentId??"")!=(expected[c.Id].ParentId??"")))throw new InvalidOperationException("Source ParentId не соответствует структурной операции.");
         imported.RoundTripDocument.SetTextEncoding(baseline.TextEncoding);
+        AxamlPatchWriter.RebaseExpressionSnapshots(imported.RoundTripDocument,model);
         return imported.RoundTripDocument;
     }
     private bool CommitAxamlStructure(DesignerDocumentFileModel candidate,string? selectedId)

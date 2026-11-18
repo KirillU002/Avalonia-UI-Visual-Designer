@@ -1,0 +1,61 @@
+using Avalonia.Controls;
+using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Media;
+using Avalonia.VisualTree;
+using System;
+using System.ComponentModel;
+using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
+using System.Windows.Input;
+
+internal static class MetadataRuntimeProbe
+{
+    public static void Attach(IClassicDesktopStyleApplicationLifetime desktop,Window window)
+    {
+        // Trusted acceptance fixture supplies a real caller-owned DataContext.
+        // Production export does not invent any of these properties/commands.
+        var model=new ProbeViewModel();window.DataContext=model;
+        window.ShowInTaskbar=false;window.ShowActivated=false;
+        window.Opened+=async(_,_)=>
+        {
+            try
+            {
+                await Task.Delay(140);window.UpdateLayout();
+                var controls=window.GetVisualDescendants().OfType<Control>().Where(c=>!string.IsNullOrEmpty(c.Name)).GroupBy(c=>c.Name!).ToDictionary(g=>g.Key,g=>g.First());
+                void Require(bool test,string message){if(!test)throw new Exception(message);}
+                Require(controls["Input6A"] is TextBox&&controls["Output6A"] is TextBlock&&controls["Static6A"] is Border&&controls["Command6A"] is Button,"Native types missing");
+                Require(((TextBox)controls["Input6A"]).Text=="Initial"&&((TextBlock)controls["Output6A"]).Text=="Value: Initial","Initial Binding/StringFormat failed");
+                model.Name="Changed";await Task.Delay(30);
+                Require(((TextBlock)controls["Output6A"]).Text=="Value: Changed","OneWay update failed");
+                ((TextBox)controls["Input6A"]).Text="Edited";await Task.Delay(30);
+                Require(model.Name=="Edited"&&((TextBlock)controls["Named6A"]).Text=="Edited","TwoWay/default source trigger/ElementName failed");
+                Require(((TextBlock)controls["Self6A"]).Text=="Self6A","RelativeSource Self failed");
+                Require(((TextBlock)controls["Missing6A"]).Text=="Fallback"&&((TextBlock)controls["Null6A"]).Text=="NoName","Fallback/TargetNullValue failed");
+                var before=((ISolidColorBrush)((Border)controls["Static6A"]).Background!).Color;
+                Require(((Border)controls["Dynamic6A"]).Background is ISolidColorBrush b&&b.Color==before,"Initial resource resolution failed");
+                window.Resources["ThemeAccentBrush"]=Brushes.Magenta;await Task.Delay(40);
+                Require(((Border)controls["Static6A"]).Background is ISolidColorBrush s&&s.Color==before&&((Border)controls["Dynamic6A"]).Background is ISolidColorBrush d&&d.Color==Colors.Magenta,"Static/Dynamic distinction failed");
+                var command=(Button)controls["Command6A"];Require(model.Executions==0&&command.Command is not null&&Equals(command.CommandParameter,"Edited"),"Command binding/parameter failed");
+                command.Command!.Execute(command.CommandParameter);Require(model.Executions==1&&model.LastParameter=="Edited","Existing ICommand execution failed");
+                File.WriteAllText(Environment.GetEnvironmentVariable("METADATA_RUNTIME_RESULT")!,"PASS 10 authored expression assignments; 5 unique native type-property pairs; OneWay/TwoWay/default source trigger/ElementName/RelativeSelf/Fallback/TargetNull/StringFormat/Static+Dynamic/Command+Parameter; caller-owned DataContext; no generated fake VM");
+                window.Close();desktop.Shutdown(0);
+            }
+            catch(Exception error){File.WriteAllText(Environment.GetEnvironmentVariable("METADATA_RUNTIME_RESULT")!,"FAIL "+error);window.Close();desktop.Shutdown(1);}
+        };
+    }
+    private sealed class ProbeViewModel:INotifyPropertyChanged
+    {
+        private string _name="Initial";public string Name{get=>_name;set{_name=value;PropertyChanged?.Invoke(this,new PropertyChangedEventArgs(nameof(Name)));}}
+        public string? NullableName=>null;
+        public int Executions{get;private set;}public string? LastParameter{get;private set;}
+        public ICommand SaveCommand=>new ExistingCommand(p=>{Executions++;LastParameter=p as string;});
+        public event PropertyChangedEventHandler? PropertyChanged;
+    }
+    private sealed class ExistingCommand:ICommand
+    {
+        private readonly Action<object?> _execute;public ExistingCommand(Action<object?> execute){_execute=execute;}
+        public bool CanExecute(object? parameter)=>true;public void Execute(object? parameter)=>_execute(parameter);
+        public event EventHandler? CanExecuteChanged{add{}remove{}}
+    }
+}

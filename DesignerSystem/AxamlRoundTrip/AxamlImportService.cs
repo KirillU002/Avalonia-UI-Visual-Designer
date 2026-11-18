@@ -192,12 +192,13 @@ public sealed class AxamlImportService
             var zIndex = int.TryParse(element.GetAttributeValue("Canvas.ZIndex"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedZIndex)
                 ? parsedZIndex
                 : sourceOrder;
+            var reference = new AxamlSourceReference(control.Id, control.Type, element, capability) { ParentId = parentId };
+            AxamlPatchWriter.ImportExpressions(reference,control);
             using (FormDesigner.Services.LayoutDropProfile.Stage("AXAML.FileModelConstruction"))
                 importedControls.Add((ToFileModel(control), zIndex, sourceOrder));
             sourceOrder++;
             using (FormDesigner.Services.LayoutDropProfile.Stage("AXAML.SourceReferenceGeneration"))
             {
-            var reference = new AxamlSourceReference(control.Id, control.Type, element, capability) { ParentId = parentId };
             foreach (var scalar in scalarElements) reference.PropertyElements.Add(scalar.Key, scalar.Value);
             foreach (var property in AxamlRoundTripPropertyMap.PropertiesFor(controlType))
             {
@@ -669,7 +670,10 @@ internal static class AxamlRoundTripPropertyMap
             .Concat(literals.Select(p => new AxamlRoundTripProperty(p.Key,
                 new[] { p.Key, controlType + "." + p.Key },
                 c => ReadLiteral(p, c), p.Write,
-                allowNullLiteral: p.Metadata?.Nullable == true, metadata: p.Metadata))).ToArray();
+                allowNullLiteral: p.Metadata?.Nullable == true, metadata: p.Metadata)))
+            .Concat(nativeType is null ? Array.Empty<AxamlRoundTripProperty>() : FormDesigner.DesignerSystem.Metadata.AvaloniaMetadataCatalog.Get(nativeType).Properties
+                .Where(p=>p.Key is "Command" or "CommandParameter" && !p.ReadOnly && p.Property is not null)
+                .Select(p=>new AxamlRoundTripProperty(p.Key,new[]{p.Key,controlType+"."+p.Key},c=>p.DefaultText,(_,_)=>false,metadata:p))).ToArray();
     }
 
     private static string ReadLiteral(AxamlLiteralProperty property, DesignControlModel control)

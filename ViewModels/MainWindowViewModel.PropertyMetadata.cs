@@ -113,6 +113,7 @@ public partial class MainWindowViewModel
         row.SetPropertyMetadata(schema, sourceKind, local, detail, reset, sourceProperty && reset is null);
         if (sourceKind is PropertyGridValueSource.Binding or PropertyGridValueSource.Resource or PropertyGridValueSource.Complex)
             row.ProtectValue("Значение сохраняется; scalar editor не подменяет Binding/Resource/сложный объект.");
+        ConfigureExpressionRow(row,property);
         return row;
     }
     private IEnumerable<PropertyGridRowViewModel> BuildMetadataReadOnlyRows()

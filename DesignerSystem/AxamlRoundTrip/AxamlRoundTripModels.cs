@@ -107,6 +107,7 @@ public sealed class AxamlSourceReference
     public string? ParentId { get; internal set; }
     public AxamlElementSyntax Element { get; }
     public Dictionary<string, string> SnapshotValues { get; } = new(StringComparer.Ordinal);
+    public Dictionary<string, FormDesigner.DesignerSystem.Metadata.PropertyExpressionValue> ExpressionValues { get; } = new(StringComparer.Ordinal);
     public Dictionary<string, AxamlPropertyElementInfo> PropertyElements { get; } = new(StringComparer.Ordinal);
     public AxamlElementCapability Capability { get; }
     public IEnumerable<string> EditableProperties => Capability.Properties

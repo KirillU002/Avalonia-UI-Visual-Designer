@@ -99,6 +99,16 @@ public sealed class PropertyGridRowViewModel : ObservableObject
 
     public PropertyGridEditorKind Editor { get; private set; }
     public bool UsesMetadata { get; internal set; }
+    public bool CanEditExpression { get; private set; }
+    public FormDesigner.DesignerSystem.Metadata.PropertyValueKind ValueKind { get; private set; }
+    public string ExpressionHint { get; private set; } = "";
+    internal Action? ResetExpression { get; private set; }
+    internal void SetExpressionCapability(bool allowed,FormDesigner.DesignerSystem.Metadata.PropertyValueKind kind,string hint,Action? reset)
+    {
+        CanEditExpression=allowed;ValueKind=kind;ExpressionHint=hint;ResetExpression=allowed?reset:null;
+        OnPropertyChanged(nameof(CanEditExpression));OnPropertyChanged(nameof(ValueKind));OnPropertyChanged(nameof(ExpressionHint));
+        OnPropertyChanged(nameof(CanResetToDefault));
+    }
     internal Func<string, string, bool>? LiteralEquals { get; set; }
     public PropertyGridPropertyMetadata? PropertyMetadata { get; private set; }
     public PropertyGridValueSource ValueSource { get; private set; } = PropertyGridValueSource.Model;
@@ -119,7 +129,7 @@ public sealed class PropertyGridRowViewModel : ObservableObject
         _ => "Значение модели (legacy adapter)"
     };
     public string PresentationDescription => Description + "\nИсточник: " + ValueSourceLabel +
-        (SourceDetail.Length == 0 ? "" : "\n" + SourceDetail) + (EffectiveValue.Length == 0 ? "" : "\nNative effective: " + EffectiveValue);
+        (SourceDetail.Length == 0 ? "" : "\n" + SourceDetail) + (EffectiveValue.Length == 0 ? "" : "\nNative effective: " + EffectiveValue) + (ExpressionHint.Length == 0 ? "" : "\n" + ExpressionHint);
 
     internal void SetPropertyMetadata(PropertyGridPropertyMetadata metadata, PropertyGridValueSource source, bool? local,
         string detail = "", Action? removeLocal = null, bool blockReset = false)
@@ -206,7 +216,7 @@ public sealed class PropertyGridRowViewModel : ObservableObject
 
     public bool IsModified => HasLocalValue ?? (HasDefaultValue && !ValueEqualsDefault());
 
-    public bool CanResetToDefault => !ResetBlocked && !IsReadOnly && (RemoveLocalValue is not null ? HasLocalValue == true : HasDefaultValue && IsModified);
+    public bool CanResetToDefault => ResetExpression is not null || !ResetBlocked && !IsReadOnly && (RemoveLocalValue is not null ? HasLocalValue == true : HasDefaultValue && IsModified);
 
     public string ModifiedGlyph => ValueSource switch
     {
@@ -340,6 +350,8 @@ public sealed class PropertyGridRowViewModel : ObservableObject
     {
         if (!CanResetToDefault)
             return;
+
+        if (ResetExpression is { } resetExpression) { resetExpression(); return; }
 
         if (RemoveLocalValue is { } remove) { remove(); return; }
 

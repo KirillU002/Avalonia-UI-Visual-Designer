@@ -69,7 +69,7 @@ public sealed partial class AxamlPatchWriter
             }
 
             var control = ToRuntimeModel(fileControl);
-            if (AxamlRoundTripPropertyMap.PropertiesFor(reference.Element.LocalName).Any(p => reference.Capability.CanEditProperty(p.Key)
+            if (AxamlRoundTripPropertyMap.PropertiesFor(reference.Element.LocalName).Any(p => reference.Capability.CanEditProperty(p.Key) && !ExpressionManaged(reference,control,p)
                 && reference.SnapshotValues.TryGetValue(p.Key, out var before) && p.Read(control) != before
                 && !p.TryWrite(new DesignControlModel { UsesSourceLayout = true }, p.Read(control))))
             {
@@ -79,7 +79,7 @@ public sealed partial class AxamlPatchWriter
             if (fileControl.Type != reference.ControlType || (fileControl.ParentId ?? "") != (reference.ParentId ?? "")
                 || reference.SnapshotValues.TryGetValue("@ChildLayoutMode", out var layout) && layout != fileControl.ChildLayoutMode
                 || AxamlRoundTripPropertyMap.PropertiesFor(reference.Element.LocalName).Any(property =>
-                    !reference.Capability.CanEditProperty(property.Key)
+                    !reference.Capability.CanEditProperty(property.Key) && !ExpressionManaged(reference,control,property)
                     && reference.SnapshotValues.TryGetValue(property.Key, out var original) && property.Read(control) != original))
             {
                 diagnostics.Add(new("AXAML_PATCH_BLOCKED", AxamlDiagnosticSeverity.Warning, $"element={control.Name}; reason=OpaquePropertyOrHierarchyChange"));
@@ -105,7 +105,12 @@ public sealed partial class AxamlPatchWriter
                     return AxamlPatchResult.Unsafe(source, diagnostics);
                 }
             }
-            AppendPropertyEdits(source, reference, control, edits);
+            try { AppendPropertyEdits(source, reference, control, edits); }
+            catch (InvalidOperationException error)
+            {
+                diagnostics.Add(new("AXAML_EXPRESSION_PATCH_BLOCKED",AxamlDiagnosticSeverity.Warning,error.Message));
+                return AxamlPatchResult.Unsafe(source,diagnostics);
+            }
         }
 
         foreach (var siblings in roundTripDocument.SourceMap.Controls.GroupBy(r => r.ParentId ?? ""))
@@ -141,6 +146,18 @@ public sealed partial class AxamlPatchWriter
         }
 
         var patched = ApplyEdits(source, edits);
+        if(roundTripDocument.SourceMap.Controls.Any(r=>r.ExpressionValues.Count>0)
+            ||document.Controls.Any(c=>c.CustomProperties.Any(p=>p.Key.StartsWith(FormDesigner.DesignerSystem.Metadata.PropertyExpressions.Prefix,StringComparison.Ordinal))))
+        {
+            try
+            {
+                using var reader=System.Xml.XmlReader.Create(new System.IO.StringReader(patched),new System.Xml.XmlReaderSettings
+                    { DtdProcessing=System.Xml.DtdProcessing.Prohibit,XmlResolver=null,MaxCharactersInDocument=16*1024*1024 });
+                while(reader.Read()){}
+            }
+            catch(System.Xml.XmlException error)
+            {diagnostics.Add(new("AXAML_EXPRESSION_XML_BLOCKED",AxamlDiagnosticSeverity.Warning,error.Message));return AxamlPatchResult.Unsafe(source,diagnostics);}
+        }
         diagnostics.Add(new AxamlRoundTripDiagnostic("AXAML_PATCH_CREATED", AxamlDiagnosticSeverity.Information, $"edits count={edits.Count}"));
         return AxamlPatchResult.Success(patched, edits.OrderBy(edit => edit.Start).ToList(), diagnostics);
     }
@@ -161,9 +178,11 @@ public sealed partial class AxamlPatchWriter
     private static void AppendPropertyEdits(string source, AxamlSourceReference reference, DesignControlModel current, ICollection<AxamlTextEdit> edits, bool skipPlacement = false)
     {
         var additions = new List<(string Name, string Value)>();
+        AppendExpressionEdits(reference,current,edits,additions);
         foreach (var property in AxamlRoundTripPropertyMap.PropertiesFor(reference.Element.LocalName))
         {
-            if (skipPlacement && Placement(property.Key) || !reference.Capability.CanEditProperty(property.Key))
+            if (ExpressionManaged(reference,current,property)
+                || skipPlacement && Placement(property.Key) || !reference.Capability.CanEditProperty(property.Key))
                 continue;
 
             if (IsMetadataReset(property, reference, current))

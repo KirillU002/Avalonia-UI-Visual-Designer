@@ -19,6 +19,7 @@ public partial class DesignerPropertyInspector : UserControl
     {
         InitializeComponent();
         InitializePresentation();
+        AddHandler(Avalonia.Input.InputElement.PointerPressedEvent,TrackExpressionTarget,RoutingStrategies.Bubble,true);
     }
 
     public object? Context

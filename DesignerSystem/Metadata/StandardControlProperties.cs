@@ -277,6 +277,7 @@ public static partial class StandardControlProperties
             foreach (var key in new[]{"SelectionStart","SelectionEnd"})
                 if (node.CustomProperties.TryGetValue(key,out var json) && Find(type,key) is {} p)
                     control.SetValue(p.Property!, ParseSelection(p,json));
+        PropertyExpressions.ApplyPreview(control,node);
         return control;
     }
     private static bool IsTextSelection(string key) => key is "SelectionStart" or "SelectionEnd";

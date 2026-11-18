@@ -38,7 +38,7 @@ public static partial class StandardControlProperties
     public static void ApplyAdditional(Control target,IDesignControlNode node)
     {
         target=NativePropertyTarget(target,node.TypeKey);
-        if(!ExtensionTypes.ContainsKey(node.TypeKey))return;
+        if(!ExtensionTypes.ContainsKey(node.TypeKey)){PropertyExpressions.ApplyPreview(target,node);return;}
         foreach(var p in PropertiesFor(node.TypeKey))
         {
             if(!node.CustomProperties.TryGetValue(p.Key,out var json))continue;
@@ -46,6 +46,7 @@ public static partial class StandardControlProperties
             if(!TryEncode(p,text,out _)||!TryParseValue(p,text,out var value))throw new FormatException("Invalid Avalonia property: "+node.TypeKey+"."+p.Key);
             target.SetValue(p.Property!,value);
         }
+        PropertyExpressions.ApplyPreview(target,node);
     }
     public static string ApplyAdditionalGeneratedAttributes(string line,string type,IDesignControlNode node,Func<string,string> escape)
     {

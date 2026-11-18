@@ -5041,7 +5041,8 @@ public partial class MainWindowViewModel : ObservableObject
 
     public bool SupportsFieldBinding(DesignControlModel? control)
     {
-        return DescriptorDeclaresProperty(control, nameof(DesignControlModel.TextBindingPath));
+        return control is not null && !control.CustomProperties.Any(p=>p.Key is FormDesigner.DesignerSystem.Metadata.PropertyExpressions.Prefix+"Text" or FormDesigner.DesignerSystem.Metadata.PropertyExpressions.Prefix+"Content")
+            && DescriptorDeclaresProperty(control, nameof(DesignControlModel.TextBindingPath));
     }
 
     public static bool IsSupportedInteractionTarget(DesignControlModel control)
@@ -9521,7 +9522,12 @@ public partial class MainWindowViewModel : ObservableObject
             return false;
         var key = propertyKey switch { "X" => "Canvas.Left", "Y" => "Canvas.Top", _ => propertyKey };
         if (axaml.SourceMap.TryGet(control.Id, out var reference))
+        {
+            var nativeKey = NativeInspectorKey(key, reference.Element.LocalName);
+            if (FormDesigner.DesignerSystem.Metadata.PropertyExpressions.TryRead(control.CustomProperties,nativeKey,out var expression)
+                && expression.Kind != FormDesigner.DesignerSystem.Metadata.PropertyValueKind.Literal) return false;
             return reference.Capability.CanEditProperty(key);
+        }
         return axaml.SourceMap.CanInsertControls && AxamlRoundTripPropertyMap.PropertiesFor(control.Type).Any(p => p.Key == key);
     }
 
@@ -9604,6 +9610,7 @@ public partial class MainWindowViewModel : ObservableObject
             idsByName["@path:" + AxamlImportStructureReport.PathOf(element)] = reference.ControlId;
         }
         var refreshed = _axamlImportService.Import(patchedText, path, idsByName);
+        AxamlPatchWriter.RebaseExpressionSnapshots(refreshed.RoundTripDocument,acknowledgedDocument);
         refreshed.RoundTripDocument.SetTextEncoding(_activeAxamlRoundTripDocument.TextEncoding);
         _activeAxamlRoundTripDocument = refreshed.RoundTripDocument;
         RebuildPropertyGrid("AxamlPatchAcknowledged");
@@ -13461,7 +13468,7 @@ public partial class MainWindowViewModel : ObservableObject
 
         sb.AppendLine(GetRootContainerClosingTag());
         sb.AppendLine("</Window>");
-        GeneratedXaml = sb.ToString();
+        GeneratedXaml = FormDesigner.DesignerSystem.Metadata.PropertyExpressionProjection.ApplyGenerated(sb.ToString(),Controls,GetExportControlName);
         GeneratedCSharp = BuildGeneratedCSharp();
         GeneratedBindingGuide = BuildGeneratedBindingGuide();
         if (_isGeneratingSecondaryFormExport)
@@ -14510,7 +14517,7 @@ public partial class MainWindowViewModel : ObservableObject
                 ExportAxaml = exportAxaml.Axaml,
                 ProjectId = CurrentProject.Id,
                 SourceKind = IsAxamlRoundTripDocument ? "ImportedAxaml" : "ProjectJson",
-                Axaml = runtimePreviewAxaml.Axaml,
+                Axaml = FormDesigner.DesignerSystem.Metadata.PropertyExpressionProjection.ApplyGenerated(runtimePreviewAxaml.Axaml,exportViewModel.Controls,c=>exportViewModel.GetExportControlName(c),safePreview:true),
                 RootElement = runtimePreviewAxaml.RootElement,
                 RemovedXClass = runtimePreviewAxaml.RemovedXClass,
                 GeneratedCSharp = exportViewModel.GeneratedCSharp,

@@ -216,6 +216,13 @@ public partial class MainWindowViewModel
         {
             try
             {
+                if(value.Key.StartsWith(PropertyExpressions.Prefix,StringComparison.Ordinal))
+                {
+                    var key=value.Key[PropertyExpressions.Prefix.Length..];var target=PropertyExpressions.Find(model.Type,key);
+                    if(target is null||!PropertyExpressions.TryRead(model.CustomProperties,key,out var expression)||!PropertyExpressions.Validate(target,expression))
+                        throw new FormatException("Invalid or unsupported expression payload");
+                    continue;
+                }
                 if(value.Key.EndsWith(".Collection",StringComparison.Ordinal))
                 { _=CollectionItemsContract.Read(model,value.Key[..^".Collection".Length]);continue; }
                 if(StandardControlProperties.Find(model.Type,value.Key) is {} property)

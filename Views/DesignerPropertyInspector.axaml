@@ -51,6 +51,11 @@
       </controls:PropertyGridEditorTemplates.ReadOnly>
     </controls:PropertyGridEditorTemplates>
   </UserControl.Resources>
+  <DockPanel>
+  <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="6" Margin="0,0,0,4">
+    <Button x:Name="ExpressionEditorButton" Content="fx" IsEnabled="False" Click="ExpressionEditor_Click" ToolTip.Tip="Binding / StaticResource / DynamicResource / Literal. Сначала выберите строку свойства."/>
+    <TextBlock x:Name="ExpressionTargetText" Text="Выберите строку свойства" FontSize="11" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+  </StackPanel>
   <ItemsControl x:Name="PropertyGridCategoriesItemsControl"
                 DataContext="{Binding Context, ElementName=RootInspector}">
     <ItemsControl.ItemTemplate>
@@ -95,4 +100,5 @@
       </DataTemplate>
     </ItemsControl.ItemTemplate>
   </ItemsControl>
+  </DockPanel>
 </UserControl>
