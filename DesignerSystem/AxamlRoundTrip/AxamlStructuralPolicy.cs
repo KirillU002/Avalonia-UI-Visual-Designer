@@ -9,6 +9,8 @@ public static class AxamlStructuralPolicy
 {
     public static bool IsPanel(string type) => type is "Grid" or "Canvas" or "StackPanel" or "DockPanel" or "WrapPanel";
     public static bool IsCollection(string type) => type is "ComboBox" or "ListBox";
+    public static bool CanInsertToolboxItem(string type) => CanCreate(type == "Group" ? "Canvas" : type);
+
     public static bool CanCreate(string type) => type is "Button" or "TextBox" or "TextBlock" or "CheckBox" or "Border" or "StackPanel" or "Grid" or "Canvas" or "ComboBoxItem" or "ListBoxItem";
     public static AxamlElementSyntax? Host(AxamlElementSyntax parent)
     {

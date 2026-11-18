@@ -1,5 +1,6 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:source="using:FormDesigner.DesignerSystem.AxamlRoundTrip"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:vm="using:FormDesigner.ViewModels"
@@ -1205,11 +1206,16 @@
                           Classes="dock-collapse"
                           ToolTip.Tip="Обновить структуру и диагностику"/>
                 </Grid>
+                <StackPanel Orientation="Horizontal" Spacing="6" IsVisible="{Binding IsAxamlRoundTripDocument}">
+                  <CheckBox Content="Исходный AXAML" IsChecked="{Binding ShowAxamlSourceTree, Mode=TwoWay}"/>
+                  <Button Content="Метаданные DLL…" IsVisible="{Binding IsSourceTreeVisible}" Command="{Binding InspectSourceAssemblyCommand}" ToolTip.Tip="Прочитать имена типов и свойств выбранной сборки"/>
+                </StackPanel>
               </StackPanel>
 
               <TextBox Grid.Row="1"
                        Margin="0,10,0,8"
                        Watermark="Поиск по имени или типу..."
+                       IsVisible="{Binding !IsSourceTreeVisible}"
                        Text="{Binding StructureSearchText, Mode=TwoWay}"
                        MinHeight="34"/>
 
@@ -1221,7 +1227,15 @@
                       Padding="6"
                       ClipToBounds="True">
                 <Grid>
-                <TreeView x:Name="TemplateStructureTree" ItemsSource="{Binding StructureTreeItems}"
+                <TreeView ItemsSource="{Binding SourceExplorerRoots}" SelectedItem="{Binding SelectedSourceNode, Mode=TwoWay}"
+                          IsVisible="{Binding IsSourceTreeVisible}">
+                  <TreeView.DataTemplates>
+                    <TreeDataTemplate x:DataType="source:AxamlElementSyntax" DataType="source:AxamlElementSyntax" ItemsSource="{Binding Children}">
+                      <TextBlock Text="{Binding DisplayName}" ToolTip.Tip="{Binding NamespaceUri}"/>
+                    </TreeDataTemplate>
+                  </TreeView.DataTemplates>
+                </TreeView>
+                <TreeView IsVisible="{Binding !IsSourceTreeVisible}" x:Name="TemplateStructureTree" ItemsSource="{Binding StructureTreeItems}"
                           SelectedItem="{Binding SelectedStructureItem, Mode=TwoWay}">
                   <TreeView.Styles>
                     <Style Selector="TreeViewItem"
@@ -2641,6 +2655,9 @@
                         Command="{Binding ClearPropertyGridSearchCommand}"/>
               </Grid>
 
+              <Expander Header="Исходный узел AXAML" IsExpanded="True" IsVisible="{Binding HasSourceInspection}" MaxHeight="240">
+                <ScrollViewer VerticalScrollBarVisibility="Auto"><SelectableTextBlock Text="{Binding SourceInspectionText}" TextWrapping="Wrap"/></ScrollViewer>
+              </Expander>
               <ScrollViewer x:Name="SimpleInspectorScrollViewer"
                             Grid.Row="1"
                             IsVisible="False"

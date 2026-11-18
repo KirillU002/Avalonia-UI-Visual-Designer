@@ -15,6 +15,29 @@ namespace FormDesigner.DesignerSystem.AxamlRoundTrip;
 // Only trusted Avalonia controls and imported literal values; never evaluates user bindings.
 public static class AxamlPhase4Projection
 {
+    // A column's literal title is safe to project. Bindings, data, templates and custom
+    // column classes remain in source. No row objects are constructed during import.
+    private static DataGrid CreateDataGrid(AxamlElementSyntax element)
+    {
+        var grid = new DataGrid { AutoGenerateColumns = false };
+        foreach (var slot in element.Children.Where(c => c.LocalName == "DataGrid.Columns" && (c.NamespaceUri.Length != 0 || c.LegacyUnqualified) &&
+                     AxamlTypeRecognition.FrameworkType(c.NamespaceUri, "DataGrid") == typeof(DataGrid)))
+        {
+            foreach (var child in slot.Children)
+            {
+                if (child.NamespaceUri.Length == 0 && !child.LegacyUnqualified) continue;
+                var type = AxamlTypeRecognition.FrameworkType(child.NamespaceUri, child.LocalName);
+                DataGridColumn? column = type == typeof(DataGridTextColumn) ? new DataGridTextColumn() :
+                    type == typeof(DataGridCheckBoxColumn) ? new DataGridCheckBoxColumn() : null;
+                if (column == null) continue;
+                var header = child.GetAttributeValue("Header");
+                if (header != null && !header.TrimStart().StartsWith('{')) column.Header = header;
+                grid.Columns.Add(column);
+            }
+        }
+        return grid;
+    }
+
     public static Control? Create(AxamlSourceReference? reference, DesignControlModel model, bool isDesignMode = false, bool realizeOffscreen = true)
     {
         var type = reference?.Element.LocalName;
@@ -35,6 +58,9 @@ public static class AxamlPhase4Projection
         string Value(string key) => AxamlControlMetadata.Find(type!)!.LiteralProperties.Single(p => p.Key == key).Read(model);
         Control? control = type switch
         {
+            "Panel" => new Panel(),
+            "DataGrid" => CreateDataGrid(reference!.Element),
+            "Image" => new Image(),
             "Button" => new Button { Content = reference!.Capability.CanEditProperty("Text") ? model.Text : null },
             "TextBox" => new TextBox(),
             "TextBlock" => new TextBlock(),

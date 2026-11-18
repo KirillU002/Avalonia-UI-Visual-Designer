@@ -47,7 +47,19 @@ internal static partial class Program
         NativeCrashDiagnostics.InitializeFromEnvironment();
         // Initialize the real UI dispatcher before any view model can create the
         // fallback dispatcher; IPC continuations must run on the actual UI thread.
+        if (args is ["--phase7a-host", var host, var output])
+        {
+            try { return CaptureHostToolbox(host, output); }
+            catch (Exception ex) { Console.Error.WriteLine(ex); return 1; }
+        }
         EnsureAvaloniaRuntimeInitialized();
+        if (args.Length==2 && args[0]=="--phase7a-checks") return RunRecognitionChecks(args[1]);
+        if (args.Length==2 && args[0] is "--phase7a-profile" or "--phase7a-catalog" or "--phase7a-views")
+        {
+            try { return args[0] switch { "--phase7a-profile" => ProfileRecognition(args[1]),
+                "--phase7a-views" => AuditRegistryViews(args[1]), _ => ExportRegistryCatalog(args[1]) }; }
+            catch(Exception ex){Console.Error.WriteLine(ex);return 1;}
+        }
         if (args.Contains("--universal4f-checks")) return RunUniversal4FChecks();
         if (args.Contains("--universal4f-host-cycles")) return RunUniversal4FHostCycles();
         if (args.Contains("--universal4d-checks")) return RunUniversal4DChecks();

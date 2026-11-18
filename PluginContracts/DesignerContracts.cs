@@ -252,6 +252,13 @@ public interface IDesignerRegistry
     IReadOnlyList<IDesignerRuntimePreviewContributionProvider> GetRuntimePreviewContributionProviders();
 }
 
+/// <summary>Optional runtime identity for a plugin descriptor whose Toolbox ID is an alias.</summary>
+public interface IDesignerNativeTypeDescriptor
+{
+    string NativeTypeName { get; }
+    string NativeAssemblyName { get; }
+}
+
 public interface IControlDescriptor
 {
     string TypeKey { get; }

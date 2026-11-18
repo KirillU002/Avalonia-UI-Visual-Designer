@@ -159,6 +159,7 @@ public sealed class AxamlRoundTripDocument
 
     public string SourcePath { get; private set; }
     private AxamlStyleValues? _styleCatalog;
+    public AxamlTypeRecognition Recognition { get; internal set; } = new();
     public AxamlStyleValues StyleCatalog => _styleCatalog ??= AxamlStyleValues.Read(Syntax);
     public AxamlSyntaxDocument Syntax { get; private set; }
     public AxamlSourceMap SourceMap { get; private set; }

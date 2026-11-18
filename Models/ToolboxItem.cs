@@ -13,6 +13,9 @@ public class ToolboxItem
     public string ProviderId { get; set; } = "";
 
     public string ProviderBadge { get; set; } = "";
+    public string OperationHint => DesignerSystem.AxamlRoundTrip.AxamlStructuralPolicy.CanInsertToolboxItem(Type)
+        ? Description + "\nAXAML · вставка в поддерживаемый контейнер."
+        : Description + "\nAXAML · вставка этого компонента пока недоступна.";
     public string Icon => Type switch
     {
         "ReversibleStackPanel"=>"⇅", "LayoutTransformControl"=>"⤢", "TransitioningContentControl"=>"↝",

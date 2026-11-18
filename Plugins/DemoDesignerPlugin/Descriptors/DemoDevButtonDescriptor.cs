@@ -10,7 +10,7 @@ using System.Text.Json;
 
 namespace DemoDesignerPlugin.Descriptors;
 
-public sealed class DemoDevButtonDescriptor : IControlDescriptor
+public sealed class DemoDevButtonDescriptor : IControlDescriptor, IDesignerNativeTypeDescriptor
 {
     public const string TypeKeyValue = "Demo.DevButton";
     private const string AccentBrushPropertyKey = "AccentBrush";
@@ -102,6 +102,8 @@ public sealed class DemoDevButtonDescriptor : IControlDescriptor
         _pluginVersion = pluginVersion;
     }
 
+    public string NativeTypeName => "DemoDesignerPlugin.Controls.DemoDevButton";
+    public string NativeAssemblyName => "DemoDesignerPlugin";
     public string TypeKey => TypeKeyValue;
     public string Title => "Кнопка-карточка";
     public string Category => "Ввод";

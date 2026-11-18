@@ -625,6 +625,12 @@ internal static class PluginRuntimeAssemblyBridge
         }
     }
 
+    internal static string[] GetDeclaredRuntimeMetadataPaths()
+    {
+        lock (Gate)
+            return RuntimeAssemblyNames.Where(AssemblyPaths.ContainsKey).Select(n => AssemblyPaths[n]).ToArray();
+    }
+
     internal static Assembly? LoadRuntimeAssemblyIfRegistered(AssemblyName name)
     {
         lock (Gate)

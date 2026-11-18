@@ -36,6 +36,8 @@ public sealed class AxamlElementSyntax
 
     public string Name { get; }
     public string LocalName { get; }
+    public string DisplayName => (GetAttributeValue("x:Name") ?? GetAttributeValue("Name") ?? GetAttributeValue("x:Key")) is {} label
+        ? Name + " · " + label : Name;
     public string NamespaceUri
     {
         get
@@ -48,6 +50,22 @@ public sealed class AxamlElementSyntax
             return separator < 0 ? string.Empty : "unresolved:" + Name[..separator];
         }
     }
+    // Keep support for old, completely unqualified Designer documents. An empty
+    // namespace inside a namespaced document is a different XML identity.
+    internal bool LegacyUnqualified
+    {
+        get
+        {
+            var root = this;
+            for (var scope = this; scope != null; scope = scope.Parent)
+            {
+                if (scope.FindAttribute("xmlns") != null) return false;
+                root = scope;
+            }
+            return !root.Name.Contains(':');
+        }
+    }
+
     public AxamlTextSpan OpeningTagSpan { get; }
     public AxamlTextSpan EndTagSpan { get; internal set; }
     public AxamlTextSpan ElementSpan { get; internal set; }

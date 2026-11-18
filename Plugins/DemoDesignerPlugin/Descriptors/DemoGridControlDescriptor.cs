@@ -10,7 +10,7 @@ using System.Text.Json;
 
 namespace DemoDesignerPlugin.Descriptors;
 
-public sealed class DemoGridControlDescriptor : IControlDescriptor
+public sealed class DemoGridControlDescriptor : IControlDescriptor, IDesignerNativeTypeDescriptor
 {
     public const string TypeKeyValue = "Demo.GridControl";
     private const string AccentBrushPropertyKey = "AccentBrush";
@@ -128,6 +128,8 @@ public sealed class DemoGridControlDescriptor : IControlDescriptor
         _pluginVersion = pluginVersion;
     }
 
+    public string NativeTypeName => "DemoDesignerPlugin.Controls.DemoGridControl";
+    public string NativeAssemblyName => "DemoDesignerPlugin";
     public string TypeKey => TypeKeyValue;
     public string Title => "Demo GridControl";
     public string Category => "Demo Plugins";

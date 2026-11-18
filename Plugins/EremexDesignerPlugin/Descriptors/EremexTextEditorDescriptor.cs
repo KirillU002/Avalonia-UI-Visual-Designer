@@ -12,7 +12,7 @@ using System.Text.Json;
 
 namespace EremexDesignerPlugin.Descriptors;
 
-public sealed class EremexTextEditorDescriptor : IControlDescriptor, IDesignerControlProviderMetadata
+public sealed class EremexTextEditorDescriptor : IControlDescriptor, IDesignerNativeTypeDescriptor, IDesignerControlProviderMetadata
 {
     public const string TypeKeyValue = "Eremex.TextEditor";
     public const string XmlNamespace = "https://schemas.eremexcontrols.net/avalonia/editors";
@@ -39,6 +39,8 @@ public sealed class EremexTextEditorDescriptor : IControlDescriptor, IDesignerCo
         _propertySchema = new(() => { EremexCompatibilityValidator.EnsureCompatible(); return BuildPropertySchema(); });
     }
 
+    public string NativeTypeName => "Eremex.AvaloniaUI.Controls.Editors.TextEditor";
+    public string NativeAssemblyName => "Eremex.Avalonia.Controls";
     public string TypeKey => TypeKeyValue;
     public string Title => "TextEditor";
     public string Category => "Editors";

@@ -333,7 +333,7 @@ public sealed class AxamlImportService
     }
 
     private static bool IsAvaloniaElement(AxamlElementSyntax element) =>
-        element.NamespaceUri is "" or "https://github.com/avaloniaui";
+        AxamlControlMetadata.IsFrameworkNamespace(element);
 
     private static DesignerDocumentFileModel CreateDocument(string rootType, AxamlElementSyntax root)
     {
@@ -369,6 +369,15 @@ public sealed class AxamlImportService
             {
                 attribute = property.ResolveExistingAttribute(element);
                 ambiguous = property.HasAmbiguousAttribute(element);
+            }
+            // These adapters use legacy scalar fields, which cannot distinguish an absent
+            // attribute from a local value equal to the designer default after an ACK.
+            // Until that provenance is represented, only patch existing scalar values.
+            if (controlType is "DataGrid" or "Image" or "Panel" && attribute is null && property.Metadata is null)
+            {
+                capability.Properties.Add(new(property.Key, property.PreferredAttributeName,
+                    AxamlPropertyCapabilityMode.Preserved, "ExistingSourceLiteralRequired"));
+                continue;
             }
             var editable = !ambiguous;
             if (editable && attribute is not null)
@@ -710,6 +719,7 @@ internal static class AxamlRoundTripPropertyMap
                 c.LayoutSpacing = n; return true;
             })
         }).ToArray(),
+        "DataGrid" or "Image" or "Panel" => Common,
         _ => FormDesigner.DesignerSystem.Metadata.StandardControlProperties.SupportedTypes.ContainsKey(controlType) ? Common : Array.Empty<AxamlRoundTripProperty>()
     };
 

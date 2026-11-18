@@ -48,6 +48,10 @@ public static class AvaloniaMetadataCatalog
     private static int _buildCount;
     public static int BuildCount => Volatile.Read(ref _buildCount);
     public static bool IsStandard(Type type) => StandardAssemblies.Contains(type.Assembly);
+    internal static IEnumerable<Assembly> FrameworkAssemblies => StandardAssemblies.Concat(new[]
+    {
+        typeof(Avalonia.Markup.Xaml.AvaloniaXamlLoader).Assembly, typeof(Avalonia.Data.Binding).Assembly
+    }).Distinct();
     public static IReadOnlyList<Type> DiscoverControls() => StandardAssemblies.Distinct()
         .SelectMany(a => a.GetExportedTypes()).Where(t => typeof(Control).IsAssignableFrom(t) && !t.ContainsGenericParameters)
         .OrderBy(t => t.FullName, StringComparer.Ordinal).ToArray();

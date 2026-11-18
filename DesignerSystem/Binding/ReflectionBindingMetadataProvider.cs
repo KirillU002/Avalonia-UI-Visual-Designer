@@ -1,4 +1,4 @@
-﻿using FormDesigner.Models;
+using FormDesigner.Models;
 using FormDesigner.PluginContracts;
 using System;
 using System.Collections.Immutable;
@@ -12,7 +12,7 @@ using System.Runtime.Loader;
 
 namespace FormDesigner.DesignerSystem.Binding;
 
-public sealed class ReflectionBindingMetadataProvider : IBindingMetadataProvider
+public sealed partial class ReflectionBindingMetadataProvider : IBindingMetadataProvider
 {
     private readonly string _applicationBaseDirectory;
 

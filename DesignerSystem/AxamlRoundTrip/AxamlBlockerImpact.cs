@@ -21,7 +21,7 @@ public sealed record AxamlBlockerImpact(string Type, string Namespace, string Pa
                 e.Children.Sum(Reachable), opaque[e].Reason)).ToArray();
     }
 
-    private static bool IsKnown(AxamlElementSyntax e) => e.NamespaceUri is "" or "https://github.com/avaloniaui"
+    private static bool IsKnown(AxamlElementSyntax e) => AxamlControlMetadata.IsFrameworkNamespace(e)
         && AxamlControlMetadata.Find(e.LocalName) is not null;
 
     // Estimate excludes the next unknown boundary. It is not permission to flatten a parent.
@@ -36,7 +36,7 @@ public sealed record AxamlBlockerImpact(string Type, string Namespace, string Pa
     public static string CategoryOf(AxamlElementSyntax e)
     {
         if (AxamlImportStructureReport.IsPropertyElement(e)) return "PropertyElement";
-        if (e.NamespaceUri is not ("" or "https://github.com/avaloniaui")) return "CustomControl";
+        if (!AxamlControlMetadata.IsFrameworkNamespace(e)) return "CustomControl";
         // Only the already loaded trusted Avalonia assembly is inspected, never a project assembly.
         var type = typeof(Control).Assembly.GetType("Avalonia.Controls." + e.LocalName);
         if (type is null) return "Unknown";

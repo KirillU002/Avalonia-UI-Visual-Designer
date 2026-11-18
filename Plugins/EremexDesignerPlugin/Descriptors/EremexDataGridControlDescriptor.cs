@@ -20,7 +20,7 @@ namespace EremexDesignerPlugin.Descriptors;
 /// Eremex grid adapter. It supports documented automatic and explicit
 /// <see cref="GridColumn"/> collections without reusing Avalonia DataGrid columns.
 /// </summary>
-public sealed class EremexDataGridControlDescriptor : IControlDescriptor, IDesignerControlProviderMetadata
+public sealed class EremexDataGridControlDescriptor : IControlDescriptor, IDesignerNativeTypeDescriptor, IDesignerControlProviderMetadata
 {
     public const string TypeKeyValue = "Eremex.DataGridControl";
     public const string XmlNamespace = "https://schemas.eremexcontrols.net/avalonia/datagrid";
@@ -107,6 +107,8 @@ public sealed class EremexDataGridControlDescriptor : IControlDescriptor, IDesig
         _properties = new(() => { EremexCompatibilityValidator.EnsureCompatible(); return BuildPropertySchema(); });
     }
 
+    public string NativeTypeName => "Eremex.AvaloniaUI.Controls.DataGrid.DataGridControl";
+    public string NativeAssemblyName => "Eremex.Avalonia.Controls";
     public string TypeKey => TypeKeyValue;
     public string Title => "DataGridControl";
     public string Category => "Data";

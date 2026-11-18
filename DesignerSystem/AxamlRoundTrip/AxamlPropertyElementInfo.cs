@@ -12,11 +12,11 @@ public sealed record AxamlPropertyElementInfo(string OwnerType, string PropertyN
     {
         var dot = element.LocalName.IndexOf('.');
         var owner = element.LocalName[..dot]; var name = element.LocalName[(dot + 1)..];
-        var type = element.Parent is { } parent && parent.NamespaceUri is "" or "https://github.com/avaloniaui"
+        var type = element.Parent is { } parent && AxamlControlMetadata.IsFrameworkNamespace(parent)
             ? AxamlControlMetadata.ResolveNativeType(parent.LocalName) : null;
         var ownerType = type;
         while (ownerType is not null && ownerType.Name != owner) ownerType = ownerType.BaseType;
-        var property = type is not null && ownerType is not null && element.NamespaceUri is "" or "https://github.com/avaloniaui"
+        var property = type is not null && ownerType is not null && AxamlControlMetadata.IsFrameworkNamespace(element)
             && AvaloniaMetadataCatalog.Get(ownerType).Properties.Any(p => p.Key == name || p.Key == owner + "." + name)
             ? AvaloniaMetadataCatalog.Get(type).Properties.FirstOrDefault(p => p.Key == name || p.Key == owner + "." + name) : null;
         // Preserve attributes, comments, CDATA, child objects and all expressions. Only a

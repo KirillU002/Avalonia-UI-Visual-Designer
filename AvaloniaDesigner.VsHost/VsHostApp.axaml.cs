@@ -4,8 +4,6 @@ using Avalonia.Data.Core;
 using Avalonia.Data.Core.Plugins;
 using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
-using FormDesigner.DesignerSystem.Binding;
-using FormDesigner.DesignerSystem.BuiltIn;
 using FormDesigner.DesignerSystem.Hosting;
 using FormDesigner.DesignerSystem.Infrastructure;
 using FormDesigner.ViewModels;
@@ -15,8 +13,6 @@ namespace AvaloniaDesigner.VsHost;
 
 public sealed class VsHostApp : Application
 {
-    private readonly DesignerRegistry _registry = new();
-
     public override void Initialize() => AvaloniaXamlLoader.Load(this);
 
     public override void OnFrameworkInitializationCompleted()
@@ -26,10 +22,9 @@ public sealed class VsHostApp : Application
             DisableAvaloniaDataAnnotationValidation();
 
             var hostServices = new VsHostDesignerHostServices();
-            BuiltInControlRegistrar.Register(_registry);
-            _registry.RegisterBindingProvider(new ReflectionBindingMetadataProvider(hostServices.Paths.ApplicationBaseDirectory));
+            var registry = DesignerRegistry.CreateForHost(hostServices);
 
-            var viewModel = new MainWindowViewModel(_registry, hostServices);
+            var viewModel = new MainWindowViewModel(registry, hostServices);
             var window = new VsHostWindow(hostServices)
             {
                 DataContext = viewModel,

@@ -9,7 +9,7 @@ using System.Text.Json;
 
 namespace MinimalDesignerPlugin.Descriptors;
 
-public sealed class HelloCardDescriptor : IControlDescriptor
+public sealed class HelloCardDescriptor : IControlDescriptor, IDesignerNativeTypeDescriptor
 {
     public const string TypeKeyValue = "Minimal.HelloCard";
     private const string MessagePropertyKey = "Message";
@@ -77,6 +77,8 @@ public sealed class HelloCardDescriptor : IControlDescriptor
         _pluginVersion = pluginVersion;
     }
 
+    public string NativeTypeName => "MinimalDesignerPlugin.Controls.HelloCard";
+    public string NativeAssemblyName => "MinimalDesignerPlugin";
     public string TypeKey => TypeKeyValue;
     public string Title => "Hello Card";
     public string Category => "SDK Examples";

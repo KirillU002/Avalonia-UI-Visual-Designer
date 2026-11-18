@@ -12,7 +12,7 @@ using System.Text.Json;
 
 namespace DemoDesignerPlugin.Descriptors;
 
-public sealed class DemoTreeListDescriptor : IControlDescriptor
+public sealed class DemoTreeListDescriptor : IControlDescriptor, IDesignerNativeTypeDescriptor
 {
     public const string TypeKeyValue = "Demo.TreeList";
     private const string AutoGenerateColumnsPropertyName = "AutoGenerateColumns";
@@ -174,6 +174,8 @@ public sealed class DemoTreeListDescriptor : IControlDescriptor
         _pluginVersion = pluginVersion;
     }
 
+    public string NativeTypeName => "DemoDesignerPlugin.Controls.DemoTreeList";
+    public string NativeAssemblyName => "DemoDesignerPlugin";
     public string TypeKey => TypeKeyValue;
     public string Title => "TreeList";
     public string Category => "Данные";

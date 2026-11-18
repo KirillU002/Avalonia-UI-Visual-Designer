@@ -2750,9 +2750,16 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (TryNativeGridToolboxPreview(e)) return;
+        if (VM.IsAxamlRoundTripDocument && e.Data.Get(ControlTypeDataFormat) is string sourceType &&
+            !FormDesigner.DesignerSystem.AxamlRoundTrip.AxamlStructuralPolicy.CanInsertToolboxItem(sourceType))
+        {
+            e.DragEffects = DragDropEffects.None;
+            e.Handled = true;
+            return;
+        }
         if (IsSourceGridDropBlocked(GetDesignCanvasPosition(e)))
         { e.DragEffects = DragDropEffects.None; e.Handled = true; VM.StatusText = "Перенос в ячейки импортированного AXAML недоступен. Исходная разметка сохранена."; ClearGuideOverlay(); return; }
+        if (TryNativeGridToolboxPreview(e)) return;
         if (e.Data.Contains(ControlTypeDataFormat)) BeginToolboxInteraction();
 
         e.DragEffects = e.Data.Contains(ControlTypeDataFormat)
@@ -2779,6 +2786,14 @@ public partial class MainWindow : Window
         if (!e.Data.Contains(ControlTypeDataFormat))
             return;
 
+        if (VM.IsAxamlRoundTripDocument && e.Data.Get(ControlTypeDataFormat) is string sourceType &&
+            !FormDesigner.DesignerSystem.AxamlRoundTrip.AxamlStructuralPolicy.CanInsertToolboxItem(sourceType))
+        {
+            e.DragEffects = DragDropEffects.None;
+            e.Handled = true;
+            VM.StatusText = $"Для {sourceType} вставка в исходный AXAML пока недоступна.";
+            return;
+        }
         if (IsSourceGridDropBlocked(GetDesignCanvasPosition(e)))
         { e.DragEffects = DragDropEffects.None; e.Handled = true; VM.StatusText = "Перенос в ячейки импортированного AXAML недоступен. Исходная разметка сохранена."; return; }
         if (TryNativeGridToolboxDrop(e)) return;

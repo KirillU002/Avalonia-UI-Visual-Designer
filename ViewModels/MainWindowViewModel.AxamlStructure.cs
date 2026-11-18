@@ -66,6 +66,7 @@ public partial class MainWindowViewModel
             throw new InvalidOperationException("Структурная операция не сохранила однозначные source identities.");
         var expected=model.Controls.ToDictionary(c=>c.Id);
         if(imported.Document.Controls.Any(c=>(c.ParentId??"")!=(expected[c.Id].ParentId??"")))throw new InvalidOperationException("Source ParentId не соответствует структурной операции.");
+        imported.RoundTripDocument.Recognition = baseline.Recognition;
         imported.RoundTripDocument.SetTextEncoding(baseline.TextEncoding);
         AxamlPatchWriter.RebaseExpressionSnapshots(imported.RoundTripDocument,model);
         return imported.RoundTripDocument;
@@ -143,7 +144,12 @@ public partial class MainWindowViewModel
     public DesignControlModel? InsertAxamlControl(string type,string? parentId,double x,double y,int? index=null)
     {
         if(type=="Group")type="Canvas";
-        if(_activeAxamlRoundTripDocument is null||!AxamlStructuralPolicy.CanCreate(type))return null;
+        if (_activeAxamlRoundTripDocument == null) return null;
+        if (!AxamlStructuralPolicy.CanCreate(type))
+        {
+            StatusText = $"Для {type} вставка в исходный AXAML пока недоступна.";
+            return null;
+        }
         var cap=GetAxamlStructuralCapability(parentId);
         if(!cap.CanAddChild){StatusText=cap.Reason;return null;}
         var parent=GetControl(parentId);var parentType=parent is null?"Canvas":AxamlSourceType(parent);
@@ -270,6 +276,7 @@ public partial class MainWindowViewModel
         if(working.SourcePath!=path)working.ReplaceSource(path,working.Syntax,working.SourceMap,working.CapabilityReport);
         _axamlBufferSource=updated;_activeAxamlRoundTripDocument=working;
         _axamlProjectionSnapshot=_currentSnapshot;
+        RefreshSourceTree();
         if(!exactCurrent)RebuildPropertyGrid("AxamlStructureAcknowledged");
         MarkDocumentSaved(path,snapshot);OnPropertyChanged(nameof(ActiveAxamlCapabilityReport));
     }

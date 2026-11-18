@@ -19,6 +19,9 @@ public sealed record AxamlControlMetadata(string SourceType, string ProjectionTy
 {
     private static readonly Dictionary<string, AxamlControlMetadata> Known = new(StringComparer.Ordinal)
     {
+        ["Panel"] = new("Panel", "Group", AxamlContainerKind.PanelChildren, "Children"),
+        ["DataGrid"] = new("DataGrid", "Group", AxamlContainerKind.None),
+        ["Image"] = new("Image", "Group", AxamlContainerKind.None),
         ["Button"] = new("Button", "Button", AxamlContainerKind.SingleContent, "Content"),
         ["DropDownButton"] = new("DropDownButton", "DropDownButton", AxamlContainerKind.SingleContent, "Content"),
         ["SplitButton"] = new("SplitButton", "SplitButton", AxamlContainerKind.SingleContent, "Content"),
@@ -72,17 +75,20 @@ public sealed record AxamlControlMetadata(string SourceType, string ProjectionTy
         return IsFrameworkNamespace(element) ? Find(element.LocalName) : null;
     }
 
-    private static bool IsFrameworkNamespace(AxamlElementSyntax element)
+    internal static bool IsFrameworkNamespace(AxamlElementSyntax element)
     {
-        if(element.NamespaceUri is "" or "https://github.com/avaloniaui")return true;
-        var owner=element.LocalName.Split('.')[0];var type=Find(owner)?.NativeType;
+        var uri = element.NamespaceUri;
+        if (uri.Length == 0) return element.LegacyUnqualified;
+        if (uri == AxamlTypeRecognition.FrameworkUri) return true;
+        var owner = element.LocalName.Split('.')[0];
+        var type = ResolveNativeType(owner);
         return type is not null && (element.NamespaceUri=="using:"+type.Namespace
             || element.NamespaceUri=="clr-namespace:"+type.Namespace+";assembly="+type.Assembly.GetName().Name);
     }
 
     public bool AcceptsItem(AxamlElementSyntax element) => ItemType is null
-        || SourceType is "Menu" or "MenuItem" or "ContextMenu" && element.LocalName == "Separator" && element.NamespaceUri is "" or "https://github.com/avaloniaui"
-        || element.LocalName == ItemType && element.NamespaceUri is "" or "https://github.com/avaloniaui"
+        || SourceType is "Menu" or "MenuItem" or "ContextMenu" && element.LocalName == "Separator" && IsFrameworkNamespace(element)
+        || element.LocalName == ItemType && IsFrameworkNamespace(element)
         || SourceType == "ComboBox" && FindSourceElement(element, SourceType)?.SourceType == "String";
 
     public static bool HasSourceValue(AxamlElementSyntax element, string property)

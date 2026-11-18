@@ -13,6 +13,37 @@ public sealed class DesignerRegistry : IDesignerRegistry
     private readonly List<IDesignerRuntimePreviewContributionProvider> _runtimePreviewContributionProviders = new();
     private readonly List<PluginLoadReport> _pluginLoadReports = new();
 
+    public static DesignerRegistry CreateForHost(Hosting.IDesignerHostServices host)
+    {
+        var registry = new DesignerRegistry();
+        BuiltIn.BuiltInControlRegistrar.Register(registry);
+        registry.RegisterBindingProvider(new Binding.ReflectionBindingMetadataProvider(host.Paths.ApplicationBaseDirectory));
+        new PluginLoader(new TraceDesignerLogger()).LoadFromFolder(host.Paths.PluginDirectory, registry, replaceDiagnostics: true);
+        return registry;
+    }
+
+    public static (string? FullName, string? Assembly, Type? FrameworkType) NativeIdentity(IControlDescriptor descriptor)
+    {
+        if (descriptor is IDesignerNativeTypeDescriptor plugin)
+            return (plugin.NativeTypeName, plugin.NativeAssemblyName, null);
+        if (descriptor.GetType().Assembly != typeof(DesignerRegistry).Assembly) return default;
+        var type = Metadata.StandardControlProperties.PropertyTypeFor(descriptor.TypeKey)
+            ?? AxamlRoundTrip.AxamlControlMetadata.Find(descriptor.TypeKey)?.NativeType;
+        return (type?.FullName, type?.Assembly.GetName().Name, type);
+    }
+
+    // The exporter can supply runtime packages through a provider. It cannot publish
+    // a design-time plugin DLL as a compatible dependency of the generated project.
+    public static bool CanExportNativeType(IDesignerRegistry registry, IControlDescriptor descriptor)
+    {
+        if (descriptor is not IDesignerNativeTypeDescriptor plugin) return true;
+        if (Metadata.AvaloniaMetadataCatalog.FrameworkAssemblies.Any(a =>
+            a.GetName().Name == plugin.NativeAssemblyName && a.GetType(plugin.NativeTypeName) != null)) return true;
+        return descriptor is IDesignerControlProviderMetadata provider &&
+            registry.GetExportContributionProviders().Any(p =>
+                string.Equals(p.ProviderId, provider.ProviderId, StringComparison.OrdinalIgnoreCase));
+    }
+
     public void RegisterControl(IControlDescriptor descriptor)
     {
         ArgumentNullException.ThrowIfNull(descriptor);

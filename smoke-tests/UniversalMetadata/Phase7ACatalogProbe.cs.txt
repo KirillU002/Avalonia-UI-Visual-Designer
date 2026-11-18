@@ -1,0 +1,42 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Text.Json;
+using Avalonia.Controls;
+using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.LogicalTree;
+using Avalonia.Threading;
+using Avalonia.VisualTree;
+
+internal static class MetadataRuntimeProbe
+{
+    public static void Attach(IClassicDesktopStyleApplicationLifetime desktop,Window window)
+    {
+        window.ShowInTaskbar=false;
+        window.ShowActivated=false;
+        window.Opened+=(_,_)=>Dispatcher.UIThread.Post(()=>
+        {
+            var result=Environment.GetEnvironmentVariable("METADATA_RUNTIME_RESULT")!;
+            try
+            {
+                var dir=Path.GetDirectoryName(result)!;
+                var expected=JsonSerializer.Deserialize<Dictionary<string,string>>(File.ReadAllText(Path.Combine(dir,"expected.json")))!;
+                var all=window.GetVisualDescendants().OfType<Control>().Concat(window.GetLogicalDescendants().OfType<Control>()).Distinct().ToArray();
+                var actual=new Dictionary<string,bool>();
+                foreach(var pair in expected)
+                {
+                    var named=all.Where(c=>c.Name==pair.Key).ToArray();
+                    actual[pair.Key]=named.Any(c=>c.GetType().FullName==pair.Value ||
+                        c.GetVisualDescendants().OfType<Control>().Any(child=>child.GetType().FullName==pair.Value));
+                }
+                File.WriteAllText(Path.Combine(dir,"materialized.json"),JsonSerializer.Serialize(actual));
+                var missing=actual.Where(e=>!e.Value).Select(e=>e.Key+"="+expected[e.Key]).ToArray();
+                if(missing.Length!=0)throw new InvalidOperationException("Native controls not located: "+string.Join(", ",missing));
+                File.WriteAllText(result,"PASS runtime native identities: "+actual.Count);
+                window.Close();desktop.Shutdown(0);
+            }
+            catch(Exception ex){File.WriteAllText(result,"FAIL "+ex);desktop.Shutdown(1);}
+        },DispatcherPriority.Background);
+    }
+}

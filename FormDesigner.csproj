@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0</TargetFramework>
@@ -10,6 +10,9 @@
     <Nullable>enable</Nullable>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AvaloniaUseCompiledBindingsByDefault>false</AvaloniaUseCompiledBindingsByDefault>
+    <!-- Optional plugin projects outside the solution must use the host's configuration.
+         Otherwise a Release solution can package a stale Release DLL after rebuilding Debug. -->
+    <ShouldUnsetParentConfigurationAndPlatform>false</ShouldUnsetParentConfigurationAndPlatform>
     <BuildExperimentalEremexPlugin Condition="'$(BuildExperimentalEremexPlugin)' == ''">true</BuildExperimentalEremexPlugin>
   </PropertyGroup>
 

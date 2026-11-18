@@ -1371,8 +1371,8 @@ public partial class MainWindowViewModel : ObservableObject
     public bool HasNoStructureTreeControls => !HasStructureTreeControls;
     public bool HasStructureSearchText => !string.IsNullOrWhiteSpace(StructureSearchText);
     public bool IsStructureTreeEmptyStateVisible =>
-        !HasStructureTreeControls
-        || (HasStructureSearchText && (StructureTreeItems.FirstOrDefault()?.Children.Count ?? 0) == 0);
+        !IsSourceTreeVisible && (!HasStructureTreeControls
+        || (HasStructureSearchText && (StructureTreeItems.FirstOrDefault()?.Children.Count ?? 0) == 0));
     public string StructureTreeEmptyText => HasStructureSearchText
         ? "Ничего не найдено. Попробуйте другой фрагмент имени или типа."
         : "Элементов пока нет. Перетащите компонент на форму.";
@@ -5469,6 +5469,7 @@ public partial class MainWindowViewModel : ObservableObject
         if (_isStructureTreeRefreshSuspended)
             return;
 
+        RefreshSourceTree();
         var stopwatch = Stopwatch.StartNew();
         var previousExpandedIds = EnumerateStructureTreeItems()
             .Where(item => item.IsExpanded)
@@ -9557,12 +9558,15 @@ public partial class MainWindowViewModel : ObservableObject
         if (selected.Count > 0 && selected.All(control => CanEditAxamlProperty(control, row.Key)))
             return row;
         var value = row.Value;
+        var reason = "AXAML: свойство сохраняется без редактирования.";
         var key = row.Key switch { "X" => "Canvas.Left", "Y" => "Canvas.Top", _ => row.Key };
         if (SelectedControl is { } control && _activeAxamlRoundTripDocument.SourceMap.TryGet(control.Id, out var reference))
         {
             var property = reference.Capability.Properties.FirstOrDefault(p => p.Key == key);
             if (property is not null)
             {
+                if (property.Reason == "ExistingSourceLiteralRequired")
+                    reason = "Для этого свойства можно изменить только явно заданное значение в исходном AXAML.";
                 var element = _activeAxamlRoundTripDocument.CapabilityReport.PropertyElements.FirstOrDefault(p => p.Element.Parent == reference.Element
                     && p.PropertyName == property.SourceName.Split('.').Last());
                 value = reference.Element.GetAttributeValue(property.SourceName)
@@ -9571,7 +9575,7 @@ public partial class MainWindowViewModel : ObservableObject
             }
         }
         return new PropertyGridRowViewModel(row.Key, row.Label, row.Category, PropertyGridEditorKind.ReadOnly,
-            value, "AXAML: свойство сохраняется без редактирования.", isReadOnly: true, isFavorite: row.IsFavorite,
+            value, reason, isReadOnly: true, isFavorite: row.IsFavorite,
             contextDocumentId: row.ContextDocumentId, contextControlId: row.ContextControlId,
             contextControlName: row.ContextControlName, contextControlType: row.ContextControlType) { ContextRevision = row.ContextRevision };
     }
@@ -9620,8 +9624,10 @@ public partial class MainWindowViewModel : ObservableObject
         }
         var refreshed = _axamlImportService.Import(patchedText, path, idsByName);
         AxamlPatchWriter.RebaseExpressionSnapshots(refreshed.RoundTripDocument,acknowledgedDocument);
+        refreshed.RoundTripDocument.Recognition = _activeAxamlRoundTripDocument.Recognition;
         refreshed.RoundTripDocument.SetTextEncoding(_activeAxamlRoundTripDocument.TextEncoding);
         _activeAxamlRoundTripDocument = refreshed.RoundTripDocument;
+        RefreshSourceTree();
         RebuildPropertyGrid("AxamlPatchAcknowledged");
         MarkDocumentSaved(path, acknowledgedSnapshot);
         LogWorkspace(WorkspaceLogLevel.Success, OutputCategoryDiagnostics, "AXAML_PATCH_APPLIED", $"path={path}; controls={Controls.Count}");
@@ -13680,6 +13686,20 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void EnsureExportPipelineResultFresh()
     {
+        if (ActiveAxamlSourceDocument is {} source)
+        {
+            var opaque = source.CapabilityReport.Elements.FirstOrDefault(e => e.Mode == AxamlElementCapabilityMode.Opaque ||
+                e.Properties.Any(p => p.Mode != AxamlPropertyCapabilityMode.Editable &&
+                    AxamlControlMetadata.HasSourceValue(e.Element, p.SourceName)));
+            var projection = source.SourceMap.Controls.FirstOrDefault(r => r.ControlType == "Group" &&
+                r.Element.LocalName != "Canvas");
+            if (opaque != null || projection != null)
+                throw new InvalidOperationException($"Экспорт проекции потеряет исходную разметку {opaque?.Element.Name ?? projection!.Element.Name}. Сохраните AXAML через применение изменений к исходному файлу.");
+        }
+        if (IncludePluginRuntimeReferences)
+            foreach (var key in GetUsedProjectControlTypeKeys())
+                if (_registry.TryGetControl(key, out var descriptor) && !DesignerRegistry.CanExportNativeType(_registry, descriptor))
+                    throw new InvalidOperationException($"Экспорт {key} требует runtime-сборку, для которой плагин не предоставляет зависимость проекта.");
         EnsureLocalItemsSourcesExportable();
         if (GeneratedFiles.Count == 0 || IsExportCacheStale)
             GenerateXaml();
@@ -23412,6 +23432,7 @@ public partial class MainWindowViewModel : ObservableObject
     private void HandleSelectedControlChanged(DesignControlModel? value)
     {
         using var profile = LayoutDropProfile.Stage("Selection.Changed");
+        if (_selectedSourceNode != null) SelectedSourceNode = null;
         if (_suppressNextSelectedControlChangedForSameSelection)
         {
             TraceDocumentDebug(

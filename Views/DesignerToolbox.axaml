@@ -41,7 +41,7 @@
                             BorderThickness="0,0,0,1"
                             CornerRadius="0"
                             PointerPressed="ToolboxItem_PointerPressed"
-                            ToolTip.Tip="{Binding Description}">
+                            ToolTip.Tip="{Binding OperationHint}">
                       <Grid ColumnDefinitions="Auto,*,Auto" MinHeight="26">
                         <Border Width="18" Height="18" CornerRadius="4" Background="#DBEAFE" VerticalAlignment="Center">
                           <TextBlock Text="{Binding Icon}" Foreground="#1D4ED8" FontSize="8" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>

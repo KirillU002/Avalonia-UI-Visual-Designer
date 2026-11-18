@@ -1,0 +1,29 @@
+<av:Window xmlns:av="https://github.com/avaloniaui"
+           xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+           xmlns:avc="clr-namespace:Avalonia.Controls;assembly=Avalonia.Controls"
+           xmlns:panels="using:Avalonia.Controls"
+           xmlns:local="clr-namespace:FormDesigner.ExportSmokeTests;assembly=FormDesigner.ExportSmokeTests"
+           xmlns:ex="https://schemas.eremexcontrols.net/avalonia/editors"
+           xmlns:u="urn:unknown" xmlns:bad="clr-namespace:Avalonia.Controls;assembly=Missing">
+  <av:Window.Resources><av:SolidColorBrush x:Key="Accent" Color="#773388"/></av:Window.Resources>
+  <av:Window.Styles><av:Style Selector="Button.test"><av:Setter Property="Opacity" Value="0.8"/></av:Style></av:Window.Styles>
+  <av:Grid x:Name="Root" RowDefinitions="Auto,*">
+    <!-- preserve the alias, indentation and neighbours -->
+    <panels:StackPanel Grid.Row="1">
+      <avc:Button x:Name="KnownButton" Content="{Binding Order.Title, FallbackValue=none}"/>
+      <av:ContentControl><av:Border><av:TextBlock Foreground="{DynamicResource Accent}"/></av:Border></av:ContentControl>
+      <av:DataGrid x:Name="Orders" Width="140"><av:DataGrid.Columns>
+        <av:DataGridTextColumn Header="Title" Binding="{Binding Title}"/>
+        <av:DataGridCheckBoxColumn Header="Active"/><u:DataGridTextColumn Header="Unknown"/>
+      </av:DataGrid.Columns></av:DataGrid>
+      <av:Image x:Name="Logo" Source="{Binding Image}"/>
+      <av:Path Data="M0,0 L10,10"/><av:PathIcon Data="M0,0 L10,10"/>
+      <av:ListBox><av:ListBox.ItemTemplate><av:DataTemplate><av:ItemsControl>
+        <av:ItemsControl.ItemTemplate><av:DataTemplate><av:TextBlock Text="{Binding .}"/></av:DataTemplate></av:ItemsControl.ItemTemplate>
+      </av:ItemsControl></av:DataTemplate></av:ListBox.ItemTemplate></av:ListBox>
+      <local:RecognitionProbeControl u:Keep="literal &amp; raw"><av:Button Name="UnderOpaque"/></local:RecognitionProbeControl>
+      <ex:TextEditor Text="vendor"/>
+      <bad:Button/><u:Button/>
+    </panels:StackPanel>
+  </av:Grid>
+</av:Window>
