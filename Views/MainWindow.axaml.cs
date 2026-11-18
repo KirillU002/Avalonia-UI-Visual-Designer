@@ -252,7 +252,7 @@ public partial class MainWindow : Window
         UpdateDesignerViewportCursor();
     }
 
-    private MainWindowViewModel VM => (MainWindowViewModel)DataContext!;
+    private MainWindowViewModel VM => _templateDraft ?? (MainWindowViewModel)DataContext!;
 
     // DesignerSurface owns the visual tree. These compatibility accessors keep
     // the existing, extensively tested interaction implementation intact while
@@ -438,6 +438,13 @@ public partial class MainWindow : Window
 
     private async void MainWindow_Closing(object? sender, WindowClosingEventArgs e)
     {
+        if (_templateDraft != null && !_isCloseConfirmed)
+        {
+            e.Cancel = true;
+            TemplateMessage.Text = "Примените изменения шаблона или закройте редактор кнопкой Отмена.";
+            return;
+        }
+        if (_templateDraft != null) LeaveTemplate();
         if (!_isCloseConfirmed)
         {
             e.Cancel = true;
@@ -1397,23 +1404,23 @@ public partial class MainWindow : Window
 
     private async Task SaveAppSettingsNowAsync()
     {
-        if (DataContext is not MainWindowViewModel)
+        if (DataContext is not MainWindowViewModel form)
             return;
 
-        _appSettings.RecentFiles = VM.RecentFiles.ToList();
-        _appSettings.PropertyGrid = VM.CapturePropertyGridSettings();
-        _appSettings.PropertyGridFavorites = VM.CapturePropertyGridFavorites();
-        _appSettings.PropertyGridCollapsedCategories = VM.CapturePropertyGridCollapsedCategories();
-        _appSettings.General = VM.CaptureGeneralSettings();
-        _appSettings.CanvasEditor = VM.CaptureCanvasEditorSettings();
-        _appSettings.Interface = VM.CaptureInterfaceSettings();
-        _appSettings.UiDensity = VM.CaptureUiDensitySettings();
-        _appSettings.Preview = VM.CapturePreviewSettings();
-        _appSettings.BuildAndLogs = VM.CaptureBuildAndLogsSettings();
-        _appSettings.SqlServer = VM.CaptureSqlServerSettings();
-        _appSettings.PostgreSql = VM.CapturePostgreSqlSettings();
-        _appSettings.Advanced = VM.CaptureAdvancedSettings();
-        _appSettings.ExportCache = VM.CaptureExportCache();
+        _appSettings.RecentFiles = form.RecentFiles.ToList();
+        _appSettings.PropertyGrid = form.CapturePropertyGridSettings();
+        _appSettings.PropertyGridFavorites = form.CapturePropertyGridFavorites();
+        _appSettings.PropertyGridCollapsedCategories = form.CapturePropertyGridCollapsedCategories();
+        _appSettings.General = form.CaptureGeneralSettings();
+        _appSettings.CanvasEditor = form.CaptureCanvasEditorSettings();
+        _appSettings.Interface = form.CaptureInterfaceSettings();
+        _appSettings.UiDensity = form.CaptureUiDensitySettings();
+        _appSettings.Preview = form.CapturePreviewSettings();
+        _appSettings.BuildAndLogs = form.CaptureBuildAndLogsSettings();
+        _appSettings.SqlServer = form.CaptureSqlServerSettings();
+        _appSettings.PostgreSql = form.CapturePostgreSqlSettings();
+        _appSettings.Advanced = form.CaptureAdvancedSettings();
+        _appSettings.ExportCache = form.CaptureExportCache();
         _appSettings.Session = CaptureSessionState();
         await _appSettingsService.SaveAsync(_appSettings);
     }
@@ -1497,10 +1504,10 @@ public partial class MainWindow : Window
 
     private async void AutosaveTimer_Tick(object? sender, EventArgs e)
     {
-        if (UsesHostDocumentBuffer || VM.IsAxamlRoundTripDocument || _isAutosaveRunning
-            || DataContext is not MainWindowViewModel
-            || !VM.HasUnsavedWorkspaceChanges
-            || VM.IsBusy
+        if (_templateDraft != null || DataContext is not MainWindowViewModel form) return;
+        if (UsesHostDocumentBuffer || form.IsAxamlRoundTripDocument || _isAutosaveRunning
+            || !form.HasUnsavedWorkspaceChanges
+            || form.IsBusy
             || _isDragging
             || _isMarqueeSelecting
             || _isResizing
@@ -1512,7 +1519,7 @@ public partial class MainWindow : Window
 
         if (_hasUnresolvedRecoveryDraft)
         {
-            VM.AutosaveStatusText = "Автосохранение приостановлено: сначала восстановите или удалите найденный черновик через меню восстановления.";
+            form.AutosaveStatusText = "Автосохранение приостановлено: сначала восстановите или удалите найденный черновик через меню восстановления.";
             return;
         }
 
@@ -1522,24 +1529,24 @@ public partial class MainWindow : Window
         {
             var draft = new RecoveryDraftFileModel
             {
-                SessionId = VM.DocumentSessionId,
-                DocumentPath = VM.CurrentDocumentPath,
-                DocumentDisplayName = VM.GetRecoveryDisplayName(),
+                SessionId = form.DocumentSessionId,
+                DocumentPath = form.CurrentDocumentPath,
+                DocumentDisplayName = form.GetRecoveryDisplayName(),
                 LastAutosaveUtc = DateTime.UtcNow,
                 HasUnsavedChanges = true,
-                DocumentJson = VM.ExportDocumentJson()
+                DocumentJson = form.ExportDocumentJson()
             };
 
             await _autosaveRecoveryService.SaveDraftAsync(draft);
-            VM.AutosaveStatusText = $"Черновик автосохранён: {DateTime.Now:HH:mm:ss}";
+            form.AutosaveStatusText = $"Черновик автосохранён: {DateTime.Now:HH:mm:ss}";
             _appSettings.Autosave.LastAutosaveUtc = draft.LastAutosaveUtc;
             _appSettings.Autosave.LastDraftPath = _autosaveRecoveryService.RecoveryFilePath;
-            VM.LogWorkspace(WorkspaceLogLevel.Success, MainWindowViewModel.OutputCategoryBackgroundTasks, "Autosave completed.", _autosaveRecoveryService.RecoveryFilePath);
+            form.LogWorkspace(WorkspaceLogLevel.Success, MainWindowViewModel.OutputCategoryBackgroundTasks, "Autosave completed.", _autosaveRecoveryService.RecoveryFilePath);
             ScheduleSettingsSave();
         }
         catch (Exception ex)
         {
-            VM.AutosaveStatusText = $"Ошибка автосохранения: {ex.Message}";
+            form.AutosaveStatusText = $"Ошибка автосохранения: {ex.Message}";
         }
         finally
         {
@@ -2316,6 +2323,15 @@ public partial class MainWindow : Window
 
     private void MainWindow_KeyDown(object? sender, KeyEventArgs e)
     {
+        if (_templateDraft != null)
+        {
+            if (e.Source is not TextBox && e.KeyModifiers == KeyModifiers.Control && e.Key is Key.Z or Key.Y)
+            {
+                (e.Key == Key.Z ? VM.UndoCommand : VM.RedoCommand).Execute(null);
+                e.Handled = true;
+            }
+            return;
+        }
         if (e.Key == Key.Escape && _contextMenuPointer is not null)
         { CancelPendingContextMenu(); e.Handled = true; return; }
         if (DataContext is not MainWindowViewModel)
@@ -4382,6 +4398,7 @@ public partial class MainWindow : Window
             preview.Margin = default; // The wrapper already owns the measured source frame.
         }
         VM.ApplyFormStyle(preview, model);
+        if (model.ItemTemplate is {} template) MainWindowViewModel.ApplyNativeItemTemplate(preview, model.Type, template, VM.Registry, VM.AppearanceDraft(), designSurface: true);
 
         var root = new Canvas
         {

@@ -3320,16 +3320,17 @@ public partial class MainWindowViewModel : ObservableObject
         var groups = new Dictionary<string, ToolboxGroupModel>(StringComparer.OrdinalIgnoreCase);
         foreach (var descriptor in _registry.GetControls())
         {
-            if (descriptor is MissingPluginDescriptor)
+            if (descriptor is MissingPluginDescriptor || IsTemplateDraft && !ItemTemplateDesign.SupportsDescriptor(descriptor.TypeKey))
                 continue;
 
-            if (!MatchesToolboxSearch(descriptor, ToolboxSearchText))
+            var templateDock = IsTemplateDraft && descriptor.TypeKey == DesignerControlTypes.Group;
+            if (!MatchesToolboxSearch(descriptor, ToolboxSearchText) && !(templateDock && "DockPanel".Contains(ToolboxSearchText ?? "", StringComparison.OrdinalIgnoreCase)))
                 continue;
 
             var provider = ResolveToolboxProvider(descriptor);
             var item = new ToolboxItem
             {
-                Title = descriptor.Title,
+                Title = templateDock ? "DockPanel" : descriptor.Title,
                 Type = descriptor.TypeKey,
                 Category = descriptor.Category,
                 Description = descriptor.Description,
@@ -6962,11 +6963,17 @@ public partial class MainWindowViewModel : ObservableObject
     {
         if(IsAxamlRoundTripDocument)return InsertAxamlControl(type,parentId??(CanHostChildren(SelectedControl)?SelectedControl?.Id:SelectedControl?.ParentId),x,y)
             ??throw new InvalidOperationException(StatusText);
-        return CreateControlCore(type, x, y, parentId, bypassGridSnap, ActiveDocumentId, "CreateControl");
+        if (!IsTemplateDraft) return CreateControlCore(type, x, y, parentId, bypassGridSnap, ActiveDocumentId, "CreateControl");
+        BeginGridEditorUndoBatch();
+        try { return CreateControlCore(type, x, y, parentId, bypassGridSnap, ActiveDocumentId, "CreateControl"); }
+        finally { CommitGridEditorUndoBatch(); }
     }
 
     private DesignControlModel CreateControlCore(string type, double x, double y, string? parentId, bool bypassGridSnap, string documentId, string reason, GridDropTarget? gridTarget = null)
     {
+        if (IsTemplateDraft && type == "DockPanel") type = DesignerControlTypes.Group;
+        if (IsTemplateDraft && !ItemTemplateDesign.SupportsDescriptor(type))
+            throw new InvalidOperationException("Этот тип недоступен в ItemTemplate.");
         using var profileStage = LayoutDropProfile.Stage("CreateControlCore");
         // Контрол всегда создается из стартового шаблона,
         // а координаты сразу привязываются к сетке и границам контейнера.
@@ -6974,8 +6981,10 @@ public partial class MainWindowViewModel : ObservableObject
         if(parentModel is not null && FormDesigner.DesignerSystem.Metadata.StandardControlProperties.IsSingleChild(parentModel.Type) && Controls.Any(c=>c.ParentId==parentModel.Id))
             throw new InvalidOperationException("Контейнер принимает один Child/Content. Добавьте вложенный Layout для нескольких компонентов.");
         var model = CreateDefaultControl(type);
+        if (IsTemplateDraft && type == DesignerControlTypes.Image && model.ImageSource == "avares://FormDesigner/Assets/avalonia-logo.ico")
+            model.ImageSource = "";
         LayoutDropProfile.Affect(model.Id);
-        model.Name = GetUniqueControlName(type);
+        model.Name = GetUniqueControlName(IsTemplateDraft && type == DesignerControlTypes.Group ? "DockPanel" : type);
         model.ParentId = NormalizeId(parentId);
         var parentLayoutMode = GetLayoutModeForParent(model.ParentId);
 
@@ -12585,7 +12594,8 @@ public partial class MainWindowViewModel : ObservableObject
         if (SelectedControl is null || GetLayoutModeForParent(SelectedControl.ParentId) != DesignerLayoutModes.Stack)
             return;
 
-        BeginUndoBatch();
+        if (IsTemplateDraft) BeginGridEditorUndoBatch();
+        else BeginUndoBatch();
         try
         {
             var siblings = GetChildControls(SelectedControl.ParentId)
@@ -12607,7 +12617,8 @@ public partial class MainWindowViewModel : ObservableObject
         }
         finally
         {
-            CommitUndoBatch();
+            if (IsTemplateDraft) CommitGridEditorUndoBatch();
+            else CommitUndoBatch();
         }
     }
 
@@ -13468,7 +13479,12 @@ public partial class MainWindowViewModel : ObservableObject
 
         sb.AppendLine(GetRootContainerClosingTag());
         sb.AppendLine("</Window>");
-        GeneratedXaml = FormDesigner.DesignerSystem.Metadata.PropertyExpressionProjection.ApplyGenerated(ApplyAuthoredClasses(sb.ToString()),Controls,GetExportControlName);
+        GeneratedXaml = ApplyItemTemplates(FormDesigner.DesignerSystem.Metadata.PropertyExpressionProjection.ApplyGenerated(ApplyAuthoredClasses(sb.ToString()),Controls,GetExportControlName));
+        if (IsTemplateDraft)
+        {
+            _activeLayoutExportPlan = null;
+            return;
+        }
         GeneratedCSharp = BuildGeneratedCSharp();
         GeneratedBindingGuide = BuildGeneratedBindingGuide();
         if (_isGeneratingSecondaryFormExport)
@@ -17051,6 +17067,7 @@ public partial class MainWindowViewModel : ObservableObject
         model.PluginId = string.IsNullOrWhiteSpace(model.PluginId) ? definition.PluginId : model.PluginId;
         model.PluginVersion = string.IsNullOrWhiteSpace(model.PluginVersion) ? definition.PluginVersion : model.PluginVersion;
         ConfigureNativeControl(model);
+        if (IsTemplateDraft && type == DesignerControlTypes.Group) model.ChildLayoutMode = DesignerLayoutModes.Dock;
         return model;
     }
 
@@ -21307,6 +21324,7 @@ public partial class MainWindowViewModel : ObservableObject
             GridRowDefinitions = control.GridRowDefinitions,
             ShowGridLines = control.ShowGridLines,
             AutoGenerateColumns = control.AutoGenerateColumns,
+            ItemTemplate = control.ItemTemplate,
             BindingSourceId = control.BindingSourceId,
             TextBindingPath = control.TextBindingPath,
             GeneratedButtonActionKey = control.GeneratedButtonActionKey,
@@ -21537,6 +21555,7 @@ public partial class MainWindowViewModel : ObservableObject
             GridRowDefinitions = controlFile.GridRowDefinitions ?? "",
             ShowGridLines = controlFile.ShowGridLines,
             AutoGenerateColumns = controlFile.AutoGenerateColumns,
+            ItemTemplate = controlFile.ItemTemplate,
             BindingSourceId = controlFile.BindingSourceId,
             TextBindingPath = controlFile.TextBindingPath,
             GeneratedButtonActionKey = controlFile.GeneratedButtonActionKey,
@@ -22542,6 +22561,7 @@ public partial class MainWindowViewModel : ObservableObject
 
     private void RaiseSelectionProperties()
     {
+        OnPropertyChanged(nameof(CanOpenItemTemplate));
         OnPropertyChanged(nameof(HasSelectedControl));
         OnPropertyChanged(nameof(HasNoSelectedControl));
         OnPropertyChanged(nameof(IsContextualToolbarVisible));
@@ -23400,7 +23420,8 @@ public partial class MainWindowViewModel : ObservableObject
                 toOutput: false);
             _suppressNextSelectedControlChangedForSameSelection = false;
             _suppressNextSelectedControlChangedReason = "";
-            OnPropertyChanged(nameof(HasSelectedControl));
+            OnPropertyChanged(nameof(CanOpenItemTemplate));
+        OnPropertyChanged(nameof(HasSelectedControl));
             OnPropertyChanged(nameof(HasNoSelectedControl));
             OnPropertyChanged(nameof(SelectedControlSummary));
             RaiseSelectionProperties();
@@ -23427,6 +23448,7 @@ public partial class MainWindowViewModel : ObservableObject
 
         RebuildDescriptorCustomPropertyEditors();
         RebuildPropertyGrid("SelectedControlChanged");
+        OnPropertyChanged(nameof(CanOpenItemTemplate));
         OnPropertyChanged(nameof(HasSelectedControl));
         OnPropertyChanged(nameof(HasNoSelectedControl));
         OnPropertyChanged(nameof(CanEditText));

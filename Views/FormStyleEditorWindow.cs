@@ -254,7 +254,7 @@ public sealed class FormStyleEditorWindow : Window
     }
     private void BuildSource(StackPanel body)
     {
-        var fields = _vm.StyleFields.ToArray();
+        var fields = _vm.StyleFields.Where(f => f.TemplateOwner == null).ToArray();
         var list = new ListBox { ItemsSource = fields.Select(f => f.Label).ToArray(), Height = 220 };
         var input = new TextBox();
         list.SelectionChanged += (_,_) => { if (list.SelectedIndex >= 0) input.Text = fields[list.SelectedIndex].Value; };

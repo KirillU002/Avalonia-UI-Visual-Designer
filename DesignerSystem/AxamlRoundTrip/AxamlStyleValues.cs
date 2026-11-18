@@ -7,11 +7,11 @@ using System.Linq;
 namespace FormDesigner.DesignerSystem.AxamlRoundTrip;
 
 public sealed record StyleSourceValue(string Id, string Label, string Value, AxamlTextSpan Span, char Quote,
-    FormResource? Resource, string? Target, string? Property);
+    FormResource? Resource, string? Target, string? Property, string? TemplateOwner = null);
 
 // Only direct Window declarations participate. Paths are local to the fixed Styles/Resources
 // slot, independent of offsets and of insertions/reorders in the visual tree.
-public sealed class AxamlStyleValues
+public sealed partial class AxamlStyleValues
 {
     public FormAppearance Sheet { get; } = new();
     public List<StyleSourceValue> Fields { get; } = new();
@@ -80,6 +80,7 @@ public sealed class AxamlStyleValues
             for (var i = 0; i < styles[0].Children.Count; i++)
                 result.ReadStyle(syntax,styles[0].Children[i],i);
         }
+        result.ReadItemTemplateValues(syntax);
         var ambiguous = result.Fields.GroupBy(f => f.Id).Where(g => g.Count() > 1).Select(g => g.Key).ToHashSet();
         result.Fields.RemoveAll(f => ambiguous.Contains(f.Id));
         if (ambiguous.Count != 0) result.Notices.Add("Повторяющиеся ключи доступны только для чтения.");
@@ -209,6 +210,11 @@ public sealed class AxamlStyleValues
                     foreach (var setter in style.Setters)
                         if (PropertyExpressions.TryResource(setter.Value,PropertyExpressions.Classify(setter.Value),out var key) && key == r.Key)
                             FormStyleAuthoring.CheckSetter(candidate,style.Target,setter);
+            }
+            else if (field.TemplateOwner != null)
+            {
+                if (!CanEditTemplateValue(field.Target!, field.Property!, value))
+                    throw new InvalidOperationException("Недопустимое значение свойства ItemTemplate.");
             }
             else FormStyleAuthoring.CheckSetter(catalog.Sheet,field.Target!,new(field.Property!,value));
             var escaped = Encode(value,field.Quote);

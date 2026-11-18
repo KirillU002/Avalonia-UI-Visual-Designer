@@ -83,6 +83,8 @@ public class DesignerDocumentFileModel
 
 public class DesignerControlFileModel
 {
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public ItemTemplateDesign? ItemTemplate { get; set; }
     public string Id { get; set; } = "";
     public string Type { get; set; } = "";
     public string Name { get; set; } = "";

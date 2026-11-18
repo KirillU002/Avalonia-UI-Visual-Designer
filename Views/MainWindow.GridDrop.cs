@@ -39,7 +39,8 @@ public partial class MainWindow
 
     private void TraceGridDrag(string code, GridDropTarget? target = null, string reason = "", string? controlId = null)
     {
-        if (_attachedViewModel is not { } vm) return;
+        if (_attachedViewModel == null) return;
+        var vm = VM;
         var origin = _gridDragOrigin;
         var record = new GridDragDiagnostic(code, origin?.DocumentId ?? (_gridToolboxSourceDocument.Length > 0 ? _gridToolboxSourceDocument : vm.ActiveDocumentId), controlId ?? origin?.Model.Id ?? "",
             origin?.Parent ?? "", target?.ParentId ?? "", origin?.Row ?? -1, origin?.Column ?? -1,

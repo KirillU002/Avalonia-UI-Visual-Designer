@@ -60,6 +60,13 @@ internal static partial class Program
         if (args.Contains("--universal5f-checks")) return RunUniversal5FChecks();
         if (args.Contains("--universal5g-api")) return Inspect5GApi();
         if (args.Contains("--universal5g-checks")) return Run5GChecks();
+        if (args.Contains("--universal6c-profile")) return ProfileItemTemplate(args[^1]);
+        if (args.Contains("--universal6c-checks")) return Run6CChecks();
+        if (args.Contains("--universal6c-generated"))
+        {
+            try { return TemplateProjects(args[^1]); }
+            catch (Exception error) { Console.Error.WriteLine(error); return 1; }
+        }
         if (args.Contains("--universal6b-export-profile")) return ProfileStyleExport(args[^1]);
         if (args.Contains("--universal6b-profile")) return ProfileStyleEditor(args[^1]);
         if (args.Contains("--universal6b-checks")) return Run6BChecks();

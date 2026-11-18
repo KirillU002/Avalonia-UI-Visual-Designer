@@ -1671,6 +1671,7 @@ public partial class PreviewWindow : Window
         created.IsEnabled = IsRuntimeControlEnabled(control);
         FormDesigner.DesignerSystem.Metadata.StandardControlProperties.NativePropertyTarget(created,control.Type).IsEnabled=IsRuntimeControlEnabled(control);
         FormDesigner.DesignerSystem.Metadata.FormStyleProjection.Apply(created,_document.Appearance,control.Id,control.Name,control.Type);
+        if (control.ItemTemplate is {} template) FormDesigner.ViewModels.MainWindowViewModel.ApplyNativeItemTemplate(created, control.Type, template, _registry, _document.Appearance);
         TrackPreviewControl(control, created);
         return created;
     }

@@ -10,6 +10,13 @@ namespace FormDesigner.DesignerSystem.Metadata;
 
 public static class PropertyExpressionProjection
 {
+    private static bool InTemplate(AxamlElementSyntax element)
+    {
+        for (var parent = element.Parent; parent != null; parent = parent.Parent)
+            if (parent.LocalName is "DataTemplate" or "ControlTemplate" or "TreeDataTemplate") return true;
+        return false;
+    }
+
     // One explicit overlay on the existing generator's output, using its existing
     // syntax/span machinery. Never serializes a complete imported document.
     public static string ApplyGenerated(string text,IEnumerable<DesignControlModel> models,Func<DesignControlModel,string> name, bool safePreview=false)
@@ -19,7 +26,7 @@ public static class PropertyExpressionProjection
         var syntax=AxamlSyntaxDocument.Parse(text);var nodes=Descendants(syntax.Root).ToArray();var edits=new List<AxamlTextEdit>();
         foreach(var model in targets)
         {
-            var matching=nodes.Where(e=>(e.GetAttributeValue("x:Name")??e.GetAttributeValue("Name"))==name(model)).ToArray();
+            var matching=nodes.Where(e=>(e.GetAttributeValue("x:Name")??e.GetAttributeValue("Name"))==name(model) && !InTemplate(e)).ToArray();
             if(matching.Length!=1)throw new InvalidOperationException("Expression export target is ambiguous: "+model.Name);
             var node=matching[0];var additions=new List<string>();
             foreach(var entry in model.CustomProperties.Where(p=>p.Key.StartsWith(PropertyExpressions.Prefix,StringComparison.Ordinal)))

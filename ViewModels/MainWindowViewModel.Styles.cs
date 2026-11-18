@@ -38,6 +38,8 @@ public partial class MainWindowViewModel
         return doc.StyleCatalog.Notices.Concat(notices).Distinct().ToArray();
     }
 
+    internal string OriginalTemplateFieldValue(StyleSourceValue field) => (_axamlBufferSource ?? _activeAxamlRoundTripDocument)?.StyleCatalog.Fields.SingleOrDefault(f => f.Id == field.Id)?.Value ?? field.Value;
+
     public void SaveSourceStyleValue(string documentId,StyleSourceValue field,string value)
     {
         if (ActiveDocumentId != documentId || IsBusy || !StyleFields.Any(f => ReferenceEquals(f,field)))

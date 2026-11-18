@@ -92,7 +92,8 @@ public partial class PreviewWindow
                 if (!string.IsNullOrEmpty(model.BindingSourceId))
                 {
                     var configured = (ListBox)StandardItemsControlFactory.Create(model, StandardListRows(model));
-                    list.ItemsSource = configured.ItemsSource; list.ItemTemplate = configured.ItemTemplate;
+                    list.ItemsSource = configured.ItemsSource;
+                    if (model.ItemTemplate == null) list.ItemTemplate = configured.ItemTemplate;
                 }
                 continue;
             }

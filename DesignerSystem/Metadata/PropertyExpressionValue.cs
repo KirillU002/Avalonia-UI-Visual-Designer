@@ -135,6 +135,7 @@ public static class PropertyExpressions
         && p.Key is not ("Name" or "DataContext" or "ItemsSource" or "SelectedItem" or "CaretIndex" or "SelectionStart" or "SelectionEnd" or "Grid.Row" or "Grid.Column" or "Grid.RowSpan" or "Grid.ColumnSpan" or "Canvas.Left" or "Canvas.Top" or "DockPanel.Dock")
         && (p.Editor is MetadataEditor.Text or MetadataEditor.Boolean or MetadataEditor.Number or MetadataEditor.Enumeration
             or MetadataEditor.Color or MetadataEditor.Thickness or MetadataEditor.CornerRadius or MetadataEditor.Font
+            || p.Property == Image.SourceProperty
             || p.Key is "Content" or "Header" or "Watermark" or "Command" or "CommandParameter" or "RenderTransform" or "RenderTransformOrigin" or "Clip" or "OpacityMask" or "TextDecorations" or "BoxShadow");
     public static bool Validate(AvaloniaPropertyInfo property, PropertyExpressionValue value)
     {

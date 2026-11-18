@@ -1,4 +1,4 @@
-﻿<Window xmlns="https://github.com/avaloniaui"
+<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
@@ -541,7 +541,8 @@
   </Window.Styles>
 
   <!-- Каркас всего окна: верхняя шапка конструктора и основная рабочая область. -->
-  <Grid RowDefinitions="Auto,*,Auto">
+  <Panel>
+  <Grid x:Name="FormWorkspace" RowDefinitions="Auto,*,Auto">
     <!-- Compact IDE command bar. Detailed document state lives in the status bar. -->
     <Border Grid.Row="0"
             Background="#0F172A"
@@ -1220,7 +1221,7 @@
                       Padding="6"
                       ClipToBounds="True">
                 <Grid>
-                <TreeView ItemsSource="{Binding StructureTreeItems}"
+                <TreeView x:Name="TemplateStructureTree" ItemsSource="{Binding StructureTreeItems}"
                           SelectedItem="{Binding SelectedStructureItem, Mode=TwoWay}">
                   <TreeView.Styles>
                     <Style Selector="TreeViewItem"
@@ -8350,6 +8351,27 @@
       </Grid>
     </Border>
   </Grid>
+  <Grid x:Name="TemplateWorkspace" IsVisible="False" RowDefinitions="Auto,*,Auto" ColumnDefinitions="230,*,360" Margin="8">
+    <StackPanel Grid.ColumnSpan="3" Orientation="Horizontal" Spacing="6" Margin="0,0,0,8">
+      <TextBlock x:Name="TemplateOwnerLabel" VerticalAlignment="Center" FontWeight="Bold"/>
+      <TextBox x:Name="TemplateItemsPathInput" Width="155" Watermark="Путь ItemsSource" ToolTip.Tip="Для пустой коллекции. Путь от DataContext владельца."/>
+      <Button Content="Применить" Click="CommitTemplate_Click"/>
+      <Button Content="Отмена" Click="CancelTemplate_Click"/>
+      <Button Content="Отменить действие" Command="{Binding UndoCommand}"/>
+      <Button Content="Повторить" Command="{Binding RedoCommand}"/>
+      <Button Content="Удалить компонент" Command="{Binding DeleteSelectedCommand}"/>
+      <Button Content="Предпросмотр" Click="PreviewTemplate_Click"/>
+      <Button Content="Удалить шаблон" Click="DeleteTemplate_Click"/>
+    </StackPanel>
+    <Grid Grid.Row="1" RowDefinitions="*,*">
+      <Border x:Name="TemplateToolboxSlot"/>
+      <Border x:Name="TemplateExplorerSlot" Grid.Row="1"/>
+    </Grid>
+    <Border Grid.Row="1" Grid.Column="1" x:Name="TemplateSurfaceSlot"/>
+    <ScrollViewer Grid.Row="1" Grid.Column="2"><Border x:Name="TemplateInspectorSlot"/></ScrollViewer>
+    <TextBlock Grid.Row="2" Grid.ColumnSpan="3" x:Name="TemplateMessage" TextWrapping="Wrap"/>
+  </Grid>
+  </Panel>
 </Window>
 
 

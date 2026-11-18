@@ -1,0 +1,71 @@
+using Avalonia.Controls;
+using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Media;
+using Avalonia.Styling;
+using Avalonia.Threading;
+using Avalonia.VisualTree;
+using System;
+using System.IO;
+using System.Linq;
+
+internal static class MetadataRuntimeProbe
+{
+    public sealed record Order(string Title, IImage Thumbnail);
+    public sealed record OrderList(Order[] Orders);
+
+    public static void Attach(IClassicDesktopStyleApplicationLifetime desktop, Window window)
+    {
+        window.ShowInTaskbar = false;
+        window.ShowActivated = false;
+        window.Opened += (_,_) => Dispatcher.UIThread.Post(() =>
+        {
+            try
+            {
+                var bound = window.GetVisualDescendants().OfType<ItemsControl>().Single(i => i.Name == "BoundOrders");
+                if (bound.Items.Count != 0) throw new Exception("Design sample data leaked into export");
+                var thumbnail = new DrawingImage { Drawing = new GeometryDrawing { Brush = Brushes.RoyalBlue, Geometry = new RectangleGeometry(new Avalonia.Rect(0,0,12,12)) } };
+                bound.DataContext = new OrderList(new[] { new Order("Actual order title",thumbnail) });
+                window.UpdateLayout();
+                if (!bound.GetVisualDescendants().OfType<TextBlock>().Any(t => t.Name == "BoundTitle" && t.Text == "Actual order title"
+                        && ReferenceEquals(t.DataContext,bound.Items[0])))
+                    throw new Exception("Collection and item binding scopes differ from the authored template.");
+                var rowControls = bound.GetVisualDescendants().OfType<Control>().ToArray();
+                if (rowControls.OfType<TextBlock>().Single(t=>t.Name=="BoundEcho").Text!="Actual order title" ||
+                    rowControls.OfType<TextBlock>().Single(t=>t.Name=="SelfEcho").Text!="SelfEcho")
+                    throw new Exception("Item namescope: " + string.Join(" | ", rowControls.OfType<TextBlock>()
+                        .Where(t=>t.Name is "BoundTitle" or "BoundEcho" or "SelfEcho").Select(t=>t.Name+"=["+t.Text+"]")));
+                foreach (var required in new[]{typeof(Grid),typeof(DockPanel),typeof(WrapPanel),typeof(Border),typeof(StackPanel),typeof(Button),typeof(CheckBox),typeof(TextBlock),typeof(Image)})
+                    if (!rowControls.Any(c=>c.GetType()==required)) throw new Exception("Missing native template child: "+required.Name);
+                if (!ReferenceEquals(rowControls.OfType<Image>().Single(i=>i.Name=="RowImage").Source,thumbnail))
+                    throw new Exception("Image did not receive the row thumbnail.");
+                foreach (var theme in new[] { ThemeVariant.Light, ThemeVariant.Dark })
+                {
+                    window.RequestedThemeVariant = theme;
+                    var expected = theme == ThemeVariant.Light ? "#2468AC" : "#AC6824";
+                    foreach (var type in new[]{"ListBox","ComboBox","ItemsControl"})
+                    {
+                        var owner = window.GetVisualDescendants().OfType<ItemsControl>().Single(i => i.Name == "Rows"+type);
+                        if (owner.ItemTemplate == null || owner.Items.Count != 2 || owner.Items[0] as string != type+" A")
+                            throw new Exception("Missing runtime data or template: "+type);
+                        if (owner is ComboBox combo) combo.SelectedIndex = 0;
+                        window.UpdateLayout();
+                        var labels = owner.GetVisualDescendants().OfType<TextBlock>().Where(t => t.Name == "TemplateLabel").ToArray();
+                        if (!labels.Any(t => t.DataContext as string == type+" A" && t.Text == type+" A" && t.FontSize == 17 && Math.Abs(t.Opacity-0.76)<1e-6
+                            && t.Foreground is ISolidColorBrush brush && brush.Color == Color.Parse(expected)))
+                            throw new Exception(type+" missing rendered item, binding or theme brush: "+theme+" labels="+
+                                string.Join(",",labels.Select(t=>t.Text+" "+t.Foreground)));
+                    }
+                }
+                File.WriteAllText(Environment.GetEnvironmentVariable("METADATA_RUNTIME_RESULT")!,
+                    "PASS 3 native ItemTemplate owners, materialized item DataContext, Text and dynamic brush in Light and Dark; real Orders/Title binding, empty before assigning data; nine native child types, row Image.Source and StaticResource FontSize; named style setter, ElementName and RelativeSource Self");
+                window.Close();
+                desktop.Shutdown(0);
+            }
+            catch(Exception ex)
+            {
+                File.WriteAllText(Environment.GetEnvironmentVariable("METADATA_RUNTIME_RESULT")!,"FAIL "+ex);
+                desktop.Shutdown(1);
+            }
+        },DispatcherPriority.Background);
+    }
+}

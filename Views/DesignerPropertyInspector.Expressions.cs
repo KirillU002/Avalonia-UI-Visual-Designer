@@ -26,9 +26,13 @@ public partial class DesignerPropertyInspector
         if(this.FindControl<Button>("ExpressionEditorButton")is {} button)button.IsEnabled=false;
         if(this.FindControl<TextBlock>("ExpressionTargetText")is {} label)label.Text="Выберите строку свойства";
     }
+    private void ItemTemplate_Click(object? sender, RoutedEventArgs e)
+    {
+        if (TopLevel.GetTopLevel(this) is MainWindow window) window.EditSelectedItemTemplate();
+    }
     private async void StyleEditor_Click(object? sender,RoutedEventArgs e)
     {
-        if (Context is MainWindowViewModel vm && TopLevel.GetTopLevel(this) is Window owner)
+        if (Context is MainWindowViewModel { IsTemplateDraft: false } vm && TopLevel.GetTopLevel(this) is Window owner)
             await new FormStyleEditorWindow(vm).ShowDialog(owner);
     }
     private async void ExpressionEditor_Click(object? sender,RoutedEventArgs e)

@@ -39,6 +39,7 @@ public partial class MainWindowViewModel
             .GroupBy(c => c.Id, StringComparer.OrdinalIgnoreCase).Any(g => g.Count() > 1))
             throw new InvalidOperationException("Повторяющиеся идентификаторы компонентов. Текущий проект не изменён.");
         if (document.Appearance is {} appearance) ValidateAppearanceForExport(appearance);
+        foreach (var control in document.Controls) control.ItemTemplate?.Validate(control.Type);
         ValidateNativeDocument(document);
     }
 
